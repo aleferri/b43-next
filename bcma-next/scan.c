@@ -479,7 +479,7 @@ int bcmn_bus_scan(struct bcmn_bus *bus)
 
 	while (eromptr < eromend) {
 		struct bcmn_device *other_core;
-		struct bcmn_device *core = kzalloc_obj(*core, GFP_KERNEL);
+		struct bcmn_device *core = kzalloc_obj(*core);
 		if (!core) {
 			err = -ENOMEM;
 			goto out;

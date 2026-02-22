@@ -479,7 +479,7 @@ static int ssbn_devices_register(struct ssbn_bus *bus)
 			continue;
 		}
 
-		devwrap = kzalloc_obj(*devwrap, GFP_KERNEL);
+		devwrap = kzalloc_obj(*devwrap);
 		if (!devwrap) {
 			err = -ENOMEM;
 			goto error;

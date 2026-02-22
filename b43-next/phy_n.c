@@ -1550,7 +1550,7 @@ static u16 b43_nphy_gen_load_samples(struct b43_wldev *dev, u32 freq, u16 max,
 		len = bw << 1;
 	}
 
-	samples = kzalloc_objs(struct cordic_iq, len, GFP_KERNEL);
+	samples = kzalloc_objs(struct cordic_iq, len);
 	if (!samples) {
 		b43err(dev->wl, "allocation for samples generation failed\n");
 		return 0;
@@ -6404,7 +6404,7 @@ static int b43_nphy_op_allocate(struct b43_wldev *dev)
 {
 	struct b43_phy_n *nphy;
 
-	nphy = kzalloc_obj(*nphy, GFP_KERNEL);
+	nphy = kzalloc_obj(*nphy);
 	if (!nphy)
 		return -ENOMEM;
 
