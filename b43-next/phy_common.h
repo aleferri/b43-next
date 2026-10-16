@@ -171,6 +171,10 @@ enum b43_txpwr_result {
  * 			beacons. Called by the core right after it releases the
  * 			MAC, for the PHY to run what the check held back.
  * 			Can be NULL, if not required.
+ * @ofdm_tx:		OFDM or HT frames are about to be queued for
+ * 			transmission. Called from the TX work with wl->mutex
+ * 			held, at most once per run of it.
+ * 			Can be NULL, if not required.
  */
 struct b43_phy_operations {
 	/* Initialisation */
@@ -212,6 +216,7 @@ struct b43_phy_operations {
 	bool (*radar_poll)(struct b43_wldev *dev);
 	void (*beacon_rate_set)(struct b43_wldev *dev, bool cck);
 	void (*cac_done)(struct b43_wldev *dev);
+	void (*ofdm_tx)(struct b43_wldev *dev);
 };
 
 struct b43_phy_g;
