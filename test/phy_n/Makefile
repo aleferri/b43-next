@@ -21,7 +21,7 @@ KFLAGS := -nostdinc -I$(REPO)/b43-next -I$(REPO) $(KINC) -D__KERNEL__ -DMODULE \
           -DKBUILD_MODNAME=\"b43\" \
           -include $(K)/include/linux/kconfig.h \
           -include $(K)/include/linux/compiler_types.h \
-          -DCONFIG_B43_NEXT_BCMA=1 \
+          -DCONFIG_B43_NEXT_BCMA=1 -DCONFIG_B43_NEXT_PHY_N=1 \
           -O2 -fno-strict-aliasing -fno-common -std=gnu11 \
           -Wall -Werror -Wno-pointer-sign -Wno-unused-function \
           -Wno-address-of-packed-member \
