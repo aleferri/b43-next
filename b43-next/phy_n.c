@@ -227,6 +227,7 @@ static void b43_nphy_rf_ctl_override_one_to_many(struct b43_wldev *dev,
 		b43_nphy_rf_ctl_override_rev7(dev, 0x4, value, core, off, 0);
 		b43_nphy_rf_ctl_override_rev7(dev, 0x2, value, core, off, 1);
 		b43_nphy_rf_ctl_override_rev7(dev, 0x1, value, core, off, 2);
+		b43_nphy_rf_ctl_override_rev7(dev, 0x4, value, core, off, 2);
 		b43_nphy_rf_ctl_override_rev7(dev, 0x0800, 1, core, off, 1);
 		break;
 	case N_RF_CTL_OVER_CMD_RX_GAIN:
@@ -238,8 +239,8 @@ static void b43_nphy_rf_ctl_override_one_to_many(struct b43_wldev *dev,
 	case N_RF_CTL_OVER_CMD_TX_GAIN:
 		tmp = value & 0x7FFF;
 		b43_nphy_rf_ctl_override_rev7(dev, 0x1000, tmp, core, off, 0);
-		tmp = value >> 14;
-		b43_nphy_rf_ctl_override_rev7(dev, 0x4000, tmp, core, off, 0);
+		tmp = (value & 0x8000) >> 14;
+		b43_nphy_rf_ctl_override_rev7(dev, 0x2000, tmp, core, off, 0);
 		break;
 	}
 }
