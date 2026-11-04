@@ -28,6 +28,11 @@ ifneq ($(CONFIG_MMC),)
 ssbn-opts += SDIOHOST
 b43n-opts += SDIO
 endif
+ifneq ($(CONFIG_BMIPS_GENERIC),)
+ifneq ($(CONFIG_OF),)
+bcmn-opts += HOST_SOC_BCM6362
+endif
+endif
 ifneq ($(CONFIG_MAC80211_LEDS),)
 ifneq ($(CONFIG_LEDS_CLASS),)
 b43n-opts += LEDS
@@ -76,6 +81,7 @@ b43-next-y += $(addprefix bcma-next/, \
 	driver_chipcommon.o driver_chipcommon_pmu.o driver_chipcommon_b.o)
 b43-next-$(CONFIG_BCMN_DRIVER_PCI) += bcma-next/driver_pci.o bcma-next/driver_pcie2.o
 b43-next-$(CONFIG_BCMN_HOST_PCI) += bcma-next/host_pci.o
+b43-next-$(CONFIG_BCMN_HOST_SOC_BCM6362) += bcma-next/host_soc_bcm6362.o
 
 b43-next-$(CONFIG_BCM47XX_NVRAM) += nvram/bcm47xx_sprom.o
 

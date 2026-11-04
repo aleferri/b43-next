@@ -19,8 +19,9 @@ make KSRC=/path/to/build   # or a tree prepared with modules_prepare
 
 The kernel must be 6.18 or later and have PCI, mac80211 and the CORDIC
 library; MMC adds the SDIO host, MAC80211_LEDS with LEDS_CLASS the LEDs,
-HW_RANDOM the RNG, and BCM47XX_NVRAM, on the Broadcom routers, the board data
-of boards without a SROM. `B43_NEXT_DEBUG=y` builds debugfs and the debug
+HW_RANDOM the RNG, BMIPS_GENERIC with OF the host of the BCM6362's integrated
+WLAN, and BCM47XX_NVRAM, on the Broadcom routers, the board data of boards
+without a SROM. `B43_NEXT_DEBUG=y` builds debugfs and the debug
 messages; `B43_NEXT_DFS=y`, on a kernel with CFG80211_CERTIFICATION_ONUS,
 lets an AP on the AC-PHY run on radar channels (tested on the RT-AC66U B1
 only, not a certified detector). What the kernel's Kconfig decided for b43,
@@ -57,7 +58,7 @@ b43-next drives them whether the kernel has brcmsmac or not
 
 ```
 b43-next/            b43
-bcma-next/           the bcma files a PCI host needs, renamed
+bcma-next/           the bcma files a PCI or BCM6362 host needs, renamed
 ssb-next/            the ssb files a PCI or SDIO host needs, renamed
 nvram/               the SPROM from the board's NVRAM, for both buses
 include/             the two buses' headers

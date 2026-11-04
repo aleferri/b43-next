@@ -118,6 +118,21 @@ static inline void bcmn_host_soc_unregister_driver(void)
 }
 #endif /* CONFIG_BCMN_HOST_SOC && CONFIG_OF */
 
+/* host_soc_bcm6362.c */
+#ifdef CONFIG_BCMN_HOST_SOC_BCM6362
+int __init bcmn_host_soc_bcm6362_register_driver(void);
+void bcmn_host_soc_bcm6362_unregister_driver(void);
+#else
+static inline int __init bcmn_host_soc_bcm6362_register_driver(void)
+{
+	return 0;
+}
+
+static inline void bcmn_host_soc_bcm6362_unregister_driver(void)
+{
+}
+#endif /* CONFIG_BCMN_HOST_SOC_BCM6362 */
+
 /* driver_pci.c */
 #ifdef CONFIG_BCMN_DRIVER_PCI
 u32 bcmn_pcie_read(struct bcmn_drv_pci *pc, u32 address);

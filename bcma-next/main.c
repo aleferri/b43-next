@@ -680,6 +680,11 @@ int __init bcmn_modinit(void)
 		pr_err("SoC host initialization failed\n");
 		err = 0;
 	}
+	err = bcmn_host_soc_bcm6362_register_driver();
+	if (err) {
+		pr_err("BCM6362 WLAN host initialization failed\n");
+		err = 0;
+	}
 #ifdef CONFIG_BCMN_HOST_PCI
 	err = bcmn_host_pci_init();
 	if (err) {
@@ -696,6 +701,7 @@ void bcmn_modexit(void)
 #ifdef CONFIG_BCMN_HOST_PCI
 	bcmn_host_pci_exit();
 #endif
+	bcmn_host_soc_bcm6362_unregister_driver();
 	bcmn_host_soc_unregister_driver();
 	bus_unregister(&bcmn_bus_type);
 }
