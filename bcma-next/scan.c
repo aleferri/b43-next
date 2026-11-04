@@ -318,6 +318,12 @@ static int bcmn_get_next_core(struct bcmn_bus *bus, u32 __iomem **eromptr,
 		case BCMN_CORE_GCI:
 		/* Not used yet: case BCMN_CORE_OOB_ROUTER: */
 			break;
+		case BCMN_CORE_CHIPCOMMON:
+		case BCMN_CORE_80211:
+		case BCMN_CORE_SHIM:
+			if (bus->wrapperless)
+				break;
+			fallthrough;
 		default:
 			bcmn_erom_skip_component(bus, eromptr);
 			return -ENXIO;
