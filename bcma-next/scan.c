@@ -143,6 +143,8 @@ static const char *bcmn_device_name(const struct bcmn_device_id *id)
 
 static u32 bcmn_scan_read32(struct bcmn_bus *bus, u16 offset)
 {
+	if (bus->big_endian)
+		return ioread32be(bus->mmio + offset);
 	return readl(bus->mmio + offset);
 }
 
@@ -155,7 +157,7 @@ static void bcmn_scan_switch_core(struct bcmn_bus *bus, u32 addr)
 
 static u32 bcmn_erom_get_ent(struct bcmn_bus *bus, u32 __iomem **eromptr)
 {
-	u32 ent = readl(*eromptr);
+	u32 ent = bus->big_endian ? ioread32be(*eromptr) : readl(*eromptr);
 	(*eromptr)++;
 	return ent;
 }
