@@ -197,6 +197,13 @@ struct ssbn_sprom {
 	u16 dot11agduphrpo;
 	u16 dot11agduplrpo;
 
+	/* Single-chain maxima and rate offsets of rev 8 and before (ppr.c). */
+	u8 maxpwr_bg, maxpwr_al, maxpwr_a, maxpwr_ah;
+	u16 cck2gpo;
+	u32 ofdm2gpo, ofdm5glpo, ofdm5gpo, ofdm5ghpo;
+	u16 mcs2gpo[8], mcs5glpo[8], mcs5gpo[8], mcs5ghpo[8];
+	u16 cddpo, stbcpo;
+
 	u8 revision;
 	u16 boardflags_lo, boardflags_hi;
 	u16 boardflags2_lo, boardflags2_hi;

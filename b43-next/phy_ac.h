@@ -3,7 +3,7 @@
 #define B43_PHY_AC_H_
 
 #include "phy_common.h"
-#include "ppr_ac.h"
+#include "ppr.h"
 #include "radar_ac.h"
 
 struct ieee80211_channel;
@@ -561,7 +561,7 @@ struct b43_phy_ac {
 	/* The beacon goes out at a CCK rate, see op_beacon_rate_set(). */
 	bool beacon_cck;
 	/* The same field for VHT MCS 0-9, by width (20, 40, 80 MHz). */
-	u16 rate_po_vht[B43_PPR_AC_ROWS][10];
+	u16 rate_po_vht[B43_PPR_BW_NUM][B43_PPR_MCS_RATES];
 	u8 crs_subband;
 	/* Operating width of the same configuration. */
 	enum nl80211_chan_width cal_width;
@@ -572,8 +572,8 @@ struct b43_phy_ac {
 	 * maximum per core, and the inputs it was computed from, so the
 	 * periodic hook can tell a change from a repeat.
 	 */
-	struct b43_ppr_ac txpwr_ppr;
-	struct b43_ppr_ac txpwr_spacing;	/* distances, never saturated */
+	struct b43_ppr txpwr_ppr;
+	struct b43_ppr txpwr_spacing;	/* distances, never saturated */
 	u8 txpwr_max[B43_PHY_AC_MAX_CORES];
 	/* maxp5ga of the lowest core, 0 when the SROM declares no power. */
 	u8 txpwr_maxp;

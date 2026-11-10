@@ -45,6 +45,8 @@ static inline void __clear_bit(unsigned long nr, unsigned long *addr)
 
 #define INT_MAX		2147483647
 
+#define BUILD_BUG_ON(c)      _Static_assert(!(c), #c)
+
 #define DIV_ROUND_UP(n, d)   (((n) + (d) - 1) / (d))
 #define DIV_ROUND_CLOSEST(n, d)     (((n) + (d) / 2) / (d))
 #define DIV_ROUND_CLOSEST_ULL(n, d) (((n) + (d) / 2) / (d))

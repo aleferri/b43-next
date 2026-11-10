@@ -23,7 +23,7 @@ top-level README.
 | `switch_analog` | four sites in `main.c` plus `b43_phy_init()` | the AFE arm unit; the cold preamble once, on the first entry with a channel (`b43_phy_ac_cold_preamble_due()`) |
 | `switch_channel` | `b43_phy_init()`, `b43_op_config()` | channel setup; a no-op when channel and width are already programmed |
 | `channel_calibrate` | `b43_op_config()`, in place of its final `mac_enable` | re-enables the MAC between the RX gain-control sweep and the post-switch calibrations |
-| `recalc_txpower` / `adjust_txpower` | `b43_phy_txpower_check()` | per-rate table from the SROM (`b43-next/ppr_ac.c`), target `0x0646` per core |
+| `recalc_txpower` / `adjust_txpower` | `b43_phy_txpower_check()` | per-rate table from the SROM (`b43-next/ppr.c`), target `0x0646` per core |
 | `pwork_1sec` | the 1 s periodic work in `b43-next/main.c` | one watchdog turn while the PHY is in its run state; the bss-up once the availability check is over |
 | `pwork_60sec` | b43 periodic work | CRS minimum-power threshold, written only when it changes |
 | `radar_poll` | `radar_work`, every 150 ms while `conf->radar_enabled` | the detector read (`PHY 0x0251`/`0x0252`) |

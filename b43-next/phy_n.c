@@ -4046,12 +4046,12 @@ static void b43_nphy_tx_power_ctl_setup(struct b43_wldev *dev)
 
 	s16 a1[2], b0[2], b1[2];
 	u8 idle[2];
+	enum b43_band band;
 	u8 ppr_max;
 	s8 target[2];
 	s32 num, den, pwr;
 	u32 regval[64];
 
-	u16 freq = phy->chandef->chan->center_freq;
 	u16 tmp;
 	u16 r; /* routing */
 	u8 i, c;
@@ -4083,50 +4083,34 @@ static void b43_nphy_tx_power_ctl_setup(struct b43_wldev *dev)
 		a1[0] = a1[1] = -424;
 		b0[0] = b0[1] = 5612;
 		b1[0] = b1[1] = -1393;
-	} else {
-		if (b43_current_band(dev->wl) == NL80211_BAND_2GHZ) {
-			for (c = 0; c < 2; c++) {
-				idle[c] = nphy->pwr_ctl_info[c].idle_tssi_2g;
-				target[c] = sprom->core_pwr_info[c].maxpwr_2g;
-				a1[c] = sprom->core_pwr_info[c].pa_2g[0];
-				b0[c] = sprom->core_pwr_info[c].pa_2g[1];
-				b1[c] = sprom->core_pwr_info[c].pa_2g[2];
-			}
-		} else if (freq >= 4900 && freq < 5100) {
-			for (c = 0; c < 2; c++) {
-				idle[c] = nphy->pwr_ctl_info[c].idle_tssi_5g;
-				target[c] = sprom->core_pwr_info[c].maxpwr_5gl;
-				a1[c] = sprom->core_pwr_info[c].pa_5gl[0];
-				b0[c] = sprom->core_pwr_info[c].pa_5gl[1];
-				b1[c] = sprom->core_pwr_info[c].pa_5gl[2];
-			}
-		} else if (freq >= 5100 && freq < 5500) {
-			for (c = 0; c < 2; c++) {
-				idle[c] = nphy->pwr_ctl_info[c].idle_tssi_5g;
-				target[c] = sprom->core_pwr_info[c].maxpwr_5g;
-				a1[c] = sprom->core_pwr_info[c].pa_5g[0];
-				b0[c] = sprom->core_pwr_info[c].pa_5g[1];
-				b1[c] = sprom->core_pwr_info[c].pa_5g[2];
-			}
-		} else if (freq >= 5500) {
-			for (c = 0; c < 2; c++) {
-				idle[c] = nphy->pwr_ctl_info[c].idle_tssi_5g;
-				target[c] = sprom->core_pwr_info[c].maxpwr_5gh;
-				a1[c] = sprom->core_pwr_info[c].pa_5gh[0];
-				b0[c] = sprom->core_pwr_info[c].pa_5gh[1];
-				b1[c] = sprom->core_pwr_info[c].pa_5gh[2];
-			}
-		} else {
-			idle[0] = nphy->pwr_ctl_info[0].idle_tssi_5g;
-			idle[1] = nphy->pwr_ctl_info[1].idle_tssi_5g;
-			target[0] = target[1] = 52;
-			a1[0] = a1[1] = -424;
-			b0[0] = b0[1] = 5612;
-			b1[0] = b1[1] = -1393;
+	} else if (b43_ppr_band(phy->chandef->chan, &band)) {
+		for (c = 0; c < 2; c++) {
+			const struct ssbn_sprom_core_pwr_info *pi =
+				&sprom->core_pwr_info[c];
+			const u16 *pa = band == B43_BAND_2G ? pi->pa_2g :
+					band == B43_BAND_5G_LO ? pi->pa_5gl :
+					band == B43_BAND_5G_MI ? pi->pa_5g :
+					pi->pa_5gh;
+
+			idle[c] = band == B43_BAND_2G ?
+				  nphy->pwr_ctl_info[c].idle_tssi_2g :
+				  nphy->pwr_ctl_info[c].idle_tssi_5g;
+			target[c] = b43_ppr_sprom_r8_maxpwr(sprom, band,
+							    BIT(c));
+			a1[c] = pa[0];
+			b0[c] = pa[1];
+			b1[c] = pa[2];
 		}
+	} else {
+		idle[0] = nphy->pwr_ctl_info[0].idle_tssi_5g;
+		idle[1] = nphy->pwr_ctl_info[1].idle_tssi_5g;
+		target[0] = target[1] = 52;
+		a1[0] = a1[1] = -424;
+		b0[0] = b0[1] = 5612;
+		b1[0] = b1[1] = -1393;
 	}
 
-	ppr_max = b43_ppr_get_max(dev, &nphy->tx_pwr_max_ppr);
+	ppr_max = b43_ppr_get_max(&nphy->tx_pwr_max_ppr);
 	if (ppr_max) {
 		target[0] = ppr_max;
 		target[1] = ppr_max;
@@ -5840,20 +5824,18 @@ static enum b43_txpwr_result b43_nphy_op_recalc_txpower(struct b43_wldev *dev,
 	    nphy->tx_pwr_last_recalc_limit == phy->desired_txpower)
 		return B43_TXPWR_RES_DONE;
 
-	/* Make sure we have a clean PPR */
-	b43_ppr_clear(dev, ppr);
-
 	/* HW limitations */
-	b43_ppr_load_max_from_sprom(dev, ppr, B43_BAND_2G);
+	b43_ppr_load_sprom_r8(ppr, dev->dev->bus_sprom, B43_BAND_2G, 0x3,
+			      phy->rev >= 3);
 
 	/* Regulatory & user settings */
 	max = INT_TO_Q52(phy->chandef->chan->max_power);
 	if (phy->desired_txpower)
 		max = min_t(u8, max, INT_TO_Q52(phy->desired_txpower));
-	b43_ppr_apply_max(dev, ppr, max);
+	b43_ppr_apply_max(ppr, max);
 	if (b43_debug(dev, B43_DBG_XMITPOWER))
 		b43dbg(dev->wl, "Calculated TX power: " Q52_FMT "\n",
-		       Q52_ARG(b43_ppr_get_max(dev, ppr)));
+		       Q52_ARG(b43_ppr_get_max(ppr)));
 
 	/* TODO: Enable this once we get gains working */
 #if 0
@@ -5863,11 +5845,11 @@ static enum b43_txpwr_result b43_nphy_op_recalc_txpower(struct b43_wldev *dev,
 		hw_gain += sprom->antenna_gain.a0;
 	else
 		hw_gain += sprom->antenna_gain.a1;
-	b43_ppr_add(dev, ppr, -hw_gain);
+	b43_ppr_add(ppr, -hw_gain);
 #endif
 
 	/* Make sure we didn't go too low */
-	b43_ppr_apply_min(dev, ppr, INT_TO_Q52(8));
+	b43_ppr_apply_min(ppr, INT_TO_Q52(8));
 
 	/* Apply */
 	b43_mac_suspend(dev);

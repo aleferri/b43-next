@@ -18,7 +18,7 @@ B43     := ../../b43-next
 SCRATCH := build/b43
 STUBS   := stubs
 AC_HDRS := $(addprefix $(SCRATCH)/,phy_ac.h tables_phy_ac.h radio_2069.h \
-            ppr_ac.h radar_ac.h)
+            ppr.h radar_ac.h)
 
 # We include our stubs FIRST (via -I) so kernel headers <linux/*.h> and
 # the b43 project headers resolve to our minimal versions. The copied AC-PHY
@@ -57,7 +57,7 @@ SCRATCH_SRCS_FULL := \
     $(SCRATCH)/tables_phy_ac.c \
     $(SCRATCH)/radio_2069.c \
     $(SCRATCH)/phy_ac_hostflags.c \
-    $(SCRATCH)/ppr_ac.c \
+    $(SCRATCH)/ppr.c \
     $(SCRATCH)/radar_ac.c
 
 # phy_ac_test.c compiles the driver's phy_ac.c together with what only the

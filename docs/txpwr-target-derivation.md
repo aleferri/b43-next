@@ -14,15 +14,16 @@ It is brcmsmac's `wlc_phy_txpower_recalc_target()`, which b43 already ports for
 the N-PHY as `b43_nphy_op_recalc_txpower()`:
 
 ```
-clear -> load_max_from_sprom -> apply_max(regulatory) -> add(-6)
-      -> apply_min(8 dBm) -> get_max
+load_sprom -> apply_max(regulatory) -> add(-6) -> apply_min(8 dBm) -> get_max
 ```
 
-`b43-next/ppr_ac.{c,h}` is that PPR for SROM rev 11, one row of eight
-modulation-class groups per width. It loads the minimum of `maxp5ga` over the
-active chains plus the per-core delta, with the `mcsbw*po` nibbles per width. A
-40 MHz channel also loads the 20 MHz row, an 80 MHz channel the 20 and 40 MHz
-rows, so the maximum takes the smallest offset among the contained widths.
+The PPR is `b43-next/ppr.{c,h}`, shared by every PHY family; the AC-PHY loads
+it with `b43_ppr_load_sprom_r11()`, the rev 11 decode of the eight
+modulation-class nibbles of each width's word into the OFDM rates and VHT MCS
+0-9 of that width. It loads the minimum of `maxp5ga` over the active chains
+plus the per-core delta, with the `mcsbw*po` nibbles per width. A 40 MHz
+channel also loads the 20 MHz rates, an 80 MHz channel the 20 and 40 MHz ones,
+so the maximum takes the smallest offset among the contained widths.
 
 | quantity | unit |
 | --- | --- |

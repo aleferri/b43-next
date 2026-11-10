@@ -728,8 +728,8 @@ static void b43_phy_ac_shm_readback_block(struct b43_wldev *dev)
  * The twelve rates of the rateset in increasing bitrate, the order the stock
  * driver visits the blocks, CCK interleaved with OFDM. @dirmap is the index
  * in the direct-map table (the SIGNAL low nibble), @idx the rate's index in
- * its class: for b43_ppr_ac_ofdm(), 0 = 6 Mbit/s to 7 = 54, for
- * b43_ppr_ac_cck(), 0 = 1 Mbit/s to 3 = 11.
+ * its class: for b43_ppr_get_ofdm(), 0 = 6 Mbit/s to 7 = 54, for
+ * b43_ppr_get_cck(), 0 = 1 Mbit/s to 3 = 11.
  */
 struct b43_phy_ac_prb_rsp_rate {
 	u8 dirmap;
@@ -781,7 +781,7 @@ static u16 b43_phy_ac_po_field(int qdb)
  */
 static u16 b43_phy_ac_cck_rate_po(struct b43_phy_ac *ac)
 {
-	u8 target = b43_ppr_ac_get_max(&ac->txpwr_ppr);
+	u8 target = b43_ppr_get_max(&ac->txpwr_ppr);
 
 	if (!ac->txpwr_maxp)
 		return 0x00f8;
@@ -1007,7 +1007,8 @@ static void b43_phy_ac_chain_pair(struct b43_wldev *dev,
 	if (site == B43_PHY_AC_CHAIN_TXPWR && width != NL80211_CHAN_WIDTH_20)
 		limit += 4;
 	board = (int)ac->txpwr_maxp -
-		(0x7f - b43_ppr_ac_row_max(&ac->txpwr_spacing, width));
+		(0x7f - b43_ppr_get_bw_max(&ac->txpwr_spacing,
+					   b43_ppr_bw(width)));
 
 	out[0] = b43_phy_ac_chain_mask(ac->coremask,
 				       b43_phy_ac_chain_count(board, limit,
@@ -1080,8 +1081,8 @@ static void b43_phy_ac_bss_cc_update(struct b43_wldev *dev,
 static u16 b43_phy_ac_rate_po(const struct b43_phy_ac *ac, u8 spacing,
 			      u16 cap)
 {
-	int dist = b43_ppr_ac_get_max(&ac->txpwr_spacing) - spacing;
-	int target = b43_ppr_ac_get_max(&ac->txpwr_ppr);
+	int dist = b43_ppr_get_max(&ac->txpwr_spacing) - spacing;
+	int target = b43_ppr_get_max(&ac->txpwr_ppr);
 
 	if (cap && target > (int)cap - 6)
 		dist = max(dist, target - ((int)cap - 6));
@@ -1107,7 +1108,7 @@ static bool b43_phy_ac_legacy_capped(struct b43_wldev *dev)
 static u16 b43_phy_ac_rate_po_capped(const struct b43_phy_ac *ac, u8 power,
 				     u16 cap)
 {
-	int target = b43_ppr_ac_get_max(&ac->txpwr_ppr);
+	int target = b43_ppr_get_max(&ac->txpwr_ppr);
 	int p = power;
 
 	if (cap)
@@ -1205,17 +1206,15 @@ static u16 b43_phy_ac_legacy_cap(struct b43_wldev *dev,
  */
 static void b43_phy_ac_vht_rate_po(struct b43_phy_ac *ac, bool capped)
 {
-	static const enum nl80211_chan_width widths[B43_PPR_AC_ROWS] = {
-		NL80211_CHAN_WIDTH_20, NL80211_CHAN_WIDTH_40, NL80211_CHAN_WIDTH_80,
-	};
-	const struct b43_ppr_ac *t = capped ? &ac->txpwr_ppr : &ac->txpwr_spacing;
-	unsigned int w, mcs;
+	const struct b43_ppr *t = capped ? &ac->txpwr_ppr : &ac->txpwr_spacing;
+	enum b43_ppr_bw bw;
+	unsigned int mcs;
 	u8 p;
 
-	for (w = 0; w < ARRAY_SIZE(widths); w++) {
-		for (mcs = 0; mcs < ARRAY_SIZE(ac->rate_po_vht[w]); mcs++) {
-			p = b43_ppr_ac_vht(t, widths[w], mcs);
-			ac->rate_po_vht[w][mcs] = capped ?
+	for (bw = B43_PPR_BW_20; bw < B43_PPR_BW_NUM; bw++) {
+		for (mcs = 0; mcs < B43_PPR_MCS_RATES; mcs++) {
+			p = b43_ppr_get_mcs(t, bw, B43_PPR_SISO, mcs);
+			ac->rate_po_vht[bw][mcs] = capped ?
 				b43_phy_ac_rate_po_capped(ac, p, 0) :
 				b43_phy_ac_rate_po(ac, p, 0);
 		}
@@ -1231,10 +1230,10 @@ static void b43_phy_ac_vht_rate_po(struct b43_phy_ac *ac, bool capped)
  *
  * Legacy OFDM rates read the row of the operating width, not the 20 MHz
  * one, since on a bonded channel they go out duplicated over the block, and
- * within it the group of their modulation class (ppr_ac.h): 6 to 18 Mb/s
+ * within it the group of their modulation class (ppr.c): 6 to 18 Mb/s
  * the first, 24 to 54 the next four. The target is the maximum over the rows
  * the channel loads. The regulatory ceiling applies to the power table only
- * (b43_ppr_ac_load_max_from_sprom()), the legacy limit through
+ * (b43_ppr_load_sprom_r11()), the legacy limit through
  * b43_phy_ac_rate_po().
  *
  * Not reproduced: at 40 and 80 MHz the stock driver writes max(distance, K)
@@ -1253,8 +1252,9 @@ static void b43_phy_ac_prb_rsp_rate_po(struct b43_wldev *dev,
 {
 	B43_AC_FN();
 	struct b43_phy_ac *ac = dev->phy.ac;
-	const struct b43_ppr_ac *sp = &ac->txpwr_spacing;
+	const struct b43_ppr *sp = &ac->txpwr_spacing;
 	bool capped = b43_phy_ac_legacy_capped(dev);
+	enum b43_ppr_bw bw = b43_ppr_bw(ac->cal_width);
 	enum nl80211_chan_width w = ac->txpwr_pass2 ? NL80211_CHAN_WIDTH_20
 						    : ac->cal_width;
 	u16 cap = b43_phy_ac_legacy_cap(dev, site, w, w);
@@ -1269,21 +1269,21 @@ static void b43_phy_ac_prb_rsp_rate_po(struct b43_wldev *dev,
 		u16 cell = (u16)(2 * ptr + B43_AC_RT_RATE_PO);
 		u16 val;
 
-		if (r->cck && sp->has_cck)
+		if (r->cck && b43_ppr_has_cck(sp))
 			val = ac->rate_po_cck = b43_phy_ac_rate_po(ac,
-					b43_ppr_ac_cck(sp, r->idx), 0);
+					b43_ppr_get_cck(sp, r->idx), 0);
 		else if (r->cck)
 			val = ac->rate_po_cck = b43_phy_ac_cck_rate_po(ac);
 		else if (capped)
 			val = b43_phy_ac_rate_po_capped(ac,
-					b43_ppr_ac_ofdm(&ac->txpwr_ppr,
-							ac->cal_width, r->idx),
+					b43_ppr_get_ofdm(&ac->txpwr_ppr, bw,
+							 B43_PPR_SISO, r->idx),
 					cap);
 		else
 			val = b43_phy_ac_rate_po(ac,
-						 b43_ppr_ac_ofdm(sp, ac->cal_width,
-								 r->idx),
-						 cap);
+					b43_ppr_get_ofdm(sp, bw, B43_PPR_SISO,
+							 r->idx),
+					cap);
 
 		if (!r->cck)
 			ac->rate_po_ofdm[r->idx] = val;
@@ -1320,9 +1320,9 @@ static u16 b43_phy_ac_beacon_pwr_offset_at(struct b43_wldev *dev,
 	enum nl80211_chan_width w = ac->cal_width;
 	u16 cap;
 
-	if (ac->beacon_cck && ac->txpwr_spacing.has_cck)
-		return b43_phy_ac_rate_po(ac, b43_ppr_ac_cck(&ac->txpwr_spacing,
-								 0), 0);
+	if (ac->beacon_cck && b43_ppr_has_cck(&ac->txpwr_spacing))
+		return b43_phy_ac_rate_po(ac,
+				b43_ppr_get_cck(&ac->txpwr_spacing, 0), 0);
 
 	/*
 	 * The cell is the 6 Mbit/s field, in each chip's form: at 20 and
@@ -1337,9 +1337,11 @@ static u16 b43_phy_ac_beacon_pwr_offset_at(struct b43_wldev *dev,
 				    ac->txpwr_pass2 ? w : ac->cal_width);
 	if (b43_phy_ac_legacy_capped(dev))
 		return b43_phy_ac_rate_po_capped(ac,
-				b43_ppr_ac_ofdm(&ac->txpwr_ppr, w, 0), cap);
-	return b43_phy_ac_rate_po(ac, b43_ppr_ac_ofdm(&ac->txpwr_spacing,
-						      w, 0), cap);
+				b43_ppr_get_ofdm(&ac->txpwr_ppr, b43_ppr_bw(w),
+						 B43_PPR_SISO, 0), cap);
+	return b43_phy_ac_rate_po(ac,
+			b43_ppr_get_ofdm(&ac->txpwr_spacing, b43_ppr_bw(w),
+					 B43_PPR_SISO, 0), cap);
 }
 
 /*
@@ -1354,7 +1356,7 @@ static void b43_phy_ac_op_beacon_rate_set(struct b43_wldev *dev, bool cck)
 	if (ac->beacon_cck == cck)
 		return;
 	ac->beacon_cck = cck;
-	if (ac->txpwr_spacing.has_cck)
+	if (b43_ppr_has_cck(&ac->txpwr_spacing))
 		b43_shm_write16(dev, B43_SHM_SHARED, 0x00ce,
 				b43_phy_ac_beacon_pwr_offset_at(dev,
 						B43_PHY_AC_CHAIN_TXPWR));
@@ -2069,8 +2071,9 @@ bool b43_phy_ac_txpwr_recalc(struct b43_wldev *dev)
 	B43_AC_FN();
 	const struct ssbn_sprom *sprom = dev->dev->bus_sprom;
 	struct b43_phy_ac *ac = dev->phy.ac;
-	struct b43_ppr_ac *ppr = &ac->txpwr_ppr;
-	unsigned int sb = b43_ppr_ac_subband(ac->cal_channel, ac->cal_width);
+	struct b43_ppr *ppr = &ac->txpwr_ppr;
+	unsigned int sb = b43_ppr_sprom_r11_subband(ac->cal_channel,
+						    ac->cal_width);
 	u16 ceiling = b43_phy_ac_reg_ceiling(dev);
 	unsigned int core;
 	u8 maxp, max;
@@ -2080,23 +2083,23 @@ bool b43_phy_ac_txpwr_recalc(struct b43_wldev *dev)
 	    ac->txpwr_calc_ceiling == ceiling)
 		return false;
 
-	maxp = b43_ppr_ac_load_max_from_sprom(sprom, ac->coremask, ac->num_cores,
-					      ppr, ac->cal_channel, ac->cal_width,
-					      (u8)min_t(u16, ceiling, 0xff));
-	b43_ppr_ac_load_spacing(sprom, &ac->txpwr_spacing, ac->cal_channel,
-				ac->cal_width);
+	maxp = b43_ppr_load_sprom_r11(ppr, sprom, ac->coremask, ac->num_cores,
+				      ac->cal_channel, ac->cal_width,
+				      (u8)min_t(u16, ceiling, 0xff));
+	b43_ppr_load_sprom_r11_spacing(&ac->txpwr_spacing, sprom,
+				       ac->cal_channel, ac->cal_width);
 	if (!maxp)
 		b43warn(dev->wl,
 			"AC-PHY: maxp5ga is 0 for the sub-band of channel %u: "
 			"the SROM declares no power, target at the floor\n",
 			ac->cal_channel);
-	b43_ppr_ac_add(ppr, -6);
-	b43_ppr_ac_apply_min(ppr, B43_PHY_AC_QDB(1));
-	max = b43_ppr_ac_get_max(ppr);
+	b43_ppr_add(ppr, -6);
+	b43_ppr_apply_min(ppr, B43_PHY_AC_QDB(1));
+	max = b43_ppr_get_max(ppr);
 
 	ac->txpwr_maxp = maxp;
 
-	if (b43_ppr_ac_sprom_has_subband_po(sprom) && !ac->txpwr_calc_chan)
+	if (b43_ppr_sprom_r11_has_subband_po(sprom) && !ac->txpwr_calc_chan)
 		b43warn(dev->wl,
 			"AC-PHY: the SROM has explicit sub-band row offsets "
 			"(sb*/dot11agdup*/mcslr*), which are not applied: "
@@ -5751,7 +5754,7 @@ static void b43_phy_ac_crs_note_noise(struct b43_wldev *dev, const u16 *sample)
 
 /*
  * The rings are emptied when the sub-band changes, on pa5g_group's
- * partition (5250 and 5500 MHz), not b43_ppr_ac_subband()'s.
+ * partition (5250 and 5500 MHz), not b43_ppr_sprom_r11_subband()'s.
  *
  * The reset is at the channel change, not in the index getter: in the
  * post-bring-up tail the sample latch precedes the block that reads the
