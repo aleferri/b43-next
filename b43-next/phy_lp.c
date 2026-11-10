@@ -1703,7 +1703,7 @@ static int lpphy_calc_rx_iq_comp(struct b43_wldev *dev, u16 samples)
 
 	c1 = b43_phy_read(dev, B43_LPPHY_RX_COMP_COEFF_S);
 	c0 = c1 >> 8;
-	c1 |= 0xFF;
+	c1 &= 0xFF;
 
 	b43_phy_maskset(dev, B43_LPPHY_RX_COMP_COEFF_S, 0xFF00, 0x00C0);
 	b43_phy_mask(dev, B43_LPPHY_RX_COMP_COEFF_S, 0x00FF);
