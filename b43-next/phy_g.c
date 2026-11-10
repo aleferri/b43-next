@@ -16,6 +16,7 @@
 #include "b43.h"
 #include "phy_g.h"
 #include "phy_common.h"
+#include "ppr.h"
 #include "lo.h"
 #include "main.h"
 #include "wa.h"
@@ -2877,6 +2878,26 @@ static void b43_gphy_op_adjust_txpower(struct b43_wldev *dev)
 	b43_mac_enable(dev);
 }
 
+/*
+ * The board's per-rate limits: maxpwr_bg and its rate offsets, less 0.75 dB
+ * on a board with PA control. An SROM that leaves no room for that, or puts
+ * the limit at 30 dBm or more, is replaced by 20 dBm.
+ */
+static void b43_gphy_load_ppr(struct b43_wldev *dev, struct b43_ppr *ppr)
+{
+	struct ssbn_sprom *sprom = dev->dev->bus_sprom;
+	int backoff = (sprom->boardflags_lo & B43_BFL_PACTRL) ? 3 : 0;
+
+	if (unlikely(sprom->maxpwr_bg < backoff ||
+		     sprom->maxpwr_bg - backoff >= INT_TO_Q52(30))) {
+		b43warn(dev->wl, "Invalid max-TX-power value in SPROM.\n");
+		sprom->maxpwr_bg = INT_TO_Q52(20);
+		backoff = 0;
+	}
+	b43_ppr_load_sprom_legacy(ppr, sprom, B43_BAND_2G, false);
+	b43_ppr_add(ppr, -backoff);
+}
+
 static enum b43_txpwr_result b43_gphy_op_recalc_txpower(struct b43_wldev *dev,
 							bool ignore_tssi)
 {
@@ -2887,6 +2908,7 @@ static enum b43_txpwr_result b43_gphy_op_recalc_txpower(struct b43_wldev *dev,
 	int estimated_pwr, desired_pwr, pwr_adjust;
 	int rfatt_delta, bbatt_delta;
 	unsigned int max_pwr;
+	struct b43_ppr ppr;
 
 	/* First get the average TSSI */
 	cck_result = b43_phy_shm_tssi_read(dev, B43_SHM_SH_TSSI_CCK);
@@ -2914,23 +2936,16 @@ static enum b43_txpwr_result b43_gphy_op_recalc_txpower(struct b43_wldev *dev,
 	estimated_pwr = b43_gphy_estimate_power_out(dev, average_tssi);
 
 	B43_WARN_ON(phy->type != B43_PHYTYPE_G);
-	max_pwr = dev->dev->bus_sprom->maxpwr_bg;
-	if (dev->dev->bus_sprom->boardflags_lo & B43_BFL_PACTRL)
-		max_pwr -= 3; /* minus 0.75 */
-	if (unlikely(max_pwr >= INT_TO_Q52(30/*dBm*/))) {
-		b43warn(dev->wl,
-			"Invalid max-TX-power value in SPROM.\n");
-		max_pwr = INT_TO_Q52(20); /* fake it */
-		dev->dev->bus_sprom->maxpwr_bg = max_pwr;
-	}
+	b43_gphy_load_ppr(dev, &ppr);
+	max_pwr = b43_ppr_get_max(&ppr);
 
 	/* Get desired power (in Q5.2) */
 	if (phy->desired_txpower < 0)
 		desired_pwr = INT_TO_Q52(0);
 	else
 		desired_pwr = INT_TO_Q52(phy->desired_txpower);
-	/* And limit it. max_pwr already is Q5.2 */
-	desired_pwr = clamp_val(desired_pwr, 0, max_pwr);
+	b43_ppr_apply_max(&ppr, min(desired_pwr, 0xff));
+	desired_pwr = b43_ppr_get_max(&ppr);
 	if (b43_debug(dev, B43_DBG_XMITPOWER)) {
 		b43dbg(dev->wl,
 		       "[TX power]  current = " Q52_FMT
