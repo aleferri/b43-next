@@ -26,8 +26,8 @@ static int bcmn_fill_sprom_with_fallback(struct bcmn_bus *bus,
 	if (err)
 		goto fail;
 
-	bcmn_debug(bus, "Using SPROM revision %d provided by platform.\n",
-		   bus->sprom.revision);
+	bcmn_info(bus, "Using SPROM revision %d provided by platform.\n",
+		  bus->sprom.revision);
 	return 0;
 fail:
 	bcmn_warn(bus, "Using fallback SPROM failed (err %d)\n", err);
@@ -137,7 +137,7 @@ static int bcmn_sprom_valid(struct bcmn_bus *bus, const u16 *sprom,
 	}
 
 	bus->sprom.revision = revision;
-	bcmn_debug(bus, "Found SPROM revision %d\n", revision);
+	bcmn_info(bus, "Found SPROM revision %d\n", revision);
 
 	return 0;
 }
@@ -440,6 +440,211 @@ static void bcmn_sprom_extract_r8(struct bcmn_bus *bus, const u16 *sprom)
 	     SSBN_SPROM8_TEMPDELTA_HYSTERESIS_SHIFT);
 }
 
+static void bcmn_sprom_unpack_rxgains(struct ssbn_sprom_rxgains *out,
+				      int chain, u8 packed)
+{
+	out->trelnabyp[chain] = (packed >> 7) & 0x01;
+	out->triso[chain]     = (packed >> 3) & 0x0f;
+	out->elnagain[chain]  =  packed       & 0x07;
+}
+
+static void bcmn_sprom_extract_r11(struct bcmn_bus *bus, const u16 *sprom)
+{
+	static const u16 pwr_info_offset[] = {
+		SSBN_SPROM11_PWR_INFO_CORE0,
+		SSBN_SPROM11_PWR_INFO_CORE1,
+		SSBN_SPROM11_PWR_INFO_CORE2,
+	};
+	u16 v;
+	int i, j;
+
+	BUILD_BUG_ON(ARRAY_SIZE(pwr_info_offset) >
+		     ARRAY_SIZE(bus->sprom.core_pwr_info));
+
+	/* Header: rev-11 offsets, rev-8 masks/shifts. */
+	for (i = 0; i < 3; i++) {
+		v = sprom[SPOFF(SSBN_SPROM11_IL0MAC) + i];
+		*(((__be16 *)bus->sprom.il0mac) + i) = cpu_to_be16(v);
+	}
+
+	SPEX(board_rev, SSBN_SPROM8_BOARDREV, ~0, 0);
+	SPEX(board_type, SSBN_SPROM1_SPID, ~0, 0);
+	SPEX(boardflags_lo, SSBN_SPROM8_BFLLO, ~0, 0);
+	SPEX(boardflags_hi, SSBN_SPROM8_BFLHI, ~0, 0);
+	SPEX(boardflags2_lo, SSBN_SPROM8_BFL2LO, ~0, 0);
+	SPEX(boardflags2_hi, SSBN_SPROM8_BFL2HI, ~0, 0);
+	SPEX32(boardflags3, SSBN_SPROM11_BFL3, ~0, 0);
+
+	SPEX(country_code, SSBN_SPROM11_CCODE, ~0, 0);
+	SPEX(gpio0, SSBN_SPROM11_GPIOA, SSBN_SPROM8_GPIOA_P0, 0);
+	SPEX(gpio1, SSBN_SPROM11_GPIOA, SSBN_SPROM8_GPIOA_P1,
+	     SSBN_SPROM8_GPIOA_P1_SHIFT);
+	SPEX(gpio2, SSBN_SPROM11_GPIOB, SSBN_SPROM8_GPIOB_P2, 0);
+	SPEX(gpio3, SSBN_SPROM11_GPIOB, SSBN_SPROM8_GPIOB_P3,
+	     SSBN_SPROM8_GPIOB_P3_SHIFT);
+	SPEX(ant_available_a, SSBN_SPROM11_ANTAVAIL, SSBN_SPROM8_ANTAVAIL_A,
+	     SSBN_SPROM8_ANTAVAIL_A_SHIFT);
+	SPEX(ant_available_bg, SSBN_SPROM11_ANTAVAIL, SSBN_SPROM8_ANTAVAIL_BG,
+	     SSBN_SPROM8_ANTAVAIL_BG_SHIFT);
+	SPEX(txchain, SSBN_SPROM11_TXRXC, SSBN_SPROM8_TXRXC_TXCHAIN,
+	     SSBN_SPROM8_TXRXC_TXCHAIN_SHIFT);
+	SPEX(rxchain, SSBN_SPROM11_TXRXC, SSBN_SPROM8_TXRXC_RXCHAIN,
+	     SSBN_SPROM8_TXRXC_RXCHAIN_SHIFT);
+	SPEX(antswitch, SSBN_SPROM11_TXRXC, SSBN_SPROM8_TXRXC_SWITCH,
+	     SSBN_SPROM8_TXRXC_SWITCH_SHIFT);
+	SPEX(subband5gver, SSBN_SPROM11_SUBBAND5GVER, 0x00ff, 0);
+
+	/* FEM / PA control block. */
+	SPEX(tssiposslope2g, SSBN_SPROM11_FEM_CFG1,
+	     SSBN_SPROM11_FEM_TSSIPOSSLOPE, 0);
+	SPEX(epagain2g, SSBN_SPROM11_FEM_CFG1, SSBN_SPROM11_FEM_EPAGAIN,
+	     SSBN_SPROM11_FEM_EPAGAIN_SHIFT);
+	SPEX(pdgain2g, SSBN_SPROM11_FEM_CFG1, SSBN_SPROM11_FEM_PDGAIN,
+	     SSBN_SPROM11_FEM_PDGAIN_SHIFT);
+	SPEX(tworangetssi2g, SSBN_SPROM11_FEM_CFG1,
+	     SSBN_SPROM11_FEM_TWORANGETSSI, SSBN_SPROM11_FEM_TWORANGETSSI_SHIFT);
+	SPEX(papdcap2g, SSBN_SPROM11_FEM_CFG1, SSBN_SPROM11_FEM_PAPDCAP,
+	     SSBN_SPROM11_FEM_PAPDCAP_SHIFT);
+	SPEX(femctrl, SSBN_SPROM11_FEM_CFG1, SSBN_SPROM11_FEM_CTRL,
+	     SSBN_SPROM11_FEM_CTRL_SHIFT);
+	SPEX(tssiposslope5g, SSBN_SPROM11_FEM_CFG2,
+	     SSBN_SPROM11_FEM_TSSIPOSSLOPE, 0);
+	SPEX(epagain5g, SSBN_SPROM11_FEM_CFG2, SSBN_SPROM11_FEM_EPAGAIN,
+	     SSBN_SPROM11_FEM_EPAGAIN_SHIFT);
+	SPEX(pdgain5g, SSBN_SPROM11_FEM_CFG2, SSBN_SPROM11_FEM_PDGAIN,
+	     SSBN_SPROM11_FEM_PDGAIN_SHIFT);
+	SPEX(tworangetssi5g, SSBN_SPROM11_FEM_CFG2,
+	     SSBN_SPROM11_FEM_TWORANGETSSI, SSBN_SPROM11_FEM_TWORANGETSSI_SHIFT);
+	SPEX(papdcap5g, SSBN_SPROM11_FEM_CFG2, SSBN_SPROM11_FEM_PAPDCAP,
+	     SSBN_SPROM11_FEM_PAPDCAP_SHIFT);
+	SPEX(gainctrlsph, SSBN_SPROM11_FEM_CFG2,
+	     SSBN_SPROM11_FEM_GAINCTRLSPH, SSBN_SPROM11_FEM_GAINCTRLSPH_SHIFT);
+
+	/* TSSI floor. */
+	SPEX(tssifloor2g, SSBN_SPROM11_TSSIFLOOR_2G,
+	     SSBN_SPROM11_TSSIFLOOR_MASK, 0);
+	for (i = 0; i < 4; i++)
+		SPEX(tssifloor5g[i], SSBN_SPROM11_TSSIFLOOR_5GL + i * 2,
+		     SSBN_SPROM11_TSSIFLOOR_MASK, 0);
+
+	/* Per-chain power info. */
+	for (i = 0; i < ARRAY_SIZE(pwr_info_offset); i++) {
+		struct ssbn_sprom_core_pwr_info *p = &bus->sprom.core_pwr_info[i];
+		u16 base = pwr_info_offset[i];
+
+		p->maxp2ga = sprom[SPOFF(base + SSBN_SPROM11_PWR_MAXP2GA)] & 0xff;
+
+		for (j = 0; j < 3; j++)
+			p->pa2ga[j] = sprom[SPOFF(base + SSBN_SPROM11_PWR_PA2GA) + j];
+
+		v = sprom[SPOFF(base + SSBN_SPROM11_PWR_MAXP5GA)];
+		p->maxp5ga[0] = v & 0xff;
+		p->maxp5ga[1] = (v >> 8) & 0xff;
+		v = sprom[SPOFF(base + SSBN_SPROM11_PWR_MAXP5GA) + 1];
+		p->maxp5ga[2] = v & 0xff;
+		p->maxp5ga[3] = (v >> 8) & 0xff;
+
+		for (j = 0; j < 12; j++)
+			p->pa5ga[j] = sprom[SPOFF(base + SSBN_SPROM11_PWR_PA5GA) + j];
+
+		v = sprom[SPOFF(base + SSBN_SPROM11_PWR_RXGAINS0)];
+		bcmn_sprom_unpack_rxgains(&bus->sprom.rxgains_5gm, i,  v       & 0xff);
+		bcmn_sprom_unpack_rxgains(&bus->sprom.rxgains_5gh, i, (v >> 8) & 0xff);
+		v = sprom[SPOFF(base + SSBN_SPROM11_PWR_RXGAINS1)];
+		bcmn_sprom_unpack_rxgains(&bus->sprom.rxgains_2g,  i,  v       & 0xff);
+		bcmn_sprom_unpack_rxgains(&bus->sprom.rxgains_5gl, i, (v >> 8) & 0xff);
+	}
+
+	SPEX(rpcal2g,    SSBN_SPROM11_RPCAL_2G,  ~0, 0);
+	SPEX(rpcal5gb[0], SSBN_SPROM11_RPCAL_5GL, ~0, 0);
+	SPEX(rpcal5gb[1], SSBN_SPROM11_RPCAL_5GM, ~0, 0);
+	SPEX(rpcal5gb[2], SSBN_SPROM11_RPCAL_5GH, ~0, 0);
+	SPEX(rpcal5gb[3], SSBN_SPROM11_RPCAL_5GU, ~0, 0);
+
+	SPEX(pdoffset2g40ma[0], SSBN_SPROM11_PDOFFSET2G40M,
+	     SSBN_SPROM11_PDOFFSET2G40M_MA0, SSBN_SPROM11_PDOFFSET2G40M_MA0_SHIFT);
+	SPEX(pdoffset2g40ma[1], SSBN_SPROM11_PDOFFSET2G40M,
+	     SSBN_SPROM11_PDOFFSET2G40M_MA1, SSBN_SPROM11_PDOFFSET2G40M_MA1_SHIFT);
+	SPEX(pdoffset2g40ma[2], SSBN_SPROM11_PDOFFSET2G40M,
+	     SSBN_SPROM11_PDOFFSET2G40M_MA2, SSBN_SPROM11_PDOFFSET2G40M_MA2_SHIFT);
+	SPEX(pdoffset2g40mvalid, SSBN_SPROM11_PDOFFSET2G40M,
+	     SSBN_SPROM11_PDOFFSET2G40M_VALID,
+	     SSBN_SPROM11_PDOFFSET2G40M_VALID_SHIFT);
+
+	for (i = 0; i < 3; i++) {
+		bus->sprom.pdoffset40ma[i] =
+			sprom[SPOFF(SSBN_SPROM11_PDOFFSET40MA) + i];
+		bus->sprom.pdoffset80ma[i] =
+			sprom[SPOFF(SSBN_SPROM11_PDOFFSET80MA) + i];
+	}
+
+	SPEX(cckbw202gpo,           SSBN_SPROM11_CCKBW202GPO,           ~0, 0);
+	SPEX(cckbw20ul2gpo,         SSBN_SPROM11_CCKBW20UL2GPO,         ~0, 0);
+	SPEX32(mcsbw202gpo,         SSBN_SPROM11_MCSBW202GPO,           ~0, 0);
+	SPEX32(mcsbw402gpo,         SSBN_SPROM11_MCSBW402GPO,           ~0, 0);
+	SPEX(dot11agofdmhrbw202gpo, SSBN_SPROM11_DOT11AGOFDMHRBW202GPO, ~0, 0);
+	SPEX(ofdmlrbw202gpo,        SSBN_SPROM11_OFDMLRBW202GPO,        ~0, 0);
+	SPEX32(mcsbw205glpo,        SSBN_SPROM11_MCSBW205GLPO,          ~0, 0);
+	SPEX32(mcsbw405glpo,        SSBN_SPROM11_MCSBW405GLPO,          ~0, 0);
+	SPEX32(mcsbw805glpo,        SSBN_SPROM11_MCSBW805GLPO,          ~0, 0);
+	SPEX32(mcsbw205gmpo,        SSBN_SPROM11_MCSBW205GMPO,          ~0, 0);
+	SPEX32(mcsbw405gmpo,        SSBN_SPROM11_MCSBW405GMPO,          ~0, 0);
+	SPEX32(mcsbw805gmpo,        SSBN_SPROM11_MCSBW805GMPO,          ~0, 0);
+	SPEX32(mcsbw205ghpo,        SSBN_SPROM11_MCSBW205GHPO,          ~0, 0);
+	SPEX32(mcsbw405ghpo,        SSBN_SPROM11_MCSBW405GHPO,          ~0, 0);
+	SPEX32(mcsbw805ghpo,        SSBN_SPROM11_MCSBW805GHPO,          ~0, 0);
+
+	SPEX(mcslr5gpo[0],          SSBN_SPROM11_MCSLR5GLPO,            ~0, 0);
+	SPEX(mcslr5gpo[1],          SSBN_SPROM11_MCSLR5GMPO,            ~0, 0);
+	SPEX(mcslr5gpo[2],          SSBN_SPROM11_MCSLR5GHPO,            ~0, 0);
+	SPEX(sb20in40hrpo,          SSBN_SPROM11_SB20IN40HRPO,          ~0, 0);
+	SPEX(sb20in40lrpo,          SSBN_SPROM11_SB20IN40LRPO,          ~0, 0);
+	SPEX(sb20in80and160hr5gpo[0], SSBN_SPROM11_SB20IN80AND160HR5GLPO, ~0, 0);
+	SPEX(sb20in80and160hr5gpo[1], SSBN_SPROM11_SB20IN80AND160HR5GMPO, ~0, 0);
+	SPEX(sb20in80and160hr5gpo[2], SSBN_SPROM11_SB20IN80AND160HR5GHPO, ~0, 0);
+	SPEX(sb20in80and160lr5gpo[0], SSBN_SPROM11_SB20IN80AND160LR5GLPO, ~0, 0);
+	SPEX(sb20in80and160lr5gpo[1], SSBN_SPROM11_SB20IN80AND160LR5GMPO, ~0, 0);
+	SPEX(sb20in80and160lr5gpo[2], SSBN_SPROM11_SB20IN80AND160LR5GHPO, ~0, 0);
+	SPEX(sb40and80hr5gpo[0],    SSBN_SPROM11_SB40AND80HR5GLPO,      ~0, 0);
+	SPEX(sb40and80hr5gpo[1],    SSBN_SPROM11_SB40AND80HR5GMPO,      ~0, 0);
+	SPEX(sb40and80hr5gpo[2],    SSBN_SPROM11_SB40AND80HR5GHPO,      ~0, 0);
+	SPEX(sb40and80lr5gpo[0],    SSBN_SPROM11_SB40AND80LR5GLPO,      ~0, 0);
+	SPEX(sb40and80lr5gpo[1],    SSBN_SPROM11_SB40AND80LR5GMPO,      ~0, 0);
+	SPEX(sb40and80lr5gpo[2],    SSBN_SPROM11_SB40AND80LR5GHPO,      ~0, 0);
+	SPEX(dot11agduphrpo,        SSBN_SPROM11_DOT11AGDUPHRPO,        ~0, 0);
+	SPEX(dot11agduplrpo,        SSBN_SPROM11_DOT11AGDUPLRPO,        ~0, 0);
+
+	SPEX(tempthresh, SSBN_SPROM11_THERMAL, SSBN_SPROM8_THERMAL_TRESH,
+	     SSBN_SPROM8_THERMAL_TRESH_SHIFT);
+	SPEX(tempoffset, SSBN_SPROM11_THERMAL, SSBN_SPROM8_THERMAL_OFFSET,
+	     SSBN_SPROM8_THERMAL_OFFSET_SHIFT);
+	SPEX(rawtempsense, SSBN_SPROM11_RAWTS, SSBN_SPROM8_RAWTS_RAWTEMP,
+	     SSBN_SPROM8_RAWTS_RAWTEMP_SHIFT);
+	SPEX(measpower, SSBN_SPROM11_RAWTS, SSBN_SPROM8_RAWTS_MEASPOWER,
+	     SSBN_SPROM8_RAWTS_MEASPOWER_SHIFT);
+	SPEX(tempsense_slope, SSBN_SPROM11_OPT_CORRX,
+	     SSBN_SPROM8_OPT_CORRX_TEMP_SLOPE,
+	     SSBN_SPROM8_OPT_CORRX_TEMP_SLOPE_SHIFT);
+	SPEX(tempcorrx, SSBN_SPROM11_OPT_CORRX, SSBN_SPROM8_OPT_CORRX_TEMPCORRX,
+	     SSBN_SPROM8_OPT_CORRX_TEMPCORRX_SHIFT);
+	SPEX(tempsense_option, SSBN_SPROM11_OPT_CORRX,
+	     SSBN_SPROM8_OPT_CORRX_TEMP_OPTION,
+	     SSBN_SPROM8_OPT_CORRX_TEMP_OPTION_SHIFT);
+	SPEX(phycal_tempdelta, SSBN_SPROM11_TEMPDELTA,
+	     SSBN_SPROM8_TEMPDELTA_PHYCAL,
+	     SSBN_SPROM8_TEMPDELTA_PHYCAL_SHIFT);
+	SPEX(temps_period, SSBN_SPROM11_TEMPDELTA, SSBN_SPROM8_TEMPDELTA_PERIOD,
+	     SSBN_SPROM8_TEMPDELTA_PERIOD_SHIFT);
+	SPEX(temps_hysteresis, SSBN_SPROM11_TEMPDELTA,
+	     SSBN_SPROM8_TEMPDELTA_HYSTERESIS,
+	     SSBN_SPROM8_TEMPDELTA_HYSTERESIS_SHIFT);
+
+	bus->sprom.antenna_gain_qdb[0] =
+		ssbn_sprom_antgain_qdb(sprom[SPOFF(SSBN_SPROM11_AGBG10)] & 0xff);
+	bus->sprom.antenna_gain_qdb[1] =
+		ssbn_sprom_antgain_qdb(sprom[SPOFF(SSBN_SPROM11_AGBG2A0)] >> 8);
+}
+
 /*
  * Indicates the presence of external SPROM.
  */
@@ -606,8 +811,16 @@ int bcmn_sprom_get(struct bcmn_bus *bus)
 		bcmn_warn(bus, "Invalid SPROM read from the PCIe card, trying to use fallback SPROM\n");
 		err = bcmn_fill_sprom_with_fallback(bus, &bus->sprom);
 	} else {
-		bcmn_sprom_extract_r8(bus, sprom);
+		if (bus->sprom.revision == 11)
+			bcmn_sprom_extract_r11(bus, sprom);
+		else
+			bcmn_sprom_extract_r8(bus, sprom);
 		kfree(sprom);
+		/*
+		 * The board's NVRAM may say more about this device than its
+		 * SPROM has words for. Not having NVRAM here is the norm.
+		 */
+		bcm47xx_sprom_fill_bcma_nvram(bus, &bus->sprom);
 	}
 
 	return err;

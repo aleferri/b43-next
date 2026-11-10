@@ -37,6 +37,19 @@ struct ssbn_sprom_core_pwr_info {
 	u8 itssi_2g, itssi_5g;
 	u8 maxpwr_2g, maxpwr_5gl, maxpwr_5g, maxpwr_5gh;
 	u16 pa_2g[4], pa_5gl[4], pa_5g[4], pa_5gh[4];
+
+	/* SROM rev 11 */
+	u8 maxp2ga;
+	u8 maxp5ga[4];
+	u16 pa2ga[3];
+	u16 pa5ga[12];
+};
+
+/* Per-band rx gain context, one value per RF chain. SROM rev 11. */
+struct ssbn_sprom_rxgains {
+	u8 elnagain[3];
+	u8 triso[3];
+	u8 trelnabyp[3];
 };
 
 struct ssbn_sprom {
@@ -77,6 +90,11 @@ struct ssbn_sprom {
 	u8 gpio1;		/* GPIO pin 1 */
 	u8 gpio2;		/* GPIO pin 2 */
 	u8 gpio3;		/* GPIO pin 3 */
+	u8 gpio_ext[12];	/* GPIO pins 4-15; NVRAM ledbh4-ledbh15 only,
+				 * no SPROM revision carries them */
+	u8 avvmid[3][5][2];	/* NVRAM AvVmid_c0..2: {Av, Vmid} for 2g, 5gl,
+				 * 5gml, 5gmu, 5gh */
+	u8 avvmid_valid;	/* bit per chain whose AvVmid_cN parsed */
 	u8 maxpwr_bg;		/* 2.4GHz Amplifier Max Power (in dBm Q5.2) */
 	u8 maxpwr_al;		/* 5.2GHz Amplifier Max Power (in dBm Q5.2) */
 	u8 maxpwr_a;		/* 5.3GHz Amplifier Max Power (in dBm Q5.2) */
@@ -206,7 +224,77 @@ struct ssbn_sprom {
 	u16 legofdm40duppo;
 	u8 sar2g;
 	u8 sar5g;
+
+	/* SROM rev 11. Populated by the rev 11 extractor from the device's
+	 * SPROM, or by bcm47xx_sprom from NVRAM on a board without one; zero
+	 * on rev <= 10 boards.
+	 */
+	struct ssbn_sprom_rxgains rxgains_2g;
+	struct ssbn_sprom_rxgains rxgains_5gl;
+	struct ssbn_sprom_rxgains rxgains_5gm;
+	struct ssbn_sprom_rxgains rxgains_5gh;
+	u8 subband5gver;
+	/* Antenna gain in quarter dB, per band: agbg0 for 2.4 GHz, aga0 for
+	 * 5 GHz, decoded by ssbn_sprom_antgain_qdb(). */
+	s8 antenna_gain_qdb[2];
+	u16 dot11agofdmhrbw202gpo;
+	u16 ofdmlrbw202gpo;
+	u32 mcsbw805glpo;
+	u32 mcsbw805gmpo;
+	u32 mcsbw805ghpo;
+	/* TX beamforming RX path calibration, one word for 2.4 GHz and one per
+	 * 5 GHz sub-band (l, m, h, u). */
+	u16 rpcal2g;
+	u16 rpcal5gb[4];
+	u16 pdoffset40ma[3];
+	u16 pdoffset80ma[3];
+	u8 pdoffset2g40ma[3];	/* 4 bits, signed */
+	u8 pdoffset2g40mvalid;
+	/* Explicit per-rate-group power offsets of the bonded channels'
+	 * sub-band rows (20-in-40, 20-in-80/160, 40-in-80, duplicate legacy),
+	 * low-rate and high-rate halves, and the MCS 8-9 offsets; nibbles.
+	 * Index 0..2 is the 5 GHz l/m/h band. */
+	u16 mcslr5gpo[3];
+	u16 sb20in40hrpo;
+	u16 sb20in40lrpo;
+	u16 sb20in80and160hr5gpo[3];
+	u16 sb20in80and160lr5gpo[3];
+	u16 sb40and80hr5gpo[3];
+	u16 sb40and80lr5gpo[3];
+	u16 dot11agduphrpo;
+	u16 dot11agduplrpo;
+	/* FEM / PA control block (SROM11_FEM_CFG1/2). femctrl selects the
+	 * front-end module control scheme: a driver that programs the FEM
+	 * control table must check it, not assume it.
+	 */
+	u8 tssiposslope2g;
+	u8 epagain2g;
+	u8 pdgain2g;
+	u8 tworangetssi2g;
+	u8 papdcap2g;
+	u8 femctrl;
+	u8 tssiposslope5g;
+	u8 epagain5g;
+	u8 pdgain5g;
+	u8 tworangetssi5g;
+	u8 papdcap5g;
+	u8 gainctrlsph;
+	/* TSSI floor: 0x3ff when the field is not programmed. */
+	u16 tssifloor2g;
+	u16 tssifloor5g[4];
 };
+
+/*
+ * A SROM rev 11 antenna gain byte, agbg0 or aga0, in quarter dB: whole dB in
+ * bits [5:0], signed, and quarter dB in bits [7:6]. The NVRAM variable holds
+ * the same byte.
+ */
+static inline s8 ssbn_sprom_antgain_qdb(u8 raw)
+{
+	s8 gain = (s8)((raw & 0x3f) << 2) >> 2;
+
+	return 4 * gain + (raw >> 6);
+}
 
 /* Information about the PCB the circuitry is soldered on. */
 struct ssbn_boardinfo {

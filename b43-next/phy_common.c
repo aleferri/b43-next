@@ -99,14 +99,15 @@ int b43_phy_init(struct b43_wldev *dev)
 
 	err = ops->init(dev);
 	if (err) {
-		b43err(dev->wl, "PHY init failed\n");
+		b43err_restart(dev->wl, "PHY init failed\n");
 		goto err_block_rf;
 	}
 	phy->do_full_init = false;
 
 	err = b43_switch_channel(dev, phy->channel);
 	if (err) {
-		b43err(dev->wl, "PHY init: Channel switch to default failed\n");
+		b43err_restart(dev->wl,
+			       "PHY init: Channel switch to default failed\n");
 		goto err_phy_exit;
 	}
 
@@ -222,7 +223,7 @@ u16 b43_radio_read(struct b43_wldev *dev, u16 reg)
 void b43_radio_write(struct b43_wldev *dev, u16 reg, u16 value)
 {
 	assert_mac_suspended(dev);
-	if (b43_bus_host_is_pci(dev->dev) &&
+	if (b43_bus_host_is_pci(dev->dev) && !b43_flush_writes(dev) &&
 	    ++dev->phy.writes_counter > B43_MAX_WRITES_IN_ROW) {
 		b43_read32(dev, B43_MMIO_MACCTL);
 		dev->phy.writes_counter = 1;
@@ -278,7 +279,7 @@ u16 b43_phy_read(struct b43_wldev *dev, u16 reg)
 void b43_phy_write(struct b43_wldev *dev, u16 reg, u16 value)
 {
 	assert_mac_suspended(dev);
-	if (b43_bus_host_is_pci(dev->dev) &&
+	if (b43_bus_host_is_pci(dev->dev) && !b43_flush_writes(dev) &&
 	    ++dev->phy.writes_counter > B43_MAX_WRITES_IN_ROW) {
 		b43_read16(dev, B43_MMIO_PHY_VER);
 		dev->phy.writes_counter = 1;
@@ -375,11 +376,18 @@ void b43_phy_take_out_of_reset(struct b43_wldev *dev)
 	switch (dev->dev->bus_type) {
 #ifdef CONFIG_B43_NEXT_BCMA
 	case B43_BUS_BCMA:
-		/* Unset reset bit (with forcing clock) */
+		/*
+		 * Unset reset bit (with forcing clock). The AC's stock driver
+		 * releases the force in the same write, 0x141, where b43 keeps
+		 * it until the PHY clock is back, 0x143.
+		 */
 		tmp = bcmn_aread32(dev->dev->bdev, BCMN_IOCTL);
 		tmp &= ~B43_BCMA_IOCTL_PHY_RESET;
 		tmp &= ~B43_BCMA_IOCTL_PHY_CLKEN;
-		tmp |= BCMN_IOCTL_FGC;
+		if (b43_is_ac_core(dev))
+			tmp &= ~BCMN_IOCTL_FGC;
+		else
+			tmp |= BCMN_IOCTL_FGC;
 		bcmn_awrite32(dev->dev->bdev, BCMN_IOCTL, tmp);
 		udelay(1);
 
@@ -413,11 +421,28 @@ void b43_phy_take_out_of_reset(struct b43_wldev *dev)
 	}
 }
 
+static int b43_switch_channel_ac(struct b43_wldev *dev,
+				 unsigned int new_channel)
+{
+	int err;
+
+	err = dev->phy.ops->switch_channel(dev, new_channel);
+	if (err)
+		return err;
+	msleep(8);
+	return 0;
+}
+
 int b43_switch_channel(struct b43_wldev *dev, unsigned int new_channel)
 {
 	struct b43_phy *phy = &(dev->phy);
 	u16 channelcookie, savedcookie;
 	int err;
+
+	/* The AC microcode's cookie is the chanspec, which the PHY writes
+	 * itself as part of its channel switch. */
+	if (phy->type == B43_PHYTYPE_AC)
+		return b43_switch_channel_ac(dev, new_channel);
 
 	/* First we set the channel radio code to prevent the
 	 * firmware from sending ghost packets.
@@ -560,6 +585,27 @@ bool b43_is_40mhz(struct b43_wldev *dev)
 }
 
 /* https://bcm-v4.sipsolutions.net/802.11/PHY/N/BmacPhyClkFgc */
+/*
+ * The PHY clock and bandwidth field of the core's IOCTL (B43_BCMA_IOCTL_PHY_BW),
+ * kept in dev->phy so that the PHY reset of the next core reset restores it:
+ * the stock driver's core reset carries the width the PHY last ran at.
+ */
+void b43_phy_bw_clk_set(struct b43_wldev *dev, u32 bits)
+{
+#ifdef CONFIG_B43_NEXT_BCMA
+	u32 tmp;
+
+	if (dev->dev->bus_type != B43_BUS_BCMA)
+		return;
+	dev->phy.bw_clkbits = bits;
+	tmp = bcmn_aread32(dev->dev->bdev, BCMN_IOCTL);
+	tmp &= ~B43_BCMA_IOCTL_PHY_BW;
+	tmp |= bits;
+	bcmn_awrite32(dev->dev->bdev, BCMN_IOCTL, tmp);
+	bcmn_aread32(dev->dev->bdev, BCMN_IOCTL);
+#endif
+}
+
 void b43_phy_force_clock(struct b43_wldev *dev, bool force)
 {
 	u32 tmp;
@@ -577,6 +623,9 @@ void b43_phy_force_clock(struct b43_wldev *dev, bool force)
 		else
 			tmp &= ~BCMN_IOCTL_FGC;
 		bcmn_awrite32(dev->dev->bdev, BCMN_IOCTL, tmp);
+		/* The AC cores' stock driver reads the IOCTL back. */
+		if (dev->phy.type == B43_PHYTYPE_AC)
+			bcmn_aread32(dev->dev->bdev, BCMN_IOCTL);
 		break;
 #endif
 #ifdef CONFIG_B43_NEXT_SSB

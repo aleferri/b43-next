@@ -1,0 +1,314 @@
+// SPDX-License-Identifier: GPL-2.0
+/*
+ * Broadcom B43 wireless driver
+ * Per-rate power table for the AC-PHY, SROM revision 11
+ *
+ * Copyright (c) 2026 Alessio Ferri <alessio.ferri.3012@gmail.com>
+ * Copyright (c) 2026 Andreas Wendleder <andreas.wendleder@proton.me>
+ *
+ * The primitives follow b43's ppr.c one for one. What differs is the load:
+ * rev 11 has per-core maxima, maxp2ga on 2.4 GHz and maxp5ga[] over four
+ * 5 GHz sub-bands, and power offsets per band, bandwidth and modulation
+ * class (see ppr_ac.h); the table takes the minimum over the active cores
+ * as ppr.c's b43_ppr_load_max_from_sprom() does over its two.
+ */
+
+#include "b43.h"
+#include "ppr_ac.h"
+
+#define ppr_ac_for_each_entry(ppr, i, entry)				\
+	for (i = 0, entry = (ppr)->__all;					\
+	     i < (ppr)->num;						\
+	     i++, entry++)
+
+#define ppr_ac_for_each_cck(ppr, i, entry)					\
+	for (i = 0, entry = (ppr)->cck;					\
+	     (ppr)->has_cck && i < B43_PPR_AC_CCK_RATES;			\
+	     i++, entry++)
+
+/* Row of the table a width sits on; also the number of rows it loads - 1. */
+static unsigned int b43_ppr_ac_row(enum nl80211_chan_width width)
+{
+	switch (width) {
+	case NL80211_CHAN_WIDTH_80:
+		return 2;
+	case NL80211_CHAN_WIDTH_40:
+		return 1;
+	default:
+		return 0;
+	}
+}
+
+void b43_ppr_ac_clear(struct b43_ppr_ac *ppr, enum nl80211_chan_width width)
+{
+	memset(ppr, 0, sizeof(*ppr));
+	ppr->num = (b43_ppr_ac_row(width) + 1) * B43_PPR_AC_GROUPS;
+}
+
+void b43_ppr_ac_add(struct b43_ppr_ac *ppr, int diff)
+{
+	unsigned int i;
+	u8 *entry;
+
+	ppr_ac_for_each_entry(ppr, i, entry)
+		*entry = (u8)clamp_t(int, *entry + diff, 0, 127);
+	ppr_ac_for_each_cck(ppr, i, entry)
+		*entry = (u8)clamp_t(int, *entry + diff, 0, 127);
+}
+
+void b43_ppr_ac_apply_max(struct b43_ppr_ac *ppr, u8 max)
+{
+	unsigned int i;
+	u8 *entry;
+
+	ppr_ac_for_each_entry(ppr, i, entry)
+		*entry = min(*entry, max);
+	ppr_ac_for_each_cck(ppr, i, entry)
+		*entry = min(*entry, max);
+}
+
+void b43_ppr_ac_apply_min(struct b43_ppr_ac *ppr, u8 min)
+{
+	unsigned int i;
+	u8 *entry;
+
+	ppr_ac_for_each_entry(ppr, i, entry)
+		*entry = max(*entry, min);
+	ppr_ac_for_each_cck(ppr, i, entry)
+		*entry = max(*entry, min);
+}
+
+u8 b43_ppr_ac_get_max(const struct b43_ppr_ac *ppr)
+{
+	unsigned int i;
+	u8 res = 0;
+
+	for (i = 0; i < ppr->num; i++)
+		res = max(ppr->__all[i], res);
+	for (i = 0; ppr->has_cck && i < B43_PPR_AC_CCK_RATES; i++)
+		res = max(ppr->cck[i], res);
+
+	return res;
+}
+
+/*
+ * The group of each rate: the nibble of the mcsbw*po word its modulation and
+ * coding class sits on. Legacy 6 to 18 Mb/s and MCS 0-2 share the first.
+ */
+static const u8 b43_ppr_ac_ofdm_group[B43_PPR_AC_OFDM_RATES] = {
+	0, 0, 0, 0, 1, 2, 3, 4
+};
+
+u8 b43_ppr_ac_ofdm(const struct b43_ppr_ac *ppr, enum nl80211_chan_width width,
+		   unsigned int rate)
+{
+	if (WARN_ON_ONCE(rate >= B43_PPR_AC_OFDM_RATES))
+		return 0;
+	return ppr->rows[b43_ppr_ac_row(width)][b43_ppr_ac_ofdm_group[rate]];
+}
+
+u8 b43_ppr_ac_cck(const struct b43_ppr_ac *ppr, unsigned int rate)
+{
+	if (WARN_ON_ONCE(rate >= B43_PPR_AC_CCK_RATES))
+		return 0;
+	return ppr->has_cck ? ppr->cck[rate] : 0;
+}
+
+static const u8 b43_ppr_ac_vht_group[] = {
+	0, 0, 0, 1, 2, 3, 4, 5, 6, 7
+};
+
+u8 b43_ppr_ac_vht(const struct b43_ppr_ac *ppr, enum nl80211_chan_width width,
+		  unsigned int mcs)
+{
+	if (WARN_ON_ONCE(mcs >= ARRAY_SIZE(b43_ppr_ac_vht_group)))
+		return 0;
+	return ppr->rows[b43_ppr_ac_row(width)][b43_ppr_ac_vht_group[mcs]];
+}
+
+u8 b43_ppr_ac_row_max(const struct b43_ppr_ac *ppr,
+		      enum nl80211_chan_width width)
+{
+	const u8 *row = ppr->rows[b43_ppr_ac_row(width)];
+	u8 m = 0;
+	unsigned int g;
+
+	for (g = 0; g < B43_PPR_AC_GROUPS; g++)
+		m = max(m, row[g]);
+	return m;
+}
+
+/*
+ * Sub-band index into maxp5ga[], keyed on the primary channel: at 80 MHz the
+ * captures follow it, and the centre puts ch36 one group too high.
+ *
+ * The first boundary is 5210 at 20 and 80 MHz, 5250 at 40, settled by the
+ * sign of the residuals: a regulatory limit can only lower a target. At 40
+ * MHz 5210 leaves ch44 two units low, which nothing downstream raises; 5250
+ * leaves ch36 and ch52 two units high, which a limit explains, and the rest
+ * exact. The 20 MHz boundary rests on the d6220 alone, the only board with
+ * distinct first entries: ch40 gives 66 and ch44 64 with maxp5ga = {72, 70,
+ * ...}.
+ *
+ * Not b43_phy_ac_pa5g_group(), which splits at 5250 at every width
+ * (subband5gver=4) for the pa5ga coefficients: the two coincide at 40 MHz
+ * only.
+ *
+ * ch149-165 take the fourth entry: the tg789vac-v2 (maxp5ga 90/88/92/88)
+ * writes 0x52 on all nine UNII-3 configurations, 88 less the margin, where
+ * the third would give 0x56; the d6220 (72/70/86/0) writes 0x04 on its eight.
+ */
+unsigned int b43_ppr_ac_subband(u16 chan, enum nl80211_chan_width width)
+{
+	u16 freq = 5000 + 5 * chan;
+	u16 first = (width == NL80211_CHAN_WIDTH_40) ? 5250 : 5210;
+
+	if (freq < first)
+		return 0;
+	if (freq < 5500)
+		return 1;
+	if (freq < 5745)
+		return 2;
+	return 3;
+}
+
+static u8 b43_ppr_ac_off(u32 po, unsigned int group)
+{
+	return (u8)(((po >> (4 * group)) & 0xf) * 2);
+}
+
+static u8 b43_ppr_ac_sub(u8 maxp, u8 off)
+{
+	return off > maxp ? 0 : (u8)(maxp - off);
+}
+
+/*
+ * The l/m/h band of the mcsbw*po words: 0 = 5gl, 1 = 5gm, 2 = 5gh, by channel
+ * number. It is not the maxp5ga sub-band of b43_ppr_ac_subband(), which is by
+ * frequency: the two partitions are the SROM's, not this driver's, and they
+ * differ at ch48-51 and ch100.
+ */
+unsigned int b43_ppr_ac_po_band(u16 chan)
+{
+	if (chan < 52)
+		return 0;
+	if (chan < 100)
+		return 1;
+	return 2;
+}
+
+static bool b43_ppr_ac_is_2g(u16 chan)
+{
+	return chan <= 14;
+}
+
+/*
+ * Fill the rows the width loads from @top less each group's nibble, and on
+ * 2.4 GHz the CCK rates less theirs.
+ */
+static void b43_ppr_ac_fill_rows(const struct ssbn_sprom *sprom,
+				 struct b43_ppr_ac *ppr, u16 chan, u8 top)
+{
+	const u32 po[3][B43_PPR_AC_ROWS] = {
+		{ sprom->mcsbw205glpo, sprom->mcsbw405glpo, sprom->mcsbw805glpo },
+		{ sprom->mcsbw205gmpo, sprom->mcsbw405gmpo, sprom->mcsbw805gmpo },
+		{ sprom->mcsbw205ghpo, sprom->mcsbw405ghpo, sprom->mcsbw805ghpo },
+	};
+	const u32 po2g[B43_PPR_AC_ROWS] = {
+		sprom->mcsbw202gpo, sprom->mcsbw402gpo, 0,
+	};
+	bool g = b43_ppr_ac_is_2g(chan);
+	const u32 *rowpo = g ? po2g : po[b43_ppr_ac_po_band(chan)];
+	u16 cck = sprom->cckbw202gpo;
+	unsigned int row, i;
+
+	for (row = 0; row < ppr->num / B43_PPR_AC_GROUPS; row++)
+		for (i = 0; i < B43_PPR_AC_GROUPS; i++)
+			ppr->rows[row][i] = b43_ppr_ac_sub(top,
+						b43_ppr_ac_off(rowpo[row], i));
+	ppr->has_cck = g;
+	for (i = 0; g && i < B43_PPR_AC_CCK_RATES; i++)
+		ppr->cck[i] = b43_ppr_ac_sub(top, b43_ppr_ac_off(cck, i));
+}
+
+u8 b43_ppr_ac_load_max_from_sprom(const struct ssbn_sprom *sprom, u8 coremask,
+				  unsigned int num_cores,
+				  struct b43_ppr_ac *ppr, u16 chan,
+				  enum nl80211_chan_width width, u8 ceiling)
+{
+	unsigned int sb = b43_ppr_ac_subband(chan, width);
+	unsigned int c;
+	u8 maxp = 0xff;
+
+	b43_ppr_ac_clear(ppr, width);
+
+	for (c = 0; c < num_cores && c < ARRAY_SIZE(sprom->core_pwr_info); c++) {
+		const struct ssbn_sprom_core_pwr_info *pi;
+
+		if (!(coremask & (1u << c)))
+			continue;
+		pi = &sprom->core_pwr_info[c];
+		maxp = min(maxp, b43_ppr_ac_is_2g(chan) ? pi->maxp2ga
+							  : pi->maxp5ga[sb]);
+	}
+	if (maxp == 0xff)
+		maxp = 0;
+
+	/*
+	 * The regulatory ceiling caps each finished rate, so the rates that
+	 * would sit above it saturate into one another. It is what the stock
+	 * driver shows of itself: `wl curpower` on the DSL-3580L at ch52/80
+	 * (router-data/dsl3580l/wl1_curpower_ch52-bw80.txt) has every power
+	 * target at min(board limit, regulatory limit) - 1.5 dB, with OFDM6 to
+	 * OFDM24 all at 15.0 under a 16.5 limit and a board ramp of 0 to 2 dB.
+	 * The tg789vac's 0x38 on ch36-48 at 20 MHz points the same way: its
+	 * row starts 1 dB below maxp, and only a cap on the rows gives the
+	 * value the d6220 writes there. On the d6220's sweep the two forms give
+	 * the same stream on every segment where a ceiling binds. The returned
+	 * maxp is the uncapped one, because the caller's per-core add-back is a
+	 * distance to that core's own maxp5ga.
+	 */
+	b43_ppr_ac_fill_rows(sprom, ppr, chan, maxp);
+	if (ceiling)
+		b43_ppr_ac_apply_max(ppr, ceiling);
+	return maxp;
+}
+
+/*
+ * The rate spacing of the channel's SROM table, with nothing saturated: the
+ * rows filled from the top of the scale, so no rate hits zero. Where the
+ * power table saturates -- a sub-band whose maxp5ga is 0 -- the distances
+ * between rates are still the SROM's, and those are what the vendor writes
+ * in the per-rate offsets. Everywhere else the two tables differ by a
+ * constant and give the same distances.
+ */
+void b43_ppr_ac_load_spacing(const struct ssbn_sprom *sprom,
+			     struct b43_ppr_ac *ppr, u16 chan,
+			     enum nl80211_chan_width width)
+{
+	b43_ppr_ac_clear(ppr, width);
+	b43_ppr_ac_fill_rows(sprom, ppr, chan, 0x7f);
+}
+
+/*
+ * The rev 11 SROM also carries explicit offsets for the sub-band rows of a
+ * bonded channel -- 20-in-40, 20-in-80/160, 40-in-80, duplicate legacy, and
+ * the MCS 8-9 pair -- in low-rate and high-rate halves. They are all zero on
+ * every board captured, so which nibble lands on which rate is not
+ * established and the loader does not add them. A board where they are not
+ * zero is one this table does not describe yet.
+ */
+bool b43_ppr_ac_sprom_has_subband_po(const struct ssbn_sprom *sprom)
+{
+	unsigned int i;
+
+	if (sprom->sb20in40hrpo || sprom->sb20in40lrpo ||
+	    sprom->dot11agduphrpo || sprom->dot11agduplrpo)
+		return true;
+	for (i = 0; i < 3; i++)
+		if (sprom->mcslr5gpo[i] || sprom->sb20in80and160hr5gpo[i] ||
+		    sprom->sb20in80and160lr5gpo[i] || sprom->sb40and80hr5gpo[i] ||
+		    sprom->sb40and80lr5gpo[i])
+			return true;
+	return false;
+}

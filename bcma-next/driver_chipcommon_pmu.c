@@ -145,6 +145,47 @@ static void bcmn_pmu2_pll_init0(struct bcmn_drv_cc *cc, u32 xtalfreq)
 	/* TODO: Do we need to update OTP? */
 }
 
+/* BCM4352/BCM4360: only chip rev 3 has been captured. */
+static void bcmn_pmu_4360_pll_init(struct bcmn_drv_cc *cc)
+{
+	struct bcmn_bus *bus = cc->core->bus;
+	u32 ctl2, ctl3;
+
+	if (bus->chipinfo.rev != 3)
+		return;
+	/* No capture has the USB strap. */
+	if (bus->chipinfo.id == BCMN_CHIP_ID_BCM4360 &&
+	    cc->status & BCMN_CC_CHIPST_4360_MODE_USB)
+		return;
+
+	/* Fractional VCO, 960.0098 MHz from a 40 MHz crystal. */
+	ctl2 = bcmn_chipco_pll_read(cc, BCMN_CC_PMU_PLL_CTL2);
+	ctl3 = bcmn_chipco_pll_read(cc, BCMN_CC_PMU_PLL_CTL3);
+	bcmn_info(bus, "PMU PLL pre-write: ctl2=0x%08x ctl3=0x%08x\n",
+		  ctl2, ctl3);
+	bcmn_chipco_pll_write(cc, BCMN_CC_PMU_PLL_CTL2, 0x0c31);
+	bcmn_chipco_pll_write(cc, BCMN_CC_PMU_PLL_CTL3, 0x100e);
+	bcmn_pmu_set32(cc, BCMN_CC_PMU_CTL, BCMN_CC_PMU_CTL_PLL_UPD);
+}
+
+/* Returns the max resource mask to program, 0 to leave it alone. */
+static u32 bcmn_pmu_4360_resources_init(struct bcmn_drv_cc *cc)
+{
+	if (cc->core->bus->chipinfo.rev != 3)
+		return 0;
+
+	bcmn_pmu_write32(cc, BCMN_CC_PMU_RES_TABSEL, 6);
+	bcmn_pmu_write32(cc, BCMN_CC_PMU_RES_UPDNTM, 0x00200001);
+
+	/* min_res_mask keeps its reset value in both cases. */
+	if (cc->status & BCMN_CC_CHIPST_4360_RSRC_INIT_MODE0)
+		return 0;
+	bcmn_chipco_pll_write(cc, BCMN_CC_PMU_PLL_CTL6, 0x09048562);
+	bcmn_chipco_pll_write(cc, BCMN_CC_PMU_PLL_CTL14, 0x09048562);
+	bcmn_pmu_set32(cc, BCMN_CC_PMU_CTL, BCMN_CC_PMU_CTL_PLL_UPD);
+	return 0x1ff;
+}
+
 static void bcmn_pmu_pll_init(struct bcmn_drv_cc *cc)
 {
 	struct bcmn_bus *bus = cc->core->bus;
@@ -155,6 +196,10 @@ static void bcmn_pmu_pll_init(struct bcmn_drv_cc *cc)
 		if (xtalfreq == 0)
 			xtalfreq = 20000;
 		bcmn_pmu2_pll_init0(cc, xtalfreq);
+		break;
+	case BCMN_CHIP_ID_BCM4352:
+	case BCMN_CHIP_ID_BCM4360:
+		bcmn_pmu_4360_pll_init(cc);
 		break;
 	}
 }
@@ -188,10 +233,20 @@ static void bcmn_pmu_resources_init(struct bcmn_drv_cc *cc)
 			  BCMN_RES_4314_WL_CORE_READY;
 		max_msk = 0x3FFFFFFF;
 		break;
+	case BCMN_CHIP_ID_BCM4352:
+	case BCMN_CHIP_ID_BCM4360:
+		max_msk = bcmn_pmu_4360_resources_init(cc);
+		break;
 	default:
 		bcmn_debug(bus, "PMU resource config unknown or not needed for device 0x%04X\n",
 			   bus->chipinfo.id);
 	}
+
+	bcmn_info(bus,
+		  "PMU res mask pre-write: min=0x%08x max=0x%08x (writing min=0x%08x max=0x%08x)\n",
+		  bcmn_pmu_read32(cc, BCMN_CC_PMU_MINRES_MSK),
+		  bcmn_pmu_read32(cc, BCMN_CC_PMU_MAXRES_MSK),
+		  min_msk, max_msk);
 
 	/* Set the resource masks. */
 	if (min_msk)
@@ -288,8 +343,8 @@ void bcmn_pmu_early_init(struct bcmn_drv_cc *cc)
 	pmucap = bcmn_pmu_read32(cc, BCMN_CC_PMU_CAP);
 	cc->pmu.rev = (pmucap & BCMN_CC_PMU_CAP_REVISION);
 
-	bcmn_debug(bus, "Found rev %u PMU (capabilities 0x%08X)\n", cc->pmu.rev,
-		   pmucap);
+	bcmn_info(bus, "Found rev %u PMU (capabilities 0x%08X)\n", cc->pmu.rev,
+		  pmucap);
 }
 
 void bcmn_pmu_init(struct bcmn_drv_cc *cc)

@@ -227,6 +227,16 @@ void bcmn_core_chipcommon_init(struct bcmn_drv_cc *cc)
 			((leddc_on << BCMN_CC_GPIOTIMER_ONTIME_SHIFT) |
 			 (leddc_off << BCMN_CC_GPIOTIMER_OFFTIME_SHIFT)));
 	}
+
+	/*
+	 * Bits 5:2 of corecontrol, which the stock driver sets next to the
+	 * GPIO timer: wl 6.30.223 writes 0x3c on the Archer T5E, wl 6.30.102.7
+	 * pulses the bits low and back high on the DSL-3580L. Bit 3 is
+	 * UARTCLKEN; bits 2, 4 and 5 are not named here.
+	 */
+	if (cc->core->bus->chipinfo.id == BCMN_CHIP_ID_BCM4352 ||
+	    cc->core->bus->chipinfo.id == BCMN_CHIP_ID_BCM4360)
+		bcmn_cc_set32(cc, BCMN_CC_CORECTL, 0x3c);
 	cc->ticks_per_ms = bcmn_chipco_watchdog_ticks_per_ms(cc);
 
 	cc->setup_done = true;

@@ -99,6 +99,10 @@ struct b43_bus_dev *b43_bus_dev_bcma_init(struct bcmn_device *core)
 	    bcm47xx_bus.bcma.bus.chipinfo.id == BCMA_CHIP_ID_BCM4716)
 		dev->flush_writes = true;
 #endif
+#ifdef CONFIG_BCM63XX
+	if (b43_bus_host_is_pci(dev))
+		dev->flush_writes = true;
+#endif
 
 	dev->dev = &core->dev;
 	dev->dma_dev = core->dma_dev;

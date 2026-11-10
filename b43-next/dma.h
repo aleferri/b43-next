@@ -90,6 +90,11 @@ struct b43_dmadesc32 {
 #define		B43_DMA64_TXPARITYDISABLE		0x00000800
 #define		B43_DMA64_TXADDREXT_MASK		0x00030000
 #define		B43_DMA64_TXADDREXT_SHIFT		16
+#define		B43_DMA64_TXCTL_KEEP		0x03FC00C0	/* Outstanding reads, burst, prefetch */
+#define		B43_DMA64_TXMR_2			0x00000040	/* 2 outstanding reads */
+#define		B43_DMA64_TXBURST_128			0x000C0000	/* 128-byte bursts */
+#define		B43_DMA64_TXPREFETCH_16			0x00600000	/* Prefetch 16 descriptors */
+#define		B43_DMA64_TXPREFETCH_THRESH_8		0x03000000	/* Prefetch threshold 8 */
 #define B43_DMA64_TXINDEX				0x04
 #define B43_DMA64_TXRINGLO				0x08
 #define B43_DMA64_TXRINGHI				0x0C
@@ -118,6 +123,9 @@ struct b43_dmadesc32 {
 #define		B43_DMA64_RXPARITYDISABLE		0x00000800
 #define		B43_DMA64_RXADDREXT_MASK		0x00030000
 #define		B43_DMA64_RXADDREXT_SHIFT		16
+#define		B43_DMA64_RXCTL_KEEP		0x03FC0000	/* Burst, prefetch */
+#define		B43_DMA64_RXBURST_128			0x000C0000	/* 128-byte bursts */
+#define		B43_DMA64_RXPREFETCH_8			0x00400000	/* Prefetch 8 descriptors */
 #define B43_DMA64_RXINDEX				0x24
 #define B43_DMA64_RXRINGLO				0x28
 #define B43_DMA64_RXRINGHI				0x2C
@@ -167,12 +175,20 @@ struct b43_dmadesc_generic {
 /* Offset of frame with actual data */
 #define B43_DMA0_RX_FW598_FO		38
 #define B43_DMA0_RX_FW351_FO		30
+#define B43_DMA0_RX_AC_FO		40
 
 /* DMA engine tuning knobs */
 #define B43_TXRING_SLOTS		256
 #define B43_RXRING_SLOTS		256
 #define B43_DMA0_RX_FW598_BUFSIZE	(B43_DMA0_RX_FW598_FO + IEEE80211_MAX_FRAME_LEN)
 #define B43_DMA0_RX_FW351_BUFSIZE	(B43_DMA0_RX_FW351_FO + IEEE80211_MAX_FRAME_LEN)
+/*
+ * The AC PHY announces VHT, whose MPDUs may be as long as 3895 bytes; the
+ * buffer holds one after the PLCP header and its two bytes of padding.
+ */
+#define B43_DMA0_RX_AC_BUFSIZE		(B43_DMA0_RX_AC_FO + \
+					 sizeof(struct b43_plcp_hdr6) + 2 + \
+					 IEEE80211_MAX_MPDU_LEN_VHT_3895)
 
 /* Pointer poison */
 #define B43_DMA_PTR_POISON		((void *)ERR_PTR(-ENOMEM))
@@ -188,9 +204,18 @@ struct b43_dmadesc_meta {
 	struct sk_buff *skb;
 	/* DMA base bus-address of the descriptor buffer. */
 	dma_addr_t dmaaddr;
+	/* TX: bytes mapped for the slot, 0 when nothing is. */
+	unsigned int len;
 	/* ieee80211 TX status. Only used once per 802.11 frag. */
 	bool is_last_fragment;
 };
+
+/*
+ * Most buffers of one TX frame (mac80211's max_tx_fragments): the head of
+ * an A-MSDU and the subframes on its frag_list, each in a slot of its own
+ * after the slot of the TX header.
+ */
+#define B43_TX_MAX_FRAGS	8
 
 struct b43_dmaring;
 
@@ -226,6 +251,8 @@ enum b43_addrtype {
 struct b43_dmaring {
 	/* Lowlevel DMA ops. */
 	const struct b43_dma_ops *ops;
+	/* RX buffers, when the kernel has page pools (b43_rx_pool_create()). */
+	struct page_pool *rx_pool;
 	/* Kernel virtual base address of the ring memory. */
 	void *descbase;
 	/* Meta data about all descriptors. */
@@ -237,6 +264,9 @@ struct b43_dmaring {
 	u8 *txhdr_cache;
 	/* (Unadjusted) DMA base bus-address of the ring memory. */
 	dma_addr_t dmabase;
+	/* What the DMA64 index registers count from: the low word of the ring
+	 * address on the AC cores, zero on the others. */
+	u32 index_base;
 	/* Number of descriptor slots in the ring. */
 	int nr_slots;
 	/* Number of used descriptor slots. */
@@ -293,10 +323,9 @@ void b43_dma_tx_resume(struct b43_wldev *dev);
 
 int b43_dma_tx(struct b43_wldev *dev,
 	       struct sk_buff *skb);
+bool b43_dma_tx_room(struct b43_wldev *dev, u8 queue_prio);
 void b43_dma_handle_txstatus(struct b43_wldev *dev,
 			     const struct b43_txstatus *status);
-
-void b43_dma_handle_rx_overflow(struct b43_dmaring *ring);
 
 void b43_dma_rx(struct b43_dmaring *ring);
 

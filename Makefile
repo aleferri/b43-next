@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: GPL-2.0
 #
-#   make [KVER=...] [KSRC=...] [B43_NEXT_DEBUG=y]
+#   make [KVER=...] [KSRC=...] [B43_NEXT_DEBUG=y] [B43_NEXT_DFS=y]
 #   make install          modules, then the modprobe and udev configuration
 #   make uninstall
 #

@@ -23,6 +23,8 @@ struct b43_led {
 	/* If activelow is true, the LED is ON if the
 	 * bit is switched off. */
 	bool activelow;
+	/* Follows the radio state instead of a mac80211 trigger. */
+	bool radio;
 	/* The unique name string for this LED device. */
 	char name[B43_LED_MAX_NAME_LEN + 1];
 	/* The current status of the LED. This is updated locklessly. */
@@ -31,17 +33,17 @@ struct b43_led {
 	bool hw_state;
 };
 
+/* One per GPIO pin the MAC's 16-bit GPIO_CONTROL register can drive. */
+#define B43_MAX_NR_LEDS			16
+
 struct b43_leds {
-	struct b43_led led_tx;
-	struct b43_led led_rx;
-	struct b43_led led_radio;
-	struct b43_led led_assoc;
+	/* Two per pin at most: an activity LED takes the TX and the RX
+	 * trigger on the same pin. */
+	struct b43_led led[2 * B43_MAX_NR_LEDS];
 
 	bool stop;
 	struct work_struct work;
 };
-
-#define B43_MAX_NR_LEDS			4
 
 #define B43_LED_BEHAVIOUR		0x7F
 #define B43_LED_ACTIVELOW		0x80
@@ -66,6 +68,8 @@ void b43_leds_unregister(struct b43_wl *wl);
 void b43_leds_init(struct b43_wldev *dev);
 void b43_leds_exit(struct b43_wldev *dev);
 void b43_leds_stop(struct b43_wldev *dev);
+u32 b43_leds_gpio_mask(struct b43_wl *wl);
+u32 b43_leds_gpio_activelow(struct b43_wl *wl);
 
 
 #else /* CONFIG_B43_NEXT_LEDS */
@@ -89,6 +93,14 @@ static inline void b43_leds_exit(struct b43_wldev *dev)
 }
 static inline void b43_leds_stop(struct b43_wldev *dev)
 {
+}
+static inline u32 b43_leds_gpio_mask(struct b43_wl *wl)
+{
+	return 0;
+}
+static inline u32 b43_leds_gpio_activelow(struct b43_wl *wl)
+{
+	return 0;
 }
 #endif /* CONFIG_B43_NEXT_LEDS */
 

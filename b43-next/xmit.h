@@ -187,11 +187,94 @@ struct b43_tx_legacy_rate_phy_ctl_entry {
 #define  B43_TXH_PHY1_MODUL_QAM64	0x1800 /* QAM64 */
 #define  B43_TXH_PHY1_MODUL_QAM256	0x2000 /* QAM256 */
 
+/*
+ * TX descriptor of the AC microcode, d11 core revisions 40-63, long format:
+ * per-frame fields, four rate blocks, the link ("cache") fields. Layout and
+ * names from Broadcom's d11actxh_t; in front of it a 4-byte TX offload
+ * header that lets the frame through as it is, 0x02 in its bytes 0 and 2,
+ * as gonsolo's port sends it (see PROVENANCE.md). The frame follows the
+ * descriptor directly; the TX status echoes @cookie as the frame ID.
+ */
+struct b43_txhdr_ac_rate {
+	__le16 phy_ctl[3];		/* PHY TX control words 0-2 */
+	struct b43_plcp_hdr6 plcp;
+	__le16 fbw_info;		/* Fallback bandwidth */
+	__le16 tx_rate;			/* In 500 kb/s units */
+	__le16 rts_cts_ctl;
+	__le16 bfm0;
+} __packed;
+
+/* Rate blocks of the AC descriptor, tried in order */
+#define B43_TXH_AC_RATES		4
+
+struct b43_txhdr_ac {
+	__u8 toe[4];			/* TX offload header */
+	__le16 tso_info;
+	__le16 mac_ctl_lo;		/* MAC TX control, low */
+	__le16 mac_ctl_hi;		/* MAC TX control, high */
+	__le16 chanspec;
+	__u8 iv_offset;			/* Length of the 802.11 header */
+	__u8 pkt_cache_len;
+	__le16 frame_len;		/* With the FCS */
+	__le16 cookie;			/* Frame ID */
+	__le16 seq;
+	__le16 tstamp;
+	__le16 tx_status;
+	struct b43_txhdr_ac_rate rate[B43_TXH_AC_RATES];
+	__u8 cipher_bss;		/* Cipher in 7:4, BSS index in 3:0 */
+	__u8 key_idx;			/* Key slot */
+	__u8 mpdu_max;			/* MPDUs per A-MPDU, primary rate */
+	__u8 mpdu_max_fb;		/* and fallback rate */
+	__le16 ampdu_dur;		/* Longest A-MPDU, MPDU density */
+	__u8 ba_win;			/* Block ack window less one */
+	__u8 max_agg_len;		/* Longest A-MPDU, log2 of its bytes */
+	__u8 tkip_p1k[10];
+	__u8 tsc_pn[6];
+} __packed;
+
+/* Cache info, cipher_bss */
+#define B43_TXH_AC_CIPHER_SHIFT		4
+/* Cache info, ampdu_dur: d11.h's minimum duration index and maximum */
+#define B43_TXH_AC_AMPDU_DENSITY	0x000F	/* MPDU density, 802.11 code */
+#define B43_TXH_AC_AMPDU_MAX_DUR_SHIFT	4	/* In 16 us units */
+
+/* MAC TX control, low */
+#define B43_TXH_AC_MAC_AMPDU		0x0040	/* Aggregatable */
+#define B43_TXH_AC_MAC_IACK		0x0080	/* Expect an immediate ACK */
+#define B43_TXH_AC_MAC_LFRM		0x0100	/* Long frame retry limit */
+#define B43_TXH_AC_MAC_ASEQ		0x0800	/* ucode assigns the sequence number */
+#define B43_TXH_AC_MAC_STMSDU		0x4000	/* First MSDU */
+/* MAC TX control, high */
+#define B43_TXH_AC_MAC_FIX_RATE		0x0002	/* Primary rate only */
+#define B43_TXH_AC_MAC_SVHT		0x0004	/* Single VHT MPDU A-MPDU */
+/* PHY TX control word 0: B43_TXH_PHY_ENC in 1:0, then */
+#define B43_TXH_AC_PHY0_NON_SOUNDING	0x0004
+#define B43_TXH_AC_PHY0_BFM		0x0008	/* Beamformed */
+#define B43_TXH_AC_PHY0_SHORT_PREAMBLE	0x0010
+#define B43_TXH_AC_PHY0_CORES_SHIFT	6
+#define B43_TXH_AC_PHY0_BW_SHIFT	14	/* 0 20 MHz, 1 40, 2 80 */
+#define B43_TXH_AC_PHY0_CORES		0x01C0
+/* PHY TX control word 1: primary 20 MHz subband, power offset */
+#define B43_TXH_AC_PHY1_SUBBAND		0x0007
+#define B43_TXH_AC_PHY1_TXPWR_OFFSET	0x01F8
+/* PHY TX control word 2: the legacy rate index, or the VHT MCS and NSS - 1 */
+#define B43_TXH_AC_PHY2_VHT_MCS		0x000F
+#define B43_TXH_AC_PHY2_VHT_NSS_SHIFT	4
+/* RTS/CTS control */
+#define B43_TXH_AC_RTS_FT_OFDM		0x0001
+#define B43_TXH_AC_RTS_USE_RTS		0x0004
+#define B43_TXH_AC_RTS_USE_CTS		0x0008
+#define B43_TXH_AC_RTS_SHORT_PREAMBLE	0x0010
+#define B43_TXH_AC_RTS_LAST_RATE	0x0020
+#define B43_TXH_AC_RTS_RATE_SHIFT	8
+#define B43_TXH_AC_RTS_TXBF_SLOT_SHIFT	12	/* Beamforming slot */
 
 static inline
 size_t b43_txhdr_size(struct b43_wldev *dev)
 {
 	switch (dev->fw.hdr_format) {
+	case B43_FW_HDR_AC:
+		return sizeof(struct b43_txhdr_ac);
 	case B43_FW_HDR_598:
 		return 112 + sizeof(struct b43_plcp_hdr6);
 	case B43_FW_HDR_410:
@@ -203,6 +286,10 @@ size_t b43_txhdr_size(struct b43_wldev *dev)
 }
 
 
+bool b43_txhdr_ac_rate_ok(const struct ieee80211_supported_band *band,
+			  const struct ieee80211_tx_rate *r);
+bool b43_txstatus_mpdu_acked(const struct b43_txstatus *status,
+			     const struct sk_buff *skb);
 int b43_generate_txhdr(struct b43_wldev *dev,
 		       u8 * txhdr,
 		       struct sk_buff *skb_frag,
@@ -221,6 +308,13 @@ struct b43_txstatus {
 	u8 intermediate;	/* Intermediate status notification (not final) */
 	u8 for_ampdu;		/* Status is for an AMPDU (afterburner) */
 	u8 acked;		/* Wireless ACK received */
+	u8 rate_tries[B43_TXH_AC_RATES]; /* AC: attempts at each rate block */
+	u8 mpdus;		/* AC: MPDUs the status covers */
+	u8 mpdus_acked;		/* AC: of them acknowledged */
+	u8 mpdu_index;		/* AC: the MPDU being reported, from 0 */
+	u16 ba_ssn;		/* AC: sequence number of the first MPDU */
+	u64 ba_bitmap;		/* AC: block ack bitmap from ba_ssn */
+	u32 raw[8];		/* AC: the two packages, as read */
 };
 
 /* txstatus supp_reason values */
@@ -311,6 +405,8 @@ struct b43_rxhdr_fw4 {
 #define  B43_RX_PHYST0_OFDM		0x0001 /* Frame type: OFDM */
 #define  B43_RX_PHYST0_PRE_N		0x0002 /* Pre-standard N-PHY frame */
 #define  B43_RX_PHYST0_STD_N		0x0003 /* Standard N-PHY frame */
+#define  B43_RX_PHYST0_HT		0x0002 /* AC microcode: HT frame */
+#define  B43_RX_PHYST0_VHT		0x0003 /* AC microcode: VHT frame */
 
 /* PHY RX Status 2 */
 #define B43_RX_PHYST2_LNAG		0xC000 /* LNA Gain */
@@ -330,6 +426,10 @@ struct b43_rxhdr_fw4 {
 #define B43_RX_MAC_TKIP_MICATT		0x00080000 /* TKIP MIC attempted */
 #define B43_RX_MAC_AGGTYPE		0x00060000 /* Aggregation type */
 #define B43_RX_MAC_AGGTYPE_SHIFT	17
+#define  B43_RX_AGG_MIDDLE		0	/* A-MSDU piece: a subframe */
+#define  B43_RX_AGG_FIRST		1	/* Header and first subframe */
+#define  B43_RX_AGG_LAST		2	/* Last subframe, MIC and FCS */
+#define  B43_RX_AGG_SINGLE		3	/* The whole A-MSDU */
 #define B43_RX_MAC_AMSDU		0x00010000 /* A-MSDU mask */
 #define B43_RX_MAC_BEACONSENT		0x00008000 /* Beacon sent flag */
 #define B43_RX_MAC_KEYIDX		0x000007E0 /* Key index */
@@ -355,7 +455,10 @@ void b43_generate_plcp_hdr(struct b43_plcp_hdr4 *plcp,
 			   const u16 octets, const u8 bitrate);
 
 void b43_rx(struct b43_wldev *dev, struct sk_buff *skb, const void *_rxhdr);
+void b43_rx_amsdu_free(struct b43_wldev *dev);
 
+void b43_txstatus_dump(struct b43_wldev *dev,
+		       const struct b43_txstatus *status);
 void b43_handle_txstatus(struct b43_wldev *dev,
 			 const struct b43_txstatus *status);
 bool b43_fill_txstatus_report(struct b43_wldev *dev,
@@ -374,6 +477,26 @@ static inline int b43_new_kidx_api(struct b43_wldev *dev)
 	/* FIXME: Not sure the change was at rev 351 */
 	return (dev->fw.rev >= 351);
 }
+
+/* Base of the key index/algorithm block in shared memory.
+ *
+ * B43_SHM_SH_KEYIDXBLOCK is the v4 firmware layout, as b43.h says. On the
+ * microcode the AC cores load the block starts at 0x05E0, and 0x05D4 holds PHY
+ * state -- the transmit chain mask -- so writing there breaks the transmit
+ * path silently.
+ *
+ * Keyed on the microcode identity, not the PHY type: the layout is the
+ * microcode's. b43_request_firmware() selects "ucode42" for core revision 42
+ * with an AC PHY, and this is the same test. ucode40 is the other AC entry and
+ * no capture covers it; it almost certainly needs this too.
+ */
+static inline u16 b43_shm_sh_keyidxblock(struct b43_wldev *dev)
+{
+	if (dev->phy.type == B43_PHYTYPE_AC && dev->dev->core_rev == 42)
+		return 0x05E0;
+	return B43_SHM_SH_KEYIDXBLOCK;
+}
+
 static inline u8 b43_kidx_to_fw(struct b43_wldev *dev, u8 raw_kidx)
 {
 	u8 firmware_kidx;
@@ -387,6 +510,29 @@ static inline u8 b43_kidx_to_fw(struct b43_wldev *dev, u8 raw_kidx)
 	}
 	return firmware_kidx;
 }
+
+/*
+ * The cipher number the microcode takes, in the key index block and the TX
+ * header. The AC microcode numbers them as Broadcom's d11.h does from core
+ * revision 40 (WSEC_ALGO_*): AES 5 and WEP104 3, where the older microcode
+ * has AES at 3 and WEP104 at 4, which is b43's own numbering.
+ */
+static inline u8 b43_sec_algo_fw(struct b43_wldev *dev, u8 algorithm)
+{
+	static const u8 ac[] = {
+		[B43_SEC_ALGO_NONE]		= 0,
+		[B43_SEC_ALGO_WEP40]		= 1,
+		[B43_SEC_ALGO_TKIP]		= 2,
+		[B43_SEC_ALGO_AES]		= 5,
+		[B43_SEC_ALGO_WEP104]		= 3,
+		[B43_SEC_ALGO_AES_LEGACY]	= 4,
+	};
+
+	if (dev->fw.hdr_format != B43_FW_HDR_AC || algorithm >= ARRAY_SIZE(ac))
+		return algorithm;
+	return ac[algorithm];
+}
+
 static inline u8 b43_kidx_to_raw(struct b43_wldev *dev, u8 firmware_kidx)
 {
 	u8 raw_kidx;

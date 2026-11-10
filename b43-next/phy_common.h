@@ -33,7 +33,8 @@ struct b43_wldev;
 #define B43_PHYVER_TYPE_SHIFT		8
 #define B43_PHYVER_VERSION		0x00FF
 
-/* PHY writes need to be flushed if we reach limit */
+/* PHY writes need to be flushed if we reach limit, unless each address
+ * write is read back (b43_flush_writes()). */
 #define B43_MAX_WRITES_IN_ROW		24
 
 /**
@@ -143,9 +144,32 @@ enum b43_txpwr_result {
  * 			Can be NULL, if (and ONLY if) @recalc_txpower _always_
  * 			returns B43_TXPWR_RES_DONE.
  *
+ * @pwork_1sec:	Periodic work. Called every second.
+ * 			Can be NULL, if not required.
  * @pwork_15sec:	Periodic work. Called every 15 seconds.
  * 			Can be NULL, if not required.
  * @pwork_60sec:	Periodic work. Called every 60 seconds.
+ * 			Can be NULL, if not required.
+ * @channel_calibrate:	Calibrations that close a channel switch. Called by
+ * 			b43_op_config() with the MAC suspended, in place of
+ * 			its final b43_mac_enable(): the hook re-enables the
+ * 			MAC itself at the point its calibration needs it
+ * 			running, and must leave it enabled.
+ * 			Can be NULL, if not required.
+ * @noise_sample_done:	A background noise sample requested with
+ * 			B43_MACCMD_BGNOISE has completed. Called from the
+ * 			interrupt thread, in place of the core's own
+ * 			link-quality sampling.
+ * 			Can be NULL, if not required.
+ * @radar_poll:		Read the radar detector. Called every 150 ms while
+ * 			mac80211 asks for radar detection. Returns true when
+ * 			a radar pulse has arrived since the previous call.
+ * 			Can be NULL, if the PHY has no detector.
+ * @beacon_rate_set:	The beacon goes out at a CCK rate or not, from the
+ *			beacon template writer. Can be NULL.
+ * @cac_done:		The channel availability check has ended and the BSS
+ * 			beacons. Called by the core right after it releases the
+ * 			MAC, for the PHY to run what the check held back.
  * 			Can be NULL, if not required.
  */
 struct b43_phy_operations {
@@ -180,8 +204,14 @@ struct b43_phy_operations {
 	void (*adjust_txpower)(struct b43_wldev *dev);
 
 	/* Misc */
+	void (*pwork_1sec)(struct b43_wldev *dev);
 	void (*pwork_15sec)(struct b43_wldev *dev);
 	void (*pwork_60sec)(struct b43_wldev *dev);
+	void (*channel_calibrate)(struct b43_wldev *dev);
+	void (*noise_sample_done)(struct b43_wldev *dev);
+	bool (*radar_poll)(struct b43_wldev *dev);
+	void (*beacon_rate_set)(struct b43_wldev *dev, bool cck);
+	void (*cac_done)(struct b43_wldev *dev);
 };
 
 struct b43_phy_g;
@@ -191,6 +221,8 @@ struct b43_phy_ht;
 struct b43_phy_lcn;
 
 struct b43_phy {
+	/* IOCTL PHY bandwidth bits, 0 until b43_phy_bw_clk_set(). */
+	u32 bw_clkbits;
 	/* Hardware operation callbacks. */
 	const struct b43_phy_operations *ops;
 
@@ -442,5 +474,6 @@ void b43_phyop_switch_analog_generic(struct b43_wldev *dev, bool on);
 bool b43_is_40mhz(struct b43_wldev *dev);
 
 void b43_phy_force_clock(struct b43_wldev *dev, bool force);
+void b43_phy_bw_clk_set(struct b43_wldev *dev, u32 bits);
 
 #endif /* LINUX_B43_PHY_COMMON_H_ */

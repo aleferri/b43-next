@@ -9,6 +9,7 @@
 #include <bcma-next/bcmn.h>
 #include <ssb-next/ssbn.h>
 #include <linux/completion.h>
+#include <linux/ratelimit.h>
 #include <net/mac80211.h>
 
 #include "debugfs.h"
@@ -26,6 +27,7 @@
 #endif
 
 /* MMIO offsets */
+#define B43_MMIO_GPTIMER		0x18	/* General-purpose timer */
 #define B43_MMIO_DMA0_REASON		0x20
 #define B43_MMIO_DMA0_IRQ_MASK		0x24
 #define B43_MMIO_DMA1_REASON		0x28
@@ -52,6 +54,8 @@
 #define B43_MMIO_SHM_DATA_UNALIGNED	0x166
 #define B43_MMIO_XMITSTAT_0		0x170
 #define B43_MMIO_XMITSTAT_1		0x174
+#define B43_MMIO_XMITSTAT_2		0x178	/* AC microcode */
+#define B43_MMIO_XMITSTAT_3		0x17C	/* AC microcode */
 #define B43_MMIO_REV3PLUS_TSF_LOW	0x180	/* core rev >= 3 only */
 #define B43_MMIO_REV3PLUS_TSF_HIGH	0x184	/* core rev >= 3 only */
 #define B43_MMIO_TSF_CFP_REP		0x188
@@ -128,6 +132,10 @@
 #define B43_MMIO_XMTFIFO_RD_PTR		0x528	/* core rev>= 16 only */
 #define B43_MMIO_XMTFIFO_WR_PTR		0x52A	/* core rev>= 16 only */
 #define B43_MMIO_XMTFIFODEF1		0x52C	/* core rev>= 16 only */
+#define B43_MMIO_AGGFIFODATA0		0x530
+#define B43_MMIO_AGGFIFODATA1		0x532
+#define B43_MMIO_AGGFIFODATA2		0x534
+#define B43_MMIO_AGGFIFODATA3		0x536
 #define B43_MMIO_XMTFIFOCMD		0x540
 #define B43_MMIO_XMTFIFOFLUSH		0x542
 #define B43_MMIO_XMTFIFOTHRESH		0x544
@@ -135,6 +143,7 @@
 #define B43_MMIO_XMTFIFOPRIRDY		0x548
 #define B43_MMIO_XMTFIFORQPRI		0x54A
 #define B43_MMIO_XMTTPLATETXPTR		0x54C
+#define B43_MMIO_XMTFIFO_54E		0x54E	/* core rev 42, no documented name */
 #define B43_MMIO_XMTTPLATEPTR		0x550
 #define B43_MMIO_SMPL_CLCT_STRPTR	0x552	/* core rev>= 22 only */
 #define B43_MMIO_SMPL_CLCT_STPPTR	0x554	/* core rev>= 22 only */
@@ -156,6 +165,9 @@
 #define B43_MMIO_RNG			0x65A
 #define B43_MMIO_IFSSLOT		0x684	/* Interframe slot time */
 #define B43_MMIO_IFSCTL			0x688	/* Interframe space control */
+#define  B43_MMIO_IFSCTL_BIT3		0x0008	/* Set by the AC initvals, cleared by the stock driver */
+#define B43_MMIO_IFSTBL			0x69C	/* Table indexed by IFSCTL bits 13:12 (name ours) */
+#define B43_MMIO_UNK_3DC		0x3DC	/* AC: 10,000,000 from the stock driver, purpose unknown */
 #define B43_MMIO_IFSSTAT		0x690
 #define B43_MMIO_IFSMEDBUSYCTL		0x692
 #define B43_MMIO_IFTXDUR		0x694
@@ -165,6 +177,13 @@
 #define B43_MMIO_BTCOEX_STAT		0x6B6 /* Bluetooth Coexistence Status */
 #define B43_MMIO_BTCOEX_TXCTL		0x6B8 /* Bluetooth Coexistence Transmit Control */
 #define B43_MMIO_WEPCTL			0x7C0
+/* Aggregation queue manager, core rev >= 40 (Broadcom's d11.h names) */
+#define B43_MMIO_AQMCONFIG		0x800
+#define B43_MMIO_AQMMAXIDX		0x804
+#define B43_MMIO_AQMMAXAGGLEN_LO	0x812
+#define B43_MMIO_AQMMAXAGGLEN_HI	0x814
+#define B43_MMIO_AQMAGGPARAMS		0x816
+#define B43_MMIO_AQMMINMPDULEN		0x818
 
 /* SPROM boardflags_lo values */
 #define B43_BFL_BTCOEXIST		0x0001	/* implements Bluetooth coexistance */
@@ -252,9 +271,10 @@ enum {
 #define B43_SHM_SH_PHYTXNOI		0x006E	/* PHY noise directly after TX (lower 8bit only) */
 #define B43_SHM_SH_RFRXSP1		0x0072	/* RF RX SP Register 1 */
 #define B43_SHM_SH_HOSTF4		0x0078	/* Hostflags 4 for ucode options */
-#define B43_SHM_SH_CHAN			0x00A0	/* Current channel (low 8bit only) */
+#define B43_SHM_SH_CHAN			0x00A0	/* Current channel (low 8bit only); the chanspec on the AC-PHY */
 #define  B43_SHM_SH_CHAN_5GHZ		0x0100	/* Bit set, if 5 Ghz channel */
 #define  B43_SHM_SH_CHAN_40MHZ		0x0200	/* Bit set, if 40 Mhz channel width */
+#define B43_SHM_SH_CTS_DURATION		0x00B8	/* Duration (us) of the CTS-to-self sent on MAC suspend */
 #define B43_SHM_SH_MACHW_L		0x00C0	/* Location where the ucode expects the MAC capabilities */
 #define B43_SHM_SH_MACHW_H		0x00C2	/* Location where the ucode expects the MAC capabilities */
 #define B43_SHM_SH_HOSTF5		0x00D4	/* Hostflags 5 for ucode options */
@@ -293,6 +313,30 @@ enum {
 #define B43_SHM_SH_BTL0			0x0018	/* Beacon template length 0 */
 #define B43_SHM_SH_BT_BASE1		0x0468	/* Beacon template base 1 */
 #define B43_SHM_SH_BTL1			0x001A	/* Beacon template length 1 */
+#define B43_SHM_SH_BT_BASE0_AC784	0x00D8	/* AC ucode 784, beacon 0 */
+#define B43_SHM_SH_BT_BASE1_AC784	0x02D8	/* AC ucode 784, beacon 1 */
+#define B43_SHM_SH_BT_BASE0_AC832	0x0200	/* AC ucode 832 on, beacon 0 */
+#define B43_SHM_SH_BT_BASE1_AC832	0x0480	/* AC ucode 832 on, beacon 1 */
+/*
+ * On the first PHY TX error or TX underflow the AC ucode saves the TX error
+ * PHY register, the frame's PHY control words, its PLCP and its internal
+ * frame code (0x20 the beacon), then sets the latch word and saves nothing
+ * more until it is cleared. Offsets from the latch word; see
+ * docs/ucode42/07-SUBSYSTEMS.md.
+ */
+#define B43_SHM_SH_TXERR_AC784		0x16C8	/* AC ucode 784, latch */
+#define B43_SHM_SH_TXERR_AC928		0x17F4	/* AC ucode 832 and 928, latch */
+#define  B43_TXERR_STATUS		0x0002	/* PHY reg 0x007, CCK one for CCK */
+#define  B43_TXERR_PHYCTL		0x0004	/* 3 words */
+#define  B43_TXERR_PLCP			0x000A	/* 7 words */
+#define  B43_TXERR_FRAME		0x001A	/* ucode frame code */
+/*
+ * First cell of the AC ucode's MAC config block, which
+ * b43_phy_ac_shm_mac_config_block() writes at fixed distances from it.
+ */
+#define B43_SHM_SH_MACCFG_AC784		0x0894	/* AC ucode 784 */
+#define B43_SHM_SH_MACCFG_AC832		0x08F4	/* AC ucode 832 */
+#define B43_SHM_SH_MACCFG_AC928		0x08EC	/* AC ucode 928 */
 #define B43_SHM_SH_BTSFOFF		0x001C	/* Beacon TSF offset */
 #define B43_SHM_SH_TIMBPOS		0x001E	/* TIM B position in beacon */
 #define B43_SHM_SH_DTIMP		0x0012	/* DTIP period */
@@ -300,6 +344,8 @@ enum {
 #define B43_SHM_SH_SFFBLIM		0x0044	/* Short frame fallback retry limit */
 #define B43_SHM_SH_LFFBLIM		0x0046	/* Long frame fallback retry limit */
 #define B43_SHM_SH_BEACPHYCTL		0x0054	/* Beacon PHY TX control word (see PHY TX control) */
+#define B43_SHM_SH_BEACPHYCTL_AC	0x00CC	/* Beacon PHY TX control word, AC microcode */
+#define B43_SHM_SH_TXCORE_AC		0x05D4	/* TX core mask per rate class, 5 words, AC microcode */
 #define B43_SHM_SH_EXTNPHYCTL		0x00B0	/* Extended bytes for beacon PHY control (N) */
 #define B43_SHM_SH_BCN_LI		0x00B6	/* beacon listen interval */
 /* SHM_SHARED ACK/CTS control */
@@ -310,6 +356,8 @@ enum {
 #define B43_SHM_SH_PRTLEN		0x004A	/* Probe Response template length */
 #define B43_SHM_SH_PRMAXTIME		0x0074	/* Probe Response max time */
 #define B43_SHM_SH_PRPHYCTL		0x0188	/* Probe Response PHY TX control word */
+/* SHM_SHARED station address, AC PHY: three words, low byte first */
+#define B43_SHM_SH_AC_MACADDR		0x078C
 /* SHM_SHARED rate tables */
 #define B43_SHM_SH_OFDMDIRECT		0x01C0	/* Pointer to OFDM direct map */
 #define B43_SHM_SH_OFDMBASIC		0x01E0	/* Pointer to OFDM basic rate map */
@@ -398,6 +446,26 @@ enum {
 /* MacFilter offsets. */
 #define B43_MACFILTER_SELF		0x0000
 #define B43_MACFILTER_BSSID		0x0003
+
+/* Address match table, wide layout (802.11 core revision >= 42). Same routing
+ * as the older receive-match table, B43_SHM_RCMTA, two words per row. The top
+ * two rows replace the MACFILTER port, and the flags half-word above the
+ * address says the row is live and what it matches. */
+#define B43_AMT_WIDE_ENTRIES		64
+#define B43_AMT_BSSID			0x3e
+#define B43_AMT_SELF			0x3f
+#define B43_AMT_F_VALID			0x8000
+#define B43_AMT_F_BSSID			(B43_AMT_F_VALID | 0x0002)
+#define B43_AMT_F_SELF			(B43_AMT_F_VALID | 0x0008)
+#define B43_AMT_F_KEY			(B43_AMT_F_VALID | 0x0004)
+/*
+ * The further AP interfaces of a multi-BSS setup take the rows below the
+ * BSSID, matched as the receiver address (A1) and as the BSSID (A3), above
+ * the B43_NR_PAIRWISE_KEYS rows the pairwise keys use.
+ */
+#define B43_MBSS_MAX			4
+#define B43_AMT_MBSS(i)			(B43_AMT_BSSID - 1 - (i))
+#define B43_AMT_F_MBSS			(B43_AMT_F_SELF | B43_AMT_F_BSSID)
 
 /* PowerControl */
 #define B43_PCTL_IN			0xB0
@@ -565,6 +633,37 @@ enum {
 					 B43_IRQ_RFKILL | \
 					 B43_IRQ_TX_OK)
 
+/*
+ * The AC cores run with every bit of the stock driver's mask: 0xb2e7a864 on
+ * the agcombo (7.14, AP), 0xb0e7a860 on the MacBookAir6,1 (6.30, station),
+ * which lacks only the AP's TBTT and 0x02000000. b43 adds MAC_TXERR and
+ * UCODE_DEBUG, which both leave masked, for its own reports. brcmsmac's
+ * d11.h names TIMER0 the PSM microcode watchdog (MI_GP0) and TIMEOUT the
+ * general-purpose timer (MI_TO), and gives the bits b43 has no name for:
+ */
+#define B43_IRQ_PWRUP			0x00200000	/* radio/PHY powered back up */
+#define B43_IRQ_RESERVED3		0x00400000
+#define B43_IRQ_RESERVED2		0x00800000
+#define B43_IRQ_RESERVED1		0x02000000
+#define B43_IRQ_MASKTEMPLATE_AC		(B43_IRQ_TBTT_INDI | \
+					 B43_IRQ_ATIM_END | \
+					 B43_IRQ_PMQ | \
+					 B43_IRQ_MAC_TXERR | \
+					 B43_IRQ_PHY_TXERR | \
+					 B43_IRQ_TIMER0 | \
+					 B43_IRQ_DMA | \
+					 B43_IRQ_TXFIFO_FLUSH_OK | \
+					 B43_IRQ_CCA_MEASURE_OK | \
+					 B43_IRQ_NOISESAMPLE_OK | \
+					 B43_IRQ_PWRUP | \
+					 B43_IRQ_RESERVED3 | \
+					 B43_IRQ_RESERVED2 | \
+					 B43_IRQ_RESERVED1 | \
+					 B43_IRQ_UCODE_DEBUG | \
+					 B43_IRQ_RFKILL | \
+					 B43_IRQ_TX_OK | \
+					 B43_IRQ_TIMEOUT)
+
 /* The firmware register to fetch the debug-IRQ reason from. */
 #define B43_DEBUGIRQ_REASON_REG		63
 /* Debug-IRQ reasons. */
@@ -668,6 +767,7 @@ struct b43_dma {
 	u32 translation; /* Routing bits */
 	bool translation_in_low; /* Should translation bit go into low addr? */
 	bool parity; /* Check for parity */
+	bool index_is_addr; /* DMA64 index registers hold descriptor addresses */
 };
 
 struct b43_pio_txqueue;
@@ -695,12 +795,52 @@ struct b43_stats {
 	u8 link_noise;
 };
 
+/*
+ * Per station, in ieee80211_sta::drv_priv: the window of each TID's block
+ * ack session on TX, 0 without one.
+ */
+struct b43_sta {
+	u8 ampdu_win[IEEE80211_NUM_TIDS];
+	/* Beamforming slot of the station plus one, 0 for none. */
+	u8 txbf_slot;
+};
+
+/*
+ * Transmit beamforming on the AC: the microcode publishes the base of its
+ * beamforming block at shared 0x00B0, a word address (0x0406 under wl 7.14 on
+ * the RT-AC66U B1, 0x03d6 under b43 with 784.2). The block opens with 16-word
+ * slots, which 784.2 lays out seven of (read back under b43: each starts with
+ * its index and holds 0x001d 0x0003 0x40e5 0x1471 0x8492 in words 4-8), the
+ * sounding period right after at +0xE0. A beamformee takes a slot; with a
+ * pairwise key, the key's row in the per-row table at 0x0668 points at it
+ * (router-data/rt-ac66u-b1/mmio-txbf2.zip).
+ */
+#define B43_SHM_SH_TXBF_BLK		0x00B0
+#define B43_SHM_SH_AMT_INFO		0x0668
+#define  B43_AMT_INFO_TXBF		0x1000
+#define  B43_AMT_INFO_TXBF_SLOT_SHIFT	13
+#define B43_TXBF_SLOTS			5
+#define B43_TXBF_SOUNDING		0x00E0	/* Sounding period, in the block */
+#define B43_TXBF_CTL			0x06E0	/* In the block, bit 8 cleared */
+#define B43_TXBF_SOUNDING_DEFAULT	6250
+
+#define B43_TXBF_NO_ROW		0xff
+
+struct b43_txbf_link {
+	struct b43_sta *bsta;
+	u8 row;				/* Address match row of the key, or
+					 * B43_TXBF_NO_ROW on an open BSS */
+	u8 addr[ETH_ALEN];		/* Our address, of the station's BSS */
+};
+
 struct b43_key {
 	/* If keyconf is NULL, this key is disabled.
 	 * keyconf is a cookie. Don't derefenrence it outside of the set_key
 	 * path, because b43 doesn't own it. */
 	struct ieee80211_key_conf *keyconf;
 	u8 algorithm;
+	/* The station of a pairwise key, for b43_keys_restore(). */
+	u8 addr[ETH_ALEN];
 };
 
 /* SHM offsets to the QOS data structures for the 4 different queues. */
@@ -774,6 +914,55 @@ enum b43_firmware_hdr_format {
 	B43_FW_HDR_598,
 	B43_FW_HDR_410,
 	B43_FW_HDR_351,
+	/*
+	 * The microcode of the AC cores, 832.127 in wl 6.30.223 and 928.1201
+	 * in 7.14.43 alike: a 40 byte RX header and an eight-word TX status.
+	 * The TX header and the fields inside the RX header are not visible
+	 * at the bus; where this format shares a case with B43_FW_HDR_598,
+	 * the 598 layout is assumed, not verified.
+	 */
+	B43_FW_HDR_AC,
+};
+
+/*
+ * Where a microcode takes its beacon templates in template RAM, and what goes
+ * in front of the frame there.
+ *
+ * The bases are constants of the microcode, not of the core: the AC builds
+ * load them as immediates right before the template engine is started, those
+ * of 784 and those of 832, which 928 keeps. Each beacon has the room up to the
+ * next template, header included.
+ *
+ * In front of the frame the pre-AC microcode takes the 6 byte PLCP header. The
+ * AC one takes 12 bytes with the PLCP at byte 3, the rest zero (the beacon of
+ * the agcombo bus capture, 928), and counts them in the template length and
+ * in the TIM position (0x3c + SSID length on 784 and 928).
+ *
+ * TODO: probe-response offload. Its template follows the beacons, at 0x04d8
+ * in 784 and 0x0700 in 832 and 928, and the stock driver rewrites it after
+ * every beacon; b43 uploads none and leaves the probe requests to mac80211.
+ * See docs/retrace-todo.md.
+ */
+struct b43_tpl_layout {
+	u16 bcn_base[2];
+	u16 bcn_size;
+	u8 hdr_len;
+	u8 plcp_off;		/* PLCP header offset in the template, OFDM rates */
+	u8 plcp_off_cck;	/* the same for CCK rates */
+};
+
+/*
+ * What b43 writes to the shared memory of an AC microcode where the
+ * microcodes differ: the offsets, in bytes, and the values and order their
+ * own drivers use.
+ */
+struct b43_shm_layout {
+	u16 mac_cfg;		/* first cell of the MAC config block */
+	bool mac_cfg_0020;	/* 0x0020 = 0x0800 before the block */
+	bool mac_cfg_16;	/* the seven words from mac_cfg + 0x16 */
+	u16 cts_duration;	/* us, of the CTS-to-self of the RX-cal suspend */
+	bool cts_suspended;	/* armed with the MAC already suspended */
+	u16 txerr;		/* latch of the saved TX fault; 0 if none known */
 };
 
 /* Pointers to the firmware data and meta information about it. */
@@ -794,6 +983,10 @@ struct b43_firmware {
 
 	/* Format of header used by firmware */
 	enum b43_firmware_hdr_format hdr_format;
+	/* Template RAM layout; NULL for an AC microcode not known here */
+	const struct b43_tpl_layout *tpl;
+	/* Shared memory layout; NULL but for an AC microcode known here */
+	const struct b43_shm_layout *shm;
 
 	/* Set to true, if we are using an opensource firmware.
 	 * Use this to check for proprietary vs opensource. */
@@ -836,6 +1029,13 @@ struct b43_wldev {
 
 	bool bad_frames_preempt;	/* Use "Bad Frames Preemption" (default off) */
 	bool dfq_valid;		/* Directed frame queue valid (IBSS PS mode, ATIM) */
+	/* The A-MSDU being put together from its pieces (b43_rx_amsdu()). */
+	struct sk_buff *rx_amsdu;
+	u8 rx_amsdu_hdr[40] __aligned(4);	/* Its first receive header */
+	u32 rx_amsdu_err;
+	/* Word address of the microcode's beamforming block, 0 without. */
+	u16 txbf_base;
+	struct b43_txbf_link txbf[B43_TXBF_SLOTS];
 	bool radio_hw_enable;	/* saved state of radio hardware enabled state */
 	bool qos_enabled;		/* TRUE, if QoS is used. */
 	bool hwcrypto_enabled;		/* TRUE, if HW crypto acceleration is enabled. */
@@ -871,6 +1071,23 @@ struct b43_wldev {
 	/* Periodic tasks */
 	struct delayed_work periodic_work;
 	unsigned int periodic_state;
+	struct delayed_work radar_work;
+
+	/*
+	 * AC PHY: a channel availability check holds transmission back, and
+	 * the configuration the radio was last tuned to by b43_op_config().
+	 */
+	bool cac_pending;
+	struct cfg80211_chan_def tuned_chandef;
+	/*
+	 * AC PHY: the AP on the tuned channel detects radars, which arms the
+	 * detector on the PHY and keeps radar_work polling it. Set with the
+	 * tune, see b43_ac_radar_arm_wanted().
+	 */
+	bool radar_arm;
+
+	/* AC: rate limit of the TX state dump on a PHY TX error. */
+	struct ratelimit_state txerr_dump_rs;
 
 	struct work_struct restart_work;
 
@@ -916,6 +1133,12 @@ struct b43_wl {
 	 */
 
 	struct ieee80211_vif *vif;
+	/*
+	 * The further AP interfaces on the AC (multi-BSS). vif is the one
+	 * whose beacon the microcode sends; these go out from the driver at
+	 * its TBTT.
+	 */
+	struct ieee80211_vif *mbss_vif[B43_MBSS_MAX - 1];
 	/* The MAC address of the operating interface. */
 	u8 mac_addr[ETH_ALEN];
 	/* Current BSSID */
@@ -960,6 +1183,14 @@ struct b43_wl {
 	/* Queue of packets to be transmitted. */
 	struct sk_buff_head tx_queue[B43_QOS_QUEUE_NUM];
 
+	/*
+	 * Received frames, handed to mac80211 after the interrupt thread
+	 * drops the mutex (b43_rx_deliver()).
+	 */
+	struct sk_buff_head rx_queue;
+	/* Sent frames whose TX status b43_rx_deliver() reports, likewise. */
+	struct sk_buff_head txstatus_queue;
+
 	/* Flag that implement the queues stopping. */
 	bool tx_queue_stopped[B43_QOS_QUEUE_NUM];
 
@@ -969,8 +1200,21 @@ struct b43_wl {
 	/* The device LEDs. */
 	struct b43_leds leds;
 
+	/*
+	 * The bands of an AC PHY. Their HT and VHT capabilities depend on
+	 * the board's receive chains, so each device has its own copies.
+	 */
+	struct ieee80211_supported_band band_5ghz_ac;
+	struct ieee80211_supported_band band_2ghz_ac;
+
+	/*
+	 * The radar types the AC PHY matches (enum b43_radar_region), from
+	 * the DFS region of the regulatory domain (b43_reg_notifier()).
+	 */
+	u8 radar_region;
+
 	/* Kmalloc'ed scratch space for PIO TX/RX. Protected by wl->mutex. */
-	u8 pio_scratchspace[118] __attribute__((__aligned__(8)));
+	u8 pio_scratchspace[128] __attribute__((__aligned__(8)));
 	u8 pio_tailspace[4] __attribute__((__aligned__(8)));
 };
 
@@ -1033,14 +1277,26 @@ static inline void b43_write16(struct b43_wldev *dev, u16 offset, u16 value)
 	dev->dev->write16(dev->dev, offset, value);
 }
 
-/* To optimize this check for flush_writes on BCM47XX_BCMA only. */
+/*
+ * Hosts whose posted writes of a register address need a read back before
+ * the data port is used: the BCM4716 SoC with a PCIe radio, and the BCM63xx
+ * routers, where the stock driver reads back the PHY and radio address after
+ * every write of it. The check is compiled only there.
+ */
+static inline bool b43_flush_writes(struct b43_wldev *dev)
+{
+#if defined(CONFIG_BCM47XX_BCMA) || defined(CONFIG_BCM63XX)
+	return dev->dev->flush_writes;
+#else
+	return false;
+#endif
+}
+
 static inline void b43_write16f(struct b43_wldev *dev, u16 offset, u16 value)
 {
 	b43_write16(dev, offset, value);
-#if defined(CONFIG_BCM47XX_BCMA)
-	if (dev->dev->flush_writes)
+	if (b43_flush_writes(dev))
 		b43_read16(dev, offset);
-#endif
 }
 
 static inline void b43_maskset16(struct b43_wldev *dev, u16 offset, u16 mask,
@@ -1057,6 +1313,18 @@ static inline u32 b43_read32(struct b43_wldev *dev, u16 offset)
 static inline void b43_write32(struct b43_wldev *dev, u16 offset, u32 value)
 {
 	dev->dev->write32(dev->dev, offset, value);
+}
+
+/*
+ * The 802.11 cores of the AC chips, known before the PHY is: the stock
+ * driver takes them from the core revision the EROM lists and resets them
+ * the AC way from its first reset on, before it reads a PHY register. b43
+ * has the same revision from the bus scan, and the resets that come before
+ * b43_phy_versioning() ask this instead of the PHY type.
+ */
+static inline bool b43_is_ac_core(struct b43_wldev *dev)
+{
+	return dev->dev->core_rev == 40 || dev->dev->core_rev == 42;
 }
 
 static inline void b43_maskset32(struct b43_wldev *dev, u16 offset, u32 mask,
@@ -1101,6 +1369,7 @@ static inline void b43_stop_queue(struct b43_wldev *dev, int queue_prio)
 /* Message printing */
 __printf(2, 3) void b43info(struct b43_wl *wl, const char *fmt, ...);
 __printf(2, 3) void b43err(struct b43_wl *wl, const char *fmt, ...);
+__printf(2, 3) void b43err_restart(struct b43_wl *wl, const char *fmt, ...);
 __printf(2, 3) void b43warn(struct b43_wl *wl, const char *fmt, ...);
 __printf(2, 3) void b43dbg(struct b43_wl *wl, const char *fmt, ...);
 

@@ -39,6 +39,14 @@ endif
 ifeq ($(B43_NEXT_DEBUG),y)
 b43n-opts += DEBUG
 endif
+# Radar channels in AP mode on the AC-PHY: tested on the RT-AC66U B1 only,
+# not a certified radar detector.
+ifeq ($(B43_NEXT_DFS),y)
+ifeq ($(CONFIG_CFG80211_CERTIFICATION_ONUS),)
+$(error b43-next: B43_NEXT_DFS=y needs a kernel with CFG80211_CERTIFICATION_ONUS)
+endif
+b43n-opts += DFS
+endif
 
 $(foreach o,$(ssbn-opts),$(eval CONFIG_SSBN_$(o) := y))
 $(foreach o,$(bcmn-opts),$(eval CONFIG_BCMN_$(o) := y))
@@ -76,7 +84,8 @@ b43-next-$(CONFIG_B43_NEXT_PHY_LP) += b43-next/phy_lp.o b43-next/tables_lpphy.o
 b43-next-$(CONFIG_B43_NEXT_PHY_HT) += $(addprefix b43-next/, \
 	phy_ht.o tables_phy_ht.o radio_2059.o)
 b43-next-$(CONFIG_B43_NEXT_PHY_LCN) += b43-next/phy_lcn.o b43-next/tables_phy_lcn.o
-b43-next-$(CONFIG_B43_NEXT_PHY_AC) += b43-next/phy_ac.o
+b43-next-$(CONFIG_B43_NEXT_PHY_AC) += $(addprefix b43-next/, \
+	phy_ac.o tables_phy_ac.o radio_2069.o helpers_phy_ac.o ppr_ac.o radar_ac.o)
 b43-next-$(CONFIG_B43_NEXT_LEDS) += b43-next/leds.o
 b43-next-$(CONFIG_B43_NEXT_SDIO) += b43-next/sdio.o
 b43-next-$(CONFIG_B43_NEXT_DEBUG) += b43-next/debugfs.o

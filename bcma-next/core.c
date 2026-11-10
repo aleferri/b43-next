@@ -100,7 +100,7 @@ void bcmn_core_set_clockmode(struct bcmn_device *core,
 			bcmn_err(core->bus, "HT force timeout\n");
 		break;
 	case BCMN_CLKMODE_DYNAMIC:
-		bcmn_set32(core, BCMN_CLKCTLST, ~BCMN_CLKCTLST_FORCEHT);
+		bcmn_mask32(core, BCMN_CLKCTLST, ~BCMN_CLKCTLST_FORCEHT);
 		break;
 	}
 }

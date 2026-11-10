@@ -170,6 +170,10 @@ void bcmn_core_pcie2_init(struct bcmn_drv_pcie2 *pcie2)
 	case BCMN_CHIP_ID_BCM4360:
 	case BCMN_CHIP_ID_BCM4352:
 		pcie2->reqsize = 1024;
+		/* Only chip rev 3 has been captured. */
+		if (ci->rev == 3)
+			pcie2_set32(pcie2, BCMN_CLKCTLST,
+				    BCMN_CLKCTLST_HAVEHTREQ);
 		break;
 	default:
 		pcie2->reqsize = 128;

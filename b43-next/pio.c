@@ -456,6 +456,7 @@ static int pio_tx_frame(struct b43_pio_txqueue *q,
 	cookie = generate_cookie(q, pack);
 	hdrlen = b43_txhdr_size(dev);
 	BUILD_BUG_ON(sizeof(wl->pio_scratchspace) < sizeof(struct b43_txhdr));
+	BUILD_BUG_ON(sizeof(wl->pio_scratchspace) < sizeof(struct b43_txhdr_ac));
 	B43_WARN_ON(sizeof(wl->pio_scratchspace) < hdrlen);
 	err = b43_generate_txhdr(dev, (u8 *)txhdr, skb,
 				 info, cookie);
@@ -494,6 +495,9 @@ int b43_pio_tx(struct b43_wldev *dev, struct sk_buff *skb)
 	int err = 0;
 	struct ieee80211_tx_info *info = IEEE80211_SKB_CB(skb);
 
+	/* The queue is written from skb->data, skb->len bytes. */
+	if (skb_linearize(skb))
+		return -ENOMEM;
 	hdr = (struct ieee80211_hdr *)skb->data;
 
 	if (info->flags & IEEE80211_TX_CTL_SEND_AFTER_DTIM) {
@@ -512,7 +516,7 @@ int b43_pio_tx(struct b43_wldev *dev, struct sk_buff *skb)
 
 	if (unlikely(total_len > q->buffer_size)) {
 		err = -ENOBUFS;
-		b43dbg(dev->wl, "PIO: TX packet longer than queue.\n");
+		b43warn(dev->wl, "PIO: TX packet longer than queue.\n");
 		goto out;
 	}
 	if (unlikely(q->free_packet_slots == 0)) {
@@ -569,8 +573,10 @@ void b43_pio_handle_txstatus(struct b43_wldev *dev,
 	struct ieee80211_tx_info *info;
 
 	q = parse_cookie(dev, status->cookie, &pack);
-	if (unlikely(!q))
+	if (unlikely(!q)) {
+		b43_txstatus_dump(dev, status);
 		return;
+	}
 	B43_WARN_ON(!pack);
 
 	info = IEEE80211_SKB_CB(pack->skb);
@@ -582,7 +588,7 @@ void b43_pio_handle_txstatus(struct b43_wldev *dev,
 	q->buffer_used -= total_len;
 	q->free_packet_slots += 1;
 
-	ieee80211_tx_status_skb(dev->wl->hw, pack->skb);
+	skb_queue_tail(&dev->wl->txstatus_queue, pack->skb);
 	pack->skb = NULL;
 	list_add(&pack->list, &q->packets_list);
 
@@ -615,6 +621,10 @@ static bool pio_rx_frame(struct b43_pio_rxqueue *q)
 		break;
 	case B43_FW_HDR_598:
 		break;
+	case B43_FW_HDR_AC:
+		/* b43_wireless_core_init() keeps the AC cores on DMA. */
+		WARN_ON_ONCE(1);
+		return false;
 	}
 	memset(rxhdr, 0, rxhdr_size);
 
@@ -648,7 +658,7 @@ static bool pio_rx_frame(struct b43_pio_rxqueue *q)
 			udelay(10);
 		}
 	}
-	b43dbg(q->dev->wl, "PIO RX timed out\n");
+	b43warn(q->dev->wl, "PIO RX timed out\n");
 	return true;
 data_ready:
 
@@ -674,6 +684,7 @@ data_ready:
 	}
 
 	switch (dev->fw.hdr_format) {
+	case B43_FW_HDR_AC:
 	case B43_FW_HDR_598:
 		macstat = le32_to_cpu(rxhdr->format_598.mac_status);
 		break;
@@ -750,7 +761,7 @@ data_ready:
 
 rx_error:
 	if (err_msg)
-		b43dbg(q->dev->wl, "PIO RX error: %s\n", err_msg);
+		b43warn(q->dev->wl, "PIO RX error: %s\n", err_msg);
 	if (q->rev >= 8)
 		b43_piorx_write32(q, B43_PIO8_RXCTL, B43_PIO8_RXCTL_DATARDY);
 	else
