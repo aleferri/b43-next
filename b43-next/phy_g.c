@@ -2523,7 +2523,7 @@ static int b43_gphy_op_prepare_hardware(struct b43_wldev *dev)
 
 	default_baseband_attenuation(dev, &gphy->bbatt);
 	default_radio_attenuation(dev, &gphy->rfatt);
-	gphy->tx_control = (default_tx_control(dev) << 4);
+	gphy->tx_control = default_tx_control(dev);
 	generate_rfatt_list(dev, &lo->rfatt_list);
 	generate_bbatt_list(dev, &lo->bbatt_list);
 
