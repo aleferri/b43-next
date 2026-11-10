@@ -3,6 +3,7 @@
 #define B43_PHY_LCN_H_
 
 #include "phy_common.h"
+#include "ppr.h"
 
 
 #define B43_PHY_LCN_AFE_CTL1			B43_PHY_OFDM(0x03B)
@@ -23,6 +24,8 @@ struct b43_phy_lcn {
 	bool hw_pwr_ctl;
 	bool hw_pwr_ctl_capable;
 	u8 tx_pwr_curr_idx;
+	/* Per-rate maximum transmit power, from the SROM */
+	struct b43_ppr tx_max_ppr;
 };
 
 

@@ -720,8 +720,12 @@ static int b43_phy_lcn_op_init(struct b43_wldev *dev)
 	else
 		B43_WARN_ON(1);
 
-	if (b43_current_band(dev->wl) == NL80211_BAND_2GHZ)
+	if (b43_current_band(dev->wl) == NL80211_BAND_2GHZ) {
+		b43_ppr_load_sprom_legacy(&dev->phy.lcn->tx_max_ppr,
+					  dev->dev->bus_sprom, B43_BAND_2G,
+					  true);
 		b43_phy_lcn_tx_pwr_ctl_init(dev);
+	}
 
 	b43_switch_channel(dev, dev->phy.channel);
 
