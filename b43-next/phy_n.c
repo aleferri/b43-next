@@ -7587,14 +7587,23 @@ static int b43_phy_initn(struct b43_wldev *dev)
 	u16 clip[2];
 	bool do_cal = false;
 
+	/*
+	 * Not on the BCM43217: there chip control bit 6 cuts core 1's RX by
+	 * ~30 dB (vendor firmware leaves it clear; setting it by hand under
+	 * the vendor driver gives the same loss). Clear it there instead.
+	 */
 	if ((dev->phy.rev >= 3) &&
 	   (sprom->boardflags_lo & B43_BFL_EXTLNA) &&
 	   (b43_current_band(dev->wl) == NL80211_BAND_2GHZ)) {
 		switch (dev->dev->bus_type) {
 #ifdef CONFIG_B43_NEXT_BCMA
 		case B43_BUS_BCMA:
-			bcmn_cc_set32(&dev->dev->bdev->bus->drv_cc,
-				      BCMN_CC_CHIPCTL, 0x40);
+			if (dev->dev->chip_id == BCMN_CHIP_ID_BCM43217)
+				bcmn_cc_mask32(&dev->dev->bdev->bus->drv_cc,
+					       BCMN_CC_CHIPCTL, ~0x40);
+			else
+				bcmn_cc_set32(&dev->dev->bdev->bus->drv_cc,
+					      BCMN_CC_CHIPCTL, 0x40);
 			break;
 #endif
 #ifdef CONFIG_B43_NEXT_SSB
