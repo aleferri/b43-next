@@ -1789,8 +1789,8 @@ static void lpphy_start_tx_tone(struct b43_wldev *dev, s32 freq, u16 max)
 	for (i = 0; i < samples; i++) {
 		sample = cordic_calc_iq(CORDIC_FLOAT(theta));
 		theta += rotation;
-		buf[i] = CORDIC_FLOAT((sample.i * max) & 0xFF) << 8;
-		buf[i] |= CORDIC_FLOAT((sample.q * max) & 0xFF);
+		buf[i] = (CORDIC_FLOAT(sample.i * max) & 0xFF) << 8;
+		buf[i] |= CORDIC_FLOAT(sample.q * max) & 0xFF;
 	}
 
 	b43_lptab_write_bulk(dev, B43_LPTAB16(5, 0), samples, buf);
