@@ -75,9 +75,7 @@ static void lpphy_read_band_sprom(struct b43_wldev *dev)
 {
 	struct ssbn_sprom *sprom = dev->dev->bus_sprom;
 	struct b43_phy_lp *lpphy = dev->phy.lp;
-	u16 cckpo, maxpwr;
-	u32 ofdmpo;
-	int i;
+	enum b43_band band;
 
 	if (b43_current_band(dev->wl) == NL80211_BAND_2GHZ) {
 		lpphy->tx_isolation_med_band = sprom->tri2g;
@@ -89,29 +87,8 @@ static void lpphy_read_band_sprom(struct b43_wldev *dev)
 		lpphy->txpa[0] = sprom->pa0b0;
 		lpphy->txpa[1] = sprom->pa0b1;
 		lpphy->txpa[2] = sprom->pa0b2;
-		maxpwr = sprom->maxpwr_bg;
-		lpphy->max_tx_pwr_med_band = maxpwr;
-		cckpo = sprom->cck2gpo;
-		if (cckpo) {
-			ofdmpo = sprom->ofdm2gpo;
-			for (i = 0; i < 4; i++) {
-				lpphy->tx_max_rate[i] =
-					maxpwr - (ofdmpo & 0xF) * 2;
-				ofdmpo >>= 4;
-			}
-			ofdmpo = sprom->ofdm2gpo;
-			for (i = 4; i < 15; i++) {
-				lpphy->tx_max_rate[i] =
-					maxpwr - (ofdmpo & 0xF) * 2;
-				ofdmpo >>= 4;
-			}
-		} else {
-			u8 opo = sprom->opo;
-			for (i = 0; i < 4; i++)
-				lpphy->tx_max_rate[i] = maxpwr;
-			for (i = 4; i < 15; i++)
-				lpphy->tx_max_rate[i] = maxpwr - opo;
-		}
+		b43_ppr_load_sprom_legacy(&lpphy->tx_max_ppr[B43_BAND_2G],
+					  sprom, B43_BAND_2G, false);
 	} else { /* 5GHz */
 		lpphy->tx_isolation_low_band = sprom->tri5gl;
 		lpphy->tx_isolation_med_band = sprom->tri5g;
@@ -130,27 +107,9 @@ static void lpphy_read_band_sprom(struct b43_wldev *dev)
 		lpphy->txpah[0] = sprom->pa1hib0;
 		lpphy->txpah[1] = sprom->pa1hib1;
 		lpphy->txpah[2] = sprom->pa1hib2;
-		maxpwr = sprom->maxpwr_al;
-		ofdmpo = sprom->ofdm5glpo;
-		lpphy->max_tx_pwr_low_band = maxpwr;
-		for (i = 4; i < 12; i++) {
-			lpphy->tx_max_ratel[i] = maxpwr - (ofdmpo & 0xF) * 2;
-			ofdmpo >>= 4;
-		}
-		maxpwr = sprom->maxpwr_a;
-		ofdmpo = sprom->ofdm5gpo;
-		lpphy->max_tx_pwr_med_band = maxpwr;
-		for (i = 4; i < 12; i++) {
-			lpphy->tx_max_rate[i] = maxpwr - (ofdmpo & 0xF) * 2;
-			ofdmpo >>= 4;
-		}
-		maxpwr = sprom->maxpwr_ah;
-		ofdmpo = sprom->ofdm5ghpo;
-		lpphy->max_tx_pwr_hi_band = maxpwr;
-		for (i = 4; i < 12; i++) {
-			lpphy->tx_max_rateh[i] = maxpwr - (ofdmpo & 0xF) * 2;
-			ofdmpo >>= 4;
-		}
+		for (band = B43_BAND_5G_LO; band <= B43_BAND_5G_HI; band++)
+			b43_ppr_load_sprom_legacy(&lpphy->tx_max_ppr[band],
+						  sprom, band, false);
 	}
 }
 
