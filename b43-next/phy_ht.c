@@ -14,6 +14,7 @@
 #include "b43.h"
 #include "phy_ht.h"
 #include "tables_phy_ht.h"
+#include "ppr.h"
 #include "radio_2059.h"
 #include "main.h"
 
@@ -627,36 +628,23 @@ static void b43_phy_ht_tx_power_ctl_setup(struct b43_wldev *dev)
 	u8 target[3];
 	s16 a1[3], b0[3], b1[3];
 
-	u16 freq = dev->phy.chandef->chan->center_freq;
+	enum b43_band band;
 	int i, c;
 
-	if (b43_current_band(dev->wl) == NL80211_BAND_2GHZ) {
+	if (b43_ppr_band(dev->phy.chandef->chan, &band)) {
 		for (c = 0; c < 3; c++) {
-			target[c] = sprom->core_pwr_info[c].maxpwr_2g;
-			a1[c] = sprom->core_pwr_info[c].pa_2g[0];
-			b0[c] = sprom->core_pwr_info[c].pa_2g[1];
-			b1[c] = sprom->core_pwr_info[c].pa_2g[2];
-		}
-	} else if (freq >= 4900 && freq < 5100) {
-		for (c = 0; c < 3; c++) {
-			target[c] = sprom->core_pwr_info[c].maxpwr_5gl;
-			a1[c] = sprom->core_pwr_info[c].pa_5gl[0];
-			b0[c] = sprom->core_pwr_info[c].pa_5gl[1];
-			b1[c] = sprom->core_pwr_info[c].pa_5gl[2];
-		}
-	} else if (freq >= 5100 && freq < 5500) {
-		for (c = 0; c < 3; c++) {
-			target[c] = sprom->core_pwr_info[c].maxpwr_5g;
-			a1[c] = sprom->core_pwr_info[c].pa_5g[0];
-			b0[c] = sprom->core_pwr_info[c].pa_5g[1];
-			b1[c] = sprom->core_pwr_info[c].pa_5g[2];
-		}
-	} else if (freq >= 5500) {
-		for (c = 0; c < 3; c++) {
-			target[c] = sprom->core_pwr_info[c].maxpwr_5gh;
-			a1[c] = sprom->core_pwr_info[c].pa_5gh[0];
-			b0[c] = sprom->core_pwr_info[c].pa_5gh[1];
-			b1[c] = sprom->core_pwr_info[c].pa_5gh[2];
+			const struct ssbn_sprom_core_pwr_info *pi =
+				&sprom->core_pwr_info[c];
+			const u16 *pa = band == B43_BAND_2G ? pi->pa_2g :
+					band == B43_BAND_5G_LO ? pi->pa_5gl :
+					band == B43_BAND_5G_MI ? pi->pa_5g :
+					pi->pa_5gh;
+
+			target[c] = b43_ppr_sprom_r8_maxpwr(sprom, band,
+							    BIT(c));
+			a1[c] = pa[0];
+			b0[c] = pa[1];
+			b1[c] = pa[2];
 		}
 	} else {
 		target[0] = target[1] = target[2] = 52;
