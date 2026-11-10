@@ -475,7 +475,8 @@ static void bcmn_sprom_extract_r11(struct bcmn_bus *bus, const u16 *sprom)
 	SPEX(boardflags2_hi, SSBN_SPROM8_BFL2HI, ~0, 0);
 	SPEX32(boardflags3, SSBN_SPROM11_BFL3, ~0, 0);
 
-	SPEX(country_code, SSBN_SPROM11_CCODE, ~0, 0);
+	SPEX(alpha2[0], SSBN_SPROM11_CCODE, 0xff00, 8);
+	SPEX(alpha2[1], SSBN_SPROM11_CCODE, 0x00ff, 0);
 	SPEX(gpio0, SSBN_SPROM11_GPIOA, SSBN_SPROM8_GPIOA_P0, 0);
 	SPEX(gpio1, SSBN_SPROM11_GPIOA, SSBN_SPROM8_GPIOA_P1,
 	     SSBN_SPROM8_GPIOA_P1_SHIFT);
