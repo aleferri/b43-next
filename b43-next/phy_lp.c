@@ -1069,9 +1069,10 @@ static u32 lpphy_qdiv_roundup(u32 dividend, u32 divisor, u8 precision)
 
 	while (precision > 0) {
 		quotient <<= 1;
-		if (remainder << 1 >= divisor) {
+		remainder <<= 1;
+		if (remainder >= divisor) {
 			quotient++;
-			remainder = (remainder << 1) - divisor;
+			remainder -= divisor;
 		}
 		precision--;
 	}
