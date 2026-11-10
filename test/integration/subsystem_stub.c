@@ -1,0 +1,631 @@
+// SPDX-License-Identifier: GPL-2.0
+/*
+ * Il resto del livello sotto: controllo bcma, ssb, mac80211 e i sottosistemi
+ * di b43 che non emettono op.
+ *
+ * Compilato coi flag del KERNEL, non come utente, e non per gusto: qui
+ * servono i tipi veri. `ieee80211_alloc_hw_nm` deve restituire una
+ * `struct ieee80211_hw` la cui `priv` sia allineata come nel kernel, perche'
+ * b43 ci mette la sua `b43_wl` e la rilegge con `hw_to_b43_wl()`. Con una
+ * struttura inventata il puntatore cadrebbe altrove e il difetto si vedrebbe
+ * mille op piu' tardi.
+ *
+ * Cosa emette op e cosa no, per non cercarlo dopo: le op passano SOLO dalla
+ * vtable di bcmn_stub.c. I dieci simboli `bcmn_*` qui sotto sono clock,
+ * enable, GPIO e PLL, e nella traccia del vendor non compaiono -- il tracer di
+ * wl aggancia le funzioni di accesso, non quelle di gestione del core. Quindi
+ * no-op e' la risposta giusta, non una scorciatoia.
+ *
+ * `ssbn_*` sono no-op perche' qui serve solo BCMA: b43 compila con
+ * CONFIG_B43_NEXT_BCMA e il ramo ssb non viene percorso, ma il link li chiede
+ * comunque.
+ */
+#include <linux/platform_device.h>
+#include <bcma-next/bcmn.h>
+#include <ssb-next/ssbn.h>
+#include <linux/etherdevice.h>
+#include <linux/jiffies.h>
+#include <linux/kernel.h>
+#include <linux/slab.h>
+#include <net/mac80211.h>
+
+#include "trace_out.h"
+#include "chip_link.h"
+
+/* --- bcma: il lato host PCI, che passa dallo spazio di configurazione --- */
+
+void bcmn_host_pci_up(struct bcmn_bus *bus) { }
+void bcmn_host_pci_down(struct bcmn_bus *bus) { }
+int bcmn_host_pci_irq_ctl(struct bcmn_bus *bus, struct bcmn_device *core,
+			  bool enable)
+{
+	return 0;
+}
+
+/* --- ChipCommon e PMU -----------------------------------------------------
+ *
+ * Sono il codice vero di bcma (driver_chipcommon.c, driver_chipcommon_pmu.c,
+ * driver_pcie2.c): i loro accessi passano dallo stub del bus come quelli del
+ * core 802.11, e escono come CC.RD/CC.WR e PCIE.RD/PCIE.WR al bus, la stessa
+ * classe che reverse-tools/mmio2ops.py da' alla cattura.
+ */
+
+/* Quello che il codice di bcma chiede al resto di bcma e al kernel. */
+bool bcmn_wait_value(struct bcmn_device *core, u16 reg, u32 mask, u32 value,
+		     int timeout)
+{
+	int i;
+
+	for (i = 0; i < 100; i++)
+		if ((bcmn_read32(core, reg) & mask) == value)
+			return true;
+	return false;
+}
+
+int bcmn_sflash_init(struct bcmn_drv_cc *cc) { return -EOPNOTSUPP; }
+int pcie_set_readrq(struct pci_dev *dev, int rq) { return 0; }
+struct platform_device *
+platform_device_register_full(const struct platform_device_info *pdevinfo)
+{
+	return ERR_PTR(-ENODEV);
+}
+
+/* --- ssb: non percorso, ma il link lo chiede -------------------------- */
+
+int ssbn_bus_powerup(struct ssbn_bus *bus, bool dynamic_pctl) { return 0; }
+int ssbn_bus_may_powerdown(struct ssbn_bus *bus) { return 0; }
+u32 ssbn_dma_translation(struct ssbn_device *dev) { return 0; }
+void ssbn_device_enable(struct ssbn_device *dev, u32 core_specific_flags) { }
+void ssbn_device_disable(struct ssbn_device *dev, u32 core_specific_flags) { }
+int ssbn_device_is_enabled(struct ssbn_device *dev) { return 1; }
+void ssbn_commit_settings(struct ssbn_bus *bus) { }
+void ssbn_driver_unregister(struct ssbn_driver *drv) { }
+void ssbn_set_devtypedata(struct ssbn_device *dev, void *data) { }
+int ssbn_pcicore_dev_irqvecs_enable(struct ssbn_pcicore *pc,
+				   struct ssbn_device *dev)
+{
+	return 0;
+}
+
+/* --- mac80211: la sola che deve restituire qualcosa di usabile -------- */
+
+struct ieee80211_hw *ieee80211_alloc_hw_nm(size_t priv_data_len,
+					   const struct ieee80211_ops *ops,
+					   const char *requested_name)
+{
+	struct ieee80211_hw *hw;
+
+	extern const struct ieee80211_ops *b43_test_hw_ops;
+	extern struct ieee80211_hw *b43_test_hw;
+
+	/*
+	 * Nel kernel `priv` sta dopo la struttura, allineata; qui si fa lo
+	 * stesso con una sola allocazione, cosi' `hw->priv` e' un puntatore
+	 * valido e b43 ci scrive la sua b43_wl.
+	 */
+	hw = kzalloc(sizeof(*hw) + priv_data_len, GFP_KERNEL);
+	if (!hw)
+		return NULL;
+	hw->priv = (char *)hw + sizeof(*hw);
+	hw->wiphy = kzalloc(sizeof(*hw->wiphy), GFP_KERNEL);
+	b43_test_hw_ops = ops;
+	b43_test_hw = hw;
+	return hw;
+}
+
+void ieee80211_free_hw(struct ieee80211_hw *hw)
+{
+	if (hw)
+		kfree(hw->wiphy);
+	kfree(hw);
+}
+
+/*
+ * La vtable di b43, catturata come `__bcmn_driver_register` cattura la probe:
+ * b43_op_start e' statica, e senza questo l'harness non ha modo di far
+ * partire il bring-up dopo la probe.
+ */
+const struct ieee80211_ops *b43_test_hw_ops;
+struct ieee80211_hw *b43_test_hw;
+
+/*
+ * register_hw sceglie il canale, che nel kernel fa mac80211 e non b43:
+ * b43_phy_init() (phy_common.c:93) legge
+ * dev->wl->hw->conf.chandef.chan->hw_value, e se nessuno ha impostato quel
+ * puntatore il bring-up muore la'.
+ *
+ * Il canale e la larghezza si prendono dall'ambiente, `B43_CHANNEL` e
+ * `B43_BW`, perche' i 26 segmenti dello sweep sono 26 configurazioni e una
+ * suite che sa fare solo la prima non li misura. Sono gli stessi due
+ * parametri che `../unit` prende come AC_CHANNEL e AC_BW; il prefisso e'
+ * B43_ per stare con B43_READ_ORACLE e B43_TRACE_OUT di questa suite.
+ *
+ * Il canale non si inventa: si cerca fra quelli che b43 ha registrato in
+ * b43_setup_bands() (main.c:5267), che e' la stessa restrizione che ha
+ * mac80211. Se `B43_CHANNEL` non e' fra quelli lo si dice e si prende il
+ * primo, invece di lasciare un puntatore a un canale che il driver non
+ * conosce.
+ *
+ * `center_freq1` per BW40 e BW80 e' il centro del blocco legato, non del
+ * canale: e' quello che b43_phy_ac_write_chanspec() legge per comporre il
+ * chanspec. La formula e' la stessa di ../unit/main.c.
+ */
+static enum nl80211_chan_width shim_width(long bw)
+{
+	switch (bw) {
+	case 40:  return NL80211_CHAN_WIDTH_40;
+	case 80:  return NL80211_CHAN_WIDTH_80;
+	default:  return NL80211_CHAN_WIDTH_20;
+	}
+}
+
+/*
+ * Quello che cfg80211_chandef_usable() chiede alla banda prima di accettare
+ * una larghezza: il 40 vuole HT con SUP_WIDTH_20_40, l'80 vuole VHT. Senza,
+ * hostapd non arriva a start_ap con quella chandef, e una suite che la
+ * imponesse misurerebbe una configurazione che sul ferro non esiste.
+ */
+static bool shim_width_usable(const struct ieee80211_supported_band *sb,
+			      long bw)
+{
+	switch (bw) {
+	case 40:
+		return sb->ht_cap.ht_supported &&
+		       (sb->ht_cap.cap & IEEE80211_HT_CAP_SUP_WIDTH_20_40);
+	case 80:
+		return sb->ht_cap.ht_supported && sb->vht_cap.vht_supported;
+	default:
+		return true;
+	}
+}
+
+static struct ieee80211_hw *g_hw;
+
+/*
+ * Il regdomain che cfg80211 applica ai canali alla registrazione. La cattura
+ * a freddo e' di un wl con ccode= vuoto nel NVRAM, cioe' con la sua locale
+ * interna, i cui tetti sono per larghezza di banda e stanno in
+ * b43_phy_ac_locale_ceiling(). Qui non si abbassa il max_power dei canali:
+ * un tetto per canale da 20 MHz, come cfg80211 lo esprime, varrebbe anche
+ * per i blocchi da 40 e 80 MHz, dove la locale del vendor e' piu' alta.
+ */
+static void apply_regdomain(struct ieee80211_supported_band *sb)
+{
+	unsigned int i;
+
+	/* Il dovere radar, come lo marca cfg80211: U-NII-2A e U-NII-2C. */
+	for (i = 0; i < sb->n_channels; i++) {
+		u32 f = sb->channels[i].center_freq;
+
+		if ((f >= 5260 && f <= 5320) || (f >= 5500 && f <= 5720))
+			sb->channels[i].flags |= IEEE80211_CHAN_RADAR;
+	}
+}
+
+int ieee80211_register_hw(struct ieee80211_hw *hw)
+{
+	long want = b43_test_env_long("B43_CHANNEL", 0);
+	long bw = b43_test_env_long("B43_BW", 20);
+	struct ieee80211_channel *first = NULL, *pick = NULL;
+	enum nl80211_band band;
+	int i;
+
+	g_hw = hw;
+	for (band = 0; band < NUM_NL80211_BANDS; band++) {
+		struct ieee80211_supported_band *sb = hw->wiphy->bands[band];
+
+		if (!sb || !sb->n_channels)
+			continue;
+		apply_regdomain(sb);
+		if (!first)
+			first = &sb->channels[0];
+		for (i = 0; i < sb->n_channels; i++) {
+			if (sb->channels[i].hw_value == want) {
+				pick = &sb->channels[i];
+				break;
+			}
+		}
+		if (pick)
+			break;
+	}
+
+	if (!pick) {
+		if (want)
+			b43_trace_note("B43_CHANNEL=%d non e' fra i canali che "
+				       "b43 ha registrato; uso il primo\n",
+				       (int)want);
+		pick = first;
+	}
+	if (!pick) {
+		b43_trace_note("b43 non ha registrato nessuna banda%d\n", 0);
+		return 0;
+	}
+
+	if (!shim_width_usable(hw->wiphy->bands[pick->band], bw)) {
+		b43_trace_note("B43_BW=%d: la banda non annuncia la larghezza, "
+			       "cfg80211 la rifiuterebbe\n", (int)bw);
+		return -EINVAL;
+	}
+
+	hw->conf.chandef.chan = pick;
+	hw->conf.chandef.width = shim_width(bw);
+	hw->conf.chandef.center_freq1 = pick->center_freq +
+		(bw == 40 ? 10 : bw == 80 ? 30 : 0);
+	/*
+	 * mac80211 hands the driver a power level with the channel, the
+	 * channel's own max_power when userspace has not asked for less. Zero
+	 * is the value b43_op_config() reads as "no power level", and on it
+	 * the TX power check -- and adjust_txpower behind it -- never runs.
+	 */
+	hw->conf.power_level = pick->max_power;
+	/*
+	 * The retry limits mac80211 starts from, wiphy->retry_short/long as
+	 * cfg80211 sets them; with zero b43_op_config() writes zero limits.
+	 */
+	hw->conf.short_frame_max_tx_count = 7;
+	hw->conf.long_frame_max_tx_count = 4;
+	return 0;
+}
+void ieee80211_unregister_hw(struct ieee80211_hw *hw) { }
+void ieee80211_wake_queues(struct ieee80211_hw *hw) { }
+void ieee80211_stop_queue(struct ieee80211_hw *hw, int queue) { }
+void ieee80211_free_txskb(struct ieee80211_hw *hw, struct sk_buff *skb) { }
+void ieee80211_purge_tx_queue(struct ieee80211_hw *hw,
+			      struct sk_buff_head *skbs) { }
+void ieee80211_rx_list(struct ieee80211_hw *hw, struct ieee80211_sta *sta,
+		       struct sk_buff *skb, struct list_head *list) { }
+void netif_receive_skb_list(struct list_head *head) { }
+void skb_queue_purge_reason(struct sk_buff_head *list,
+			    enum skb_drop_reason reason) { }
+void ieee80211_handle_wake_tx_queue(struct ieee80211_hw *hw,
+				    struct ieee80211_txq *txq) { }
+/* Le txq da cui l'AC tira i frame (b43_tx_pull()): vuote. */
+void ieee80211_txq_schedule_start(struct ieee80211_hw *hw, u8 ac) { }
+struct ieee80211_txq *ieee80211_next_txq(struct ieee80211_hw *hw, u8 ac)
+{
+	return NULL;
+}
+struct sk_buff *ieee80211_tx_dequeue(struct ieee80211_hw *hw,
+				     struct ieee80211_txq *txq) { return NULL; }
+void __ieee80211_schedule_txq(struct ieee80211_hw *hw,
+			      struct ieee80211_txq *txq, bool force) { }
+/* Nessuna stazione e nessuna sessione block ack: le catture non ne hanno. */
+struct ieee80211_sta *ieee80211_find_sta(struct ieee80211_vif *vif,
+					 const u8 *addr) { return NULL; }
+void ieee80211_stop_tx_ba_cb_irqsafe(struct ieee80211_vif *vif,
+				     const u8 *ra, u16 tid) { }
+void __rcu_read_lock(void) { }
+void __rcu_read_unlock(void) { }
+/* In linea, come queue_work_on(): la suite e' a un thread, e il work che
+ * b43_phy_txpower_check() accoda e' adjust_txpower, cioe' op da confrontare. */
+void ieee80211_queue_work(struct ieee80211_hw *hw, struct work_struct *work)
+{
+	if (work && work->func)
+		work->func(work);
+}
+
+/*
+ * I delayed work sono i timer del driver: il periodic work, il poll del
+ * radar. Si tengono qui con la loro scadenza in jiffies, e li fa scattare
+ * b43_test_run_until() quando main.c porta avanti l'orologio. Un work gia'
+ * accodato non si riaccoda, come nel kernel.
+ */
+#define SHIM_DWORKS	8
+
+static struct {
+	struct delayed_work *work;
+	unsigned long due;
+} dworks[SHIM_DWORKS];
+
+void ieee80211_queue_delayed_work(struct ieee80211_hw *hw,
+				  struct delayed_work *work,
+				  unsigned long delay)
+{
+	int i, free = -1;
+
+	for (i = 0; i < SHIM_DWORKS; i++) {
+		if (dworks[i].work == work)
+			return;
+		if (!dworks[i].work && free < 0)
+			free = i;
+	}
+	if (free < 0) {
+		b43_trace_note("troppi delayed work in coda%d\n", 0);
+		return;
+	}
+	dworks[free].work = work;
+	dworks[free].due = jiffies + delay;
+}
+
+int b43_test_dwork_cancel(void *w)
+{
+	int i;
+
+	for (i = 0; i < SHIM_DWORKS; i++) {
+		if (dworks[i].work == w) {
+			dworks[i].work = NULL;
+			return 1;
+		}
+	}
+	return 0;
+}
+
+/* Fa scattare, in ordine di scadenza, i work che scadono entro @until. */
+/* With the virtual chip, jiffies that pass are its time too. */
+void b43_chip_deliver_irq(void);
+
+static void chip_follow(unsigned long to)
+{
+	if (b43_chip_active() && time_after(to, jiffies)) {
+		b43_chip_time((to - jiffies) * (1000000UL / HZ));
+		b43_chip_deliver_irq();
+	}
+}
+
+void b43_test_run_until(unsigned long until)
+{
+	for (;;) {
+		struct delayed_work *w;
+		int i, next = -1;
+
+		for (i = 0; i < SHIM_DWORKS; i++)
+			if (dworks[i].work && time_before_eq(dworks[i].due, until) &&
+			    (next < 0 || time_before(dworks[i].due, dworks[next].due)))
+				next = i;
+		if (next < 0)
+			break;
+		w = dworks[next].work;
+		chip_follow(dworks[next].due);
+		if (time_after(dworks[next].due, jiffies))
+			jiffies = dworks[next].due;
+		dworks[next].work = NULL;
+		w->work.func(&w->work);
+	}
+	chip_follow(until);
+	if (time_after(until, jiffies))
+		jiffies = until;
+}
+
+/*
+ * Il beacon che mac80211 darebbe a b43_update_templates(): intestazione,
+ * SSID, rate e TIM, cioe' quel che b43_write_beacon_template() legge per
+ * TIMBPOS e DTIMPER. La lunghezza dell'SSID e' B43_SSID_LEN, come AC_SSID_LEN
+ * di ../unit, perche' entra nella lunghezza del template.
+ */
+static struct sk_buff shim_beacon_skb;
+static u8 shim_beacon[256];
+
+struct sk_buff *ieee80211_beacon_get_tim(struct ieee80211_hw *hw,
+					 struct ieee80211_vif *vif,
+					 u16 *tim_offset, u16 *tim_length,
+					 unsigned int link_id)
+{
+	static const u8 rates[] = { 0x8c, 0x12, 0x98, 0x24, 0xb0, 0x48, 0x60, 0x6c };
+	struct ieee80211_mgmt *m = (struct ieee80211_mgmt *)shim_beacon;
+	long ssid_len = b43_test_env_long("B43_SSID_LEN", 7);
+	struct ieee80211_tx_info *info;
+	u8 *p;
+
+	memset(shim_beacon, 0, sizeof(shim_beacon));
+	m->frame_control = cpu_to_le16(IEEE80211_FTYPE_MGMT |
+				       IEEE80211_STYPE_BEACON);
+	eth_broadcast_addr(m->da);
+	memcpy(m->sa, vif->addr, ETH_ALEN);
+	memcpy(m->bssid, vif->addr, ETH_ALEN);
+	m->u.beacon.beacon_int = cpu_to_le16(vif->bss_conf.beacon_int);
+	m->u.beacon.capab_info = cpu_to_le16(WLAN_CAPABILITY_ESS);
+	p = m->u.beacon.variable;
+	*p++ = WLAN_EID_SSID;
+	*p++ = (u8)ssid_len;
+	memset(p, 'X', ssid_len);
+	p += ssid_len;
+	*p++ = WLAN_EID_SUPP_RATES;
+	*p++ = sizeof(rates);
+	memcpy(p, rates, sizeof(rates));
+	p += sizeof(rates);
+	*p++ = WLAN_EID_TIM;
+	*p++ = 4;
+	*p++ = 0;				/* DTIM count */
+	*p++ = vif->bss_conf.dtim_period;
+	*p++ = 0;
+	*p++ = 0;
+
+	memset(&shim_beacon_skb, 0, sizeof(shim_beacon_skb));
+	shim_beacon_skb.data = shim_beacon;
+	shim_beacon_skb.len = p - shim_beacon;
+	info = IEEE80211_SKB_CB(&shim_beacon_skb);
+	info->band = NL80211_BAND_5GHZ;
+	info->control.rates[0].idx = 0;
+	return &shim_beacon_skb;
+}
+
+/*
+ * The channel-context ops b43 takes from mac80211's emulation. mac80211
+ * calls them; the harness drives config directly and never does.
+ */
+int ieee80211_emulate_add_chanctx(struct ieee80211_hw *hw,
+				  struct ieee80211_chanctx_conf *ctx)
+{
+	return 0;
+}
+
+void ieee80211_emulate_remove_chanctx(struct ieee80211_hw *hw,
+				      struct ieee80211_chanctx_conf *ctx)
+{
+}
+
+void ieee80211_emulate_change_chanctx(struct ieee80211_hw *hw,
+				      struct ieee80211_chanctx_conf *ctx,
+				      u32 changed)
+{
+}
+
+int ieee80211_emulate_switch_vif_chanctx(struct ieee80211_hw *hw,
+					 struct ieee80211_vif_chanctx_switch *vifs,
+					 int n_vifs,
+					 enum ieee80211_chanctx_switch_mode mode)
+{
+	return 0;
+}
+
+void ieee80211_radar_detected(struct ieee80211_hw *hw,
+			      struct ieee80211_chanctx_conf *chanctx_conf)
+{
+	b43_trace_note("ieee80211_radar_detected()%.0d\n", 0);
+}
+const struct ieee80211_rate *
+ieee80211_get_response_rate(struct ieee80211_supported_band *sband,
+			    u32 basic_rates, int bitrate)
+{
+	struct ieee80211_rate *rate = NULL;
+	int i;
+
+	if (!sband || !sband->bitrates)
+		return NULL;
+	/* mac80211's: the highest basic rate not above @bitrate. */
+	for (i = 0; i < sband->n_bitrates; i++) {
+		struct ieee80211_rate *r = &sband->bitrates[i];
+
+		if (!(basic_rates & BIT(i)) || r->bitrate > bitrate)
+			continue;
+		if (!rate || rate->bitrate < r->bitrate)
+			rate = r;
+	}
+	return rate ? rate : &sband->bitrates[0];
+}
+
+/* --- i sottosistemi di b43 -------------------------------------------------
+ *
+ * dma.c si compila com'e', con dma_stub.c sotto: programma gli anelli e
+ * serve i frame che la timeline consegna con gli eventi IRQ. PIO e' l'altro
+ * percorso dati, che b43 non prende su PCIe: init deve riuscire lo stesso o
+ * b43_wireless_core_init esce prima di b43_security_init.
+ */
+struct b43_wldev;
+
+int b43_pio_init(struct b43_wldev *dev) { return 0; }
+void b43_pio_free(struct b43_wldev *dev) { }
+void b43_pio_tx(struct b43_wldev *dev, struct sk_buff *skb) { }
+void b43_pio_rx(void *q) { }
+/*
+ * Non stubbati: stanno in xmit.c, che si compila. Erano qui quando xmit.c
+ * non era nella lista, e tenerli darebbe "multiple definition".
+ *   b43_handle_txstatus, b43_generate_plcp_hdr,
+ *   b43_plcp_get_ratecode_cck, b43_plcp_get_ratecode_ofdm
+ */
+
+/*
+ * leds.c e rfkill.c si compilano: sotto di loro stanno il LED core e i
+ * trigger di mac80211, che qui non ci sono. La registrazione riesce e i
+ * trigger hanno un nome, perche' con un nome nullo b43_register_led()
+ * ritorna -EINVAL e il percorso dei LED -- il mask per b43_gpio_init() e le
+ * scritture di GPIO_CONTROL in b43_leds_init() -- non gira affatto. Il LED
+ * core non richiama mai brightness_set: nessun trigger scatta senza traffico.
+ */
+int led_classdev_register_ext(struct device *parent,
+			      struct led_classdev *led_cdev,
+			      struct led_init_data *init_data) { return 0; }
+void led_classdev_unregister(struct led_classdev *led_cdev) { }
+const char *__ieee80211_get_tx_led_name(struct ieee80211_hw *hw) { return "tx"; }
+const char *__ieee80211_get_rx_led_name(struct ieee80211_hw *hw) { return "rx"; }
+const char *__ieee80211_get_assoc_led_name(struct ieee80211_hw *hw) { return "assoc"; }
+const char *__ieee80211_get_radio_led_name(struct ieee80211_hw *hw) { return "radio"; }
+void wiphy_rfkill_set_hw_state_reason(struct wiphy *wiphy, bool blocked,
+				      enum rfkill_hard_block_reasons reason) { }
+
+/*
+ * Sospensione e ripresa delle code TX, e lo stato TX: percorso dati, nessuna
+ * op sul bring-up. `handle_txstatus` non viene chiamato affatto qui, non
+ * essendoci trasmissione.
+ */
+void b43_pio_tx_suspend(struct b43_wldev *dev) { }
+void b43_pio_tx_resume(struct b43_wldev *dev) { }
+void b43_pio_handle_txstatus(struct b43_wldev *dev, const void *status) { }
+
+/* --- mac80211: utilita' pure, nessuna emette op ----------------------- */
+
+unsigned int ieee80211_hdrlen(__le16 fc) { return 24; }
+u32 ieee80211_channel_to_freq_khz(int chan, enum nl80211_band band)
+{
+	/* 5 GHz: la formula di mac80211, non un valore inventato. */
+	if (band == NL80211_BAND_5GHZ)
+		return (5000 + chan * 5) * 1000;
+	return 0;
+}
+struct ieee80211_channel *ieee80211_get_channel_khz(struct wiphy *wiphy,
+						    u32 freq)
+{
+	enum nl80211_band band;
+	int i;
+
+	if (!g_hw)
+		return NULL;
+	for (band = 0; band < NUM_NL80211_BANDS; band++) {
+		struct ieee80211_supported_band *sb = g_hw->wiphy->bands[band];
+
+		if (!sb)
+			continue;
+		for (i = 0; i < sb->n_channels; i++)
+			if (sb->channels[i].center_freq * 1000 == freq)
+				return &sb->channels[i];
+	}
+	return NULL;
+}
+void ieee80211_rts_get(struct ieee80211_hw *hw, struct ieee80211_vif *vif,
+		       const void *frame, size_t frame_len,
+		       const struct ieee80211_tx_info *frame_txctl,
+		       struct ieee80211_rts *rts) { }
+void ieee80211_ctstoself_get(struct ieee80211_hw *hw,
+			     struct ieee80211_vif *vif, const void *frame,
+			     size_t frame_len,
+			     const struct ieee80211_tx_info *frame_txctl,
+			     struct ieee80211_cts *cts) { }
+__le16 ieee80211_generic_frame_duration(struct ieee80211_hw *hw,
+					struct ieee80211_vif *vif,
+					enum nl80211_band band,
+					size_t frame_len,
+					struct ieee80211_rate *rate)
+{
+	return 0;
+}
+void ieee80211_get_tkip_p1k_iv(struct ieee80211_key_conf *keyconf,
+			       u32 iv32, u16 *p1k) { }
+void ieee80211_rx_napi(struct ieee80211_hw *hw, struct ieee80211_sta *sta,
+		       struct sk_buff *skb, struct napi_struct *napi) { }
+
+/*
+ * Le vtable degli altri PHY: a NULL, e non e' pigrizia. b43_phy_allocate()
+ * dispaccia su phy->type, quindi su questo hardware prende solo il ramo AC:
+ * se un giorno prendesse un altro ramo il puntatore nullo lo fa vedere
+ * subito, invece di far girare una vtable finta e produrre una traccia
+ * plausibile del PHY sbagliato.
+ */
+const struct b43_phy_operations *b43_phyops_g;
+const struct b43_phy_operations *b43_phyops_n;
+const struct b43_phy_operations *b43_phyops_lp;
+const struct b43_phy_operations *b43_phyops_ht;
+
+/*
+ * I work item si eseguono in linea, non si accodano.
+ *
+ * Non e' una comodita': b43_bcma_probe() (main.c:5851) chiede il firmware da
+ * un work -- INIT_WORK(&wl->firmware_load, b43_request_firmware) piu'
+ * schedule_work -- e con un queue_work no-op quel lavoro non gira mai.
+ * dev->fw.ucode.data resta nullo e b43_upload_microcode() muore a main.c:2761
+ * dereferenziandolo, dentro il bring-up e non nella probe, cioe' lontano
+ * dalla causa.
+ *
+ * Eseguirlo qui e' lo stesso ragionamento dei lock: la suite e' a un thread,
+ * e se il lavoro girasse davvero in parallelo la traccia non sarebbe piu'
+ * ordinata e il confronto posizionale non avrebbe senso. La differenza
+ * rispetto al kernel e' che la' il work parte dopo che la probe e' ritornata,
+ * qui parte dentro schedule_work(): se una fase dipendesse da quell'ordine si
+ * vedrebbe come op fuori posto, non come un crash.
+ */
+bool queue_work_on(int cpu, struct workqueue_struct *wq,
+		   struct work_struct *work)
+{
+	if (work && work->func)
+		work->func(work);
+	return true;
+}

@@ -1,0 +1,359 @@
+#!/bin/sh
+# The port's gate against a sweep segment.
+#
+# Two conditions, and they are not interchangeable: --cold measures a first
+# bring-up, --hot measures a cycle on an interface that is already up. Both
+# are needed, because a predicate that tells the two apart is invisible in the
+# other one.
+#
+# --cold (default)
+#   The cold sweep: a module reloaded per channel, so every segment is an
+#   isolated attach with all the trace classes armed. A segment is compared
+#   against the `full` flow and whole, not split into `down` and `up`: the
+#   module is loaded inside the segment, so the eleven reads of
+#   rx_gain_regs_program() are in the segment and the oracle serves them where
+#   the vendor made them. Splitting a cold segment instead leaves the head of
+#   the attach (switch_analog and the GPIOs) and the tail after the last probe
+#   group out of the comparison.
+#
+# --hot
+#   The `up` segments of the hot sweep. Every predicate that tells a first
+#   bring-up from a later one is invisible in the cold sweep -- it reads the
+#   same on all 26 segments -- and a missing term does not show. A predicate
+#   like the one in b43_phy_ac_may_calibrate_tx(), which only looks at
+#   center_freq <= 5250, makes the cold scores add up while the up segments
+#   above 5250 sit at 35% instead of 80%: forty-five points on half the
+#   driver, invisible to the cold gate. The three default segments are
+#   chosen to catch that: one below 5250 MHz and two above. If a
+#   predicate confuses the two conditions, the first stays put and the other
+#   two collapse.
+#
+#   A hot segment does not contain the module load, so the flow must be `up`
+#   and not `full`: the eleven reads of rx_gain_regs_program() fall before the
+#   start of the segment, and a flow that executes them drains the oracle
+#   queues the phase under test needs. AC_FIRST_INIT=0, because a hot segment
+#   is not a first bring-up and the vendor's init_regs takes its two-pass
+#   branch.
+#
+# The comparison window and the oracle window are two different things, and
+# they start at different places:
+#
+#   from    the attach's first PHY op, the first of the ten save reads that
+#           open switch_analog_once(). The comparison starts here. It must not
+#           be hooked to the AFE bank (PHY.WR 0x173e), which comes after those
+#           ten reads, and it must not be "any first PHY op": before it wl0's
+#           attach writes the N-PHY's own registers (cold03 #452, PHY.WR 0xa6,
+#           which b43/phy_n.h calls AFECTL_C1). Those are the other core's,
+#           not the b43 core's, and strip_other_core.py removes them.
+#   oracle  cold: the insmod, so the per-address queues also cover the OTP and
+#           the core probe. Hot: the segment's first op, since there is no
+#           insmod. Not the window start: the `up` flow emits a prologue
+#           before the op the comparison aligns on -- 5717 ops on
+#           01-up-ch36-bw20, enable_afe among them -- whose vendor
+#           counterparts sit in the segment ahead of the window. An oracle
+#           that starts at the window hands those reads the window's values
+#           and every queue they touch runs one read ahead from there on,
+#           which is what the value-restoring phases then write back.
+#
+# Usage:
+#   ./gates.sh [segment...]                     cold, default ch36 bw20
+#   ./gates.sh --hot [segment...]               hot, three default segments
+#   ./gates.sh --hot --flow switch_channel DIR  one row per channel, over a dir
+#   ./gates.sh --board tg789 [segment...]      another board's profile
+#   COLD=/tmp/r7000-2g ./gates.sh --board r7000-2g /tmp/r7000-2g/cold01-ch1-bw20.txt
+#
+# --min-block N --gap-tol M are required, except with --table: cmp_skip.py
+# counts the equal pairs of blocks of at least N pairs, with at most M
+# non-corresponding ops between one run and the next (see its score()).
+#
+# Environment: COLD, HOT override the segment directories; GATE_TMP keeps the
+# working files (seg, merged, full, cmp) in that directory instead of a
+# temporary one.
+
+set -e
+HERE=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+REPO=$HERE/../..
+. "$REPO/test/paths.sh"
+TOOLS=$TRACE_TOOLS
+# GATE_TMP: la directory di lavoro, quando serve tenerne i file -- la cattura
+# ripiegata la rilegge read_perturb.py. Senza, una dir per run che sparisce.
+if [ -n "${GATE_TMP:-}" ]; then
+	TMP=$GATE_TMP
+	mkdir -p "$TMP"
+else
+	TMP=$(mktemp -d)
+	trap 'rm -rf "$TMP"' EXIT
+fi
+COLD=${COLD:-/tmp/cold}
+HOT=${HOT:-/tmp/hot/segmenti}
+
+COND=cold
+FLOW=
+TABLE=0
+BOARD=d6220
+while [ $# -gt 0 ]; do
+	case $1 in
+	--cold) COND=cold; shift ;;
+	--hot)  COND=hot;  shift ;;
+	--flow) FLOW=$2;   shift 2 ;;
+	--table) TABLE=1;  shift ;;
+	--board) BOARD=$2;  shift 2 ;;
+	--min-block) MIN_BLOCK=$2; shift 2 ;;
+	--gap-tol) GAP_TOL=$2; shift 2 ;;
+	--) shift; break ;;
+	-*) echo "unknown option: $1" >&2; exit 2 ;;
+	*) break ;;
+	esac
+done
+if [ "$TABLE" = 0 ] && { [ -z "${MIN_BLOCK:-}" ] || [ -z "${GAP_TOL:-}" ]; }; then
+	echo "--min-block and --gap-tol are required" >&2
+	exit 2
+fi
+
+# The regulatory ceiling. The stock driver's limits are conducted and per
+# width -- the same 56 on ch36-48/20 on the d6220, the agcombo and the
+# tg789vac, whose antenna gains differ -- and the port carries them as its
+# own locale table (b43_phy_ac_locale_ceiling()), so cfg80211's per-channel
+# EIRP is left permissive here and binds nowhere. AC_MAX_POWER_MAP still
+# reaches the harness for experiments on the cfg80211 path.
+[ -n "${AC_MAX_POWER_MAP:-}" ] && export AC_MAX_POWER_MAP
+
+if [ "$COND" = cold ]; then
+	DIR=$COLD
+	ARCHIVE=cold-sweep.zip
+	: "${FLOW:=full}"
+	FIRST_INIT=1
+	DEFAULT="$COLD/cold01-ch36-bw20.txt"
+	[ "$BOARD" = r7000-2g ] && DEFAULT="$COLD/cold01-ch1-bw20.txt"
+else
+	DIR=$HOT
+	ARCHIVE=hot-sweep.zip
+	: "${FLOW:=up}"
+	FIRST_INIT=0
+	# By channel, not by position: the index of a segment is its rank in
+	# the sweep's channel list, so extending that list renumbers everything
+	# after it and a fixed index silently lands on another channel.
+	DEFAULT="$HOT/*-up-ch36-bw20.txt $HOT/*-up-ch52-bw20.txt $HOT/*-up-ch104-bw20.txt"
+fi
+
+# switch_channel executes a single warm cycle, so its oracle starts at the
+# very first op of the segment and its score is the one-row-per-channel table.
+[ "$FLOW" = switch_channel ] && TABLE=1
+
+if [ ! -d "$DIR" ]; then
+	echo "missing $DIR:"
+	# The R7000 archives hold the whole sweep, not its segments.
+	case $BOARD in
+	r7000-2g|r7000-5g)
+		band=${BOARD#r7000-}
+		if [ "$COND" = cold ]; then
+			sweep=cold-${band}20 split="--on mod --prefix cold"
+		else
+			sweep=hot-${band}20 split="--on chanspec"
+		fi
+		echo "  unzip -d /tmp/r7000 $TRACES/r7000/$sweep.zip"
+		echo "  python3 $TOOLS/split_trace.py $split /tmp/r7000/$sweep.txt $DIR"
+		exit 1 ;;
+	esac
+	case $BOARD in
+	dsl)   DATA=dsl3580l ;;
+	tg789) DATA=tg789vac-v2 ;;
+	agcombo) DATA=vd625-agcombo ;;
+	*)     DATA=$BOARD ;;
+	esac
+	echo "  unzip -d $(dirname "$DIR") $TRACES/$DATA/$ARCHIVE"
+	exit 1
+fi
+
+if [ $# -gt 0 ]; then
+	if [ -d "$1" ]; then
+		SEGS=$(ls "$1"/*-up-ch*.txt 2>/dev/null)
+	else
+		SEGS=$*
+	fi
+else
+	SEGS=$DEFAULT
+fi
+
+# I pin dei LED, che il perimetro usa per riconoscere le op LED del vendor.
+# Li ricava l'harness dalla SROM del profilo, con la regola di leds.c.
+LED_PINS=$("$HERE/ac_trace" led_pins "$BOARD" 2>/dev/null)
+
+[ "$TABLE" = 1 ] && printf '%5s %8s %8s %10s %10s %s\n' \
+	ch vendor port full phy-rad-tbl status
+
+fail=0
+for seg in $SEGS; do
+	[ -f "$seg" ] || { echo "missing $seg"; fail=1; continue; }
+	base=$(basename "$seg" .txt)
+	ch=$(echo "$base" | sed -n 's/.*ch\([0-9]*\)-bw.*/\1/p')
+	bw=$(echo "$base" | sed -n 's/.*-bw\([0-9]*\).*/\1/p')
+
+	# Cold only: an op absent from a capture that does not trace its class
+	# says nothing about the driver, and deducing something from it has
+	# produced wrong conclusions about the chanspec, the probe-response
+	# writes and the noise sample.
+	[ "$COND" = cold ] &&
+		python3 "$TOOLS/check_class_coverage.py" \
+			--require "$seg"
+
+	# L'attach dell'altro core esce prima di piegare le letture, o la
+	# finestra dell'oracolo -- che parte dall'insmod per coprire l'OTP e il
+	# probe dei core -- si mangia anche le sue, e le code per (classe,
+	# indirizzo) servono al driver sotto esame la shared memory di wl0.
+	# Sulle celle 0x0000/0x0002 e' visibile: il self-test di
+	# b43_validate_chipaccess lo eseguono entrambi i core. Il taglio e' un
+	# no-op per il punteggio del PHY -- nel prefisso non c'e' una sola
+	# PHY.RD o RAD.RD -- e serve all'oracolo, non al confronto.
+	python3 "$TOOLS/strip_other_core.py" "$seg" \
+		"$TMP/seg" 2>/dev/null || cp "$seg" "$TMP/seg"
+
+	python3 "$TOOLS/trace_filter.py" --retvals \
+		"$TMP/seg" "$TMP/merged" >/dev/null 2>&1 ||
+		cp "$TMP/seg" "$TMP/merged"
+
+	eval "$(python3 - "$TMP/merged" "$FLOW" <<'PY'
+import re, sys
+
+path, flow = sys.argv[1], sys.argv[2]
+first_op = first_phy = insmod = None
+for line in open(path, errors='replace'):
+    m = re.match(r"\s*[\d.]+\s+#(\d+)\s+cpu\d+\s+(\S+)", line)
+    if not m:
+        continue
+    if first_op is None:
+        first_op = m.group(1)
+    if insmod is None and re.search(r"MARK\s+'mod COMING'", line):
+        insmod = m.group(1)
+    if first_phy is None and re.match(
+            r"\s*[\d.]+\s+#\d+\s+cpu\d+\s+PHY\.RD\s+addr=0x0*739\s", line):
+        first_phy = m.group(1)
+    if insmod and first_phy:
+        break
+
+start = first_op if flow == 'switch_channel' else first_phy
+print(f"from={start or ''}")
+print(f"oracle={insmod or first_op or ''}")
+PY
+)"
+	[ -n "$from" ] || { echo "$seg: no PHY op"; fail=1; continue; }
+	last=$(grep -oE '#[0-9]+' "$TMP/merged" | tail -1 | tr -d '#')
+
+	# Everything after the bring-up tail is the environment acting on the
+	# driver -- the 1 s watchdog work, the 150 ms radar timer, the core's
+	# template reloads, the bss-up after the CAC -- and the environment
+	# here is the capture: timeline.py lists those events at their
+	# instants and the harness replays them. What the driver does on each
+	# is the driver's. The same pass reads the phase of the watchdog's
+	# 10-turn counter at the segment start, state the driver carries from
+	# before the segment. See timeline.py.
+	sched=$(python3 "$TOOLS/timeline.py" "$TMP/merged" "$TMP/timeline" \
+		2>/dev/null || true)
+
+	# On which of the four conf_tx passes the stack republished the beacon.
+	# See beacon_reloads.py; the other reloads are in the timeline.
+	sched="$sched $(python3 "$TOOLS/beacon_reloads.py" \
+		"$TMP/merged" --sh 2>/dev/null | grep AC_EDCF_RELOADS || true)"
+
+	# phycal_tempdelta, when the capture set it on the instance: the
+	# wlc_ioctl hook records `wl phycal_tempdelta N` as an IOVAR.SET. Older
+	# captures do not have it, and take AC_TEMPDELTA from the caller.
+	tdelta=$(grep -m1 -oE "IOVAR\.SET +name=phycal_tempdelta val=0x[0-9a-f]+" \
+		"$TMP/merged" | grep -oE "0x[0-9a-f]+$" || true)
+	# The TG789vac v2 sweep traces no IOVAR, and its first boot gave every
+	# instance `phycal_tempdelta 40`; the second boot, which took these
+	# four segments, left the NVRAM's 0 (router-data/tg789vac-v2/README.md,
+	# "Reloading wl"). Environment of the capture, not of the driver.
+	if [ -z "$tdelta" ] && [ "$BOARD" = tg789 ] && [ "$COND" = cold ]; then
+		case $base in
+		cold01-*|cold32-*|cold33-*|cold41-*) ;;
+		*) tdelta=40 ;;
+		esac
+	fi
+	[ -n "$tdelta" ] && sched="$sched AC_TEMPDELTA=$tdelta"
+
+	# The SSID length drives the probe-response length, the PLCP of the
+	# eight rates and 0x001e. It is the capture's, not the driver's, and
+	# the capture states it: the first PRSSIDLEN write (OBJ.WR 0x0048).
+	# A segment that does not write it keeps the harness default; a
+	# caller's AC_SSID_LEN wins over both.
+	if [ -z "$AC_SSID_LEN" ]; then
+		ssidlen=$(grep -m1 -oE "OBJ\.WR +addr=0x0048 val=0x[0-9a-f]+" \
+			"$TMP/merged" | grep -oE "0x[0-9a-f]+$" || true)
+		[ -n "$ssidlen" ] && sched="$sched AC_SSID_LEN=$ssidlen"
+	fi
+
+	# MAC.BW is written only by the first segment of each bandwidth: the
+	# others inherit it. The segment knows by itself whether it has it.
+	if grep -q ' MAC\.BW' "$TMP/merged"; then
+		macw=0
+	else
+		macw=$(case $bw in 40) echo 2 ;; 80) echo 3 ;; *) echo 1 ;; esac)
+	fi
+
+	[ "$TABLE" = 1 ] || echo "=== $base (from $from${sched:+, $sched}) ==="
+
+	# shellcheck disable=SC2086
+	if ! env AC_CHANNEL=$ch AC_BW=$bw AC_MAC_WIDTH=$macw \
+	     AC_FIRST_INIT=$FIRST_INIT \
+	     AC_READ_ORACLE="$TMP/merged" AC_READ_ORACLE_FROM=$oracle $sched \
+		"$HERE/ac_trace" "$FLOW" "$BOARD" 2>/dev/null > "$TMP/full"; then
+		if [ "$TABLE" = 1 ]; then
+			printf '%5s %8s %8s %10s %10s %s\n' \
+				"$ch" - - - - "flow failed"
+			continue
+		fi
+		echo "  the flow failed"; fail=1; continue
+	fi
+
+	# A flow that bails out early still produces a score, and that score
+	# looks like a regression of the port rather than a run that never
+	# happened, so it is said.
+	# In --table mode it goes to stderr, because a line on stdout would
+	# break the table; in detail mode it stays on stdout, next to the score
+	# it disclaims -- a reader who redirects stderr away would otherwise see
+	# a 2% score with no explanation of why the run never happened.
+	nport=$(grep -c '^cpu' "$TMP/full" || true)
+	if [ "$nport" -lt 6000 ]; then
+		{
+		echo "  WARNING: the port emitted only $nport ops on ch$ch/bw$bw:"
+		echo "  the flow bailed out early, the score below is not a"
+		echo "  measurement of the port."
+		} >&$([ "$TABLE" = 1 ] && echo 2 || echo 1)
+	fi
+
+	if [ "$TABLE" = 1 ]; then
+		python3 "$TOOLS/sweep_report.py" score \
+			"$TMP/merged" "$TMP/full" "$ch"
+		continue
+	fi
+
+	# The two measures, with the reference tools.
+	#
+	# The line to look at is "grezzo": wl ops reproduced in order over ALL
+	# of wl's, because the goal is for b43 to emit them all, the core's
+	# included. "nel perimetro" removes what the harness cannot emit and
+	# only serves to show the next PHY divergence without stopping at the
+	# first core op -- it is navigation, not a score. The core's debt is in
+	# docs/retrace-todo.md.
+	#
+	# compare.py is the position-by-position comparison, which stops at the
+	# first divergence and gives the context. The two measures are not
+	# comparable: the first tolerates insertions, the second does not.
+	echo "  --- cmp_skip ---"
+	python3 "$HERE/cmp_skip.py" "$TMP/merged" "$TMP/full" \
+		"$from:$last" --board "$BOARD" --led-pins "$LED_PINS" \
+		--min-block "$MIN_BLOCK" --gap-tol "$GAP_TOL" \
+		| grep -E 'grezzo|spostate|nel perimetro|CON  ecce|fuori perimetro|op saltate|valore sbagliato|op di wl mancanti|solo vendor|solo port|invisibili|bulk espanse|blocchi troppo corti'
+	echo "  --- compare ---"
+	python3 "$HERE/compare.py" "$TMP/merged" "$TMP/full" \
+		--range "$from:$last" --auto-align --led-pins "$LED_PINS" \
+		> "$TMP/cmp" || fail=1
+	if [ "$COND" = cold ]; then
+		sed -n '1,4p;/^  @/{p;q}' "$TMP/cmp"
+	else
+		sed -n '/^  @/{p;q}' "$TMP/cmp"
+	fi
+done
+
+exit $fail

@@ -1,0 +1,5 @@
+*.o
+test
+ssbn_sprom_gen.h
+test_nvram
+extract_r11_gen.c

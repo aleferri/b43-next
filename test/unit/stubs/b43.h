@@ -1,0 +1,474 @@
+/* SPDX-License-Identifier: GPL-2.0
+ * Minimal stub of b43-next/b43.h for the
+ * userspace test build. Only the fields and macros touched by the
+ * scratch code we compile are declared; the concrete storage lives in
+ * test/main.c which owns the mock device instance.
+ *
+ * The b43_{phy,radio}_{read,write,mask,maskset,set,read_log,force_clock}
+ * accessors and b43_{read,write,write16f}16 are declared here as extern;
+ * they are provided by wrap.c which emits the wl-diag trace line and
+ * simulates the return value from an in-memory register mirror.
+ */
+#ifndef _STUB_B43_H
+#define _STUB_B43_H
+
+#include <linux/types.h>
+#include <linux/kernel.h>
+
+/* Forward decls used by the header shape. */
+struct b43_wldev;
+struct b43_wl;
+struct b43_phy;
+struct b43_phy_ac;
+struct ieee80211_channel;
+struct ieee80211_hw;
+
+/* Bus discriminator; scratch code checks == B43_BUS_BCMA. */
+enum b43_bus_type {
+	B43_BUS_SSB  = 0,
+	B43_BUS_BCMA = 1,
+};
+
+/* Bands (mac80211 style). */
+enum nl80211_band {
+	NL80211_BAND_2GHZ = 0,
+	NL80211_BAND_5GHZ = 1,
+};
+enum nl80211_channel_type {
+	NL80211_CHAN_NO_HT = 0,
+	NL80211_CHAN_HT20,
+	NL80211_CHAN_HT40MINUS,
+	NL80211_CHAN_HT40PLUS,
+};
+/*
+ * Same order and values as include/uapi/linux/nl80211.h. The previous stub
+ * numbered these from zero without NL80211_CHAN_WIDTH_20_NOHT, so every
+ * value was one below the real one -- harmless while both sides used the
+ * stub, wrong the moment the driver source is read against upstream.
+ */
+enum nl80211_chan_width {
+	NL80211_CHAN_WIDTH_20_NOHT,
+	NL80211_CHAN_WIDTH_20,
+	NL80211_CHAN_WIDTH_40,
+	NL80211_CHAN_WIDTH_80,
+	NL80211_CHAN_WIDTH_80P80,
+	NL80211_CHAN_WIDTH_160,
+};
+
+/* Debug switch used inside b43_phy_read_log macros. */
+#define B43_DEBUG 0
+
+/*
+ * B43_WARN_ON — mirrors b43-next/b43.h upstream:
+ * WARN_ON active when CONFIG_B43_NEXT_DEBUG is set, evaluated-and-dropped
+ * otherwise. Test build follows the DEBUG=0 branch, so it evaluates x
+ * and drops it (keeps -Werror=unused-value quiet).
+ */
+#define B43_WARN_ON(x) ({ int __b43_warn = !!(x); __b43_warn; })
+
+/*
+ * Trimmed mock mac80211 chandef so scratch code can read chan/width.
+ */
+struct cfg80211_chan_def {
+	struct ieee80211_channel *chan;
+	enum nl80211_chan_width width;
+	int center_freq1;
+	int center_freq2;
+};
+
+/*
+ * Subset of the cfg80211 channel flags. Only the one the PHY reads is here.
+ * IEEE80211_CHAN_RADAR is set by cfg80211 from the wiphy's regulatory domain,
+ * on the sub-bands where radar detection is required.
+ */
+#define IEEE80211_CHAN_RADAR	(1 << 3)
+
+struct ieee80211_channel {
+	int band;
+	u16 center_freq;
+	u16 hw_value;
+	/*
+	 * Regulatory ceiling for this channel, in whole dBm, as cfg80211
+	 * fills it from the wiphy's regulatory domain. The TX power
+	 * derivation consumes it; see b43_phy_ac_txpwr_target().
+	 */
+	int max_power;
+	u32 flags;
+};
+
+struct ieee80211_conf {
+	struct cfg80211_chan_def chandef;
+	/* Come in-tree: mac80211 chiede il rilevamento dei radar. */
+	bool radar_enabled;
+};
+
+struct wiphy;
+
+struct ieee80211_hw {
+	struct ieee80211_conf conf;
+	struct wiphy *wiphy;
+};
+
+/*
+ * Per-channel regulatory lookup. Upstream this walks the wiphy's band
+ * definitions; the harness scripts a small table so the per-sub-channel path
+ * can be exercised without a regulatory core.
+ */
+struct ieee80211_channel *ieee80211_get_channel(struct wiphy *wiphy, int freq);
+void b43_test_reg_init(int dflt, const char *map);
+/*
+ * Hook del vendor su wlc_bmac_bw_set. NON e' una scrittura di registro: il suo
+ * equivalente GPL in brcmsmac, brcms_b_bw_set(), fa `pi->bw = bw` piu' un reset
+ * e un init del PHY, e nelle catture fra il record e il prologo radio non c'e'
+ * nessuna scrittura. In b43 la larghezza sta in phy.chandef e la imposta
+ * b43_phy_init(): non c'e' niente da chiamare, e nessun codice del port emette
+ * questa op. Vedi SOLO_VENDOR in test/compare.py.
+ *
+ * Il prototipo resta per non rompere link di scratch che lo usassero.
+ */
+void b43_mac_bw_set(struct b43_wldev *dev, u32 bw);
+void b43_test_oracle_coverage_report(void);
+
+/*
+ * SROM rev 11 per-chain power info. Exactly the shape defined by
+ * bcma/include/ssb-next/ssbn.h —
+ * keep field order/types byte-identical so this stub interoperates
+ * with anything using the same offsets.
+ */
+struct ssbn_sprom_core_pwr_info {
+	u8 itssi_2g, itssi_5g;
+	u8 maxpwr_2g, maxpwr_5gl, maxpwr_5g, maxpwr_5gh;
+	u16 pa_2g[4], pa_5gl[4], pa_5g[4], pa_5gh[4];
+	/* rev 11 additions */
+	u8 maxp2ga;
+	u8 maxp5ga[4];
+	u16 pa2ga[3];
+	u16 pa5ga[12];
+};
+
+/*
+ * Rev-11 per-rate power offsets, as added to struct ssbn_sprom in
+ * bcma/include/ssb-next/ssbn.h. Four u32 per
+ * band in the real layout (20/40/80/160 MHz); only the two the TX power
+ * derivation consumes are mirrored here.
+ */
+struct ssbn_sprom_rxgains {
+	u8 elnagain[3];
+	u8 triso[3];
+	u8 trelnabyp[3];
+};
+
+/*
+ * Bus-level device abstraction. On real hardware this is either
+ * struct bcmn_device or struct ssbn_device wrapped in b43_bus_dev; here
+ * we hold only the fields the scratch code reads.
+ */
+#define WRITE_ONCE(x, val)	((x) = (val))
+#define READ_ONCE(x)		(x)
+
+struct ssbn_sprom {
+	u8 il0mac[6];		/* MAC address of the 802.11 core */
+	/*
+	 * Offset di potenza per-rate a 5 GHz, per sotto-banda e larghezza.
+	 * Nomi e forma sono quelli di
+	 * bcma/include/ssb-next/ssbn.h -- campi piatti, non un array di struct.
+	 */
+	u32 mcsbw205glpo, mcsbw405glpo, mcsbw805glpo;
+	u32 mcsbw205gmpo, mcsbw405gmpo, mcsbw805gmpo;
+	u32 mcsbw205ghpo, mcsbw405ghpo, mcsbw805ghpo;
+	/* The same at 2.4 GHz, 20 and 40 MHz, and the CCK rates' nibbles. */
+	u32 mcsbw202gpo, mcsbw402gpo;
+	u16 cckbw202gpo;
+	/* Antenna gain per band, quarter-dB, SROM ag0/ag1. Index 1 is 5 GHz. */
+	u16 pdoffset40ma[3];
+	u16 pdoffset80ma[3];
+	u8 pdoffset2g40ma[3];	/* 4 bit, con segno */
+	u8 pdoffset2g40mvalid;
+	u16 rpcal2g;
+	u16 rpcal5gb[4];
+	s8 antenna_gain_qdb[2];
+	u16 mcslr5gpo[3];
+	u16 sb20in40hrpo;
+	u16 sb20in40lrpo;
+	u16 sb20in80and160hr5gpo[3];
+	u16 sb20in80and160lr5gpo[3];
+	u16 sb40and80hr5gpo[3];
+	u16 sb40and80lr5gpo[3];
+	u16 dot11agduphrpo;
+	u16 dot11agduplrpo;
+
+	u8 revision;
+	u16 boardflags_lo, boardflags_hi;
+	u16 boardflags2_lo, boardflags2_hi;
+	u8 rxchain;
+	u8 txchain;
+	u8 subband;
+	u8 subband5gver;
+	/* LED behaviour per GPIO pin: ledbh0-3 dalla SROM, 4-15 dalla NVRAM
+	 * (gpio_ext[] e' in bcma/include/ssb-next/ssbn.h). Il PHY non li legge; stanno qui perche'
+	 * board_profile.h li riempie per la suite di integrazione. */
+	u8 gpio0, gpio1, gpio2, gpio3;
+	u8 gpio_ext[12];
+	/* boardflags3 e AvVmid_c0..2 dalla NVRAM, come in bcma/. */
+	u32 boardflags3;
+	u8 avvmid[3][5][2];
+	u8 avvmid_valid;
+	/* Blocco FEM/PA (SROM11_FEM_CFG1/2), decodificato come in bcma. */
+	u8 tssiposslope2g, epagain2g, pdgain2g, tworangetssi2g, papdcap2g, femctrl;
+	u8 tssiposslope5g, epagain5g, pdgain5g, tworangetssi5g, papdcap5g, gainctrlsph;
+	/* Campi della temperatura, gia' in ssb.h upstream. */
+	u8 tempthresh, tempoffset;
+	u8 phycal_tempdelta, temps_period, temps_hysteresis;
+	u16 tssifloor2g;
+	u16 tssifloor5g[4];
+	struct ssbn_sprom_core_pwr_info core_pwr_info[4];
+	struct ssbn_sprom_rxgains rxgains_2g;
+	struct ssbn_sprom_rxgains rxgains_5gl;
+	struct ssbn_sprom_rxgains rxgains_5gm;
+	struct ssbn_sprom_rxgains rxgains_5gh;
+	/* extend on demand */
+};
+
+struct bcmn_drv_cc { int _dummy; };
+struct bcmn_bus    { struct bcmn_drv_cc drv_cc; };
+struct bcmn_device { struct bcmn_bus *bus; };
+
+struct b43_bus_dev {
+	enum b43_bus_type bus_type;
+	u16 chip_id;
+	u16 board_type;	/* come in-tree (bus.h) */
+	struct ssbn_sprom *bus_sprom;
+	struct bcmn_device *bdev;   /* only meaningful when bus_type==BCMA */
+};
+
+/*
+ * Radio version constants (only the bits the code compares are used).
+ */
+#define B43_PHYTYPE_AC		0x0b
+
+struct b43_phy {
+	/*
+	 * Larghezza e canale correnti. In b43 li punta b43_phy_init() alla
+	 * config dell'hardware, prima di switch_analog() e di
+	 * b43_software_rfkill(), e b43_op_config() li ripunta a ogni cambio di
+	 * canale; b43_is_40mhz() legge da qui. L'harness lo fa in mount_board(),
+	 * cosi' il codice del PHY vede lo stesso oggetto.
+	 */
+	const struct cfg80211_chan_def *chandef;
+	/*
+	 * Tipo e revisione del PHY, che b43 pubblica in shared memory per
+	 * l'ucode; vedi b43_phy_ac_shm_readback_block().
+	 */
+	u8  type;
+	u8  rev;
+	u16 radio_ver;
+	u8  radio_rev;
+	struct b43_phy_ac *ac;
+	/* Some scratch code touches phy.dacbuf_cap / phy.lpf_cap directly. */
+	u8 dacbuf_cap;
+	u8 lpf_cap;
+	/* Come in-tree: il limite di potenza da mac80211, in dBm. */
+	int desired_txpower;
+	/*
+	 * Primo bring-up contro bring-up successivo. In-tree lo gestisce
+	 * b43_phy_init(): true fino al primo ops->init riuscito. Qui lo imposta
+	 * il flow, cosi' lo stesso codice si misura contro una cattura attach
+	 * o contro una down->up.
+	 */
+	bool do_full_init;
+};
+
+struct b43_wl {
+	struct ieee80211_hw *hw;
+	u8 radar_region;
+};
+
+/* Come in-tree (b43.h). */
+struct b43_shm_layout {
+	u16 mac_cfg;
+	bool mac_cfg_0020;
+	bool mac_cfg_16;
+	u16 cts_duration;
+	bool cts_suspended;
+	u16 txerr;
+};
+
+struct b43_wldev {
+	struct b43_bus_dev *dev;
+	/* Come in-tree: profondita' di annidamento di b43_mac_suspend. */
+	int mac_suspended;
+	struct b43_wl *wl;
+	struct b43_phy phy;
+	/* Come in-tree: il channel availability check tiene ferma la TX. */
+	bool cac_pending;
+	/* Come in-tree: l'AP rileva i radar, il detector e' armato. */
+	bool radar_arm;
+	/* Come in-tree: la disposizione della shared memory della microcode. */
+	struct {
+		const struct b43_shm_layout *shm;
+	} fw;
+};
+
+/*
+ * Log macros. Route everything to stderr so it does not interleave
+ * with the wl-diag trace on stdout.
+ */
+#define b43dbg(wl, fmt, ...)  fprintf(stderr, "b43dbg: "  fmt, ##__VA_ARGS__)
+#define b43info(wl, fmt, ...) fprintf(stderr, "b43info: " fmt, ##__VA_ARGS__)
+#define b43warn(wl, fmt, ...) fprintf(stderr, "b43warn: " fmt, ##__VA_ARGS__)
+#define b43err(wl, fmt, ...)  fprintf(stderr, "b43err: "  fmt, ##__VA_ARGS__)
+
+/*
+ * Low-level hardware accessors -- provided by wrap.c. On real hardware
+ * these live in main.c / phy_common.c.
+ */
+u16  b43_phy_read(struct b43_wldev *dev, u16 reg);
+void b43_phy_write(struct b43_wldev *dev, u16 reg, u16 val);
+void b43_phy_mask(struct b43_wldev *dev, u16 reg, u16 mask);
+void b43_phy_set(struct b43_wldev *dev, u16 reg, u16 val);
+void b43_phy_maskset(struct b43_wldev *dev, u16 reg, u16 mask, u16 set);
+void b43_phy_force_clock(struct b43_wldev *dev, bool force);
+void b43_phy_bw_clk_set(struct b43_wldev *dev, u32 bits);
+
+u16  b43_radio_read(struct b43_wldev *dev, u16 reg);
+void b43_radio_write(struct b43_wldev *dev, u16 reg, u16 val);
+void b43_radio_mask(struct b43_wldev *dev, u16 reg, u16 mask);
+void b43_radio_set(struct b43_wldev *dev, u16 reg, u16 val);
+void b43_radio_maskset(struct b43_wldev *dev, u16 reg, u16 mask, u16 set);
+
+u16  b43_read16(struct b43_wldev *dev, u16 offset);
+u32  b43_read32(struct b43_wldev *dev, u16 offset);
+void b43_write32(struct b43_wldev *dev, u16 offset, u32 val);
+void b43_write16(struct b43_wldev *dev, u16 offset, u16 val);
+void b43_write16f(struct b43_wldev *dev, u16 offset, u16 val);
+
+/* SHM (ucode shared memory) -- kernel: b43/main.h; il tracer li emette
+ * come OBJ.RD/OBJ.WR (implementazione in wrap.c). */
+#define B43_SHM_SHARED 0x0001
+#define B43_SHM_SCRATCH 0x0002
+#define B43_SHM_SC_MINCONT 0x0003
+#define B43_SHM_SC_MAXCONT 0x0004
+#define B43_SHM_SC_SRLIMIT 0x0006
+#define B43_SHM_SC_LRLIMIT 0x0007
+u16  b43_shm_read16(struct b43_wldev *dev, u16 routing, u16 offset);
+void b43_shm_write16(struct b43_wldev *dev, u16 routing, u16 offset, u16 val);
+
+/* MAC gating -- no-op in test (state mask in b43_phy_ac tracks the bit). */
+void b43_mac_enable(struct b43_wldev *dev);
+void b43_mac_suspend(struct b43_wldev *dev);
+void b43_mac_suspend_enable(struct b43_wldev *dev);
+void b43_mac_phy_clock_set(struct b43_wldev *dev, bool on);
+
+/*
+ * Master Host Feature maskset — helper AC-PHY-specifico.
+ *
+ * b43 mainline ha `void b43_hf_write(struct b43_wldev *dev, u64 value)`
+ * che scrive 3 word MHF (SHM HOSTF1/2/3, slot 0-2). Il blob vendor AC-PHY
+ * usa 5 slot (0-4) e ha una semantica maskset atomica visibile al tracer
+ * WL-diag come `MAC.MHF addr=<slot> val=<val> mask=<mask>`.
+ *
+ * L'implementazione reale è in b43/helpers_phy_ac.c e fa r/m/w SHM sui
+ * registri B43_SHM_SH_HOSTFn (tutti già definiti nel kernel b43.h). Nel
+ * test env il --wrap del linker intercetta la chiamata prima che raggiunga
+ * l'implementazione.
+ *
+ * slot: 0..4  (0 = HOSTF1, 4 = HOSTF5)
+ * mask: bit da preservare (~mask sono i bit modificati)
+ * val:  valore dei bit modificati
+ */
+void b43_phy_ac_mhf_maskset(struct b43_wldev *dev,
+			    u16 slot, u16 mask, u16 val);
+
+/* Generic switch-analog helper called by ops. */
+void b43_phyop_switch_analog_generic(struct b43_wldev *dev, bool on);
+
+/* Band query. Backed by a mutable global in wrap.c. */
+enum nl80211_band b43_current_band(struct b43_wl *wl);
+
+/* Generic PHY init (used by phy_common as a fallback). */
+int b43_phy_init(struct b43_wldev *dev);
+
+/* Kernel helper used by chan-def code. */
+static inline enum nl80211_channel_type
+cfg80211_get_chandef_type(const struct cfg80211_chan_def *c)
+{
+	(void)c;
+	return NL80211_CHAN_NO_HT;
+}
+
+/*
+ * bcma chipcommon accessors used by phy_ac op_init / op_software_rfkill /
+ * set_channel. Real bodies live in bcma-next/driver_chipcommon*.c.
+ * In the test build we provide no-op logging stubs in wrap.c that record
+ * the call in the trace stream and return 0.
+ */
+u32 bcmn_chipco_gpio_out(struct bcmn_drv_cc *cc, u32 mask, u32 value);
+u32 bcmn_chipco_gpio_outen(struct bcmn_drv_cc *cc, u32 mask, u32 value);
+u32 bcmn_chipco_gpio_control(struct bcmn_drv_cc *cc, u32 mask, u32 value);
+#ifndef BCMN_CC_PMU_PLL_CTL3
+#define BCMN_CC_PMU_PLL_CTL3 3
+#endif
+u32 bcmn_chipco_pll_read(struct bcmn_drv_cc *cc, u32 offset);
+void b43_test_pll_set(u32 offset, u32 val);
+void bcmn_chipco_regctl_maskset(struct bcmn_drv_cc *cc, u32 offset,
+				u32 mask, u32 set);
+#define BCMN_CC_CHIPCTL 0x0028
+void bcmn_cc_set32(struct bcmn_drv_cc *cc, u16 offset, u32 set);
+void bcmn_cc_mask32(struct bcmn_drv_cc *cc, u16 offset, u32 mask);
+
+enum bcmn_clkmode {
+	BCMN_CLKMODE_FAST,
+	BCMN_CLKMODE_DYNAMIC,
+};
+void bcmn_core_set_clockmode(struct bcmn_device *core,
+			     enum bcmn_clkmode clkmode);
+
+/* SPROM boardflags_lo, as in b43.h. */
+#define B43_BFL_BTCOEXIST	0x0001
+
+/* MMIO offsets touched via b43_write16/b43_read16 in scratch. */
+#define B43_MMIO_PHY_CONTROL      0x3FC
+#define B43_MMIO_PHY_DATA         0x3FE
+#define B43_MMIO_RADIO24_CONTROL  0x1F8
+#define B43_MMIO_RADIO24_DATA     0x1FA
+
+/*
+ * Celle di shared memory delle cinque word di host flag, e MACCTL: valori del
+ * b43.h del kernel, serviti qui perche' helpers_phy_ac.c ora e' nel link (le
+ * sue decisioni, non solo la sua etichetta, sono cio' che il confronto
+ * verifica).
+ */
+#define B43_SHM_SH_HOSTF1         0x005E
+#define B43_SHM_SH_RADAR          0x0066
+#define B43_HF_RADARW             0x2000
+#define B43_SHM_SH_HOSTF2         0x0060
+#define B43_SHM_SH_HOSTF3         0x0062
+#define B43_SHM_SH_HOSTF4         0x0078
+#define B43_SHM_SH_HOSTF5         0x00D4
+#define B43_SHM_SH_RFATT          0x0064
+#define B43_SHM_SH_CHAN           0x00A0
+#define B43_SHM_SH_CTS_DURATION   0x00B8
+#define B43_SHM_SH_SLOTT          0x0010
+#define B43_SHM_SH_PRETBTT        0x0096
+#define B43_SHM_SH_TXCORE_AC      0x05D4
+#define B43_MMIO_MACCTL           0x120
+#define B43_MACCTL_ENABLED        0x00000001	/* b43.h */
+#define B43_MACCTL_PSM_RUN        0x00000002	/* b43.h */
+#define B43_MACCTL_PSM_JMP0       0x00000004	/* b43.h */
+#define B43_MACCTL_IHR_ENABLED    0x00000400	/* b43.h */
+#define B43_MACCTL_GPOUTSMSK      0x0000C000	/* b43.h */
+#define B43_MACCTL_INFRA          0x00020000	/* b43.h */
+#define B43_MACCTL_AP             0x00040000	/* b43.h */
+#define B43_MACCTL_AWAKE          0x04000000	/* b43.h */
+#define B43_MMIO_PHY0             0x3E6
+#define B43_MMIO_PSM_PHY_HDR      0x492
+#define B43_PSM_HDR_MAC_PHY_CLOCK_EN	0x00000002
+#define B43_PSM_HDR_MAC_PHY_FORCE_CLK	0x00000004
+#define B43_BCMA_IOCTL_PHY_BW_20MHZ	0x00000040
+#define B43_BCMA_IOCTL_PHY_BW_40MHZ	0x00000080
+#define B43_BCMA_IOCTL_PHY_BW_80MHZ	0x000000C0
+#define B43_DMA64_TXSUSPEND       0x00000002	/* dma.h */
+#define B43_MMIO_MACCMD           0x124
+#define B43_MACCMD_BGNOISE        0x00000010
+
+#endif /* _STUB_B43_H */

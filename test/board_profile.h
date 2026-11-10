@@ -1,0 +1,751 @@
+/* SPDX-License-Identifier: GPL-2.0 */
+/*
+ * Profili di board condivisi fra le due suite.
+ *
+ * Stavano in unit/main.c e l'integrazione non li aveva affatto: girava con la
+ * SROM azzerata, quindi con femctrl=0 -- che il driver segnala -- rxchain=0,
+ * coremask=0, subband5gver=0 e le tabelle pa5ga/maxp5ga tutte a zero. Ogni
+ * misura fatta la' sopra era su una board che non esiste.
+ *
+ * Sono la stessa board, quindi il profilo sta in un posto solo. Ogni suite lo
+ * monta a modo suo: `unit` ha una struct ssbn_sprom di stub, `integration` ha
+ * quella vera degli header del kernel, e i nomi dei campi coincidono perche' i
+ * campi rev-11 li aggiunge bcma/include/ssb-next/ssbn.h con quei nomi.
+ */
+#ifndef B43_TEST_BOARD_PROFILE_H_
+#define B43_TEST_BOARD_PROFILE_H_
+
+/* Board profile. Extend when adding more targets (DSL-3580L is identical
+ * to D6220 chip-wise; agcombo needs num_cores=3, coremask=0x7). */
+struct board_profile {
+	const char *name;
+	u16 chip_id;
+	/* chiprev e deviceid PCI, da `wl revinfo`: b43 legge il secondo per
+	 * decidere le bande, e l'integrazione li monta su chipinfo e host_pci. */
+	u8  chip_rev;
+	u16 pci_device;
+	u8  radio_rev;
+	u16 radio_ver;
+	u8  phy_rev;
+	u8  num_cores;
+	u8  coremask;
+	u8  rxchain;
+	u8  subband5gver;
+	/* Word raw del blocco FEM/PA, come lette dai dump SROM. */
+	u16 fem_cfg1;
+	u16 fem_cfg2;
+	/* Word raw della temperatura: 87 (tempthresh, tempoffset) e 92
+	 * (phycal_tempdelta, temps_period, temps_hysteresis). */
+	u16 thermal;
+	u16 tempdelta;
+	u16 tssifloor5g[4];
+	/* pa5ga per-core (3 core), 12 u16 = 4 gruppi (5g band) × 3 (a1,b0,b1).
+	 * Dal file NVRAM del router, keys pa5ga0/pa5ga1/pa5ga2. Se tutti 0,
+	 * mount_board lascia pa5ga = 0 (il caller cade sui pwrdet_def).
+	 */
+	u16 pa5ga[3][12];
+	/* maxp5ga per-core (3 core), 4 sub-band u8. NVRAM keys maxp5ga{0,1,2}.
+	 * Drives the per-core max TX index (maxp5ga[grp] - margin). */
+	u8 maxp5ga[3][4];
+	/* Antenna gain, raw NVRAM encoding (agbg0, aga0): whole dB in bits
+	 * [5:0], quarter dB in bits [7:6]. The 5 GHz value is what the
+	 * regulatory ceiling subtracts from an EIRP limit; on the d6220 and
+	 * agcombo aga0..2 are all 133, so which of the three wl reads does not
+	 * matter there. */
+	u8 antgain_raw[2];
+	/*
+	 * ChipCommon at reset, as bcma's chipcommon and PMU init read it:
+	 * capabilities, capabilities_ext, chipstatus and pmucapabilities.
+	 * Zero leaves the PMU out of the harness's bcma init. macbook and
+	 * archer: their own attach captures. agcombo and tg789: the MacBook's,
+	 * chipstatus included, so their PMU branch (bit 5) is the MacBook's.
+	 */
+	u32 cc_caps, cc_capext, cc_chipstatus, pmu_caps;
+	/* Power-detector offsets per chain, one nibble per pa5g sub-band; NVRAM
+	 * pdoffset40ma{0,1,2} and pdoffset80ma{0,1,2}; at 2.4 GHz one 4-bit
+	 * value per chain, pdoffset2g40ma{0,1,2}, unused when
+	 * pdoffset2g40mvalid is set. Feed table 0x21. */
+	u16 pdoffset40ma[3];
+	u16 pdoffset80ma[3];
+	u8 pdoffset2g40ma[3];
+	u8 pdoffset2g40mvalid;
+	/* rpcal2g and rpcal5gb0..3: SROM words 182, 183, 190, 191, 198. */
+	u16 rpcal[5];
+	/* mcsbw{20,40}5g{l,m,h}po, NVRAM. Index 0 = 5gl, 1 = 5gm, 2 = 5gh. */
+	u32 mcsbw5g_po[3][3];	/* [sotto-banda][bw20, bw40, bw80] */
+	/* rxgains_5gl per-core (3 core). NVRAM keys rxgains5gelnagaina{0,1,2}
+	 * e rxgains5gtrisoa{0,1,2}. Usati per computare hdr = (elnagain+3)<<1
+	 * e gainctx = ((triso+4)<<1)+2 nel body Phase 3 di noise-shaping. */
+	u8 rxgains_5gl_elnagain[3];
+	u8 rxgains_5gl_triso[3];
+	/* rxgains5gh per core, with trelnabyp: the SROM boards have the byte
+	 * erased, 7/15/1; the R7000 programs it in NVRAM. */
+	u8 rxgains_5gh_elnagain[3];
+	u8 rxgains_5gh_triso[3];
+	u8 rxgains_5gh_trelnabyp[3];
+	/* The 2.4 GHz fields, per core: pa2ga (a1, b0, b1) and rxgains 2g. Only
+	 * the archer profile carries them; the routers are zero there. */
+	u16 pa2ga[3][3];
+	/* 2.4 GHz power: maxp2ga per core, mcsbw{20,40}2gpo, cckbw202gpo. */
+	u8 maxp2ga[3];
+	u32 mcsbw2g_po[2];
+	u16 cckbw202gpo;
+	u8 rxgains_2g_elnagain[3];
+	u8 rxgains_2g_triso[3];
+	u8 rxgains_2g_trelnabyp[3];
+	/* R2069_RCCAL_E/F (radio 0x0414/0x0415) read by rccal in op_init to
+	 * derive lpf_cap = ((F-E)*193)>>8. Per-board because it is an analog
+	 * measurement, not a constant. */
+	u16 rccal_e, rccal_f;
+	/* R2069_RCCAL_G (radio 0x0416), read post-apply: dacbuf_cap =
+	 * (rccal_g & 0x03e0) >> 5. Per-board analog measurement. */
+	u16 rccal_g;
+	/* macaddr dell'NVRAM. Lo consuma emit_core_shm_macaddr(), che sta in
+	 * piedi per il core: e' dato di board, non una costante. */
+	u8 macaddr[6];
+	/* Revisione del core 802.11 e MAC_HW_CAP. Li consuma
+	 * emit_core_shm_chipinit(): b43 li scrive in shared memory al core
+	 * init, il primo da dev->dev->core_rev e il secondo da una lettura
+	 * MMIO di B43_MMIO_MAC_HW_CAP che l'harness non modella. */
+	u16 core_rev;
+	u32 mac_hw_cap;
+	/* boardflags, boardflags2, boardflags3: SROM words 66-71 on rev 11. */
+	u32 boardflags, boardflags2, boardflags3;
+	/* LED behaviour per GPIO pin: 0-3 from SROM ledbh0-3 (words 77-78 on
+	 * rev 11), 4-15 from NVRAM ledbh4..15. 0xff is "no field", and on
+	 * 0-3 it is what selects b43's defaults, as it does the stock
+	 * driver's. Consumed by leds.c; the pins end up in b43_gpio_init(). */
+	u8 ledbh[16];
+	/* Revision of the microcode the board's wl runs; 0 for 7.14's, 928. */
+	u16 ucode;
+};
+
+/*
+ * D6220 SPROM values from router-data/d6220/wl1_nvram.txt:
+ *   subband5gver=0x4
+ *   pa5ga0=0xff33,0x175b,0xfd32,0xff23,0x1672,0xfd36,0xff25,0x161d,0xfd4b,0xff2d,0x16c3,0xfd3b
+ *   pa5ga1=0xff2e,0x1702,0xfd39,0xff23,0x16ae,0xfd30,0xff44,0x180e,0xfd36,0xff36,0x16b0,0xfd55
+ *   pa5ga2=0xff6e,0x15dc,0xfd61,0xff59,0x15be,0xfd49,0xff5d,0x15f7,0xfd4a,0xff3d,0x1560,0xfd33
+ * Per ch36 (5180 MHz) con subband5gver=4 → grp=0, a1/b0/b1 = pa5ga0[0..2].
+ */
+static const struct board_profile PROFILE_D6220 = {
+	/* boardflags, boardflags2, boardflags3 (NVRAM). */
+	.boardflags = 0x10000000, .boardflags2 = 0x2, .boardflags3 = 0x0,
+	/* rpcal2g, rpcal5gb0..3 = 0, 299, 297, 297, 65342 (NVRAM and SROM). */
+	.rpcal = { 0x0000, 0x012b, 0x0129, 0x0129, 0xff3e },
+	.name = "d6220", .chip_id = 0x4352, .radio_rev = 4,
+	.chip_rev = 0x3, .pci_device = 0x43b3,
+	/* macaddr=00:00:00:00:00:03 (wl1_nvram.txt) */
+	.macaddr = { 0x00, 0x00, 0x00, 0x00, 0x00, 0x03 },
+	/* WLCOREREV e MACHW_L/H come li scrive il vendor: cold01 #652-#654 */
+	.core_rev = 42, .mac_hw_cap = 0x30518c05,
+	/* SROM words 77-78 = 0xffff; NVRAM ledbh10=0x88: gpio 10, active-low,
+	 * activity. Together with the gpio 0-2 defaults this is the 0x407
+	 * the vendor writes on the chipcommon. */
+	.ledbh = { [0] = 0xff, [1] = 0xff, [2] = 0xff, [3] = 0xff,
+		   [10] = 0x88 },
+	.radio_ver = 0x2069, .phy_rev = 1,
+	.num_cores = 3, .coremask = 0x3, .rxchain = 3,
+	.subband5gver = 0x4,
+	.fem_cfg1     = 0x30a1,
+	.fem_cfg2     = 0x00a1,
+	.thermal      = 0xffff,
+	.tempdelta    = 0xffff,
+	/* word 96..99 = 0xffff, mascherate 0x03ff: campo non programmato. */
+	.tssifloor5g  = { 0x3ff, 0x3ff, 0x3ff, 0x3ff },
+	.pa5ga = {
+		{ 0xff33, 0x175b, 0xfd32, 0xff23, 0x1672, 0xfd36,
+		  0xff25, 0x161d, 0xfd4b, 0xff2d, 0x16c3, 0xfd3b },
+		{ 0xff2e, 0x1702, 0xfd39, 0xff23, 0x16ae, 0xfd30,
+		  0xff44, 0x180e, 0xfd36, 0xff36, 0x16b0, 0xfd55 },
+		{ 0xff6e, 0x15dc, 0xfd61, 0xff59, 0x15be, 0xfd49,
+		  0xff5d, 0x15f7, 0xfd4a, 0xff3d, 0x1560, 0xfd33 },
+	},
+	/* rxgains5gelnagaina{0,1,2}=3, rxgains5gtrisoa{0,1,2}=6 (NVRAM d6220). */
+	.rxgains_5gl_elnagain = { 3, 3, 3 },
+	.rxgains_5gl_triso    = { 6, 6, 6 },
+	.rxgains_5gh_elnagain = { 7, 7, 7 },
+	.rxgains_5gh_triso    = { 15, 15, 15 },
+	.rxgains_5gh_trelnabyp = { 1, 1, 1 },
+	/* No RETVAL in the d6220 capture (older tracer): the observed TXLPF
+	 * write lo=0x50db fixes cap=0xa8, hence F-E=0xdf. Absolute E is taken
+	 * as comparator-A 0x0ac7; only the difference feeds the cap. */
+	.rccal_e = 0x0ac7, .rccal_f = 0x0ba6,
+	/* No RETVAL on d6220: dacbuf_cap 0xe deduced from the observed
+	 * 0x0b2e; rccal_g chosen so (g & 0x3e0)>>5 = 0xe. */
+	.rccal_g = 0x01c0,
+	/* maxp5ga{0,1,2} (NVRAM d6220). */
+	.maxp5ga = {
+		{ 72, 70, 86, 0 },
+		{ 72, 70, 86, 0 },
+		{ 76, 76, 76, 76 },
+		},
+	.antgain_raw = { 71, 133 },
+	.pdoffset40ma = { 0x3222, 0x3222, 0x3222 },
+	.pdoffset80ma = { 0, 0, 0 },
+	.mcsbw5g_po = {
+		/* mcsbw{20,40,80}5g{l,m,h}po di wl1_nvram.txt */
+		{ 0x20000000, 0x21000000, 0x32222222 },
+		{ 0x11111111, 0x10000000, 0x22222222 },
+		{ 0x98764200, 0x98764200, 0xa8764222 },
+	},
+};
+
+static const struct board_profile PROFILE_AGCOMBO = {
+	/* boardflags, boardflags2, boardflags3 (NVRAM). */
+	.boardflags = 0x10000000, .boardflags2 = 0x2, .boardflags3 = 0x0,
+	/* rpcal2g, rpcal5gb0..3 from the agcombo NVRAM. */
+	.rpcal = { 0x0000, 0x172b, 0x1823, 0x1021, 0x1c30 },
+	.name = "agcombo", .chip_id = 0x4360, .radio_rev = 4,
+	.cc_caps = 0x58680001, .cc_capext = 0x00000003,
+	.cc_chipstatus = 0x0000024d, .pmu_caps = 0x10a22b11,
+	.chip_rev = 0x3, .pci_device = 0x43a2,
+	/* macaddr=00:c0:02:01:07:24 (vd625-agcombo/wl1_nvram.txt) */
+	.macaddr = { 0x00, 0xc0, 0x02, 0x01, 0x07, 0x24 },
+	.core_rev = 42, .mac_hw_cap = 0x30518c05,
+	/*
+	 * Blocco FEM/PA sintetizzato dalla NVRAM agcombo con le maschere
+	 * canoniche (SROM11_FEM_CFG1/2): femctrl=6 pdgain=10 tssiposslope=1,
+	 * il resto a zero -- gli stessi valori del d6220, quindi stesse word.
+	 * Il dump SROM agcombo in repo e' tutto a zero, quindi la sorgente e'
+	 * la NVRAM. Senza questo il guard su femctrl scattava e la tabella di
+	 * controllo FEM non veniva scritta su questa board.
+	 */
+	.fem_cfg1 = 0x30a1, .fem_cfg2 = 0x00a1,
+	/* Dall'NVRAM: tempthresh=255 tempoffset=255, phycal_tempdelta=255
+	 * temps_period=15 temps_hysteresis=15, cioe' tutto non programmato. */
+	.thermal = 0xffff, .tempdelta = 0xffff,
+	.tssifloor5g = { 0x3ff, 0x3ff, 0x3ff, 0x3ff },
+	.radio_ver = 0x2069, .phy_rev = 1,
+	/* NVRAM ledbh10=0x88 as on the D6220. vd625-agcombo/wl1_srom.txt is all zeros
+	 * from word 48 on, so ledbh0-3 are not readable there; 0xff follows
+	 * the 0x407 the vendor writes, which needs the gpio 0-2 defaults. */
+	.ledbh = { [0] = 0xff, [1] = 0xff, [2] = 0xff, [3] = 0xff,
+		   [10] = 0x88 },
+	.num_cores = 3, .coremask = 0x7, .rxchain = 7,
+	.subband5gver = 0x4,
+	/* pa5ga{0,1,2} (NVRAM agcombo). */
+	.pa5ga = {
+		{ 0xff3e, 0x167e, 0xfd20, 0xff80, 0x17e5, 0xfd50,
+		  0xff3d, 0x16fd, 0xfd02, 0xff4c, 0x16bb, 0xfd29 },
+		{ 0xff4f, 0x1693, 0xfd26, 0xff6a, 0x17a6, 0xfd1e,
+		  0xff4c, 0x171f, 0xfd0d, 0xff5a, 0x1724, 0xfd27 },
+		{ 0xff70, 0x1805, 0xfd2f, 0xff63, 0x17e4, 0xfd1b,
+		  0xff60, 0x17ae, 0xfd1b, 0xff67, 0x1840, 0xfd13 },
+	},
+	/* Same 5gl values as d6220 (NVRAM agcombo). */
+	.rxgains_5gl_elnagain = { 3, 3, 3 },
+	.rxgains_5gl_triso    = { 6, 6, 6 },
+	.rxgains_5gh_elnagain = { 7, 7, 7 },
+	.rxgains_5gh_triso    = { 15, 15, 15 },
+	.rxgains_5gh_trelnabyp = { 1, 1, 1 },
+	/* Real E/F from the agcombo rescan RETVALs -> cap=0xae. */
+	.rccal_e = 0x0adc, .rccal_f = 0x0bc4,
+	.rccal_g = 0x01a8,  /* -> dacbuf_cap 0xd */
+	/* maxp5ga{0,1,2} (NVRAM agcombo). */
+	.maxp5ga = {
+		{ 74, 74, 82, 82 },
+		{ 74, 74, 82, 82 },
+		{ 74, 74, 82, 82 },
+		},
+	.antgain_raw = { 71, 133 },
+	.pdoffset40ma = { 0x3222, 0x3222, 0x3222 },
+	.pdoffset80ma = { 0x0100, 0x0100, 0x0100 },
+	.mcsbw5g_po = {
+		/*
+		 * mcsbw{20,40,80}5g{l,m,h}po di vd625-agcombo/wl1_nvram.txt, che li porta
+		 * in esadecimale. Su questa board le tre larghezze hanno la
+		 * stessa word: 5gl e 5gm a 0x88644220, 5gh a 0xcca88440.
+		 */
+		{ 0x88644220, 0x88644220, 0x88644220 },
+		{ 0x88644220, 0x88644220, 0x88644220 },
+		{ 0xcca88440, 0xcca88440, 0xcca88440 },
+	},
+};
+
+/*
+ * DSL-3580L: BCM4352 radio (like the D6220) on a BCM6362 SoC, wl 6.30.102.7.
+ * NVRAM from router-data/dsl3580l/wl1_nvram.txt: aa5g/txchain/rxchain=3
+ * (coremask 0x3, two active cores like the D6220), subband5gver=0x4,
+ * maxp5ga{0,1,2}=76,76,76,76, rxgains 5gl elnagain=3/triso=6, pa5ga per-core
+ * below. Same chip as the D6220 but older wl, so it is the version witness.
+ */
+static const struct board_profile PROFILE_DSL = {
+	/* boardflags, boardflags2, boardflags3 (NVRAM). */
+	.boardflags = 0x10000000, .boardflags2 = 0x2, .boardflags3 = 0x0,
+	.name = "dsl", .chip_id = 0x4352, .radio_rev = 4,
+	.ucode = 784,
+	/* deviceid dalla lista PCI di router_info.txt; il chiprev di wl1 non
+	 * e' in nessun dump, e' quello del D6220, stesso chip. */
+	.chip_rev = 0x3, .pci_device = 0x43b3,
+	.radio_ver = 0x2069, .phy_rev = 1,
+	/* Same SROM words and the same ledbh10=0x88 as the D6220. */
+	.ledbh = { [0] = 0xff, [1] = 0xff, [2] = 0xff, [3] = 0xff,
+		   [10] = 0x88 },
+	.num_cores = 3, .coremask = 0x3, .rxchain = 3,
+	.subband5gver = 0x4,
+	.fem_cfg1     = 0x30a1,
+	.fem_cfg2     = 0x00a1,
+	.thermal      = 0xffff,
+	.tempdelta    = 0xffff,
+	/* word 96..99 = 0xffff, mascherate 0x03ff: campo non programmato. */
+	.tssifloor5g  = { 0x3ff, 0x3ff, 0x3ff, 0x3ff },
+	.pa5ga = {
+		{ 0xff4d, 0x1690, 0xfd24, 0xff59, 0x1710, 0xfd28,
+		  0xff52, 0x16fd, 0xfd27, 0xff55, 0x1711, 0xfd20 },
+		{ 0xff3f, 0x1607, 0xfd1f, 0xff42, 0x1690, 0xfd21,
+		  0xff55, 0x1772, 0xfd1e, 0xff5d, 0x178d, 0xfd1e },
+		{ 0xff5a, 0x1729, 0xfd25, 0xff62, 0x175c, 0xfd30,
+		  0xff48, 0x1720, 0xfd15, 0xff54, 0x1741, 0xfd21 },
+	},
+	.rxgains_5gl_elnagain = { 3, 3, 3 },
+	.rxgains_5gl_triso    = { 6, 6, 6 },
+	.rxgains_5gh_elnagain = { 7, 7, 7 },
+	.rxgains_5gh_triso    = { 15, 15, 15 },
+	.rxgains_5gh_trelnabyp = { 1, 1, 1 },
+	/* Real E/F from the DSL down-to-bss RETVALs -> cap=0xb6 (lo=0x6cdb). */
+	.rccal_e = 0x0b39, .rccal_f = 0x0c2b,
+	.rccal_g = 0x0186,  /* -> dacbuf_cap 0xc */
+	.maxp5ga = {
+		{ 76, 76, 76, 76 },
+		{ 76, 76, 76, 76 },
+		{ 76, 76, 76, 76 },
+		},
+	.antgain_raw = { 71, 71 },
+	.pdoffset40ma = { 0x3222, 0x3222, 0x3222 },
+	.pdoffset80ma = { 0, 0, 0 },
+	.mcsbw5g_po = {
+		/*
+		 * mcsbw{20,40,80}5g{l,m,h}po di wl1_nvram.txt, che li porta in
+		 * decimale. Come sull'agcombo le tre larghezze hanno la stessa
+		 * word; 5gm e 5gh coincidono anche fra loro.
+		 */
+		{ 0xeca86420, 0xeca86420, 0xeca86420 },
+		{ 0xcca86420, 0xcca86420, 0xcca86420 },
+		{ 0xcca86420, 0xcca86420, 0xcca86420 },
+	},
+};
+
+/*
+ * TG789vac v2: BCM4360 3x3 su wl 7.14.89, lo stesso driverrev del d6220.
+ * Valori da router-data/tg789vac-v2/wl1_nvram.txt, verificati word per word
+ * contro wl1_srom_raw.txt: la SROM qui e' la NVRAM mappata in memoria, quindi
+ * le due fonti sono la stessa board.
+ */
+static const struct board_profile PROFILE_TG789 = {
+	/* boardflags, boardflags2, boardflags3 (NVRAM). */
+	.boardflags = 0x10000000, .boardflags2 = 0x2, .boardflags3 = 0x0,
+	.name = "tg789", .chip_id = 0x4360, .radio_rev = 4,
+	.cc_caps = 0x58680001, .cc_capext = 0x00000003,
+	.cc_chipstatus = 0x0000024d, .pmu_caps = 0x10a22b11,
+	.chip_rev = 0x3, .pci_device = 0x43a2,
+	/* macaddr=12:13:31:f6:da:77, il segnaposto del file di mappa. */
+	.macaddr = { 0x12, 0x13, 0x31, 0xf6, 0xda, 0x77 },
+	/* corerev 0x2a (wl1_revinfo) e MACHW_L/H come li scrive il vendor:
+	 * cold01-ch36-bw20 #590-#592. */
+	.core_rev = 42, .mac_hw_cap = 0x30518c05,
+	/* srom[77-78] = 0xffff e nessun ledbh nella NVRAM: il vendor pilota
+	 * solo i gpio 0-2 (maschera 0x7 su GPIO.OE/OUT/CTL, senza 0x400). */
+	.ledbh = { [0] = 0xff, [1] = 0xff, [2] = 0xff, [3] = 0xff },
+	.radio_ver = 0x2069, .phy_rev = 1,
+	.num_cores = 3, .coremask = 0x7, .rxchain = 7,
+	.subband5gver = 0x4,
+	/* srom[85-86]: femctrl=6 tssiposslope=1 come gli altri, pdgain=19
+	 * invece di 10 su entrambe le bande. */
+	.fem_cfg1     = 0x3131,
+	.fem_cfg2     = 0x0131,
+	/* tempthresh=120 tempoffset=0; phycal_tempdelta=0 temps_period=5
+	 * temps_hysteresis=5: l'unica board con la temperatura programmata. */
+	.thermal      = 0x7800,
+	.tempdelta    = 0x5500,
+	.tssifloor5g  = { 0x3ff, 0x3ff, 0x3ff, 0x3ff },
+	.pa5ga = {
+		{ 0xff1f, 0x1763, 0xfd10, 0xff30, 0x184d, 0xfd03,
+		  0xff26, 0x1773, 0xfd19, 0xff29, 0x1862, 0xfcfd },
+		{ 0xff3f, 0x1927, 0xfd01, 0xff2b, 0x181a, 0xfd0d,
+		  0xff2f, 0x1824, 0xfd13, 0xff2f, 0x183a, 0xfd05 },
+		{ 0xff42, 0x18cf, 0xfd0e, 0xff33, 0x180a, 0xfd12,
+		  0xff2a, 0x17c8, 0xfd15, 0xff2a, 0x17be, 0xfd17 },
+	},
+	.rxgains_5gl_elnagain = { 3, 3, 3 },
+	.rxgains_5gl_triso    = { 6, 6, 6 },
+	.rxgains_5gh_elnagain = { 7, 7, 7 },
+	.rxgains_5gh_triso    = { 15, 15, 15 },
+	.rxgains_5gh_trelnabyp = { 1, 1, 1 },
+	/* RETVAL di cold01-ch36-bw20: E #893, F #895, G post-apply #1037. */
+	.rccal_e = 0x0ac3, .rccal_f = 0x0ba5,
+	.rccal_g = 0x01c9,  /* -> dacbuf_cap 0xe */
+	.maxp5ga = {
+		{ 90, 88, 92, 88 },
+		{ 90, 88, 92, 88 },
+		{ 90, 88, 92, 88 },
+		},
+	/* agbg0=0, aga0=68. Qui aga2=67 differisce da aga0/aga1: quale dei
+	 * tre legga wl non e' stato verificato. */
+	.antgain_raw = { 0, 68 },
+	.pdoffset40ma = { 0x5444, 0x5444, 0x5344 },
+	.pdoffset80ma = { 0x2111, 0x0111, 0x2011 },
+	.mcsbw5g_po = {
+		/* mcsbw{20,40,80}5g{l,m,h}po, in decimale nella NVRAM. */
+		{ 0x77542222, 0x97542211, 0x98542222 },
+		{ 0x66432000, 0x86531000, 0x76532222 },
+		{ 0x99752200, 0x98653112, 0x97543333 },
+	},
+};
+
+/*
+ * archer-t5e: BCM4360 PCIe card (chip 0x4352 rev 3), hybrid wl 6.30.223, the
+ * only dual-band SROM of the collection. Every field is decoded from
+ * router-data/archer-t5e/srom.txt with the rev 11 offsets of bcma/bcma-next/sprom.c;
+ * rccal and MAC_HW_CAP are the reads of its mmiotrace. femctrl is 1, not 6,
+ * with femctrl_sub 0.
+ * tssifloor5g is not decoded and takes the routers' value.
+ */
+static const struct board_profile PROFILE_ARCHER = {
+	/* boardflags, boardflags2, boardflags3 (SROM). */
+	.boardflags = 0x10001000, .boardflags2 = 0x2, .boardflags3 = 0x0,
+	.name = "archer", .chip_id = 0x4352, .radio_rev = 4,
+	.ucode = 832,
+	/* archer-t5e/mmiotrace.zip #91-#94. */
+	.cc_caps = 0x58680001, .cc_capext = 0x00000003,
+	.cc_chipstatus = 0x00001a6d, .pmu_caps = 0x10a22b11,
+	.chip_rev = 0x3, .pci_device = 0x43a0,
+	.macaddr = { 0xc0, 0x25, 0xe9, 0x29, 0x03, 0xcd },
+	.core_rev = 42, .mac_hw_cap = 0xb0518c05,
+	.fem_cfg1 = 0x0851, .fem_cfg2 = 0x0051,
+	.thermal = 0xffff, .tempdelta = 0xffff,
+	.tssifloor5g = { 0x3ff, 0x3ff, 0x3ff, 0x3ff },
+	.radio_ver = 0x2069, .phy_rev = 1,
+	.ledbh = { [0] = 0xff, [1] = 0xff, [2] = 0xff, [3] = 0xff,
+		   [4 ... 15] = 0xff },
+	.num_cores = 3, .coremask = 0x7, .rxchain = 7,
+	.subband5gver = 0x4,
+	.pa5ga = {
+		{ 0xff3f, 0x1a5c, 0xfcd0, 0xff42, 0x1a7e, 0xfcd7,
+		  0xff42, 0x1913, 0xfd00, 0xff48, 0x17ee, 0xfd1b },
+		{ 0xff41, 0x1a47, 0xfcd4, 0xff45, 0x1a93, 0xfcd5,
+		  0xff3e, 0x1984, 0xfced, 0xff45, 0x18a3, 0xfd08 },
+		{ 0xff49, 0x198b, 0xfcf2, 0xff49, 0x1943, 0xfcf8,
+		  0xff3c, 0x188f, 0xfcfb, 0xff41, 0x1831, 0xfd10 },
+	},
+	.maxp5ga = {
+		{ 80, 80, 80, 80 },
+		{ 80, 80, 80, 82 },
+		{ 80, 80, 80, 80 },
+	},
+	.rxgains_5gl_elnagain = { 3, 3, 3 },
+	.rxgains_5gl_triso    = { 9, 9, 9 },
+	.rxgains_5gh_elnagain = { 7, 7, 7 },
+	.rxgains_5gh_triso    = { 15, 15, 15 },
+	.rxgains_5gh_trelnabyp = { 1, 1, 1 },
+	/* /tmp/srom/archer.vars: maxp2ga0..2 = 80, every 2.4 GHz offset 0. */
+	.maxp2ga = { 80, 80, 80 },
+	.pa2ga = {
+		{ 0xff37, 0x1b77, 0xfcb0 },
+		{ 0xff36, 0x1b2e, 0xfcb6 },
+		{ 0xff21, 0x18ec, 0xfcee },
+	},
+	.rxgains_2g_elnagain = { 4, 4, 4 },
+	.rxgains_2g_triso    = { 9, 9, 9 },
+	.rxgains_2g_trelnabyp = { 1, 1, 1 },
+	.rccal_e = 0x0aba, .rccal_f = 0x0b9d,
+	.rccal_g = 0x01c9,
+	.antgain_raw = { 0, 0 },
+	/* pdoffset40ma/80ma and every mcsbw*po word are zero in this SROM;
+	 * word 100 is 0xffff: pdoffset2g40ma valid, offsets unused. */
+	.pdoffset2g40ma = { 15, 15, 15 }, .pdoffset2g40mvalid = 1,
+};
+
+/*
+ * MacBookAir6,1: BCM4360 (chip 0x4360 rev 3), 2x2 dual-band, hybrid wl
+ * 6.30.223. Every SROM field is decoded from router-data/macbookair6-1/
+ * srom-raw.txt with the rev 11 offsets of bcma/bcma-next/sprom.c; core 2
+ * is unprogrammed there (0xffff, 0xff) and is carried as bcma extracts it.
+ * rccal and MAC_HW_CAP are the reads of wl-firstload-20260926-190438.
+ * femctrl is 2: the FEM control table stops with its warning here too.
+ * The hybrid wl has no NVRAM, so ledbh4..15 are absent.
+ */
+static const struct board_profile PROFILE_MACBOOK = {
+	/* boardflags, boardflags2, boardflags3 (SROM). */
+	.boardflags = 0x10401001, .boardflags2 = 0x2, .boardflags3 = 0x1,
+	.name = "macbook", .chip_id = 0x4360, .radio_rev = 4,
+	.ucode = 832,
+	/* wl-firstload-20260926-190438 #90-#93. */
+	.cc_caps = 0x58680001, .cc_capext = 0x00000003,
+	.cc_chipstatus = 0x0000024d, .pmu_caps = 0x10a22b11,
+	.chip_rev = 0x3, .pci_device = 0x43a0,
+	.macaddr = { 0x84, 0x38, 0x35, 0x4d, 0x18, 0x6e },
+	.core_rev = 42, .mac_hw_cap = 0xb0518c05,
+	.fem_cfg1 = 0x1101, .fem_cfg2 = 0x0101,
+	.thermal = 0x62ff, .tempdelta = 0x5128,
+	.tssifloor5g = { 0x3ff, 0x3ff, 0x3ff, 0x3ff },
+	.radio_ver = 0x2069, .phy_rev = 1,
+	.ledbh = { [0 ... 15] = 0xff },
+	.num_cores = 3, .coremask = 0x3, .rxchain = 3,
+	.subband5gver = 0x4,
+	.pa5ga = {
+		{ 0xff3a, 0x15cf, 0xfd44, 0xff36, 0x16b2, 0xfd29,
+		  0xff3e, 0x15f1, 0xfd45, 0xff30, 0x155b, 0xfd4d },
+		{ 0xff61, 0x1820, 0xfd0c, 0xff56, 0x17a1, 0xfd0e,
+		  0xff5a, 0x17cb, 0xfd0f, 0xff5a, 0x17d9, 0xfd0d },
+		{ 0xffff, 0xffff, 0xffff, 0xffff, 0xffff, 0xffff,
+		  0xffff, 0xffff, 0xffff, 0xffff, 0xffff, 0xffff },
+	},
+	.maxp5ga = {
+		{ 72, 76, 76, 76 },
+		{ 72, 76, 76, 76 },
+		{ 255, 255, 255, 255 },
+	},
+	.rxgains_5gl_elnagain = { 3, 3, 7 },
+	.rxgains_5gl_triso    = { 7, 6, 15 },
+	.rxgains_5gh_elnagain = { 7, 7, 7 },
+	.rxgains_5gh_triso    = { 15, 15, 15 },
+	.rxgains_5gh_trelnabyp = { 1, 1, 1 },
+	/*
+	 * srom-raw.txt, as docs/retrace-todo.md ("2.4 GHz") decodes it: maxp2ga
+	 * 80, mcsbw202gpo = mcsbw402gpo = 0xaa555000, CCK offsets 0.
+	 */
+	.maxp2ga = { 80, 80, 80 },
+	.mcsbw2g_po = { 0xaa555000, 0xaa555000 },
+	.pa2ga = {
+		{ 0xff39, 0x1776, 0xfd13 },
+		{ 0xff32, 0x17c1, 0xfd0d },
+		{ 0xffff, 0xffff, 0xffff },
+	},
+	.rxgains_2g_elnagain = { 4, 3, 7 },
+	.rxgains_2g_triso    = { 7, 6, 15 },
+	.rxgains_2g_trelnabyp = { 1, 1, 1 },
+	.rccal_e = 0x0a7e, .rccal_f = 0x0b53,
+	.rccal_g = 0x01eb,
+	.antgain_raw = { 6, 6 },
+	.pdoffset40ma = { 0x3323, 0x3334, 0x3332 },
+	.pdoffset80ma = { 0x2322, 0x1112, 0x2332 },
+	/* SROM word 100 is 0xffff: valid, offsets unused. */
+	.pdoffset2g40ma = { 15, 15, 15 }, .pdoffset2g40mvalid = 1,
+	.rpcal = { 0x007c, 0x0079, 0x0067, 0x0052, 0x0060 },
+	.mcsbw5g_po = {
+		{ 0xdd666000, 0xdd666000, 0xdd666000 },
+		{ 0xdd777000, 0xdd777000, 0xdd777000 },
+		{ 0xdd888000, 0xdd888000, 0xdd888000 },
+	},
+};
+
+/*
+ * Netgear R7000: two BCM4360 3x3 on PCIe of a BCM4709, wl 7.14.164.18
+ * (microcode 928), one radio per band, so one profile per radio. Values from
+ * router-data/r7000/nvram-radios.txt (pci/1/1/ for eth1, pci/2/1/ for eth2):
+ * the board has no SROM, and a key the NVRAM lacks is 0 as bcm47xx_sprom.c
+ * reads it (0xff for the ledbh keys). rccal is the first segment's RETVALs.
+ *
+ * Not in any capture: the MAC addresses (removed from the NVRAM dump) and
+ * MAC_HW_CAP, which this wl writes through accessors wl_diag does not hook;
+ * the latter is the tg789vac's, the same chip and wl branch.
+ */
+static const struct board_profile PROFILE_R7000_2G = {
+	.name = "r7000-2g", .chip_id = 0x4360, .radio_rev = 4,
+	.chip_rev = 0x3, .pci_device = 0x43a1,
+	.radio_ver = 0x2069, .phy_rev = 1,
+	.core_rev = 42, .mac_hw_cap = 0x30518c05,
+	.boardflags = 0x00001000, .boardflags2 = 0x00100002,
+	.boardflags3 = 0x10000003,
+	.ledbh = { [0 ... 15] = 0xff },
+	.num_cores = 3, .coremask = 0x7, .rxchain = 7,
+	.subband5gver = 0x4,
+	/* femctrl=3 pdgain2g=14 tssiposslope2g=1; femctrl_sub 3 from
+	 * boardflags3. No 5 GHz key. */
+	.fem_cfg1 = 0x18e1, .fem_cfg2 = 0x0000,
+	/* tempthresh=120, nothing else of the thermal block. */
+	.thermal = 0x7800, .tempdelta = 0x0000,
+	.rpcal = { 0x01ec, 0, 0, 0, 0 },
+	.antgain_raw = { 0, 0 },
+	.pa2ga = {
+		{ 0xff32, 0x1c30, 0xfca3 },
+		{ 0xff35, 0x1be3, 0xfcb0 },
+		{ 0xff33, 0x1be1, 0xfcb0 },
+	},
+	.maxp2ga = { 106, 106, 106 },
+	.mcsbw2g_po = { 0xa976a600, 0xa976a600 },
+	.cckbw202gpo = 0,
+	/* Valid, so the offsets stay out of table 0x21. */
+	.pdoffset2g40ma = { 15, 15, 15 }, .pdoffset2g40mvalid = 1,
+	.rxgains_2g_elnagain = { 3, 3, 3 },
+	.rxgains_2g_triso    = { 7, 7, 7 },
+	.rxgains_2g_trelnabyp = { 1, 1, 1 },
+	/* cold-2g20.zip, cold01-ch1-bw20: E, F and G post-apply. */
+	.rccal_e = 0x0b7c, .rccal_f = 0x0c76,
+	.rccal_g = 0x0165,
+};
+
+static const struct board_profile PROFILE_R7000_5G = {
+	.name = "r7000-5g", .chip_id = 0x4360, .radio_rev = 4,
+	.chip_rev = 0x3, .pci_device = 0x43a2,
+	.radio_ver = 0x2069, .phy_rev = 1,
+	.core_rev = 42, .mac_hw_cap = 0x30518c05,
+	.boardflags = 0x30000000, .boardflags2 = 0x00300002,
+	.boardflags3 = 0x10000000,
+	.ledbh = { [0 ... 15] = 0xff },
+	.num_cores = 3, .coremask = 0x7, .rxchain = 7,
+	.subband5gver = 0x4,
+	/* femctrl=3, femctrl_sub 0; pdgain5g=4 tssiposslope5g=1. No 2.4 GHz
+	 * key. */
+	.fem_cfg1 = 0x1800, .fem_cfg2 = 0x0041,
+	/* tempthresh=120 tempoffset=255; phycal_tempdelta=255
+	 * temps_period=15 temps_hysteresis=15. */
+	.thermal = 0x78ff, .tempdelta = 0xffff,
+	.tssifloor5g = { 0x3ff, 0x3ff, 0x3ff, 0x3ff },
+	.rpcal = { 0, 0x7901, 0x7cfb, 0x79fa, 0x8907 },
+	.pa5ga = {
+		{ 0xff4c, 0x1808, 0xfd1b, 0xff4c, 0x18cf, 0xfd0c,
+		  0xff4a, 0x1920, 0xfd08, 0xff4c, 0x1949, 0xfcf6 },
+		{ 0xff4a, 0x18ac, 0xfd0b, 0xff44, 0x1904, 0xfcff,
+		  0xff56, 0x1a09, 0xfcfc, 0xff4f, 0x19ab, 0xfcef },
+		{ 0xff4c, 0x1896, 0xfd11, 0xff43, 0x192d, 0xfcf5,
+		  0xff50, 0x19ee, 0xfcf1, 0xff52, 0x19c6, 0xfcf1 },
+	},
+	.maxp5ga = {
+		{ 106, 106, 106, 106 },
+		{ 106, 106, 106, 106 },
+		{ 106, 106, 106, 106 },
+	},
+	.antgain_raw = { 0, 0 },
+	.pdoffset40ma = { 0x1111, 0x1111, 0x1111 },
+	.pdoffset80ma = { 0, 0, 0 },
+	/* mcsbw{20,40,80}5g{l,m,h}po: one word for every band and width. */
+	.mcsbw5g_po = {
+		{ 0xba768600, 0xba768600, 0xba768600 },
+		{ 0xba768600, 0xba768600, 0xba768600 },
+		{ 0xba768600, 0xba768600, 0xba768600 },
+	},
+	.rxgains_5gl_elnagain = { 4, 4, 4 },
+	.rxgains_5gl_triso    = { 7, 6, 5 },
+	.rxgains_5gh_elnagain = { 3, 3, 4 },
+	.rxgains_5gh_triso    = { 5, 4, 4 },
+	.rxgains_5gh_trelnabyp = { 1, 1, 1 },
+	/* cold-5g20.zip, cold01-ch36-bw20: E, F and G post-apply. */
+	.rccal_e = 0x0b18, .rccal_f = 0x0c04,
+	.rccal_g = 0x01a8,
+};
+
+/* One-shot mock storage. Lives for the whole run. */
+/* Il profilo per nome, come lo passano le due suite (argv o B43_BOARD). */
+static inline const struct board_profile *board_profile_lookup(const char *name)
+{
+	if (name && !strcmp(name, "agcombo"))
+		return &PROFILE_AGCOMBO;
+	if (name && !strcmp(name, "dsl"))
+		return &PROFILE_DSL;
+	if (name && !strcmp(name, "tg789"))
+		return &PROFILE_TG789;
+	if (name && !strcmp(name, "archer"))
+		return &PROFILE_ARCHER;
+	if (name && !strcmp(name, "macbook"))
+		return &PROFILE_MACBOOK;
+	if (name && !strcmp(name, "r7000-2g"))
+		return &PROFILE_R7000_2G;
+	if (name && !strcmp(name, "r7000-5g"))
+		return &PROFILE_R7000_5G;
+	return &PROFILE_D6220;
+}
+
+/*
+ * Profilo -> SROM, con le stesse maschere che bcmn_sprom_extract_r11() usa
+ * (SROM11_FEM_CFG1/2, offset 0x0AA/0x0AC). Il profilo sta al posto di bcma:
+ * sull'hardware i per-rate li riempie bcmn_sprom_extract_r11() di
+ * bcma/bcma-next/sprom.c, dai word 176/178/180 e dai due blocchi successivi a passo 8.
+ */
+static inline void board_profile_to_sprom(const struct board_profile *p,
+					  struct ssbn_sprom *s)
+{
+	u16 c1 = p->fem_cfg1, c2 = p->fem_cfg2;
+	unsigned int c, b, w;
+
+	memset(s, 0, sizeof(*s));
+	/* The 802.11 core's address, which bcma takes from the same NVRAM
+	 * key: b43 registers it as the permanent address. */
+	memcpy(s->il0mac, p->macaddr, sizeof(s->il0mac));
+	s->boardflags_lo = p->boardflags & 0xffff;
+	s->boardflags_hi = p->boardflags >> 16;
+	s->boardflags2_lo = p->boardflags2 & 0xffff;
+	s->boardflags2_hi = p->boardflags2 >> 16;
+	s->boardflags3 = p->boardflags3;
+	s->rxchain = p->rxchain;
+	s->txchain = p->rxchain;
+	s->subband5gver = p->subband5gver;
+	for (b = 0; b < 2; b++)
+		s->antenna_gain_qdb[b] = (s8)(4 * (p->antgain_raw[b] & 0x3f) +
+					      (p->antgain_raw[b] >> 6));
+	memcpy(s->pdoffset40ma, p->pdoffset40ma, sizeof(s->pdoffset40ma));
+	memcpy(s->pdoffset80ma, p->pdoffset80ma, sizeof(s->pdoffset80ma));
+	memcpy(s->pdoffset2g40ma, p->pdoffset2g40ma, sizeof(s->pdoffset2g40ma));
+	s->pdoffset2g40mvalid = p->pdoffset2g40mvalid;
+	s->rpcal2g = p->rpcal[0];
+	memcpy(s->rpcal5gb, &p->rpcal[1], sizeof(s->rpcal5gb));
+
+	s->tssiposslope2g = c1 & 0x0001;
+	s->epagain2g      = (c1 & 0x000e) >> 1;
+	s->pdgain2g       = (c1 & 0x01f0) >> 4;
+	s->tworangetssi2g = (c1 & 0x0200) >> 9;
+	s->papdcap2g      = (c1 & 0x0400) >> 10;
+	s->femctrl        = (c1 & 0xf800) >> 11;
+	s->tssiposslope5g = c2 & 0x0001;
+	s->epagain5g      = (c2 & 0x000e) >> 1;
+	s->pdgain5g       = (c2 & 0x01f0) >> 4;
+	s->tworangetssi5g = (c2 & 0x0200) >> 9;
+	s->papdcap5g      = (c2 & 0x0400) >> 10;
+	s->gainctrlsph    = (c2 & 0xf800) >> 11;
+
+	s->tempthresh       = p->thermal >> 8;
+	s->tempoffset       = p->thermal & 0xff;
+	s->phycal_tempdelta = p->tempdelta & 0xff;
+	s->temps_period     = (p->tempdelta >> 8) & 0xf;
+	s->temps_hysteresis = p->tempdelta >> 12;
+
+	memcpy(s->tssifloor5g, p->tssifloor5g, sizeof(s->tssifloor5g));
+	s->gpio0 = p->ledbh[0];
+	s->gpio1 = p->ledbh[1];
+	s->gpio2 = p->ledbh[2];
+	s->gpio3 = p->ledbh[3];
+	memcpy(s->gpio_ext, &p->ledbh[4], sizeof(s->gpio_ext));
+	memcpy(s->rxgains_5gl.elnagain, p->rxgains_5gl_elnagain,
+	       sizeof(s->rxgains_5gl.elnagain));
+	memcpy(s->rxgains_5gl.triso, p->rxgains_5gl_triso,
+	       sizeof(s->rxgains_5gl.triso));
+	memcpy(s->rxgains_5gh.elnagain, p->rxgains_5gh_elnagain,
+	       sizeof(s->rxgains_5gh.elnagain));
+	memcpy(s->rxgains_5gh.triso, p->rxgains_5gh_triso,
+	       sizeof(s->rxgains_5gh.triso));
+	memcpy(s->rxgains_5gh.trelnabyp, p->rxgains_5gh_trelnabyp,
+	       sizeof(s->rxgains_5gh.trelnabyp));
+	memcpy(s->rxgains_2g.elnagain, p->rxgains_2g_elnagain,
+	       sizeof(s->rxgains_2g.elnagain));
+	memcpy(s->rxgains_2g.triso, p->rxgains_2g_triso,
+	       sizeof(s->rxgains_2g.triso));
+	memcpy(s->rxgains_2g.trelnabyp, p->rxgains_2g_trelnabyp,
+	       sizeof(s->rxgains_2g.trelnabyp));
+
+	for (c = 0; c < 3; c++) {
+		memcpy(s->core_pwr_info[c].pa5ga, p->pa5ga[c],
+		       sizeof(s->core_pwr_info[c].pa5ga));
+		memcpy(s->core_pwr_info[c].maxp5ga, p->maxp5ga[c],
+		       sizeof(s->core_pwr_info[c].maxp5ga));
+		memcpy(s->core_pwr_info[c].pa2ga, p->pa2ga[c],
+		       sizeof(s->core_pwr_info[c].pa2ga));
+		s->core_pwr_info[c].maxp2ga = p->maxp2ga[c];
+	}
+	s->mcsbw202gpo = p->mcsbw2g_po[0];
+	s->mcsbw402gpo = p->mcsbw2g_po[1];
+	s->cckbw202gpo = p->cckbw202gpo;
+
+	for (b = 0; b < 3; b++) {
+		u32 *dst[3][3] = {
+			{ &s->mcsbw205glpo, &s->mcsbw405glpo, &s->mcsbw805glpo },
+			{ &s->mcsbw205gmpo, &s->mcsbw405gmpo, &s->mcsbw805gmpo },
+			{ &s->mcsbw205ghpo, &s->mcsbw405ghpo, &s->mcsbw805ghpo },
+		};
+
+		for (w = 0; w < 3; w++)
+			*dst[b][w] = p->mcsbw5g_po[b][w];
+	}
+}
+
+#endif /* B43_TEST_BOARD_PROFILE_H_ */

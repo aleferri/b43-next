@@ -1,0 +1,124 @@
+# bcmn_sprom_extract_r11 — offline differential test harness
+
+A userspace harness that compiles the tree's rev 11 extractor, cut out of
+`bcma-next/sprom.c` by the Makefile, against a small kernel shim, and diffs every populated field against the matching NVRAM value. It
+validates the parser without bringing up the radio. The comparison is between
+two independent decoders of the same raw SROM: the open-source parser, and the
+Broadcom decoder that produced `nvram_dump`.
+
+## Build and run
+
+```
+$ make                     # builds ./test
+$ make check               # $TRACES/dsl3580l/wl1_*.txt (raw mode)
+$ make check-d6220         # $TRACES/d6220/wl1_*.txt (raw mode)
+$ make check-bcm4360usb    # synth-mode round trip on vectors/bcm4360usb.nvram
+$ make check-agcombo       # synth-mode round trip on $TRACES/vd625-agcombo/wl1_nvram.txt
+```
+
+Against another vector:
+
+```
+$ ./test path/to/srom_dump.txt path/to/nvram_dump.txt
+$ ./test --synth path/to/nvram.txt
+```
+
+The output is one PASS/FAIL/INFO line per field, then a summary. The exit status
+is 0 if nothing failed.
+
+| vector | result | the INFO lines |
+|---|---|---|
+| DSL-3580L (raw) | 77 PASS / 0 FAIL / 7 INFO | `il0mac` and `country_code` differ between SROM and NVRAM; the NVRAM has no `rpcal` keys |
+| D6220 (raw) | 82 PASS / 0 FAIL / 2 INFO | the same two |
+| agcombo (synth) | 83 PASS / 0 FAIL / 1 INFO | `country_code` |
+| bcm4360usb (synth) | 32 PASS / 0 FAIL / 52 INFO | keys missing from the minimal NVRAM template |
+
+## Synth mode
+
+When no `wl srdump` is available but the board's NVRAM is (for example a
+`defaultsromvars_*[]` string in a vendor's `bcmsrom.c`), `--synth` synthesises a
+raw SROM image from the NVRAM using the extractor's offsets and encoding. It
+then runs the extractor on it and diffs.
+
+It checks:
+
+- **structural completeness**: every NVRAM key the parser declares is
+  recoverable;
+- **encoding self-consistency**: bit packs survive the round trip on
+  non-saturated values;
+- **per-chain stride and per-band byte assignment**: a stride error fails at
+  once.
+
+It does **not** cross-check offsets against an external source, because synth
+and parse share offsets by construction. For that, see `../cross_check.md`.
+
+The two synth vectors:
+
+- `vectors/bcm4360usb.nvram`: BCM4360 USB defaults from asuswrt-merlin /
+  landonf `bhnd_nvram_fmt`, with non-saturated `triso=9` and `aa2g=3`;
+- `$TRACES/vd625-agcombo/wl1_nvram.txt`: a real BCM4360 3×3 dual-band
+  dump, which exercises chain 2 and the full 2.4 GHz PA chain.
+
+## The NVRAM path
+
+`test_nvram` covers the other source of the same fields: a board without a
+SROM, whose NVRAM says `sromrev=11` and holds the radio's variables under a
+device prefix, as on the Northstar routers. It compiles
+`nvram/bcm47xx_sprom.c` as it is, against the tree's `struct ssbn_sprom`,
+which the Makefile cuts out of `include/ssb-next/ssbn.h`; `nvram_shim/` stands
+in for the kernel and bus headers. A dump is served under the prefix `0:`, `bcm47xx_fill_sprom()` runs
+on it, and every rev 11 field, and the older ones the AC-PHY reads, is
+compared with the dump; a variable missing from the dump is SKIP.
+
+```
+$ make check-nvram         # the four boards' wl1_nvram.txt and bcm4360usb.nvram
+$ ./test_nvram path/to/nvram.txt
+```
+
+| vector | result |
+|---|---|
+| DSL-3580L | 116 PASS / 0 FAIL / 7 SKIP (no `tssifloor*`, no `rpcal*`) |
+| D6220, agcombo, TG789vac v2 | 123 PASS / 0 FAIL / 0 SKIP each |
+| bcm4360usb | 30 PASS / 0 FAIL / 93 SKIP |
+
+## Contributing a vector
+
+On a router with Broadcom's `wl` tool:
+
+```
+$ wl -i wl1 srdump     > srom_<board>.txt
+$ wl -i wl1 nvram_dump > nvram_<board>.txt
+$ ./test srom_<board>.txt nvram_<board>.txt
+```
+
+On a router without a SROM, the radio's variables are in NVRAM under its
+prefix, `0:` or `1:` (the one whose `devpathN` names its PCIe slot); strip it
+and run the NVRAM path on them:
+
+```
+$ nvram show | sed -n 's/^0://p' > nvram_<board>.txt
+$ ./test_nvram nvram_<board>.txt
+```
+
+The most useful boards have:
+
+- non-zero values in the `0x190`–`0x1B0` region;
+- non-saturated rxgains;
+- a chip other than the BCM4352.
+
+## Files
+
+- `extract_r11.c`: `bcmn_sprom_extract_r11()` of `bcma-next/sprom.c`, with the
+  SPOFF/SPEX macros and the rxgains helper, as the Makefile cuts them out
+  (`extract_r11_gen.c`), behind a function `test.c` calls.
+- `synth_srom.{h,c}`: the encoder counterpart, used by `--synth`, at the
+  offsets of `include/ssb-next/ssbn_regs.h`.
+- `kernel_shim.h`: typedefs, `cpu_to_be16`, `BUILD_BUG_ON`, `ARRAY_SIZE`.
+- `ssbn_sprom.h`: the tree's `struct ssbn_sprom` (`ssbn_sprom_gen.h`) and the
+  one member of `struct bcmn_bus` the extractor fills.
+- `data_load.{h,c}`: text parsers for the two dump files.
+- `test.c`: the table of field checks and the diff/summary driver.
+- `test_nvram.c`, `nvram_backend.{h,c}`, `nvram_shim.h`, `nvram_shim/`: the
+  NVRAM path's test, the dump as `bcm47xx_nvram_getenv()`, and the kernel
+  shim it is compiled with.
+- `vectors/`: NVRAM-only test vectors.

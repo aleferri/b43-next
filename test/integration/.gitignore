@@ -1,0 +1,4 @@
+build/
+residual.txt
+b43-trace
+*.o
