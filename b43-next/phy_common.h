@@ -475,5 +475,6 @@ bool b43_is_40mhz(struct b43_wldev *dev);
 
 void b43_phy_force_clock(struct b43_wldev *dev, bool force);
 void b43_phy_bw_clk_set(struct b43_wldev *dev, u32 bits);
+void b43_mac_bw_set(struct b43_wldev *dev, u32 bw);
 
 #endif /* LINUX_B43_PHY_COMMON_H_ */

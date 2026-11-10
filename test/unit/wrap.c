@@ -1473,7 +1473,7 @@ void __wrap_b43_phyop_switch_analog_generic(struct b43_wldev *dev, bool on)
 
 /* ============ SHM (OBJ) accessors ============
  *
- * Definizioni piene, non wrap: nel link di test helpers_phy_ac.c non c'e',
+ * Definizioni piene, non wrap: nel link di test main.c non c'e',
  * quindi b43_shm_read16/write16 non hanno un'implementazione reale da
  * intercettare. Il tracer le emette come OBJ.RD/OBJ.WR, gli stessi
  * mnemonici della cattura vendor. Le letture pescano dall'oracolo per
@@ -1657,12 +1657,6 @@ void __wrap_b43_mac_bw_set(struct b43_wldev *dev, u32 bw)
 {
 	(void)dev;
 	fprintf(trace(), "cpu1 MAC.BW   addr=0x0000 val=%#06x\n", bw);
-}
-
-/* Il corpo di b43_mac_bw_set() non gira mai: il --wrap sopra lo intercetta. */
-void b43_phy_bw_clk_set(struct b43_wldev *dev, u32 bits)
-{
-	(void)dev; (void)bits;
 }
 
 void udelay(unsigned long us)         { (void)us; }

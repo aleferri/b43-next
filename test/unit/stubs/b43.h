@@ -367,10 +367,10 @@ void b43_mac_phy_clock_set(struct b43_wldev *dev, bool on);
  * usa 5 slot (0-4) e ha una semantica maskset atomica visibile al tracer
  * WL-diag come `MAC.MHF addr=<slot> val=<val> mask=<mask>`.
  *
- * L'implementazione reale è in b43/helpers_phy_ac.c e fa r/m/w SHM sui
- * registri B43_SHM_SH_HOSTFn (tutti già definiti nel kernel b43.h). Nel
- * test env il --wrap del linker intercetta la chiamata prima che raggiunga
- * l'implementazione.
+ * L'implementazione reale è in b43-next/phy_ac.c, static, e scrive in SHM
+ * i registri B43_SHM_SH_HOSTFn (tutti già definiti nel kernel b43.h). Il
+ * Makefile la sposta in phy_ac_hostflags.c, perche' il --wrap del linker
+ * intercetti la chiamata prima che raggiunga l'implementazione.
  *
  * slot: 0..4  (0 = HOSTF1, 4 = HOSTF5)
  * mask: bit da preservare (~mask sono i bit modificati)
@@ -378,6 +378,7 @@ void b43_mac_phy_clock_set(struct b43_wldev *dev, bool on);
  */
 void b43_phy_ac_mhf_maskset(struct b43_wldev *dev,
 			    u16 slot, u16 mask, u16 val);
+void b43_phy_ac_mhf_write(struct b43_wldev *dev, u16 slot);
 
 /* Generic switch-analog helper called by ops. */
 void b43_phyop_switch_analog_generic(struct b43_wldev *dev, bool on);
@@ -434,9 +435,9 @@ void bcmn_core_set_clockmode(struct bcmn_device *core,
 
 /*
  * Celle di shared memory delle cinque word di host flag, e MACCTL: valori del
- * b43.h del kernel, serviti qui perche' helpers_phy_ac.c ora e' nel link (le
- * sue decisioni, non solo la sua etichetta, sono cio' che il confronto
- * verifica).
+ * b43.h del kernel, serviti qui perche' le funzioni dei flag host di
+ * phy_ac.c sono nel link (le loro decisioni, non solo la loro etichetta,
+ * sono cio' che il confronto verifica).
  */
 #define B43_SHM_SH_HOSTF1         0x005E
 #define B43_SHM_SH_RADAR          0x0066

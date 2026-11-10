@@ -85,7 +85,7 @@ b43-next-$(CONFIG_B43_NEXT_PHY_HT) += $(addprefix b43-next/, \
 	phy_ht.o tables_phy_ht.o radio_2059.o)
 b43-next-$(CONFIG_B43_NEXT_PHY_LCN) += b43-next/phy_lcn.o b43-next/tables_phy_lcn.o
 b43-next-$(CONFIG_B43_NEXT_PHY_AC) += $(addprefix b43-next/, \
-	phy_ac.o tables_phy_ac.o radio_2069.o helpers_phy_ac.o ppr_ac.o radar_ac.o)
+	phy_ac.o tables_phy_ac.o radio_2069.o ppr_ac.o radar_ac.o)
 b43-next-$(CONFIG_B43_NEXT_LEDS) += b43-next/leds.o
 b43-next-$(CONFIG_B43_NEXT_SDIO) += b43-next/sdio.o
 b43-next-$(CONFIG_B43_NEXT_DEBUG) += b43-next/debugfs.o

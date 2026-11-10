@@ -835,12 +835,6 @@ bool b43_phy_ac_txpwr_recalc(struct b43_wldev *dev);
  */
 void b43_phy_ac_noise_sample_done(struct b43_wldev *dev);
 
-/* Helpers across the MAC/PHY boundary; rationale in helpers_phy_ac.c. */
-void b43_phy_ac_mhf_maskset(struct b43_wldev *dev, u16 slot, u16 mask, u16 val);
-void b43_phy_ac_mhf_write(struct b43_wldev *dev, u16 slot);
-void b43_mac_bw_set(struct b43_wldev *dev, u32 bw);
-void b43_phy_ac_force_clock(struct b43_wldev *dev, bool force);
-
 /*
  * Trace points of the userspace harnesses in test/, which define them.
  * B43_AC_BLOCK() also names the sections of the bring-up in the kernel log
