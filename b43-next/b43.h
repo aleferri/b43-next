@@ -6,8 +6,8 @@
 #include <linux/spinlock.h>
 #include <linux/interrupt.h>
 #include <linux/hw_random.h>
-#include <linux/bcma/bcma.h>
-#include <linux/ssb/ssb.h>
+#include <bcma-next/bcmn.h>
+#include <ssb-next/ssbn.h>
 #include <linux/completion.h>
 #include <net/mac80211.h>
 
@@ -19,7 +19,7 @@
 #include "phy_common.h"
 
 
-#ifdef CONFIG_B43_DEBUG
+#ifdef CONFIG_B43_NEXT_DEBUG
 # define B43_DEBUG	1
 #else
 # define B43_DEBUG	0
@@ -486,13 +486,13 @@ enum {
 #define B43_PSM_HDR_MAC_PHY_CLOCK_EN	0x00000002
 #define B43_PSM_HDR_MAC_PHY_FORCE_CLK	0x00000004
 
-/* See BCMA_CLKCTLST_EXTRESREQ and BCMA_CLKCTLST_EXTRESST */
+/* See BCMN_CLKCTLST_EXTRESREQ and BCMN_CLKCTLST_EXTRESST */
 #define B43_BCMA_CLKCTLST_80211_PLL_REQ	0x00000100
 #define B43_BCMA_CLKCTLST_PHY_PLL_REQ	0x00000200
 #define B43_BCMA_CLKCTLST_80211_PLL_ST	0x01000000
 #define B43_BCMA_CLKCTLST_PHY_PLL_ST	0x02000000
 
-/* BCMA 802.11 core specific IO Control (BCMA_IOCTL) flags */
+/* BCMA 802.11 core specific IO Control (BCMN_IOCTL) flags */
 #define B43_BCMA_IOCTL_PHY_CLKEN	0x00000004	/* PHY Clock Enable */
 #define B43_BCMA_IOCTL_PHY_RESET	0x00000008	/* PHY Reset */
 #define B43_BCMA_IOCTL_MACPHYCLKEN	0x00000010	/* MAC PHY Clock Control Enable */
@@ -505,13 +505,13 @@ enum {
 #define B43_BCMA_IOCTL_DAC		0x00000300	/* Highspeed DAC mode control field */
 #define B43_BCMA_IOCTL_GMODE		0x00002000	/* G Mode Enable */
 
-/* BCMA 802.11 core specific IO status (BCMA_IOST) flags */
+/* BCMA 802.11 core specific IO status (BCMN_IOST) flags */
 #define B43_BCMA_IOST_2G_PHY		0x00000001	/* 2.4G capable phy */
 #define B43_BCMA_IOST_5G_PHY		0x00000002	/* 5G capable phy */
 #define B43_BCMA_IOST_FASTCLKA		0x00000004	/* Fast Clock Available */
 #define B43_BCMA_IOST_DUALB_PHY		0x00000008	/* Dualband phy */
 
-/* 802.11 core specific TM State Low (SSB_TMSLOW) flags */
+/* 802.11 core specific TM State Low (SSBN_TMSLOW) flags */
 #define B43_TMSLOW_GMODE		0x20000000	/* G Mode Enable */
 #define B43_TMSLOW_PHY_BANDWIDTH	0x00C00000	/* PHY band width and clock speed mask (N-PHY only) */
 #define  B43_TMSLOW_PHY_BANDWIDTH_10MHZ	0x00000000	/* 10 MHz bandwidth, 40 MHz PHY */
@@ -522,7 +522,7 @@ enum {
 #define B43_TMSLOW_PHYRESET		0x00080000	/* PHY Reset */
 #define B43_TMSLOW_PHYCLKEN		0x00040000	/* PHY Clock Enable */
 
-/* 802.11 core specific TM State High (SSB_TMSHIGH) flags */
+/* 802.11 core specific TM State High (SSBN_TMSHIGH) flags */
 #define B43_TMSHIGH_DUALBAND_PHY	0x00080000	/* Dualband PHY available */
 #define B43_TMSHIGH_FCLOCK		0x00040000	/* Fast Clock Available (rev >= 5) */
 #define B43_TMSHIGH_HAVE_5GHZ_PHY	0x00020000	/* 5 GHz PHY available (rev >= 5) */
@@ -885,7 +885,7 @@ struct b43_wldev {
 	struct list_head list;
 
 	/* Debugging stuff follows. */
-#ifdef CONFIG_B43_DEBUG
+#ifdef CONFIG_B43_NEXT_DEBUG
 	struct b43_dfsentry *dfsentry;
 	unsigned int irq_count;
 	unsigned int irq_bit_count[32];
@@ -929,11 +929,11 @@ struct b43_wl {
 	/* Stats about the wireless interface */
 	struct ieee80211_low_level_stats ieee_stats;
 
-#ifdef CONFIG_B43_HWRNG
+#ifdef CONFIG_B43_NEXT_HWRNG
 	struct hwrng rng;
 	bool rng_initialized;
 	char rng_name[30 + 1];
-#endif /* CONFIG_B43_HWRNG */
+#endif /* CONFIG_B43_NEXT_HWRNG */
 
 	bool radiotap_enabled;
 	bool radio_enabled;
@@ -981,8 +981,8 @@ static inline struct b43_wl *hw_to_b43_wl(struct ieee80211_hw *hw)
 
 static inline struct b43_wldev *dev_to_b43_wldev(struct device *dev)
 {
-	struct ssb_device *ssb_dev = dev_to_ssb_dev(dev);
-	return ssb_get_drvdata(ssb_dev);
+	struct ssbn_device *ssbn_dev = dev_to_ssb_dev(dev);
+	return ssbn_get_drvdata(ssbn_dev);
 }
 
 /* Is the device operating in a specified mode (NL80211_IFTYPE_XXX). */

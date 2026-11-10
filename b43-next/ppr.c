@@ -69,7 +69,7 @@ bool b43_ppr_load_max_from_sprom(struct b43_wldev *dev, struct b43_ppr *ppr,
 				 enum b43_band band)
 {
 	struct b43_ppr_rates *rates = &ppr->rates;
-	struct ssb_sprom *sprom = dev->dev->bus_sprom;
+	struct ssbn_sprom *sprom = dev->dev->bus_sprom;
 	struct b43_phy *phy = &dev->phy;
 	u8 maxpwr, off;
 	u32 sprom_ofdm_po;

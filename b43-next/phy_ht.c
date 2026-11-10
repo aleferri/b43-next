@@ -621,7 +621,7 @@ static void b43_phy_ht_tssi_setup(struct b43_wldev *dev)
 static void b43_phy_ht_tx_power_ctl_setup(struct b43_wldev *dev)
 {
 	struct b43_phy_ht *phy_ht = dev->phy.ht;
-	struct ssb_sprom *sprom = dev->dev->bus_sprom;
+	struct ssbn_sprom *sprom = dev->dev->bus_sprom;
 
 	u8 *idle = phy_ht->idle_tssi;
 	u8 target[3];
@@ -733,15 +733,15 @@ static void b43_phy_ht_tx_power_ctl_setup(struct b43_wldev *dev)
 static void b43_phy_ht_spur_avoid(struct b43_wldev *dev,
 				  struct ieee80211_channel *new_channel)
 {
-	struct bcma_device *core = dev->dev->bdev;
+	struct bcmn_device *core = dev->dev->bdev;
 	int spuravoid = 0;
 
 	/* Check for 13 and 14 is just a guess, we don't have enough logs. */
 	if (new_channel->hw_value == 13 || new_channel->hw_value == 14)
 		spuravoid = 1;
-	bcma_core_pll_ctl(core, B43_BCMA_CLKCTLST_PHY_PLL_REQ, 0, false);
-	bcma_pmu_spuravoid_pllupdate(&core->bus->drv_cc, spuravoid);
-	bcma_core_pll_ctl(core,
+	bcmn_core_pll_ctl(core, B43_BCMA_CLKCTLST_PHY_PLL_REQ, 0, false);
+	bcmn_pmu_spuravoid_pllupdate(&core->bus->drv_cc, spuravoid);
+	bcmn_core_pll_ctl(core,
 			  B43_BCMA_CLKCTLST_80211_PLL_REQ |
 			  B43_BCMA_CLKCTLST_PHY_PLL_REQ,
 			  B43_BCMA_CLKCTLST_80211_PLL_ST |

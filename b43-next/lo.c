@@ -372,7 +372,7 @@ struct lo_g_saved_values {
 static void lo_measure_setup(struct b43_wldev *dev,
 			     struct lo_g_saved_values *sav)
 {
-	struct ssb_sprom *sprom = dev->dev->bus_sprom;
+	struct ssbn_sprom *sprom = dev->dev->bus_sprom;
 	struct b43_phy *phy = &dev->phy;
 	struct b43_phy_g *gphy = phy->g;
 	struct b43_txpower_lo_control *lo = gphy->lo_control;

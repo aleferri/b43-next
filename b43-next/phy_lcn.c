@@ -586,17 +586,17 @@ static void b43_phy_lcn_txrx_spur_avoidance_mode(struct b43_wldev *dev,
 /* wlc_lcnphy_set_chanspec_tweaks */
 static void b43_phy_lcn_set_channel_tweaks(struct b43_wldev *dev, int channel)
 {
-	struct bcma_drv_cc *cc = &dev->dev->bdev->bus->drv_cc;
+	struct bcmn_drv_cc *cc = &dev->dev->bdev->bus->drv_cc;
 
 	b43_phy_maskset(dev, 0x448, ~0x300, (channel == 14) ? 0x200 : 0x100);
 
 	if (channel == 1 || channel == 2 || channel == 3 || channel == 4 ||
 	    channel == 9 || channel == 10 || channel == 11 || channel == 12) {
-		bcma_chipco_pll_write(cc, 0x2, 0x03000c04);
-		bcma_chipco_pll_maskset(cc, 0x3, 0x00ffffff, 0x0);
-		bcma_chipco_pll_write(cc, 0x4, 0x200005c0);
+		bcmn_chipco_pll_write(cc, 0x2, 0x03000c04);
+		bcmn_chipco_pll_maskset(cc, 0x3, 0x00ffffff, 0x0);
+		bcmn_chipco_pll_write(cc, 0x4, 0x200005c0);
 
-		bcma_cc_set32(cc, BCMA_CC_PMU_CTL, 0x400);
+		bcmn_cc_set32(cc, BCMN_CC_PMU_CTL, 0x400);
 
 		b43_phy_write(dev, 0x942, 0);
 
@@ -604,11 +604,11 @@ static void b43_phy_lcn_set_channel_tweaks(struct b43_wldev *dev, int channel)
 		b43_phy_maskset(dev, 0x424, (u16) ~0xff00, 0x1b00);
 		b43_phy_write(dev, 0x425, 0x5907);
 	} else {
-		bcma_chipco_pll_write(cc, 0x2, 0x03140c04);
-		bcma_chipco_pll_maskset(cc, 0x3, 0x00ffffff, 0x333333);
-		bcma_chipco_pll_write(cc, 0x4, 0x202c2820);
+		bcmn_chipco_pll_write(cc, 0x2, 0x03140c04);
+		bcmn_chipco_pll_maskset(cc, 0x3, 0x00ffffff, 0x333333);
+		bcmn_chipco_pll_write(cc, 0x4, 0x202c2820);
 
-		bcma_cc_set32(cc, BCMA_CC_PMU_CTL, 0x400);
+		bcmn_cc_set32(cc, BCMN_CC_PMU_CTL, 0x400);
 
 		b43_phy_write(dev, 0x942, 0);
 
@@ -697,7 +697,7 @@ static void b43_phy_lcn_op_prepare_structs(struct b43_wldev *dev)
 /* wlc_phy_init_lcnphy */
 static int b43_phy_lcn_op_init(struct b43_wldev *dev)
 {
-	struct bcma_drv_cc *cc = &dev->dev->bdev->bus->drv_cc;
+	struct bcmn_drv_cc *cc = &dev->dev->bdev->bus->drv_cc;
 
 	b43_phy_set(dev, 0x44a, 0x80);
 	b43_phy_mask(dev, 0x44a, 0x7f);
@@ -725,8 +725,8 @@ static int b43_phy_lcn_op_init(struct b43_wldev *dev)
 
 	b43_switch_channel(dev, dev->phy.channel);
 
-	bcma_chipco_regctl_maskset(cc, 0, 0xf, 0x9);
-	bcma_chipco_chipctl_maskset(cc, 0, 0, 0x03cddddd);
+	bcmn_chipco_regctl_maskset(cc, 0, 0xf, 0x9);
+	bcmn_chipco_chipctl_maskset(cc, 0, 0, 0x03cddddd);
 
 	/* TODO */
 

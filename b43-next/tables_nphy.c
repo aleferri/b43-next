@@ -3479,7 +3479,7 @@ static void b43_nphy_tables_init_shared_lut(struct b43_wldev *dev)
 
 static void b43_nphy_tables_init_rev7_volatile(struct b43_wldev *dev)
 {
-	struct ssb_sprom *sprom = dev->dev->bus_sprom;
+	struct ssbn_sprom *sprom = dev->dev->bus_sprom;
 	u8 antswlut;
 	int core, offset, i;
 
@@ -3550,7 +3550,7 @@ static void b43_nphy_tables_init_rev7(struct b43_wldev *dev)
 
 static void b43_nphy_tables_init_rev3(struct b43_wldev *dev)
 {
-	struct ssb_sprom *sprom = dev->dev->bus_sprom;
+	struct ssbn_sprom *sprom = dev->dev->bus_sprom;
 	u8 antswlut;
 
 	if (b43_current_band(dev->wl) == NL80211_BAND_5GHZ)
@@ -3653,7 +3653,7 @@ static const u32 *b43_nphy_get_ipa_gain_table(struct b43_wldev *dev)
 				return b43_ntab_tx_gain_ipa_2057_rev5_2g;
 			break;
 		case 6:
-			if (dev->dev->chip_id == BCMA_CHIP_ID_BCM47162)
+			if (dev->dev->chip_id == BCMN_CHIP_ID_BCM47162)
 				return b43_ntab_tx_gain_ipa_rev5_2g;
 			return b43_ntab_tx_gain_ipa_rev6_2g;
 		case 5:
@@ -3686,7 +3686,7 @@ const u32 *b43_nphy_get_tx_gain_table(struct b43_wldev *dev)
 {
 	struct b43_phy *phy = &dev->phy;
 	enum nl80211_band band = b43_current_band(dev->wl);
-	struct ssb_sprom *sprom = dev->dev->bus_sprom;
+	struct ssbn_sprom *sprom = dev->dev->bus_sprom;
 
 	if (dev->phy.rev < 3)
 		return b43_ntab_tx_gain_rev0_1_2;

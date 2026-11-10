@@ -43,14 +43,14 @@ static u32 b43_dma_address(struct b43_dma *dma, dma_addr_t dmaaddr,
 	case B43_DMA_ADDR_LOW:
 		addr = lower_32_bits(dmaaddr);
 		if (dma->translation_in_low) {
-			addr &= ~SSB_DMA_TRANSLATION_MASK;
+			addr &= ~SSBN_DMA_TRANSLATION_MASK;
 			addr |= dma->translation;
 		}
 		break;
 	case B43_DMA_ADDR_HIGH:
 		addr = upper_32_bits(dmaaddr);
 		if (!dma->translation_in_low) {
-			addr &= ~SSB_DMA_TRANSLATION_MASK;
+			addr &= ~SSBN_DMA_TRANSLATION_MASK;
 			addr |= dma->translation;
 		}
 		break;
@@ -59,8 +59,8 @@ static u32 b43_dma_address(struct b43_dma *dma, dma_addr_t dmaaddr,
 			addr = lower_32_bits(dmaaddr);
 		else
 			addr = upper_32_bits(dmaaddr);
-		addr &= SSB_DMA_TRANSLATION_MASK;
-		addr >>= SSB_DMA_TRANSLATION_SHIFT;
+		addr &= SSBN_DMA_TRANSLATION_MASK;
+		addr >>= SSBN_DMA_TRANSLATION_SHIFT;
 		break;
 	}
 
@@ -275,7 +275,7 @@ static inline int prev_slot(struct b43_dmaring *ring, int slot)
 	return slot - 1;
 }
 
-#ifdef CONFIG_B43_DEBUG
+#ifdef CONFIG_B43_NEXT_DEBUG
 static void update_max_used_slots(struct b43_dmaring *ring,
 				  int current_used_slots)
 {
@@ -803,17 +803,17 @@ static enum b43_dmatype b43_engine_type(struct b43_wldev *dev)
 	u16 mmio_base;
 
 	switch (dev->dev->bus_type) {
-#ifdef CONFIG_B43_BCMA
+#ifdef CONFIG_B43_NEXT_BCMA
 	case B43_BUS_BCMA:
-		tmp = bcma_aread32(dev->dev->bdev, BCMA_IOST);
-		if (tmp & BCMA_IOST_DMA64)
+		tmp = bcmn_aread32(dev->dev->bdev, BCMN_IOST);
+		if (tmp & BCMN_IOST_DMA64)
 			return B43_DMA_64BIT;
 		break;
 #endif
-#ifdef CONFIG_B43_SSB
+#ifdef CONFIG_B43_NEXT_SSB
 	case B43_BUS_SSB:
-		tmp = ssb_read32(dev->dev->sdev, SSB_TMSHIGH);
-		if (tmp & SSB_TMSHIGH_DMA64)
+		tmp = ssbn_read32(dev->dev->sdev, SSBN_TMSHIGH);
+		if (tmp & SSBN_TMSHIGH_DMA64)
 			return B43_DMA_64BIT;
 		break;
 #endif
@@ -880,7 +880,7 @@ struct b43_dmaring *b43_setup_dmaring(struct b43_wldev *dev,
 		} else
 			B43_WARN_ON(1);
 	}
-#ifdef CONFIG_B43_DEBUG
+#ifdef CONFIG_B43_NEXT_DEBUG
 	ring->last_injected_overflow = jiffies;
 #endif
 
@@ -969,7 +969,7 @@ static void b43_destroy_dmaring(struct b43_dmaring *ring,
 	if (!ring)
 		return;
 
-#ifdef CONFIG_B43_DEBUG
+#ifdef CONFIG_B43_NEXT_DEBUG
 	{
 		/* Print some statistics. */
 		u64 failed_packets = ring->nr_failed_tx_packets;
@@ -1039,11 +1039,11 @@ static bool b43_dma_translation_in_low_word(struct b43_wldev *dev,
 	if (type != B43_DMA_64BIT)
 		return true;
 
-#ifdef CONFIG_B43_SSB
+#ifdef CONFIG_B43_NEXT_SSB
 	if (dev->dev->bus_type == B43_BUS_SSB &&
-	    dev->dev->sdev->bus->bustype == SSB_BUSTYPE_PCI &&
+	    dev->dev->sdev->bus->bustype == SSBN_BUSTYPE_PCI &&
 	    !(pci_is_pcie(dev->dev->sdev->bus->host_pci) &&
-	      ssb_read32(dev->dev->sdev, SSB_TMSHIGH) & SSB_TMSHIGH_DMA64))
+	      ssbn_read32(dev->dev->sdev, SSBN_TMSHIGH) & SSBN_TMSHIGH_DMA64))
 			return true;
 #endif
 	return false;
@@ -1063,21 +1063,21 @@ int b43_dma_init(struct b43_wldev *dev)
 	}
 
 	switch (dev->dev->bus_type) {
-#ifdef CONFIG_B43_BCMA
+#ifdef CONFIG_B43_NEXT_BCMA
 	case B43_BUS_BCMA:
-		dma->translation = bcma_core_dma_translation(dev->dev->bdev);
+		dma->translation = bcmn_core_dma_translation(dev->dev->bdev);
 		break;
 #endif
-#ifdef CONFIG_B43_SSB
+#ifdef CONFIG_B43_NEXT_SSB
 	case B43_BUS_SSB:
-		dma->translation = ssb_dma_translation(dev->dev->sdev);
+		dma->translation = ssbn_dma_translation(dev->dev->sdev);
 		break;
 #endif
 	}
 	dma->translation_in_low = b43_dma_translation_in_low_word(dev, type);
 
 	dma->parity = true;
-#ifdef CONFIG_B43_BCMA
+#ifdef CONFIG_B43_NEXT_BCMA
 	/* TODO: find out which SSB devices need disabling parity */
 	if (dev->dev->bus_type == B43_BUS_BCMA)
 		dma->parity = false;
@@ -1287,7 +1287,7 @@ out_unmap_hdr:
 
 static inline int should_inject_overflow(struct b43_dmaring *ring)
 {
-#ifdef CONFIG_B43_DEBUG
+#ifdef CONFIG_B43_NEXT_DEBUG
 	if (unlikely(b43_debug(ring->dev, B43_DBG_DMAOVERFLOW))) {
 		/* Check if we should inject another ringbuffer overflow
 		 * to test handling of this situation in the stack. */
@@ -1302,7 +1302,7 @@ static inline int should_inject_overflow(struct b43_dmaring *ring)
 			return 1;
 		}
 	}
-#endif /* CONFIG_B43_DEBUG */
+#endif /* CONFIG_B43_NEXT_DEBUG */
 	return 0;
 }
 
@@ -1524,7 +1524,7 @@ void b43_dma_handle_txstatus(struct b43_wldev *dev,
 
 			frame_succeed = b43_fill_txstatus_report(dev, info,
 								 txstat);
-#ifdef CONFIG_B43_DEBUG
+#ifdef CONFIG_B43_NEXT_DEBUG
 			if (frame_succeed)
 				ring->nr_succeed_tx_packets++;
 			else

@@ -7,11 +7,11 @@
  * Licensed under the GNU/GPL. See COPYING for details.
  */
 
-#include "bcma_private.h"
+#include "bcmn_private.h"
 #include <linux/export.h>
-#include <linux/bcma/bcma.h>
+#include <bcma-next/bcmn.h>
 
-static bool bcma_wait_reg(struct bcma_bus *bus, void __iomem *addr, u32 mask,
+static bool bcmn_wait_reg(struct bcmn_bus *bus, void __iomem *addr, u32 mask,
 			  u32 value, int timeout)
 {
 	unsigned long deadline = jiffies + timeout;
@@ -25,37 +25,37 @@ static bool bcma_wait_reg(struct bcma_bus *bus, void __iomem *addr, u32 mask,
 		udelay(10);
 	} while (!time_after_eq(jiffies, deadline));
 
-	bcma_err(bus, "Timeout waiting for register %p\n", addr);
+	bcmn_err(bus, "Timeout waiting for register %p\n", addr);
 
 	return false;
 }
 
-void bcma_chipco_b_mii_write(struct bcma_drv_cc_b *ccb, u32 offset, u32 value)
+void bcmn_chipco_b_mii_write(struct bcmn_drv_cc_b *ccb, u32 offset, u32 value)
 {
-	struct bcma_bus *bus = ccb->core->bus;
+	struct bcmn_bus *bus = ccb->core->bus;
 	void __iomem *mii = ccb->mii;
 
-	writel(offset, mii + BCMA_CCB_MII_MNG_CTL);
-	bcma_wait_reg(bus, mii + BCMA_CCB_MII_MNG_CTL, 0x0100, 0x0000, 100);
-	writel(value, mii + BCMA_CCB_MII_MNG_CMD_DATA);
-	bcma_wait_reg(bus, mii + BCMA_CCB_MII_MNG_CTL, 0x0100, 0x0000, 100);
+	writel(offset, mii + BCMN_CCB_MII_MNG_CTL);
+	bcmn_wait_reg(bus, mii + BCMN_CCB_MII_MNG_CTL, 0x0100, 0x0000, 100);
+	writel(value, mii + BCMN_CCB_MII_MNG_CMD_DATA);
+	bcmn_wait_reg(bus, mii + BCMN_CCB_MII_MNG_CTL, 0x0100, 0x0000, 100);
 }
-EXPORT_SYMBOL_GPL(bcma_chipco_b_mii_write);
+EXPORT_SYMBOL_GPL(bcmn_chipco_b_mii_write);
 
-int bcma_core_chipcommon_b_init(struct bcma_drv_cc_b *ccb)
+int bcmn_core_chipcommon_b_init(struct bcmn_drv_cc_b *ccb)
 {
 	if (ccb->setup_done)
 		return 0;
 
 	ccb->setup_done = 1;
-	ccb->mii = ioremap(ccb->core->addr_s[1], BCMA_CORE_SIZE);
+	ccb->mii = ioremap(ccb->core->addr_s[1], BCMN_CORE_SIZE);
 	if (!ccb->mii)
 		return -ENOMEM;
 
 	return 0;
 }
 
-void bcma_core_chipcommon_b_free(struct bcma_drv_cc_b *ccb)
+void bcmn_core_chipcommon_b_free(struct bcmn_drv_cc_b *ccb)
 {
 	if (ccb->mii)
 		iounmap(ccb->mii);

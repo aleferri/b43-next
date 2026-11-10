@@ -18,7 +18,7 @@ enum b43_dyndbg {		/* Dynamic debugging features */
 	__B43_NR_DYNDBG,
 };
 
-#ifdef CONFIG_B43_DEBUG
+#ifdef CONFIG_B43_NEXT_DEBUG
 
 struct dentry;
 
@@ -80,7 +80,7 @@ void b43_debugfs_remove_device(struct b43_wldev *dev);
 void b43_debugfs_log_txstat(struct b43_wldev *dev,
 			    const struct b43_txstatus *status);
 
-#else /* CONFIG_B43_DEBUG */
+#else /* CONFIG_B43_NEXT_DEBUG */
 
 static inline bool b43_debug(struct b43_wldev *dev, enum b43_dyndbg feature)
 {
@@ -104,6 +104,6 @@ static inline void b43_debugfs_log_txstat(struct b43_wldev *dev,
 {
 }
 
-#endif /* CONFIG_B43_DEBUG */
+#endif /* CONFIG_B43_NEXT_DEBUG */
 
 #endif /* B43_DEBUGFS_H_ */

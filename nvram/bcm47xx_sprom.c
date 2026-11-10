@@ -27,11 +27,11 @@
  */
 
 #include <linux/bcm47xx_nvram.h>
-#include <linux/bcm47xx_sprom.h>
-#include <linux/bcma/bcma.h>
+#include "bcm47xx_sprom.h"
+#include <bcma-next/bcmn.h>
 #include <linux/etherdevice.h>
 #include <linux/if_ether.h>
-#include <linux/ssb/ssb.h>
+#include <ssb-next/ssbn.h>
 
 static void create_key(const char *prefix, const char *postfix,
 		       const char *name, char *buf, int len)
@@ -185,7 +185,7 @@ static void nvram_read_alpha2(const char *prefix, const char *name,
  * Note that while SPROM revision 0 was never used, we still keep BIT(0)
  * reserved for it, just to keep numbering sane.
  */
-static void bcm47xx_sprom_fill_auto(struct ssb_sprom *sprom,
+static void bcm47xx_sprom_fill_auto(struct ssbn_sprom *sprom,
 				    const char *prefix, bool fallback)
 {
 	const char *pre = prefix;
@@ -406,14 +406,14 @@ static void bcm47xx_sprom_fill_auto(struct ssb_sprom *sprom,
 }
 #undef ENTRY /* It's specific, uses local variable, don't use it (again). */
 
-static void bcm47xx_fill_sprom_path_r4589(struct ssb_sprom *sprom,
+static void bcm47xx_fill_sprom_path_r4589(struct ssbn_sprom *sprom,
 					  const char *prefix, bool fallback)
 {
 	char postfix[2];
 	int i;
 
 	for (i = 0; i < ARRAY_SIZE(sprom->core_pwr_info); i++) {
-		struct ssb_sprom_core_pwr_info *pwr_info;
+		struct ssbn_sprom_core_pwr_info *pwr_info;
 
 		pwr_info = &sprom->core_pwr_info[i];
 
@@ -457,14 +457,14 @@ static void bcm47xx_fill_sprom_path_r4589(struct ssb_sprom *sprom,
 	}
 }
 
-static void bcm47xx_fill_sprom_path_r45(struct ssb_sprom *sprom,
+static void bcm47xx_fill_sprom_path_r45(struct ssbn_sprom *sprom,
 					const char *prefix, bool fallback)
 {
 	char postfix[2];
 	int i;
 
 	for (i = 0; i < ARRAY_SIZE(sprom->core_pwr_info); i++) {
-		struct ssb_sprom_core_pwr_info *pwr_info;
+		struct ssbn_sprom_core_pwr_info *pwr_info;
 
 		pwr_info = &sprom->core_pwr_info[i];
 
@@ -507,7 +507,7 @@ static int bcm47xx_increase_mac_addr(u8 *mac, u8 num)
 
 static int mac_addr_used = 2;
 
-static void bcm47xx_fill_sprom_ethernet(struct ssb_sprom *sprom,
+static void bcm47xx_fill_sprom_ethernet(struct ssbn_sprom *sprom,
 					const char *prefix, bool fallback)
 {
 	bool fb = fallback;
@@ -552,7 +552,7 @@ static void bcm47xx_fill_sprom_ethernet(struct ssb_sprom *sprom,
 	}
 }
 
-static void bcm47xx_fill_board_data(struct ssb_sprom *sprom, const char *prefix,
+static void bcm47xx_fill_board_data(struct ssbn_sprom *sprom, const char *prefix,
 				    bool fallback)
 {
 	nvram_read_u32_2(prefix, "boardflags", &sprom->boardflags_lo,
@@ -561,7 +561,7 @@ static void bcm47xx_fill_board_data(struct ssb_sprom *sprom, const char *prefix,
 			 &sprom->boardflags2_hi, fallback);
 }
 
-void bcm47xx_fill_sprom(struct ssb_sprom *sprom, const char *prefix,
+void bcm47xx_fill_sprom(struct ssbn_sprom *sprom, const char *prefix,
 			bool fallback)
 {
 	bcm47xx_fill_sprom_ethernet(sprom, prefix, fallback);
@@ -590,17 +590,16 @@ void bcm47xx_fill_sprom(struct ssb_sprom *sprom, const char *prefix,
 	bcm47xx_sprom_fill_auto(sprom, prefix, fallback);
 }
 
-#if IS_BUILTIN(CONFIG_SSB) && IS_ENABLED(CONFIG_SSB_SPROM)
-static int bcm47xx_get_sprom_ssb(struct ssb_bus *bus, struct ssb_sprom *out)
+int bcm47xx_get_sprom_ssb(struct ssbn_bus *bus, struct ssbn_sprom *out)
 {
 	char prefix[10];
 
 	switch (bus->bustype) {
-	case SSB_BUSTYPE_SSB:
+	case SSBN_BUSTYPE_SSB:
 		bcm47xx_fill_sprom(out, NULL, false);
 		return 0;
-	case SSB_BUSTYPE_PCI:
-		memset(out, 0, sizeof(struct ssb_sprom));
+	case SSBN_BUSTYPE_PCI:
+		memset(out, 0, sizeof(struct ssbn_sprom));
 		snprintf(prefix, sizeof(prefix), "pci/%u/%u/",
 			 bus->host_pci->bus->number + 1,
 			 PCI_SLOT(bus->host_pci->devfn));
@@ -611,9 +610,7 @@ static int bcm47xx_get_sprom_ssb(struct ssb_bus *bus, struct ssb_sprom *out)
 		return -EINVAL;
 	}
 }
-#endif
 
-#if IS_BUILTIN(CONFIG_BCMA)
 /*
  * Having many NVRAM entries for PCI devices led to repeating prefixes like
  * pci/1/1/ all the time and wasting flash space. So at some point Broadcom
@@ -646,17 +643,17 @@ static void bcm47xx_sprom_apply_prefix_alias(char *prefix, size_t prefix_size)
 	}
 }
 
-static int bcm47xx_get_sprom_bcma(struct bcma_bus *bus, struct ssb_sprom *out)
+int bcm47xx_get_sprom_bcma(struct bcmn_bus *bus, struct ssbn_sprom *out)
 {
-	struct bcma_boardinfo *binfo = &bus->boardinfo;
-	struct bcma_device *core;
+	struct bcmn_boardinfo *binfo = &bus->boardinfo;
+	struct bcmn_device *core;
 	char buf[10];
 	char *prefix;
 	bool fallback = false;
 
 	switch (bus->hosttype) {
-	case BCMA_HOSTTYPE_PCI:
-		memset(out, 0, sizeof(struct ssb_sprom));
+	case BCMN_HOSTTYPE_PCI:
+		memset(out, 0, sizeof(struct ssbn_sprom));
 		/* On BCM47XX all PCI buses share the same domain */
 		if (IS_ENABLED(CONFIG_BCM47XX))
 			snprintf(buf, sizeof(buf), "pci/%u/%u/",
@@ -669,9 +666,9 @@ static int bcm47xx_get_sprom_bcma(struct bcma_bus *bus, struct ssb_sprom *out)
 		bcm47xx_sprom_apply_prefix_alias(buf, sizeof(buf));
 		prefix = buf;
 		break;
-	case BCMA_HOSTTYPE_SOC:
-		memset(out, 0, sizeof(struct ssb_sprom));
-		core = bcma_find_core(bus, BCMA_CORE_80211);
+	case BCMN_HOSTTYPE_SOC:
+		memset(out, 0, sizeof(struct ssbn_sprom));
+		core = bcmn_find_core(bus, BCMN_CORE_80211);
 		if (core) {
 			snprintf(buf, sizeof(buf), "sb/%u/",
 				 core->core_index);
@@ -688,39 +685,10 @@ static int bcm47xx_get_sprom_bcma(struct bcma_bus *bus, struct ssb_sprom *out)
 
 	nvram_read_u16(prefix, NULL, "boardvendor", &binfo->vendor, 0, true);
 	if (!binfo->vendor)
-		binfo->vendor = SSB_BOARDVENDOR_BCM;
+		binfo->vendor = SSBN_BOARDVENDOR_BCM;
 	nvram_read_u16(prefix, NULL, "boardtype", &binfo->type, 0, true);
 
 	bcm47xx_fill_sprom(out, prefix, fallback);
 
 	return 0;
 }
-#endif
-
-static unsigned int bcm47xx_sprom_registered;
-
-/*
- * On bcm47xx we need to register SPROM fallback handler very early, so we can't
- * use anything like platform device / driver for this.
- */
-int bcm47xx_sprom_register_fallbacks(void)
-{
-	if (bcm47xx_sprom_registered)
-		return 0;
-
-#if IS_BUILTIN(CONFIG_SSB) && IS_ENABLED(CONFIG_SSB_SPROM)
-	if (ssb_arch_register_fallback_sprom(&bcm47xx_get_sprom_ssb))
-		pr_warn("Failed to register ssb SPROM handler\n");
-#endif
-
-#if IS_BUILTIN(CONFIG_BCMA)
-	if (bcma_arch_register_fallback_sprom(&bcm47xx_get_sprom_bcma))
-		pr_warn("Failed to register bcma SPROM handler\n");
-#endif
-
-	bcm47xx_sprom_registered = 1;
-
-	return 0;
-}
-
-fs_initcall(bcm47xx_sprom_register_fallbacks);

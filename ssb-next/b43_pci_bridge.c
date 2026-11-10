@@ -10,11 +10,11 @@
  * Licensed under the GNU/GPL. See COPYING for details.
  */
 
-#include "ssb_private.h"
+#include "ssbn_private.h"
 
 #include <linux/pci.h>
 #include <linux/module.h>
-#include <linux/ssb/ssb.h>
+#include <ssb-next/ssbn.h>
 
 
 static const struct pci_device_id b43_pci_bridge_tbl[] = {
@@ -44,17 +44,17 @@ static const struct pci_device_id b43_pci_bridge_tbl[] = {
 MODULE_DEVICE_TABLE(pci, b43_pci_bridge_tbl);
 
 static struct pci_driver b43_pci_bridge_driver = {
-	.name = "b43-pci-bridge",
+	.name = "ssb-next-pci-bridge",
 	.id_table = b43_pci_bridge_tbl,
 };
 
 
 int __init b43_pci_ssb_bridge_init(void)
 {
-	return ssb_pcihost_register(&b43_pci_bridge_driver);
+	return ssbn_pcihost_register(&b43_pci_bridge_driver);
 }
 
-void __exit b43_pci_ssb_bridge_exit(void)
+void b43_pci_ssb_bridge_exit(void)
 {
-	ssb_pcihost_unregister(&b43_pci_bridge_driver);
+	ssbn_pcihost_unregister(&b43_pci_bridge_driver);
 }

@@ -1102,7 +1102,7 @@ static u16 radio2050_rfover_val(struct b43_wldev *dev,
 {
 	struct b43_phy *phy = &dev->phy;
 	struct b43_phy_g *gphy = phy->g;
-	struct ssb_sprom *sprom = dev->dev->bus_sprom;
+	struct ssbn_sprom *sprom = dev->dev->bus_sprom;
 
 	if (!phy->gmode)
 		return 0;
@@ -1487,8 +1487,8 @@ static void b43_phy_initb5(struct b43_wldev *dev)
 	if (phy->analog == 1) {
 		b43_radio_set(dev, 0x007A, 0x0050);
 	}
-	if ((dev->dev->board_vendor != SSB_BOARDVENDOR_BCM) &&
-	    (dev->dev->board_type != SSB_BOARD_BU4306)) {
+	if ((dev->dev->board_vendor != SSBN_BOARDVENDOR_BCM) &&
+	    (dev->dev->board_type != SSBN_BOARD_BU4306)) {
 		value = 0x2120;
 		for (offset = 0x00A8; offset < 0x00C7; offset++) {
 			b43_phy_write(dev, offset, value);
@@ -1917,8 +1917,8 @@ static void b43_phy_init_pctl(struct b43_wldev *dev)
 
 	B43_WARN_ON(phy->type != B43_PHYTYPE_G);
 
-	if ((dev->dev->board_vendor == SSB_BOARDVENDOR_BCM) &&
-	    (dev->dev->board_type == SSB_BOARD_BU4306))
+	if ((dev->dev->board_vendor == SSBN_BOARDVENDOR_BCM) &&
+	    (dev->dev->board_type == SSBN_BOARD_BU4306))
 		return;
 
 	b43_phy_write(dev, 0x0028, 0x8018);
@@ -2111,7 +2111,7 @@ void b43_gphy_channel_switch(struct b43_wldev *dev,
 
 	if (channel == 14) {
 		if (dev->dev->bus_sprom->country_code ==
-		    SSB_SPROM1CCODE_JAPAN)
+		    SSBN_SPROM1CCODE_JAPAN)
 			b43_hf_write(dev,
 				     b43_hf_read(dev) & ~B43_HF_ACPR);
 		else
@@ -2146,8 +2146,8 @@ static void default_radio_attenuation(struct b43_wldev *dev,
 
 	rf->with_padmix = false;
 
-	if (dev->dev->board_vendor == SSB_BOARDVENDOR_BCM &&
-	    dev->dev->board_type == SSB_BOARD_BCM4309G) {
+	if (dev->dev->board_vendor == SSBN_BOARDVENDOR_BCM &&
+	    dev->dev->board_type == SSBN_BOARD_BCM4309G) {
 		if (dev->dev->board_rev < 0x43) {
 			rf->att = 2;
 			return;
@@ -2172,20 +2172,20 @@ static void default_radio_attenuation(struct b43_wldev *dev,
 			return;
 		case 1:
 			if (phy->type == B43_PHYTYPE_G) {
-				if (bdev->board_vendor == SSB_BOARDVENDOR_BCM
-				    && bdev->board_type == SSB_BOARD_BCM4309G
+				if (bdev->board_vendor == SSBN_BOARDVENDOR_BCM
+				    && bdev->board_type == SSBN_BOARD_BCM4309G
 				    && bdev->board_rev >= 30)
 					rf->att = 3;
 				else if (bdev->board_vendor ==
-					 SSB_BOARDVENDOR_BCM
+					 SSBN_BOARDVENDOR_BCM
 					 && bdev->board_type ==
-					 SSB_BOARD_BU4306)
+					 SSBN_BOARD_BU4306)
 					rf->att = 3;
 				else
 					rf->att = 1;
 			} else {
-				if (bdev->board_vendor == SSB_BOARDVENDOR_BCM
-				    && bdev->board_type == SSB_BOARD_BCM4309G
+				if (bdev->board_vendor == SSBN_BOARDVENDOR_BCM
+				    && bdev->board_type == SSBN_BOARD_BCM4309G
 				    && bdev->board_rev >= 30)
 					rf->att = 7;
 				else
@@ -2194,14 +2194,14 @@ static void default_radio_attenuation(struct b43_wldev *dev,
 			return;
 		case 2:
 			if (phy->type == B43_PHYTYPE_G) {
-				if (bdev->board_vendor == SSB_BOARDVENDOR_BCM
-				    && bdev->board_type == SSB_BOARD_BCM4309G
+				if (bdev->board_vendor == SSBN_BOARDVENDOR_BCM
+				    && bdev->board_type == SSBN_BOARD_BCM4309G
 				    && bdev->board_rev >= 30)
 					rf->att = 3;
 				else if (bdev->board_vendor ==
-					 SSB_BOARDVENDOR_BCM
+					 SSBN_BOARDVENDOR_BCM
 					 && bdev->board_type ==
-					 SSB_BOARD_BU4306)
+					 SSBN_BOARD_BU4306)
 					rf->att = 5;
 				else if (bdev->chip_id == 0x4320)
 					rf->att = 4;

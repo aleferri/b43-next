@@ -34,32 +34,32 @@ int b43_phy_allocate(struct b43_wldev *dev)
 
 	switch (phy->type) {
 	case B43_PHYTYPE_G:
-#ifdef CONFIG_B43_PHY_G
+#ifdef CONFIG_B43_NEXT_PHY_G
 		phy->ops = &b43_phyops_g;
 #endif
 		break;
 	case B43_PHYTYPE_N:
-#ifdef CONFIG_B43_PHY_N
+#ifdef CONFIG_B43_NEXT_PHY_N
 		phy->ops = &b43_phyops_n;
 #endif
 		break;
 	case B43_PHYTYPE_LP:
-#ifdef CONFIG_B43_PHY_LP
+#ifdef CONFIG_B43_NEXT_PHY_LP
 		phy->ops = &b43_phyops_lp;
 #endif
 		break;
 	case B43_PHYTYPE_HT:
-#ifdef CONFIG_B43_PHY_HT
+#ifdef CONFIG_B43_NEXT_PHY_HT
 		phy->ops = &b43_phyops_ht;
 #endif
 		break;
 	case B43_PHYTYPE_LCN:
-#ifdef CONFIG_B43_PHY_LCN
+#ifdef CONFIG_B43_NEXT_PHY_LCN
 		phy->ops = &b43_phyops_lcn;
 #endif
 		break;
 	case B43_PHYTYPE_AC:
-#ifdef CONFIG_B43_PHY_AC
+#ifdef CONFIG_B43_NEXT_PHY_AC
 		phy->ops = &b43_phyops_ac;
 #endif
 		break;
@@ -334,33 +334,33 @@ void b43_phy_put_into_reset(struct b43_wldev *dev)
 	u32 tmp;
 
 	switch (dev->dev->bus_type) {
-#ifdef CONFIG_B43_BCMA
+#ifdef CONFIG_B43_NEXT_BCMA
 	case B43_BUS_BCMA:
-		tmp = bcma_aread32(dev->dev->bdev, BCMA_IOCTL);
+		tmp = bcmn_aread32(dev->dev->bdev, BCMN_IOCTL);
 		tmp &= ~B43_BCMA_IOCTL_GMODE;
 		tmp |= B43_BCMA_IOCTL_PHY_RESET;
-		tmp |= BCMA_IOCTL_FGC;
-		bcma_awrite32(dev->dev->bdev, BCMA_IOCTL, tmp);
+		tmp |= BCMN_IOCTL_FGC;
+		bcmn_awrite32(dev->dev->bdev, BCMN_IOCTL, tmp);
 		udelay(1);
 
-		tmp = bcma_aread32(dev->dev->bdev, BCMA_IOCTL);
-		tmp &= ~BCMA_IOCTL_FGC;
-		bcma_awrite32(dev->dev->bdev, BCMA_IOCTL, tmp);
+		tmp = bcmn_aread32(dev->dev->bdev, BCMN_IOCTL);
+		tmp &= ~BCMN_IOCTL_FGC;
+		bcmn_awrite32(dev->dev->bdev, BCMN_IOCTL, tmp);
 		udelay(1);
 		break;
 #endif
-#ifdef CONFIG_B43_SSB
+#ifdef CONFIG_B43_NEXT_SSB
 	case B43_BUS_SSB:
-		tmp = ssb_read32(dev->dev->sdev, SSB_TMSLOW);
+		tmp = ssbn_read32(dev->dev->sdev, SSBN_TMSLOW);
 		tmp &= ~B43_TMSLOW_GMODE;
 		tmp |= B43_TMSLOW_PHYRESET;
-		tmp |= SSB_TMSLOW_FGC;
-		ssb_write32(dev->dev->sdev, SSB_TMSLOW, tmp);
+		tmp |= SSBN_TMSLOW_FGC;
+		ssbn_write32(dev->dev->sdev, SSBN_TMSLOW, tmp);
 		usleep_range(1000, 2000);
 
-		tmp = ssb_read32(dev->dev->sdev, SSB_TMSLOW);
-		tmp &= ~SSB_TMSLOW_FGC;
-		ssb_write32(dev->dev->sdev, SSB_TMSLOW, tmp);
+		tmp = ssbn_read32(dev->dev->sdev, SSBN_TMSLOW);
+		tmp &= ~SSBN_TMSLOW_FGC;
+		ssbn_write32(dev->dev->sdev, SSBN_TMSLOW, tmp);
 		usleep_range(1000, 2000);
 
 		break;
@@ -373,40 +373,40 @@ void b43_phy_take_out_of_reset(struct b43_wldev *dev)
 	u32 tmp;
 
 	switch (dev->dev->bus_type) {
-#ifdef CONFIG_B43_BCMA
+#ifdef CONFIG_B43_NEXT_BCMA
 	case B43_BUS_BCMA:
 		/* Unset reset bit (with forcing clock) */
-		tmp = bcma_aread32(dev->dev->bdev, BCMA_IOCTL);
+		tmp = bcmn_aread32(dev->dev->bdev, BCMN_IOCTL);
 		tmp &= ~B43_BCMA_IOCTL_PHY_RESET;
 		tmp &= ~B43_BCMA_IOCTL_PHY_CLKEN;
-		tmp |= BCMA_IOCTL_FGC;
-		bcma_awrite32(dev->dev->bdev, BCMA_IOCTL, tmp);
+		tmp |= BCMN_IOCTL_FGC;
+		bcmn_awrite32(dev->dev->bdev, BCMN_IOCTL, tmp);
 		udelay(1);
 
 		/* Do not force clock anymore */
-		tmp = bcma_aread32(dev->dev->bdev, BCMA_IOCTL);
-		tmp &= ~BCMA_IOCTL_FGC;
+		tmp = bcmn_aread32(dev->dev->bdev, BCMN_IOCTL);
+		tmp &= ~BCMN_IOCTL_FGC;
 		tmp |= B43_BCMA_IOCTL_PHY_CLKEN;
-		bcma_awrite32(dev->dev->bdev, BCMA_IOCTL, tmp);
+		bcmn_awrite32(dev->dev->bdev, BCMN_IOCTL, tmp);
 		udelay(1);
 		break;
 #endif
-#ifdef CONFIG_B43_SSB
+#ifdef CONFIG_B43_NEXT_SSB
 	case B43_BUS_SSB:
 		/* Unset reset bit (with forcing clock) */
-		tmp = ssb_read32(dev->dev->sdev, SSB_TMSLOW);
+		tmp = ssbn_read32(dev->dev->sdev, SSBN_TMSLOW);
 		tmp &= ~B43_TMSLOW_PHYRESET;
 		tmp &= ~B43_TMSLOW_PHYCLKEN;
-		tmp |= SSB_TMSLOW_FGC;
-		ssb_write32(dev->dev->sdev, SSB_TMSLOW, tmp);
-		ssb_read32(dev->dev->sdev, SSB_TMSLOW); /* flush */
+		tmp |= SSBN_TMSLOW_FGC;
+		ssbn_write32(dev->dev->sdev, SSBN_TMSLOW, tmp);
+		ssbn_read32(dev->dev->sdev, SSBN_TMSLOW); /* flush */
 		usleep_range(1000, 2000);
 
-		tmp = ssb_read32(dev->dev->sdev, SSB_TMSLOW);
-		tmp &= ~SSB_TMSLOW_FGC;
+		tmp = ssbn_read32(dev->dev->sdev, SSBN_TMSLOW);
+		tmp &= ~SSBN_TMSLOW_FGC;
 		tmp |= B43_TMSLOW_PHYCLKEN;
-		ssb_write32(dev->dev->sdev, SSB_TMSLOW, tmp);
-		ssb_read32(dev->dev->sdev, SSB_TMSLOW); /* flush */
+		ssbn_write32(dev->dev->sdev, SSBN_TMSLOW, tmp);
+		ssbn_read32(dev->dev->sdev, SSBN_TMSLOW); /* flush */
 		usleep_range(1000, 2000);
 		break;
 #endif
@@ -492,8 +492,8 @@ void b43_phy_txpower_check(struct b43_wldev *dev, unsigned int flags)
 	/* The next check will be needed in two seconds, or later. */
 	phy->next_txpwr_check_time = round_jiffies(now + (HZ * 2));
 
-	if ((dev->dev->board_vendor == SSB_BOARDVENDOR_BCM) &&
-	    (dev->dev->board_type == SSB_BOARD_BU4306))
+	if ((dev->dev->board_vendor == SSBN_BOARDVENDOR_BCM) &&
+	    (dev->dev->board_type == SSBN_BOARD_BU4306))
 		return; /* No software txpower adjustment needed */
 
 	result = phy->ops->recalc_txpower(dev, !!(flags & B43_TXPWR_IGNORE_TSSI));
@@ -569,24 +569,24 @@ void b43_phy_force_clock(struct b43_wldev *dev, bool force)
 		dev->phy.type != B43_PHYTYPE_AC);
 
 	switch (dev->dev->bus_type) {
-#ifdef CONFIG_B43_BCMA
+#ifdef CONFIG_B43_NEXT_BCMA
 	case B43_BUS_BCMA:
-		tmp = bcma_aread32(dev->dev->bdev, BCMA_IOCTL);
+		tmp = bcmn_aread32(dev->dev->bdev, BCMN_IOCTL);
 		if (force)
-			tmp |= BCMA_IOCTL_FGC;
+			tmp |= BCMN_IOCTL_FGC;
 		else
-			tmp &= ~BCMA_IOCTL_FGC;
-		bcma_awrite32(dev->dev->bdev, BCMA_IOCTL, tmp);
+			tmp &= ~BCMN_IOCTL_FGC;
+		bcmn_awrite32(dev->dev->bdev, BCMN_IOCTL, tmp);
 		break;
 #endif
-#ifdef CONFIG_B43_SSB
+#ifdef CONFIG_B43_NEXT_SSB
 	case B43_BUS_SSB:
-		tmp = ssb_read32(dev->dev->sdev, SSB_TMSLOW);
+		tmp = ssbn_read32(dev->dev->sdev, SSBN_TMSLOW);
 		if (force)
-			tmp |= SSB_TMSLOW_FGC;
+			tmp |= SSBN_TMSLOW_FGC;
 		else
-			tmp &= ~SSB_TMSLOW_FGC;
-		ssb_write32(dev->dev->sdev, SSB_TMSLOW, tmp);
+			tmp &= ~SSBN_TMSLOW_FGC;
+		ssbn_write32(dev->dev->sdev, SSBN_TMSLOW, tmp);
 		break;
 #endif
 	}

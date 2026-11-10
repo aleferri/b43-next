@@ -109,41 +109,39 @@ static int b43_modparam_pio;
 module_param_named(pio, b43_modparam_pio, int, 0644);
 MODULE_PARM_DESC(pio, "Use PIO accesses by default: 0=DMA, 1=PIO");
 
-static int modparam_allhwsupport = !IS_ENABLED(CONFIG_BRCMSMAC);
+static int modparam_allhwsupport = 1;
 module_param_named(allhwsupport, modparam_allhwsupport, int, 0444);
 MODULE_PARM_DESC(allhwsupport, "Enable support for all hardware (even it if overlaps with the brcmsmac driver)");
 
-#ifdef CONFIG_B43_BCMA
-static const struct bcma_device_id b43_bcma_tbl[] = {
-	BCMA_CORE(BCMA_MANUF_BCM, BCMA_CORE_80211, 0x11, BCMA_ANY_CLASS),
-	BCMA_CORE(BCMA_MANUF_BCM, BCMA_CORE_80211, 0x15, BCMA_ANY_CLASS),
-	BCMA_CORE(BCMA_MANUF_BCM, BCMA_CORE_80211, 0x17, BCMA_ANY_CLASS),
-	BCMA_CORE(BCMA_MANUF_BCM, BCMA_CORE_80211, 0x18, BCMA_ANY_CLASS),
-	BCMA_CORE(BCMA_MANUF_BCM, BCMA_CORE_80211, 0x1C, BCMA_ANY_CLASS),
-	BCMA_CORE(BCMA_MANUF_BCM, BCMA_CORE_80211, 0x1D, BCMA_ANY_CLASS),
-	BCMA_CORE(BCMA_MANUF_BCM, BCMA_CORE_80211, 0x1E, BCMA_ANY_CLASS),
-	BCMA_CORE(BCMA_MANUF_BCM, BCMA_CORE_80211, 0x28, BCMA_ANY_CLASS),
-	BCMA_CORE(BCMA_MANUF_BCM, BCMA_CORE_80211, 0x2A, BCMA_ANY_CLASS),
+#ifdef CONFIG_B43_NEXT_BCMA
+static const struct bcmn_device_id b43_bcma_tbl[] = {
+	BCMN_CORE(BCMN_MANUF_BCM, BCMN_CORE_80211, 0x11, BCMN_ANY_CLASS),
+	BCMN_CORE(BCMN_MANUF_BCM, BCMN_CORE_80211, 0x15, BCMN_ANY_CLASS),
+	BCMN_CORE(BCMN_MANUF_BCM, BCMN_CORE_80211, 0x17, BCMN_ANY_CLASS),
+	BCMN_CORE(BCMN_MANUF_BCM, BCMN_CORE_80211, 0x18, BCMN_ANY_CLASS),
+	BCMN_CORE(BCMN_MANUF_BCM, BCMN_CORE_80211, 0x1C, BCMN_ANY_CLASS),
+	BCMN_CORE(BCMN_MANUF_BCM, BCMN_CORE_80211, 0x1D, BCMN_ANY_CLASS),
+	BCMN_CORE(BCMN_MANUF_BCM, BCMN_CORE_80211, 0x1E, BCMN_ANY_CLASS),
+	BCMN_CORE(BCMN_MANUF_BCM, BCMN_CORE_80211, 0x28, BCMN_ANY_CLASS),
+	BCMN_CORE(BCMN_MANUF_BCM, BCMN_CORE_80211, 0x2A, BCMN_ANY_CLASS),
 	{},
 };
-MODULE_DEVICE_TABLE(bcma, b43_bcma_tbl);
 #endif
 
-#ifdef CONFIG_B43_SSB
-static const struct ssb_device_id b43_ssb_tbl[] = {
-	SSB_DEVICE(SSB_VENDOR_BROADCOM, SSB_DEV_80211, 5),
-	SSB_DEVICE(SSB_VENDOR_BROADCOM, SSB_DEV_80211, 6),
-	SSB_DEVICE(SSB_VENDOR_BROADCOM, SSB_DEV_80211, 7),
-	SSB_DEVICE(SSB_VENDOR_BROADCOM, SSB_DEV_80211, 9),
-	SSB_DEVICE(SSB_VENDOR_BROADCOM, SSB_DEV_80211, 10),
-	SSB_DEVICE(SSB_VENDOR_BROADCOM, SSB_DEV_80211, 11),
-	SSB_DEVICE(SSB_VENDOR_BROADCOM, SSB_DEV_80211, 12),
-	SSB_DEVICE(SSB_VENDOR_BROADCOM, SSB_DEV_80211, 13),
-	SSB_DEVICE(SSB_VENDOR_BROADCOM, SSB_DEV_80211, 15),
-	SSB_DEVICE(SSB_VENDOR_BROADCOM, SSB_DEV_80211, 16),
+#ifdef CONFIG_B43_NEXT_SSB
+static const struct ssbn_device_id b43_ssb_tbl[] = {
+	SSBN_DEVICE(SSBN_VENDOR_BROADCOM, SSBN_DEV_80211, 5),
+	SSBN_DEVICE(SSBN_VENDOR_BROADCOM, SSBN_DEV_80211, 6),
+	SSBN_DEVICE(SSBN_VENDOR_BROADCOM, SSBN_DEV_80211, 7),
+	SSBN_DEVICE(SSBN_VENDOR_BROADCOM, SSBN_DEV_80211, 9),
+	SSBN_DEVICE(SSBN_VENDOR_BROADCOM, SSBN_DEV_80211, 10),
+	SSBN_DEVICE(SSBN_VENDOR_BROADCOM, SSBN_DEV_80211, 11),
+	SSBN_DEVICE(SSBN_VENDOR_BROADCOM, SSBN_DEV_80211, 12),
+	SSBN_DEVICE(SSBN_VENDOR_BROADCOM, SSBN_DEV_80211, 13),
+	SSBN_DEVICE(SSBN_VENDOR_BROADCOM, SSBN_DEV_80211, 15),
+	SSBN_DEVICE(SSBN_VENDOR_BROADCOM, SSBN_DEV_80211, 16),
 	{},
 };
-MODULE_DEVICE_TABLE(ssb, b43_ssb_tbl);
 #endif
 
 /* Channel and ratetables are shared for all devices.
@@ -1202,43 +1200,43 @@ void b43_power_saving_ctl_bits(struct b43_wldev *dev, unsigned int ps_flags)
 /* https://bcm-v4.sipsolutions.net/802.11/PHY/BmacCorePllReset */
 void b43_wireless_core_phy_pll_reset(struct b43_wldev *dev)
 {
-	struct bcma_drv_cc *bcma_cc __maybe_unused;
-	struct ssb_chipcommon *ssb_cc __maybe_unused;
+	struct bcmn_drv_cc *bcmn_cc __maybe_unused;
+	struct ssbn_chipcommon *ssbn_cc __maybe_unused;
 
 	switch (dev->dev->bus_type) {
-#ifdef CONFIG_B43_BCMA
+#ifdef CONFIG_B43_NEXT_BCMA
 	case B43_BUS_BCMA:
-		bcma_cc = &dev->dev->bdev->bus->drv_cc;
+		bcmn_cc = &dev->dev->bdev->bus->drv_cc;
 
-		bcma_cc_write32(bcma_cc, BCMA_CC_PMU_CHIPCTL_ADDR, 0);
-		bcma_cc_mask32(bcma_cc, BCMA_CC_PMU_CHIPCTL_DATA, ~0x4);
-		bcma_cc_set32(bcma_cc, BCMA_CC_PMU_CHIPCTL_DATA, 0x4);
-		bcma_cc_mask32(bcma_cc, BCMA_CC_PMU_CHIPCTL_DATA, ~0x4);
+		bcmn_cc_write32(bcmn_cc, BCMN_CC_PMU_CHIPCTL_ADDR, 0);
+		bcmn_cc_mask32(bcmn_cc, BCMN_CC_PMU_CHIPCTL_DATA, ~0x4);
+		bcmn_cc_set32(bcmn_cc, BCMN_CC_PMU_CHIPCTL_DATA, 0x4);
+		bcmn_cc_mask32(bcmn_cc, BCMN_CC_PMU_CHIPCTL_DATA, ~0x4);
 		break;
 #endif
-#ifdef CONFIG_B43_SSB
+#ifdef CONFIG_B43_NEXT_SSB
 	case B43_BUS_SSB:
-		ssb_cc = &dev->dev->sdev->bus->chipco;
+		ssbn_cc = &dev->dev->sdev->bus->chipco;
 
-		chipco_write32(ssb_cc, SSB_CHIPCO_CHIPCTL_ADDR, 0);
-		chipco_mask32(ssb_cc, SSB_CHIPCO_CHIPCTL_DATA, ~0x4);
-		chipco_set32(ssb_cc, SSB_CHIPCO_CHIPCTL_DATA, 0x4);
-		chipco_mask32(ssb_cc, SSB_CHIPCO_CHIPCTL_DATA, ~0x4);
+		chipco_write32(ssbn_cc, SSBN_CHIPCO_CHIPCTL_ADDR, 0);
+		chipco_mask32(ssbn_cc, SSBN_CHIPCO_CHIPCTL_DATA, ~0x4);
+		chipco_set32(ssbn_cc, SSBN_CHIPCO_CHIPCTL_DATA, 0x4);
+		chipco_mask32(ssbn_cc, SSBN_CHIPCO_CHIPCTL_DATA, ~0x4);
 		break;
 #endif
 	}
 }
 
-#ifdef CONFIG_B43_BCMA
+#ifdef CONFIG_B43_NEXT_BCMA
 static void b43_bcma_phy_reset(struct b43_wldev *dev)
 {
 	u32 flags;
 
 	/* Put PHY into reset */
-	flags = bcma_aread32(dev->dev->bdev, BCMA_IOCTL);
+	flags = bcmn_aread32(dev->dev->bdev, BCMN_IOCTL);
 	flags |= B43_BCMA_IOCTL_PHY_RESET;
 	flags |= B43_BCMA_IOCTL_PHY_BW_20MHZ; /* Make 20 MHz def */
-	bcma_awrite32(dev->dev->bdev, BCMA_IOCTL, flags);
+	bcmn_awrite32(dev->dev->bdev, BCMN_IOCTL, flags);
 	udelay(2);
 
 	b43_phy_take_out_of_reset(dev);
@@ -1260,27 +1258,27 @@ static void b43_bcma_wireless_core_reset(struct b43_wldev *dev, bool gmode)
 	if (dev->phy.type == B43_PHYTYPE_AC) {
 		u16 tmp;
 
-		tmp = bcma_aread32(dev->dev->bdev, BCMA_IOCTL);
+		tmp = bcmn_aread32(dev->dev->bdev, BCMN_IOCTL);
 		tmp &= ~B43_BCMA_IOCTL_DAC;
 		tmp |= 0x100;
-		bcma_awrite32(dev->dev->bdev, BCMA_IOCTL, tmp);
+		bcmn_awrite32(dev->dev->bdev, BCMN_IOCTL, tmp);
 
-		tmp = bcma_aread32(dev->dev->bdev, BCMA_IOCTL);
+		tmp = bcmn_aread32(dev->dev->bdev, BCMN_IOCTL);
 		tmp &= ~B43_BCMA_IOCTL_PHY_CLKEN;
-		bcma_awrite32(dev->dev->bdev, BCMA_IOCTL, tmp);
+		bcmn_awrite32(dev->dev->bdev, BCMN_IOCTL, tmp);
 
-		tmp = bcma_aread32(dev->dev->bdev, BCMA_IOCTL);
+		tmp = bcmn_aread32(dev->dev->bdev, BCMN_IOCTL);
 		tmp |= B43_BCMA_IOCTL_PHY_CLKEN;
-		bcma_awrite32(dev->dev->bdev, BCMA_IOCTL, tmp);
+		bcmn_awrite32(dev->dev->bdev, BCMN_IOCTL, tmp);
 	}
 
-	bcma_core_set_clockmode(dev->dev->bdev, BCMA_CLKMODE_FAST);
+	bcmn_core_set_clockmode(dev->dev->bdev, BCMN_CLKMODE_FAST);
 	b43_bcma_phy_reset(dev);
-	bcma_core_pll_ctl(dev->dev->bdev, req, status, true);
+	bcmn_core_pll_ctl(dev->dev->bdev, req, status, true);
 }
 #endif
 
-#ifdef CONFIG_B43_SSB
+#ifdef CONFIG_B43_NEXT_SSB
 static void b43_ssb_wireless_core_reset(struct b43_wldev *dev, bool gmode)
 {
 	u32 flags = 0;
@@ -1303,12 +1301,12 @@ void b43_wireless_core_reset(struct b43_wldev *dev, bool gmode)
 	u32 macctl;
 
 	switch (dev->dev->bus_type) {
-#ifdef CONFIG_B43_BCMA
+#ifdef CONFIG_B43_NEXT_BCMA
 	case B43_BUS_BCMA:
 		b43_bcma_wireless_core_reset(dev, gmode);
 		break;
 #endif
-#ifdef CONFIG_B43_SSB
+#ifdef CONFIG_B43_NEXT_SSB
 	case B43_BUS_SSB:
 		b43_ssb_wireless_core_reset(dev, gmode);
 		break;
@@ -2588,7 +2586,7 @@ static void b43_request_firmware(struct work_struct *work)
 start_ieee80211:
 	wl->hw->queues = B43_QOS_QUEUE_NUM;
 	if (!modparam_qos || dev->fw.opensource ||
-	    dev->dev->chip_id == BCMA_CHIP_ID_BCM4331)
+	    dev->dev->chip_id == BCMN_CHIP_ID_BCM4331)
 		wl->hw->queues = 1;
 
 	err = ieee80211_register_hw(wl->hw);
@@ -2849,12 +2847,12 @@ static int b43_upload_initvals_band(struct b43_wldev *dev)
  * https://bcm-specs.sipsolutions.net/GPIO
  */
 
-#ifdef CONFIG_B43_SSB
-static struct ssb_device *b43_ssb_gpio_dev(struct b43_wldev *dev)
+#ifdef CONFIG_B43_NEXT_SSB
+static struct ssbn_device *b43_ssb_gpio_dev(struct b43_wldev *dev)
 {
-	struct ssb_bus *bus = dev->dev->sdev->bus;
+	struct ssbn_bus *bus = dev->dev->sdev->bus;
 
-#ifdef CONFIG_SSB_DRIVER_PCICORE
+#ifdef CONFIG_SSBN_DRIVER_PCICORE
 	return (bus->chipco.dev ? bus->chipco.dev : bus->pcicore.dev);
 #else
 	return bus->chipco.dev;
@@ -2864,8 +2862,8 @@ static struct ssb_device *b43_ssb_gpio_dev(struct b43_wldev *dev)
 
 static int b43_gpio_init(struct b43_wldev *dev)
 {
-#ifdef CONFIG_B43_SSB
-	struct ssb_device *gpiodev;
+#ifdef CONFIG_B43_NEXT_SSB
+	struct ssbn_device *gpiodev;
 #endif
 	u32 mask, set;
 
@@ -2903,17 +2901,17 @@ static int b43_gpio_init(struct b43_wldev *dev)
 	}
 
 	switch (dev->dev->bus_type) {
-#ifdef CONFIG_B43_BCMA
+#ifdef CONFIG_B43_NEXT_BCMA
 	case B43_BUS_BCMA:
-		bcma_chipco_gpio_control(&dev->dev->bdev->bus->drv_cc, mask, set);
+		bcmn_chipco_gpio_control(&dev->dev->bdev->bus->drv_cc, mask, set);
 		break;
 #endif
-#ifdef CONFIG_B43_SSB
+#ifdef CONFIG_B43_NEXT_SSB
 	case B43_BUS_SSB:
 		gpiodev = b43_ssb_gpio_dev(dev);
 		if (gpiodev)
-			ssb_write32(gpiodev, B43_GPIO_CONTROL,
-				    (ssb_read32(gpiodev, B43_GPIO_CONTROL)
+			ssbn_write32(gpiodev, B43_GPIO_CONTROL,
+				    (ssbn_read32(gpiodev, B43_GPIO_CONTROL)
 				    & ~mask) | set);
 		break;
 #endif
@@ -2925,21 +2923,21 @@ static int b43_gpio_init(struct b43_wldev *dev)
 /* Turn off all GPIO stuff. Call this on module unload, for example. */
 static void b43_gpio_cleanup(struct b43_wldev *dev)
 {
-#ifdef CONFIG_B43_SSB
-	struct ssb_device *gpiodev;
+#ifdef CONFIG_B43_NEXT_SSB
+	struct ssbn_device *gpiodev;
 #endif
 
 	switch (dev->dev->bus_type) {
-#ifdef CONFIG_B43_BCMA
+#ifdef CONFIG_B43_NEXT_BCMA
 	case B43_BUS_BCMA:
-		bcma_chipco_gpio_control(&dev->dev->bdev->bus->drv_cc, ~0, 0);
+		bcmn_chipco_gpio_control(&dev->dev->bdev->bus->drv_cc, ~0, 0);
 		break;
 #endif
-#ifdef CONFIG_B43_SSB
+#ifdef CONFIG_B43_NEXT_SSB
 	case B43_BUS_SSB:
 		gpiodev = b43_ssb_gpio_dev(dev);
 		if (gpiodev)
-			ssb_write32(gpiodev, B43_GPIO_CONTROL, 0);
+			ssbn_write32(gpiodev, B43_GPIO_CONTROL, 0);
 		break;
 #endif
 	}
@@ -3013,24 +3011,24 @@ void b43_mac_phy_clock_set(struct b43_wldev *dev, bool on)
 	u32 tmp;
 
 	switch (dev->dev->bus_type) {
-#ifdef CONFIG_B43_BCMA
+#ifdef CONFIG_B43_NEXT_BCMA
 	case B43_BUS_BCMA:
-		tmp = bcma_aread32(dev->dev->bdev, BCMA_IOCTL);
+		tmp = bcmn_aread32(dev->dev->bdev, BCMN_IOCTL);
 		if (on)
 			tmp |= B43_BCMA_IOCTL_MACPHYCLKEN;
 		else
 			tmp &= ~B43_BCMA_IOCTL_MACPHYCLKEN;
-		bcma_awrite32(dev->dev->bdev, BCMA_IOCTL, tmp);
+		bcmn_awrite32(dev->dev->bdev, BCMN_IOCTL, tmp);
 		break;
 #endif
-#ifdef CONFIG_B43_SSB
+#ifdef CONFIG_B43_NEXT_SSB
 	case B43_BUS_SSB:
-		tmp = ssb_read32(dev->dev->sdev, SSB_TMSLOW);
+		tmp = ssbn_read32(dev->dev->sdev, SSBN_TMSLOW);
 		if (on)
 			tmp |= B43_TMSLOW_MACPHYCLKEN;
 		else
 			tmp &= ~B43_TMSLOW_MACPHYCLKEN;
-		ssb_write32(dev->dev->sdev, SSB_TMSLOW, tmp);
+		ssbn_write32(dev->dev->sdev, SSBN_TMSLOW, tmp);
 		break;
 #endif
 	}
@@ -3041,7 +3039,7 @@ void b43_mac_switch_freq(struct b43_wldev *dev, u8 spurmode)
 {
 	u16 chip_id = dev->dev->chip_id;
 
-	if (chip_id == BCMA_CHIP_ID_BCM4331) {
+	if (chip_id == BCMN_CHIP_ID_BCM4331) {
 		switch (spurmode) {
 		case 2: /* 168 Mhz: 2^26/168 = 0x61862 */
 			b43_write16(dev, B43_MMIO_TSF_CLK_FRAC_LOW, 0x1862);
@@ -3056,13 +3054,13 @@ void b43_mac_switch_freq(struct b43_wldev *dev, u8 spurmode)
 			b43_write16(dev, B43_MMIO_TSF_CLK_FRAC_HIGH, 0x6);
 			break;
 		}
-	} else if (chip_id == BCMA_CHIP_ID_BCM43131 ||
-	    chip_id == BCMA_CHIP_ID_BCM43217 ||
-	    chip_id == BCMA_CHIP_ID_BCM43222 ||
-	    chip_id == BCMA_CHIP_ID_BCM43224 ||
-	    chip_id == BCMA_CHIP_ID_BCM43225 ||
-	    chip_id == BCMA_CHIP_ID_BCM43227 ||
-	    chip_id == BCMA_CHIP_ID_BCM43228) {
+	} else if (chip_id == BCMN_CHIP_ID_BCM43131 ||
+	    chip_id == BCMN_CHIP_ID_BCM43217 ||
+	    chip_id == BCMN_CHIP_ID_BCM43222 ||
+	    chip_id == BCMN_CHIP_ID_BCM43224 ||
+	    chip_id == BCMN_CHIP_ID_BCM43225 ||
+	    chip_id == BCMN_CHIP_ID_BCM43227 ||
+	    chip_id == BCMN_CHIP_ID_BCM43228) {
 		switch (spurmode) {
 		case 2: /* 126 Mhz */
 			b43_write16(dev, B43_MMIO_TSF_CLK_FRAC_LOW, 0x2082);
@@ -3320,13 +3318,13 @@ static int b43_chip_init(struct b43_wldev *dev)
 	b43_mac_phy_clock_set(dev, true);
 
 	switch (dev->dev->bus_type) {
-#ifdef CONFIG_B43_BCMA
+#ifdef CONFIG_B43_NEXT_BCMA
 	case B43_BUS_BCMA:
 		/* FIXME: 0xE74 is quite common, but should be read from CC */
 		b43_write16(dev, B43_MMIO_POWERUP_DELAY, 0xE74);
 		break;
 #endif
-#ifdef CONFIG_B43_SSB
+#ifdef CONFIG_B43_NEXT_SSB
 	case B43_BUS_SSB:
 		b43_write16(dev, B43_MMIO_POWERUP_DELAY,
 			    dev->dev->sdev->bus->chipco.fast_pwrup_delay);
@@ -3531,7 +3529,7 @@ static void b43_security_init(struct b43_wldev *dev)
 	b43_clear_keys(dev);
 }
 
-#ifdef CONFIG_B43_HWRNG
+#ifdef CONFIG_B43_NEXT_HWRNG
 static int b43_rng_read(struct hwrng *rng, u32 *data)
 {
 	struct b43_wl *wl = (struct b43_wl *)rng->priv;
@@ -3548,21 +3546,21 @@ static int b43_rng_read(struct hwrng *rng, u32 *data)
 
 	return count;
 }
-#endif /* CONFIG_B43_HWRNG */
+#endif /* CONFIG_B43_NEXT_HWRNG */
 
 static void b43_rng_exit(struct b43_wl *wl)
 {
-#ifdef CONFIG_B43_HWRNG
+#ifdef CONFIG_B43_NEXT_HWRNG
 	if (wl->rng_initialized)
 		hwrng_unregister(&wl->rng);
-#endif /* CONFIG_B43_HWRNG */
+#endif /* CONFIG_B43_NEXT_HWRNG */
 }
 
 static int b43_rng_init(struct b43_wl *wl)
 {
 	int err = 0;
 
-#ifdef CONFIG_B43_HWRNG
+#ifdef CONFIG_B43_NEXT_HWRNG
 	snprintf(wl->rng_name, ARRAY_SIZE(wl->rng_name),
 		 "%s_%s", KBUILD_MODNAME, wiphy_name(wl->hw->wiphy));
 	wl->rng.name = wl->rng_name;
@@ -3575,7 +3573,7 @@ static int b43_rng_init(struct b43_wl *wl)
 		b43err(wl, "Failed to register the random "
 		       "number generator (%d)\n", err);
 	}
-#endif /* CONFIG_B43_HWRNG */
+#endif /* CONFIG_B43_NEXT_HWRNG */
 
 	return err;
 }
@@ -3923,24 +3921,24 @@ static int b43_switch_band(struct b43_wldev *dev,
 	phy->gmode = gmode;
 	b43_phy_put_into_reset(dev);
 	switch (dev->dev->bus_type) {
-#ifdef CONFIG_B43_BCMA
+#ifdef CONFIG_B43_NEXT_BCMA
 	case B43_BUS_BCMA:
-		tmp = bcma_aread32(dev->dev->bdev, BCMA_IOCTL);
+		tmp = bcmn_aread32(dev->dev->bdev, BCMN_IOCTL);
 		if (gmode)
 			tmp |= B43_BCMA_IOCTL_GMODE;
 		else
 			tmp &= ~B43_BCMA_IOCTL_GMODE;
-		bcma_awrite32(dev->dev->bdev, BCMA_IOCTL, tmp);
+		bcmn_awrite32(dev->dev->bdev, BCMN_IOCTL, tmp);
 		break;
 #endif
-#ifdef CONFIG_B43_SSB
+#ifdef CONFIG_B43_NEXT_SSB
 	case B43_BUS_SSB:
-		tmp = ssb_read32(dev->dev->sdev, SSB_TMSLOW);
+		tmp = ssbn_read32(dev->dev->sdev, SSBN_TMSLOW);
 		if (gmode)
 			tmp |= B43_TMSLOW_GMODE;
 		else
 			tmp &= ~B43_TMSLOW_GMODE;
-		ssb_write32(dev->dev->sdev, SSB_TMSLOW, tmp);
+		ssbn_write32(dev->dev->sdev, SSBN_TMSLOW, tmp);
 		break;
 #endif
 	}
@@ -4495,37 +4493,37 @@ static int b43_phy_versioning(struct b43_wldev *dev)
 	}
 
 	switch (phy_type) {
-#ifdef CONFIG_B43_PHY_G
+#ifdef CONFIG_B43_NEXT_PHY_G
 	case B43_PHYTYPE_G:
 		if (phy_rev > 9)
 			unsupported = 1;
 		break;
 #endif
-#ifdef CONFIG_B43_PHY_N
+#ifdef CONFIG_B43_NEXT_PHY_N
 	case B43_PHYTYPE_N:
 		if (phy_rev >= 19)
 			unsupported = 1;
 		break;
 #endif
-#ifdef CONFIG_B43_PHY_LP
+#ifdef CONFIG_B43_NEXT_PHY_LP
 	case B43_PHYTYPE_LP:
 		if (phy_rev > 2)
 			unsupported = 1;
 		break;
 #endif
-#ifdef CONFIG_B43_PHY_HT
+#ifdef CONFIG_B43_NEXT_PHY_HT
 	case B43_PHYTYPE_HT:
 		if (phy_rev > 1)
 			unsupported = 1;
 		break;
 #endif
-#ifdef CONFIG_B43_PHY_LCN
+#ifdef CONFIG_B43_NEXT_PHY_LCN
 	case B43_PHYTYPE_LCN:
 		if (phy_rev > 1)
 			unsupported = 1;
 		break;
 #endif
-#ifdef CONFIG_B43_PHY_AC
+#ifdef CONFIG_B43_NEXT_PHY_AC
 	case B43_PHYTYPE_AC:
 		if (phy_rev > 1)
 			unsupported = 1;
@@ -4690,7 +4688,7 @@ static void setup_struct_wldev_for_init(struct b43_wldev *dev)
 
 static void b43_bluetooth_coext_enable(struct b43_wldev *dev)
 {
-	struct ssb_sprom *sprom = dev->dev->bus_sprom;
+	struct ssbn_sprom *sprom = dev->dev->bus_sprom;
 	u64 hf;
 
 	if (!modparam_btcoex)
@@ -4717,10 +4715,10 @@ static void b43_bluetooth_coext_disable(struct b43_wldev *dev)
 
 static void b43_imcfglo_timeouts_workaround(struct b43_wldev *dev)
 {
-	struct ssb_bus *bus;
+	struct ssbn_bus *bus;
 	u32 tmp;
 
-#ifdef CONFIG_B43_SSB
+#ifdef CONFIG_B43_NEXT_SSB
 	if (dev->dev->bus_type != B43_BUS_SSB)
 		return;
 #else
@@ -4731,12 +4729,12 @@ static void b43_imcfglo_timeouts_workaround(struct b43_wldev *dev)
 
 	if ((bus->chip_id == 0x4311 && bus->chip_rev == 2) ||
 	    (bus->chip_id == 0x4312)) {
-		tmp = ssb_read32(dev->dev->sdev, SSB_IMCFGLO);
-		tmp &= ~SSB_IMCFGLO_REQTO;
-		tmp &= ~SSB_IMCFGLO_SERTO;
+		tmp = ssbn_read32(dev->dev->sdev, SSBN_IMCFGLO);
+		tmp &= ~SSBN_IMCFGLO_REQTO;
+		tmp &= ~SSBN_IMCFGLO_SERTO;
 		tmp |= 0x3;
-		ssb_write32(dev->dev->sdev, SSB_IMCFGLO, tmp);
-		ssb_commit_settings(bus);
+		ssbn_write32(dev->dev->sdev, SSBN_IMCFGLO, tmp);
+		ssbn_commit_settings(bus);
 	}
 }
 
@@ -4783,12 +4781,12 @@ static void b43_wireless_core_exit(struct b43_wldev *dev)
 		      B43_MACCTL_PSM_JMP0);
 
 	switch (dev->dev->bus_type) {
-#ifdef CONFIG_B43_BCMA
+#ifdef CONFIG_B43_NEXT_BCMA
 	case B43_BUS_BCMA:
-		bcma_host_pci_down(dev->dev->bdev->bus);
+		bcmn_host_pci_down(dev->dev->bdev->bus);
 		break;
 #endif
-#ifdef CONFIG_B43_SSB
+#ifdef CONFIG_B43_NEXT_SSB
 	case B43_BUS_SSB:
 		/* TODO */
 		break;
@@ -4811,7 +4809,7 @@ static void b43_wireless_core_exit(struct b43_wldev *dev)
 /* Initialize a wireless core */
 static int b43_wireless_core_init(struct b43_wldev *dev)
 {
-	struct ssb_sprom *sprom = dev->dev->bus_sprom;
+	struct ssbn_sprom *sprom = dev->dev->bus_sprom;
 	struct b43_phy *phy = &dev->phy;
 	int err;
 	u64 hf;
@@ -4830,16 +4828,16 @@ static int b43_wireless_core_init(struct b43_wldev *dev)
 
 	/* Enable IRQ routing to this device. */
 	switch (dev->dev->bus_type) {
-#ifdef CONFIG_B43_BCMA
+#ifdef CONFIG_B43_NEXT_BCMA
 	case B43_BUS_BCMA:
-		bcma_host_pci_irq_ctl(dev->dev->bdev->bus,
+		bcmn_host_pci_irq_ctl(dev->dev->bdev->bus,
 				      dev->dev->bdev, true);
-		bcma_host_pci_up(dev->dev->bdev->bus);
+		bcmn_host_pci_up(dev->dev->bdev->bus);
 		break;
 #endif
-#ifdef CONFIG_B43_SSB
+#ifdef CONFIG_B43_NEXT_SSB
 	case B43_BUS_SSB:
-		ssb_pcicore_dev_irqvecs_enable(&dev->dev->sdev->bus->pcicore,
+		ssbn_pcicore_dev_irqvecs_enable(&dev->dev->sdev->bus->pcicore,
 					       dev->dev->sdev);
 		break;
 #endif
@@ -4873,9 +4871,9 @@ static int b43_wireless_core_init(struct b43_wldev *dev)
 	}
 	if (sprom->boardflags_lo & B43_BFL_XTAL_NOSLOW)
 		hf |= B43_HF_DSCRQ; /* Disable slowclock requests from ucode. */
-#if defined(CONFIG_B43_SSB) && defined(CONFIG_SSB_DRIVER_PCICORE)
+#if defined(CONFIG_B43_NEXT_SSB) && defined(CONFIG_SSBN_DRIVER_PCICORE)
 	if (dev->dev->bus_type == B43_BUS_SSB &&
-	    dev->dev->sdev->bus->bustype == SSB_BUSTYPE_PCI &&
+	    dev->dev->sdev->bus->bustype == SSBN_BUSTYPE_PCI &&
 	    dev->dev->sdev->bus->pcicore.dev->id.revision <= 10)
 		hf |= B43_HF_PCISCW; /* PCI slow clock workaround. */
 #endif
@@ -5301,14 +5299,14 @@ static void b43_supported_bands(struct b43_wldev *dev, bool *have_2ghz_phy,
 {
 	u16 dev_id = 0;
 
-#ifdef CONFIG_B43_BCMA
+#ifdef CONFIG_B43_NEXT_BCMA
 	if (dev->dev->bus_type == B43_BUS_BCMA &&
-	    dev->dev->bdev->bus->hosttype == BCMA_HOSTTYPE_PCI)
+	    dev->dev->bdev->bus->hosttype == BCMN_HOSTTYPE_PCI)
 		dev_id = dev->dev->bdev->bus->host_pci->device;
 #endif
-#ifdef CONFIG_B43_SSB
+#ifdef CONFIG_B43_NEXT_SSB
 	if (dev->dev->bus_type == B43_BUS_SSB &&
-	    dev->dev->sdev->bus->bustype == SSB_BUSTYPE_PCI)
+	    dev->dev->sdev->bus->bustype == SSBN_BUSTYPE_PCI)
 		dev_id = dev->dev->sdev->bus->host_pci->device;
 #endif
 	/* Override with SPROM value if available */
@@ -5394,17 +5392,17 @@ static int b43_wireless_core_attach(struct b43_wldev *dev)
 
 	/* Try to guess supported bands for the first init needs */
 	switch (dev->dev->bus_type) {
-#ifdef CONFIG_B43_BCMA
+#ifdef CONFIG_B43_NEXT_BCMA
 	case B43_BUS_BCMA:
-		tmp = bcma_aread32(dev->dev->bdev, BCMA_IOST);
+		tmp = bcmn_aread32(dev->dev->bdev, BCMN_IOST);
 		have_2ghz_phy = !!(tmp & B43_BCMA_IOST_2G_PHY);
 		have_5ghz_phy = !!(tmp & B43_BCMA_IOST_5G_PHY);
 		break;
 #endif
-#ifdef CONFIG_B43_SSB
+#ifdef CONFIG_B43_NEXT_SSB
 	case B43_BUS_SSB:
 		if (dev->dev->core_rev >= 5) {
-			tmp = ssb_read32(dev->dev->sdev, SSB_TMSHIGH);
+			tmp = ssbn_read32(dev->dev->sdev, SSBN_TMSHIGH);
 			have_2ghz_phy = !!(tmp & B43_TMSHIGH_HAVE_2GHZ_PHY);
 			have_5ghz_phy = !!(tmp & B43_TMSHIGH_HAVE_5GHZ_PHY);
 		} else
@@ -5526,19 +5524,19 @@ static int b43_one_core_attach(struct b43_bus_dev *dev, struct b43_wl *wl)
 	(pdev->subsystem_vendor == PCI_VENDOR_ID_##_subvendor) &&	\
 	(pdev->subsystem_device == _subdevice)				)
 
-#ifdef CONFIG_B43_SSB
-static void b43_sprom_fixup(struct ssb_bus *bus)
+#ifdef CONFIG_B43_NEXT_SSB
+static void b43_sprom_fixup(struct ssbn_bus *bus)
 {
 	struct pci_dev *pdev;
 
 	/* boardflags workarounds */
-	if (bus->boardinfo.vendor == SSB_BOARDVENDOR_DELL &&
+	if (bus->boardinfo.vendor == SSBN_BOARDVENDOR_DELL &&
 	    bus->chip_id == 0x4301 && bus->sprom.board_rev == 0x74)
 		bus->sprom.boardflags_lo |= B43_BFL_BTCOEXIST;
 	if (bus->boardinfo.vendor == PCI_VENDOR_ID_APPLE &&
 	    bus->boardinfo.type == 0x4E && bus->sprom.board_rev > 0x40)
 		bus->sprom.boardflags_lo |= B43_BFL_PACTRL;
-	if (bus->bustype == SSB_BUSTYPE_PCI) {
+	if (bus->bustype == SSBN_BUSTYPE_PCI) {
 		pdev = bus->host_pci;
 		if (IS_PDEV(pdev, BROADCOM, 0x4318, ASUSTEK, 0x100F) ||
 		    IS_PDEV(pdev, BROADCOM, 0x4320,    DELL, 0x0003) ||
@@ -5555,14 +5553,14 @@ static void b43_wireless_exit(struct b43_bus_dev *dev, struct b43_wl *wl)
 {
 	struct ieee80211_hw *hw = wl->hw;
 
-	ssb_set_devtypedata(dev->sdev, NULL);
+	ssbn_set_devtypedata(dev->sdev, NULL);
 	ieee80211_free_hw(hw);
 }
 #endif
 
 static struct b43_wl *b43_wireless_init(struct b43_bus_dev *dev)
 {
-	struct ssb_sprom *sprom = dev->bus_sprom;
+	struct ssbn_sprom *sprom = dev->bus_sprom;
 	struct ieee80211_hw *hw;
 	struct b43_wl *wl;
 	char chip_name[6];
@@ -5619,8 +5617,8 @@ static struct b43_wl *b43_wireless_init(struct b43_bus_dev *dev)
 	return wl;
 }
 
-#ifdef CONFIG_B43_BCMA
-static int b43_bcma_probe(struct bcma_device *core)
+#ifdef CONFIG_B43_NEXT_BCMA
+static int b43_bcma_probe(struct bcmn_device *core)
 {
 	struct b43_bus_dev *dev;
 	struct b43_wl *wl;
@@ -5639,12 +5637,12 @@ static int b43_bcma_probe(struct bcma_device *core)
 	wl = b43_wireless_init(dev);
 	if (IS_ERR(wl)) {
 		err = PTR_ERR(wl);
-		goto bcma_out;
+		goto bcmn_out;
 	}
 
 	err = b43_one_core_attach(dev, wl);
 	if (err)
-		goto bcma_err_wireless_exit;
+		goto bcmn_err_wireless_exit;
 
 	/* setup and start work to load firmware */
 	INIT_WORK(&wl->firmware_load, b43_request_firmware);
@@ -5652,16 +5650,16 @@ static int b43_bcma_probe(struct bcma_device *core)
 
 	return err;
 
-bcma_err_wireless_exit:
+bcmn_err_wireless_exit:
 	ieee80211_free_hw(wl->hw);
-bcma_out:
+bcmn_out:
 	kfree(dev);
 	return err;
 }
 
-static void b43_bcma_remove(struct bcma_device *core)
+static void b43_bcma_remove(struct bcmn_device *core)
 {
-	struct b43_wldev *wldev = bcma_get_drvdata(core);
+	struct b43_wldev *wldev = bcmn_get_drvdata(core);
 	struct b43_wl *wl = wldev->wl;
 
 	/* We must cancel any work here before unregistering from ieee80211,
@@ -5687,7 +5685,7 @@ static void b43_bcma_remove(struct bcma_device *core)
 	kfree(wldev->dev);
 }
 
-static struct bcma_driver b43_bcma_driver = {
+static struct bcmn_driver b43_bcma_driver = {
 	.name		= KBUILD_MODNAME,
 	.id_table	= b43_bcma_tbl,
 	.probe		= b43_bcma_probe,
@@ -5695,9 +5693,9 @@ static struct bcma_driver b43_bcma_driver = {
 };
 #endif
 
-#ifdef CONFIG_B43_SSB
+#ifdef CONFIG_B43_NEXT_SSB
 static
-int b43_ssb_probe(struct ssb_device *sdev, const struct ssb_device_id *id)
+int b43_ssb_probe(struct ssbn_device *sdev, const struct ssbn_device_id *id)
 {
 	struct b43_bus_dev *dev;
 	struct b43_wl *wl;
@@ -5707,7 +5705,7 @@ int b43_ssb_probe(struct ssb_device *sdev, const struct ssb_device_id *id)
 	if (!dev)
 		return -ENOMEM;
 
-	wl = ssb_get_devtypedata(sdev);
+	wl = ssbn_get_devtypedata(sdev);
 	if (wl) {
 		b43err(NULL, "Dual-core devices are not supported\n");
 		err = -ENOTSUPP;
@@ -5721,8 +5719,8 @@ int b43_ssb_probe(struct ssb_device *sdev, const struct ssb_device_id *id)
 		err = PTR_ERR(wl);
 		goto err_ssb_kfree_dev;
 	}
-	ssb_set_devtypedata(sdev, wl);
-	B43_WARN_ON(ssb_get_devtypedata(sdev) != wl);
+	ssbn_set_devtypedata(sdev, wl);
+	B43_WARN_ON(ssbn_get_devtypedata(sdev) != wl);
 
 	err = b43_one_core_attach(dev, wl);
 	if (err)
@@ -5741,10 +5739,10 @@ err_ssb_kfree_dev:
 	return err;
 }
 
-static void b43_ssb_remove(struct ssb_device *sdev)
+static void b43_ssb_remove(struct ssbn_device *sdev)
 {
-	struct b43_wl *wl = ssb_get_devtypedata(sdev);
-	struct b43_wldev *wldev = ssb_get_drvdata(sdev);
+	struct b43_wl *wl = ssbn_get_devtypedata(sdev);
+	struct b43_wldev *wldev = ssbn_get_drvdata(sdev);
 	struct b43_bus_dev *dev = wldev->dev;
 
 	/* We must cancel any work here before unregistering from ieee80211,
@@ -5770,13 +5768,13 @@ static void b43_ssb_remove(struct ssb_device *sdev)
 	kfree(dev);
 }
 
-static struct ssb_driver b43_ssb_driver = {
+static struct ssbn_driver b43_ssb_driver = {
 	.name		= KBUILD_MODNAME,
 	.id_table	= b43_ssb_tbl,
 	.probe		= b43_ssb_probe,
 	.remove		= b43_ssb_remove,
 };
-#endif /* CONFIG_B43_SSB */
+#endif /* CONFIG_B43_NEXT_SSB */
 
 /* Perform a hardware reset. This can be called from any context. */
 void b43_controller_restart(struct b43_wldev *dev, const char *reason)
@@ -5793,16 +5791,16 @@ static void b43_print_driverinfo(void)
 	const char *feat_pci = "", *feat_nphy = "",
 		   *feat_leds = "", *feat_sdio = "";
 
-#ifdef CONFIG_B43_PCI_AUTOSELECT
+#ifdef CONFIG_B43_NEXT_PCI_AUTOSELECT
 	feat_pci = "P";
 #endif
-#ifdef CONFIG_B43_PHY_N
+#ifdef CONFIG_B43_NEXT_PHY_N
 	feat_nphy = "N";
 #endif
-#ifdef CONFIG_B43_LEDS
+#ifdef CONFIG_B43_NEXT_LEDS
 	feat_leds = "L";
 #endif
-#ifdef CONFIG_B43_SDIO
+#ifdef CONFIG_B43_NEXT_SDIO
 	feat_sdio = "S";
 #endif
 	printk(KERN_INFO "Broadcom 43xx driver loaded "
@@ -5814,17 +5812,27 @@ static int __init b43_init(void)
 {
 	int err;
 
+#ifdef CONFIG_B43_NEXT_SSB
+	err = ssbn_modinit();
+	if (err)
+		return err;
+#endif
+#ifdef CONFIG_B43_NEXT_BCMA
+	err = bcmn_modinit();
+	if (err)
+		goto err_ssb_bus_exit;
+#endif
 	b43_debugfs_init();
 	err = b43_sdio_init();
 	if (err)
 		goto err_dfs_exit;
-#ifdef CONFIG_B43_BCMA
-	err = bcma_driver_register(&b43_bcma_driver);
+#ifdef CONFIG_B43_NEXT_BCMA
+	err = bcmn_driver_register(&b43_bcma_driver);
 	if (err)
 		goto err_sdio_exit;
 #endif
-#ifdef CONFIG_B43_SSB
-	err = ssb_driver_register(&b43_ssb_driver);
+#ifdef CONFIG_B43_NEXT_SSB
+	err = ssbn_driver_register(&b43_ssb_driver);
 	if (err)
 		goto err_bcma_driver_exit;
 #endif
@@ -5832,29 +5840,42 @@ static int __init b43_init(void)
 
 	return err;
 
-#ifdef CONFIG_B43_SSB
+#ifdef CONFIG_B43_NEXT_SSB
 err_bcma_driver_exit:
 #endif
-#ifdef CONFIG_B43_BCMA
-	bcma_driver_unregister(&b43_bcma_driver);
+#ifdef CONFIG_B43_NEXT_BCMA
+	bcmn_driver_unregister(&b43_bcma_driver);
 err_sdio_exit:
 #endif
 	b43_sdio_exit();
 err_dfs_exit:
 	b43_debugfs_exit();
+#ifdef CONFIG_B43_NEXT_BCMA
+	bcmn_modexit();
+err_ssb_bus_exit:
+#endif
+#ifdef CONFIG_B43_NEXT_SSB
+	ssbn_modexit();
+#endif
 	return err;
 }
 
 static void __exit b43_exit(void)
 {
-#ifdef CONFIG_B43_SSB
-	ssb_driver_unregister(&b43_ssb_driver);
+#ifdef CONFIG_B43_NEXT_SSB
+	ssbn_driver_unregister(&b43_ssb_driver);
 #endif
-#ifdef CONFIG_B43_BCMA
-	bcma_driver_unregister(&b43_bcma_driver);
+#ifdef CONFIG_B43_NEXT_BCMA
+	bcmn_driver_unregister(&b43_bcma_driver);
 #endif
 	b43_sdio_exit();
 	b43_debugfs_exit();
+#ifdef CONFIG_B43_NEXT_BCMA
+	bcmn_modexit();
+#endif
+#ifdef CONFIG_B43_NEXT_SSB
+	ssbn_modexit();
+#endif
 }
 
 module_init(b43_init)

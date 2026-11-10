@@ -4,7 +4,7 @@
  *
  * Copyright 2009 Albert Herranz <albert_herranz@yahoo.es>
  *
- * Based on drivers/ssb/pcmcia.c
+ * Based on ssb-next/pcmcia.c
  * Copyright 2006 Johannes Berg <johannes@sipsolutions.net>
  * Copyright 2007-2008 Michael Buesch <m@bues.ch>
  *
@@ -12,38 +12,38 @@
  *
  */
 
-#include "ssb_private.h"
+#include "ssbn_private.h"
 
-#include <linux/ssb/ssb.h>
+#include <ssb-next/ssbn.h>
 #include <linux/delay.h>
 #include <linux/io.h>
 #include <linux/etherdevice.h>
 #include <linux/mmc/sdio_func.h>
 
 /* Define the following to 1 to enable a printk on each coreswitch. */
-#define SSB_VERBOSE_SDIOCORESWITCH_DEBUG		0
+#define SSBN_VERBOSE_SDIOCORESWITCH_DEBUG		0
 
 
 /* Hardware invariants CIS tuples */
-#define SSB_SDIO_CIS			0x80
-#define  SSB_SDIO_CIS_SROMREV		0x00
-#define  SSB_SDIO_CIS_ID		0x01
-#define  SSB_SDIO_CIS_BOARDREV		0x02
-#define  SSB_SDIO_CIS_PA		0x03
-#define   SSB_SDIO_CIS_PA_PA0B0_LO	0
-#define   SSB_SDIO_CIS_PA_PA0B0_HI	1
-#define   SSB_SDIO_CIS_PA_PA0B1_LO	2
-#define   SSB_SDIO_CIS_PA_PA0B1_HI	3
-#define   SSB_SDIO_CIS_PA_PA0B2_LO	4
-#define   SSB_SDIO_CIS_PA_PA0B2_HI	5
-#define   SSB_SDIO_CIS_PA_ITSSI		6
-#define   SSB_SDIO_CIS_PA_MAXPOW	7
-#define  SSB_SDIO_CIS_OEMNAME		0x04
-#define  SSB_SDIO_CIS_CCODE		0x05
-#define  SSB_SDIO_CIS_ANTENNA		0x06
-#define  SSB_SDIO_CIS_ANTGAIN		0x07
-#define  SSB_SDIO_CIS_BFLAGS		0x08
-#define  SSB_SDIO_CIS_LEDS		0x09
+#define SSBN_SDIO_CIS			0x80
+#define  SSBN_SDIO_CIS_SROMREV		0x00
+#define  SSBN_SDIO_CIS_ID		0x01
+#define  SSBN_SDIO_CIS_BOARDREV		0x02
+#define  SSBN_SDIO_CIS_PA		0x03
+#define   SSBN_SDIO_CIS_PA_PA0B0_LO	0
+#define   SSBN_SDIO_CIS_PA_PA0B0_HI	1
+#define   SSBN_SDIO_CIS_PA_PA0B1_LO	2
+#define   SSBN_SDIO_CIS_PA_PA0B1_HI	3
+#define   SSBN_SDIO_CIS_PA_PA0B2_LO	4
+#define   SSBN_SDIO_CIS_PA_PA0B2_HI	5
+#define   SSBN_SDIO_CIS_PA_ITSSI		6
+#define   SSBN_SDIO_CIS_PA_MAXPOW	7
+#define  SSBN_SDIO_CIS_OEMNAME		0x04
+#define  SSBN_SDIO_CIS_CCODE		0x05
+#define  SSBN_SDIO_CIS_ANTENNA		0x06
+#define  SSBN_SDIO_CIS_ANTGAIN		0x07
+#define  SSBN_SDIO_CIS_BFLAGS		0x08
+#define  SSBN_SDIO_CIS_LEDS		0x09
 
 #define CISTPL_FUNCE_LAN_NODE_ID        0x04	/* same as in PCMCIA */
 
@@ -101,19 +101,19 @@
  * NOTE: SDIO address @addr is 17 bits long (SDIO address space is 128K).
  */
 
-static inline struct device *ssb_sdio_dev(struct ssb_bus *bus)
+static inline struct device *ssbn_sdio_dev(struct ssbn_bus *bus)
 {
 	return &bus->host_sdio->dev;
 }
 
 /* host claimed */
-static int ssb_sdio_writeb(struct ssb_bus *bus, unsigned int addr, u8 val)
+static int ssbn_sdio_writeb(struct ssbn_bus *bus, unsigned int addr, u8 val)
 {
 	int error = 0;
 
 	sdio_writeb(bus->host_sdio, val, addr, &error);
 	if (unlikely(error)) {
-		dev_dbg(ssb_sdio_dev(bus), "%08X <- %02x, error %d\n",
+		dev_dbg(ssbn_sdio_dev(bus), "%08X <- %02x, error %d\n",
 			addr, val, error);
 	}
 
@@ -121,14 +121,14 @@ static int ssb_sdio_writeb(struct ssb_bus *bus, unsigned int addr, u8 val)
 }
 
 #if 0
-static u8 ssb_sdio_readb(struct ssb_bus *bus, unsigned int addr)
+static u8 ssbn_sdio_readb(struct ssbn_bus *bus, unsigned int addr)
 {
 	u8 val;
 	int error = 0;
 
 	val = sdio_readb(bus->host_sdio, addr, &error);
 	if (unlikely(error)) {
-		dev_dbg(ssb_sdio_dev(bus), "%08X -> %02x, error %d\n",
+		dev_dbg(ssbn_sdio_dev(bus), "%08X -> %02x, error %d\n",
 			addr, val, error);
 	}
 
@@ -137,26 +137,26 @@ static u8 ssb_sdio_readb(struct ssb_bus *bus, unsigned int addr)
 #endif
 
 /* host claimed */
-static int ssb_sdio_set_sbaddr_window(struct ssb_bus *bus, u32 address)
+static int ssbn_sdio_set_sbaddr_window(struct ssbn_bus *bus, u32 address)
 {
 	int error;
 
-	error = ssb_sdio_writeb(bus, SBSDIO_FUNC1_SBADDRLOW,
+	error = ssbn_sdio_writeb(bus, SBSDIO_FUNC1_SBADDRLOW,
 				(address >> 8) & SBSDIO_SBADDRLOW_MASK);
 	if (error)
 		goto out;
-	error = ssb_sdio_writeb(bus, SBSDIO_FUNC1_SBADDRMID,
+	error = ssbn_sdio_writeb(bus, SBSDIO_FUNC1_SBADDRMID,
 				(address >> 16) & SBSDIO_SBADDRMID_MASK);
 	if (error)
 		goto out;
-	error = ssb_sdio_writeb(bus, SBSDIO_FUNC1_SBADDRHIGH,
+	error = ssbn_sdio_writeb(bus, SBSDIO_FUNC1_SBADDRHIGH,
 				(address >> 24) & SBSDIO_SBADDRHIGH_MASK);
 	if (error)
 		goto out;
 	bus->sdio_sbaddr = address;
 out:
 	if (error) {
-		dev_dbg(ssb_sdio_dev(bus), "failed to set address window"
+		dev_dbg(ssbn_sdio_dev(bus), "failed to set address window"
 			" to 0x%08x, error %d\n", address, error);
 	}
 
@@ -164,7 +164,7 @@ out:
 }
 
 /* for enumeration use only */
-u32 ssb_sdio_scan_read32(struct ssb_bus *bus, u16 offset)
+u32 ssbn_sdio_scan_read32(struct ssbn_bus *bus, u16 offset)
 {
 	u32 val;
 	int error;
@@ -173,7 +173,7 @@ u32 ssb_sdio_scan_read32(struct ssb_bus *bus, u16 offset)
 	val = sdio_readl(bus->host_sdio, offset, &error);
 	sdio_release_host(bus->host_sdio);
 	if (unlikely(error)) {
-		dev_dbg(ssb_sdio_dev(bus), "%04X:%04X > %08x, error %d\n",
+		dev_dbg(ssbn_sdio_dev(bus), "%04X:%04X > %08x, error %d\n",
 			bus->sdio_sbaddr >> 16, offset, val, error);
 	}
 
@@ -181,17 +181,17 @@ u32 ssb_sdio_scan_read32(struct ssb_bus *bus, u16 offset)
 }
 
 /* for enumeration use only */
-int ssb_sdio_scan_switch_coreidx(struct ssb_bus *bus, u8 coreidx)
+int ssbn_sdio_scan_switch_coreidx(struct ssbn_bus *bus, u8 coreidx)
 {
 	u32 sbaddr;
 	int error;
 
-	sbaddr = (coreidx * SSB_CORE_SIZE) + SSB_ENUM_BASE;
+	sbaddr = (coreidx * SSBN_CORE_SIZE) + SSBN_ENUM_BASE;
 	sdio_claim_host(bus->host_sdio);
-	error = ssb_sdio_set_sbaddr_window(bus, sbaddr);
+	error = ssbn_sdio_set_sbaddr_window(bus, sbaddr);
 	sdio_release_host(bus->host_sdio);
 	if (error) {
-		dev_err(ssb_sdio_dev(bus), "failed to switch to core %u,"
+		dev_err(ssbn_sdio_dev(bus), "failed to switch to core %u,"
 			" error %d\n", coreidx, error);
 		goto out;
 	}
@@ -200,22 +200,22 @@ out:
 }
 
 /* host must be already claimed */
-static int ssb_sdio_switch_core(struct ssb_bus *bus, struct ssb_device *dev)
+static int ssbn_sdio_switch_core(struct ssbn_bus *bus, struct ssbn_device *dev)
 {
 	u8 coreidx = dev->core_index;
 	u32 sbaddr;
 	int error = 0;
 
-	sbaddr = (coreidx * SSB_CORE_SIZE) + SSB_ENUM_BASE;
+	sbaddr = (coreidx * SSBN_CORE_SIZE) + SSBN_ENUM_BASE;
 	if (unlikely(bus->sdio_sbaddr != sbaddr)) {
-#if SSB_VERBOSE_SDIOCORESWITCH_DEBUG
-		dev_info(ssb_sdio_dev(bus),
+#if SSBN_VERBOSE_SDIOCORESWITCH_DEBUG
+		dev_info(ssbn_sdio_dev(bus),
 			   "switching to %s core, index %d\n",
-			   ssb_core_name(dev->id.coreid), coreidx);
+			   ssbn_core_name(dev->id.coreid), coreidx);
 #endif
-		error = ssb_sdio_set_sbaddr_window(bus, sbaddr);
+		error = ssbn_sdio_set_sbaddr_window(bus, sbaddr);
 		if (error) {
-			dev_dbg(ssb_sdio_dev(bus), "failed to switch to"
+			dev_dbg(ssbn_sdio_dev(bus), "failed to switch to"
 				" core %u, error %d\n", coreidx, error);
 			goto out;
 		}
@@ -226,20 +226,20 @@ out:
 	return error;
 }
 
-static u8 ssb_sdio_read8(struct ssb_device *dev, u16 offset)
+static u8 ssbn_sdio_read8(struct ssbn_device *dev, u16 offset)
 {
-	struct ssb_bus *bus = dev->bus;
+	struct ssbn_bus *bus = dev->bus;
 	u8 val = 0xff;
 	int error = 0;
 
 	sdio_claim_host(bus->host_sdio);
-	if (unlikely(ssb_sdio_switch_core(bus, dev)))
+	if (unlikely(ssbn_sdio_switch_core(bus, dev)))
 		goto out;
 	offset |= bus->sdio_sbaddr & 0xffff;
 	offset &= SBSDIO_SB_OFT_ADDR_MASK;
 	val = sdio_readb(bus->host_sdio, offset, &error);
 	if (error) {
-		dev_dbg(ssb_sdio_dev(bus), "%04X:%04X > %02x, error %d\n",
+		dev_dbg(ssbn_sdio_dev(bus), "%04X:%04X > %02x, error %d\n",
 			bus->sdio_sbaddr >> 16, offset, val, error);
 	}
 out:
@@ -248,20 +248,20 @@ out:
 	return val;
 }
 
-static u16 ssb_sdio_read16(struct ssb_device *dev, u16 offset)
+static u16 ssbn_sdio_read16(struct ssbn_device *dev, u16 offset)
 {
-	struct ssb_bus *bus = dev->bus;
+	struct ssbn_bus *bus = dev->bus;
 	u16 val = 0xffff;
 	int error = 0;
 
 	sdio_claim_host(bus->host_sdio);
-	if (unlikely(ssb_sdio_switch_core(bus, dev)))
+	if (unlikely(ssbn_sdio_switch_core(bus, dev)))
 		goto out;
 	offset |= bus->sdio_sbaddr & 0xffff;
 	offset &= SBSDIO_SB_OFT_ADDR_MASK;
 	val = sdio_readw(bus->host_sdio, offset, &error);
 	if (error) {
-		dev_dbg(ssb_sdio_dev(bus), "%04X:%04X > %04x, error %d\n",
+		dev_dbg(ssbn_sdio_dev(bus), "%04X:%04X > %04x, error %d\n",
 			bus->sdio_sbaddr >> 16, offset, val, error);
 	}
 out:
@@ -270,21 +270,21 @@ out:
 	return val;
 }
 
-static u32 ssb_sdio_read32(struct ssb_device *dev, u16 offset)
+static u32 ssbn_sdio_read32(struct ssbn_device *dev, u16 offset)
 {
-	struct ssb_bus *bus = dev->bus;
+	struct ssbn_bus *bus = dev->bus;
 	u32 val = 0xffffffff;
 	int error = 0;
 
 	sdio_claim_host(bus->host_sdio);
-	if (unlikely(ssb_sdio_switch_core(bus, dev)))
+	if (unlikely(ssbn_sdio_switch_core(bus, dev)))
 		goto out;
 	offset |= bus->sdio_sbaddr & 0xffff;
 	offset &= SBSDIO_SB_OFT_ADDR_MASK;
 	offset |= SBSDIO_SB_ACCESS_2_4B_FLAG;	/* 32 bit data access */
 	val = sdio_readl(bus->host_sdio, offset, &error);
 	if (error) {
-		dev_dbg(ssb_sdio_dev(bus), "%04X:%04X > %08x, error %d\n",
+		dev_dbg(ssbn_sdio_dev(bus), "%04X:%04X > %08x, error %d\n",
 			bus->sdio_sbaddr >> 16, offset, val, error);
 	}
 out:
@@ -293,16 +293,16 @@ out:
 	return val;
 }
 
-#ifdef CONFIG_SSB_BLOCKIO
-static void ssb_sdio_block_read(struct ssb_device *dev, void *buffer,
+#ifdef CONFIG_SSBN_BLOCKIO
+static void ssbn_sdio_block_read(struct ssbn_device *dev, void *buffer,
 				  size_t count, u16 offset, u8 reg_width)
 {
 	size_t saved_count = count;
-	struct ssb_bus *bus = dev->bus;
+	struct ssbn_bus *bus = dev->bus;
 	int error = 0;
 
 	sdio_claim_host(bus->host_sdio);
-	if (unlikely(ssb_sdio_switch_core(bus, dev))) {
+	if (unlikely(ssbn_sdio_switch_core(bus, dev))) {
 		error = -EIO;
 		memset(buffer, 0xff, count);
 		goto err_out;
@@ -333,83 +333,83 @@ static void ssb_sdio_block_read(struct ssb_device *dev, void *buffer,
 		goto out;
 
 err_out:
-	dev_dbg(ssb_sdio_dev(bus), "%04X:%04X (width=%u, len=%zu), error %d\n",
+	dev_dbg(ssbn_sdio_dev(bus), "%04X:%04X (width=%u, len=%zu), error %d\n",
 		bus->sdio_sbaddr >> 16, offset, reg_width, saved_count, error);
 out:
 	sdio_release_host(bus->host_sdio);
 }
-#endif /* CONFIG_SSB_BLOCKIO */
+#endif /* CONFIG_SSBN_BLOCKIO */
 
-static void ssb_sdio_write8(struct ssb_device *dev, u16 offset, u8 val)
+static void ssbn_sdio_write8(struct ssbn_device *dev, u16 offset, u8 val)
 {
-	struct ssb_bus *bus = dev->bus;
+	struct ssbn_bus *bus = dev->bus;
 	int error = 0;
 
 	sdio_claim_host(bus->host_sdio);
-	if (unlikely(ssb_sdio_switch_core(bus, dev)))
+	if (unlikely(ssbn_sdio_switch_core(bus, dev)))
 		goto out;
 	offset |= bus->sdio_sbaddr & 0xffff;
 	offset &= SBSDIO_SB_OFT_ADDR_MASK;
 	sdio_writeb(bus->host_sdio, val, offset, &error);
 	if (error) {
-		dev_dbg(ssb_sdio_dev(bus), "%04X:%04X < %02x, error %d\n",
+		dev_dbg(ssbn_sdio_dev(bus), "%04X:%04X < %02x, error %d\n",
 			bus->sdio_sbaddr >> 16, offset, val, error);
 	}
 out:
 	sdio_release_host(bus->host_sdio);
 }
 
-static void ssb_sdio_write16(struct ssb_device *dev, u16 offset, u16 val)
+static void ssbn_sdio_write16(struct ssbn_device *dev, u16 offset, u16 val)
 {
-	struct ssb_bus *bus = dev->bus;
+	struct ssbn_bus *bus = dev->bus;
 	int error = 0;
 
 	sdio_claim_host(bus->host_sdio);
-	if (unlikely(ssb_sdio_switch_core(bus, dev)))
+	if (unlikely(ssbn_sdio_switch_core(bus, dev)))
 		goto out;
 	offset |= bus->sdio_sbaddr & 0xffff;
 	offset &= SBSDIO_SB_OFT_ADDR_MASK;
 	sdio_writew(bus->host_sdio, val, offset, &error);
 	if (error) {
-		dev_dbg(ssb_sdio_dev(bus), "%04X:%04X < %04x, error %d\n",
+		dev_dbg(ssbn_sdio_dev(bus), "%04X:%04X < %04x, error %d\n",
 			bus->sdio_sbaddr >> 16, offset, val, error);
 	}
 out:
 	sdio_release_host(bus->host_sdio);
 }
 
-static void ssb_sdio_write32(struct ssb_device *dev, u16 offset, u32 val)
+static void ssbn_sdio_write32(struct ssbn_device *dev, u16 offset, u32 val)
 {
-	struct ssb_bus *bus = dev->bus;
+	struct ssbn_bus *bus = dev->bus;
 	int error = 0;
 
 	sdio_claim_host(bus->host_sdio);
-	if (unlikely(ssb_sdio_switch_core(bus, dev)))
+	if (unlikely(ssbn_sdio_switch_core(bus, dev)))
 		goto out;
 	offset |= bus->sdio_sbaddr & 0xffff;
 	offset &= SBSDIO_SB_OFT_ADDR_MASK;
 	offset |= SBSDIO_SB_ACCESS_2_4B_FLAG;	/* 32 bit data access */
 	sdio_writel(bus->host_sdio, val, offset, &error);
 	if (error) {
-		dev_dbg(ssb_sdio_dev(bus), "%04X:%04X < %08x, error %d\n",
+		dev_dbg(ssbn_sdio_dev(bus), "%04X:%04X < %08x, error %d\n",
 			bus->sdio_sbaddr >> 16, offset, val, error);
 	}
-	if (bus->quirks & SSB_QUIRK_SDIO_READ_AFTER_WRITE32)
+	if (bus->quirks & SSBN_QUIRK_SDIO_READ_AFTER_WRITE32)
 		sdio_readl(bus->host_sdio, 0, &error);
 out:
 	sdio_release_host(bus->host_sdio);
 }
 
-#ifdef CONFIG_SSB_BLOCKIO
-static void ssb_sdio_block_write(struct ssb_device *dev, const void *buffer,
+#ifdef CONFIG_SSBN_BLOCKIO
+static void ssbn_sdio_block_write(struct ssbn_device *dev, const void *buffer,
 				   size_t count, u16 offset, u8 reg_width)
 {
 	size_t saved_count = count;
-	struct ssb_bus *bus = dev->bus;
+	struct ssbn_bus *bus = dev->bus;
 	int error = 0;
 
 	sdio_claim_host(bus->host_sdio);
-	if (unlikely(ssb_sdio_switch_core(bus, dev))) {
+	if (unlikely(ssbn_sdio_switch_core(bus, dev))) {
 		error = -EIO;
 		goto err_out;
 	}
@@ -439,25 +439,25 @@ static void ssb_sdio_block_write(struct ssb_device *dev, const void *buffer,
 		goto out;
 
 err_out:
-	dev_dbg(ssb_sdio_dev(bus), "%04X:%04X (width=%u, len=%zu), error %d\n",
+	dev_dbg(ssbn_sdio_dev(bus), "%04X:%04X (width=%u, len=%zu), error %d\n",
 		bus->sdio_sbaddr >> 16, offset, reg_width, saved_count, error);
 out:
 	sdio_release_host(bus->host_sdio);
 }
 
-#endif /* CONFIG_SSB_BLOCKIO */
+#endif /* CONFIG_SSBN_BLOCKIO */
 
 /* Not "static", as it's used in main.c */
-const struct ssb_bus_ops ssb_sdio_ops = {
-	.read8		= ssb_sdio_read8,
-	.read16		= ssb_sdio_read16,
-	.read32		= ssb_sdio_read32,
-	.write8		= ssb_sdio_write8,
-	.write16	= ssb_sdio_write16,
-	.write32	= ssb_sdio_write32,
-#ifdef CONFIG_SSB_BLOCKIO
-	.block_read	= ssb_sdio_block_read,
-	.block_write	= ssb_sdio_block_write,
+const struct ssbn_bus_ops ssbn_sdio_ops = {
+	.read8		= ssbn_sdio_read8,
+	.read16		= ssbn_sdio_read16,
+	.read32		= ssbn_sdio_read32,
+	.write8		= ssbn_sdio_write8,
+	.write16	= ssbn_sdio_write16,
+	.write32	= ssbn_sdio_write32,
+#ifdef CONFIG_SSBN_BLOCKIO
+	.block_read	= ssbn_sdio_block_read,
+	.block_write	= ssbn_sdio_block_write,
 #endif
 };
 
@@ -468,11 +468,11 @@ const struct ssb_bus_ops ssb_sdio_ops = {
 	}						\
   } while (0)
 
-int ssb_sdio_get_invariants(struct ssb_bus *bus,
-			    struct ssb_init_invariants *iv)
+int ssbn_sdio_get_invariants(struct ssbn_bus *bus,
+			    struct ssbn_init_invariants *iv)
 {
-	struct ssb_sprom *sprom = &iv->sprom;
-	struct ssb_boardinfo *bi = &iv->boardinfo;
+	struct ssbn_sprom *sprom = &iv->sprom;
+	struct ssbn_boardinfo *bi = &iv->boardinfo;
 	const char *error_description = "none";
 	struct sdio_func_tuple *tuple;
 	void *mac;
@@ -501,24 +501,24 @@ int ssb_sdio_get_invariants(struct ssb_bus *bus,
 			break;
 		case 0x80: /* vendor specific tuple */
 			switch (tuple->data[0]) {
-			case SSB_SDIO_CIS_SROMREV:
+			case SSBN_SDIO_CIS_SROMREV:
 				GOTO_ERROR_ON(tuple->size != 2,
 					      "sromrev tpl size");
 				sprom->revision = tuple->data[1];
 				break;
-			case SSB_SDIO_CIS_ID:
+			case SSBN_SDIO_CIS_ID:
 				GOTO_ERROR_ON((tuple->size != 5) &&
 					      (tuple->size != 7),
 					      "id tpl size");
 				bi->vendor = tuple->data[1] |
 					     (tuple->data[2]<<8);
 				break;
-			case SSB_SDIO_CIS_BOARDREV:
+			case SSBN_SDIO_CIS_BOARDREV:
 				GOTO_ERROR_ON(tuple->size != 2,
 					      "boardrev tpl size");
 				sprom->board_rev = tuple->data[1];
 				break;
-			case SSB_SDIO_CIS_PA:
+			case SSBN_SDIO_CIS_PA:
 				GOTO_ERROR_ON((tuple->size != 9) &&
 					      (tuple->size != 10),
 					      "pa tpl size");
@@ -533,21 +533,21 @@ int ssb_sdio_get_invariants(struct ssb_bus *bus,
 				sprom->maxpwr_a = tuple->data[8];
 				sprom->maxpwr_bg = tuple->data[8];
 				break;
-			case SSB_SDIO_CIS_OEMNAME:
+			case SSBN_SDIO_CIS_OEMNAME:
 				/* Not present */
 				break;
-			case SSB_SDIO_CIS_CCODE:
+			case SSBN_SDIO_CIS_CCODE:
 				GOTO_ERROR_ON(tuple->size != 2,
 					      "ccode tpl size");
 				sprom->country_code = tuple->data[1];
 				break;
-			case SSB_SDIO_CIS_ANTENNA:
+			case SSBN_SDIO_CIS_ANTENNA:
 				GOTO_ERROR_ON(tuple->size != 2,
 					      "ant tpl size");
 				sprom->ant_available_a = tuple->data[1];
 				sprom->ant_available_bg = tuple->data[1];
 				break;
-			case SSB_SDIO_CIS_ANTGAIN:
+			case SSBN_SDIO_CIS_ANTGAIN:
 				GOTO_ERROR_ON(tuple->size != 2,
 					      "antg tpl size");
 				sprom->antenna_gain.a0 = tuple->data[1];
@@ -555,14 +555,14 @@ int ssb_sdio_get_invariants(struct ssb_bus *bus,
 				sprom->antenna_gain.a2 = tuple->data[1];
 				sprom->antenna_gain.a3 = tuple->data[1];
 				break;
-			case SSB_SDIO_CIS_BFLAGS:
+			case SSBN_SDIO_CIS_BFLAGS:
 				GOTO_ERROR_ON((tuple->size != 3) &&
 					      (tuple->size != 5),
 					      "bfl tpl size");
 				sprom->boardflags_lo = tuple->data[1] |
 						 ((u16)tuple->data[2] << 8);
 				break;
-			case SSB_SDIO_CIS_LEDS:
+			case SSBN_SDIO_CIS_LEDS:
 				GOTO_ERROR_ON(tuple->size != 5,
 					      "leds tpl size");
 				sprom->gpio0 = tuple->data[1];
@@ -582,21 +582,21 @@ int ssb_sdio_get_invariants(struct ssb_bus *bus,
 
 	return 0;
 error:
-	dev_err(ssb_sdio_dev(bus), "failed to fetch device invariants: %s\n",
+	dev_err(ssbn_sdio_dev(bus), "failed to fetch device invariants: %s\n",
 		error_description);
 	return -ENODEV;
 }
 
-void ssb_sdio_exit(struct ssb_bus *bus)
+void ssbn_sdio_exit(struct ssbn_bus *bus)
 {
-	if (bus->bustype != SSB_BUSTYPE_SDIO)
+	if (bus->bustype != SSBN_BUSTYPE_SDIO)
 		return;
 	/* Nothing to do here. */
 }
 
-int ssb_sdio_init(struct ssb_bus *bus)
+int ssbn_sdio_init(struct ssbn_bus *bus)
 {
-	if (bus->bustype != SSB_BUSTYPE_SDIO)
+	if (bus->bustype != SSBN_BUSTYPE_SDIO)
 		return 0;
 
 	bus->sdio_sbaddr = ~0;

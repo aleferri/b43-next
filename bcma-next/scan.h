@@ -1,9 +1,9 @@
 /* SPDX-License-Identifier: GPL-2.0 */
-#ifndef BCMA_SCAN_H_
-#define BCMA_SCAN_H_
+#ifndef BCMN_SCAN_H_
+#define BCMN_SCAN_H_
 
-#define BCMA_ADDR_BASE		0x18000000
-#define BCMA_WRAP_BASE		0x18100000
+#define BCMN_ADDR_BASE		0x18000000
+#define BCMN_WRAP_BASE		0x18100000
 
 #define SCAN_ER_VALID		0x00000001
 #define SCAN_ER_TAGX		0x00000006 /* we have to ignore 0x8 bit when checking tag for SCAN_ER_TAG_ADDR */
@@ -54,4 +54,4 @@
 #define SCAN_SIZE_SZ		0xFFFFF000
 #define SCAN_SIZE_SG32		0x00000008
 
-#endif /* BCMA_SCAN_H_ */
+#endif /* BCMN_SCAN_H_ */

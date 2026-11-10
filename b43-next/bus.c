@@ -17,62 +17,62 @@
 #include "bus.h"
 
 /* BCMA */
-#ifdef CONFIG_B43_BCMA
+#ifdef CONFIG_B43_NEXT_BCMA
 static int b43_bus_bcma_bus_may_powerdown(struct b43_bus_dev *dev)
 {
-	return 0; /* bcma_bus_may_powerdown(dev->bdev->bus); */
+	return 0; /* bcmn_bus_may_powerdown(dev->bdev->bus); */
 }
 static int b43_bus_bcma_bus_powerup(struct b43_bus_dev *dev,
 					  bool dynamic_pctl)
 {
-	return 0; /* bcma_bus_powerup(dev->sdev->bus, dynamic_pctl); */
+	return 0; /* bcmn_bus_powerup(dev->sdev->bus, dynamic_pctl); */
 }
 static int b43_bus_bcma_device_is_enabled(struct b43_bus_dev *dev)
 {
-	return bcma_core_is_enabled(dev->bdev);
+	return bcmn_core_is_enabled(dev->bdev);
 }
 static void b43_bus_bcma_device_enable(struct b43_bus_dev *dev,
 					     u32 core_specific_flags)
 {
-	bcma_core_enable(dev->bdev, core_specific_flags);
+	bcmn_core_enable(dev->bdev, core_specific_flags);
 }
 static void b43_bus_bcma_device_disable(struct b43_bus_dev *dev,
 					      u32 core_specific_flags)
 {
-	bcma_core_disable(dev->bdev, core_specific_flags);
+	bcmn_core_disable(dev->bdev, core_specific_flags);
 }
 static u16 b43_bus_bcma_read16(struct b43_bus_dev *dev, u16 offset)
 {
-	return bcma_read16(dev->bdev, offset);
+	return bcmn_read16(dev->bdev, offset);
 }
 static u32 b43_bus_bcma_read32(struct b43_bus_dev *dev, u16 offset)
 {
-	return bcma_read32(dev->bdev, offset);
+	return bcmn_read32(dev->bdev, offset);
 }
 static
 void b43_bus_bcma_write16(struct b43_bus_dev *dev, u16 offset, u16 value)
 {
-	bcma_write16(dev->bdev, offset, value);
+	bcmn_write16(dev->bdev, offset, value);
 }
 static
 void b43_bus_bcma_write32(struct b43_bus_dev *dev, u16 offset, u32 value)
 {
-	bcma_write32(dev->bdev, offset, value);
+	bcmn_write32(dev->bdev, offset, value);
 }
 static
 void b43_bus_bcma_block_read(struct b43_bus_dev *dev, void *buffer,
 			     size_t count, u16 offset, u8 reg_width)
 {
-	bcma_block_read(dev->bdev, buffer, count, offset, reg_width);
+	bcmn_block_read(dev->bdev, buffer, count, offset, reg_width);
 }
 static
 void b43_bus_bcma_block_write(struct b43_bus_dev *dev, const void *buffer,
 			      size_t count, u16 offset, u8 reg_width)
 {
-	bcma_block_write(dev->bdev, buffer, count, offset, reg_width);
+	bcmn_block_write(dev->bdev, buffer, count, offset, reg_width);
 }
 
-struct b43_bus_dev *b43_bus_dev_bcma_init(struct bcma_device *core)
+struct b43_bus_dev *b43_bus_dev_bcma_init(struct bcmn_device *core)
 {
 	struct b43_bus_dev *dev = kzalloc(sizeof(*dev), GFP_KERNEL);
 	if (!dev)
@@ -119,63 +119,63 @@ struct b43_bus_dev *b43_bus_dev_bcma_init(struct bcma_device *core)
 
 	return dev;
 }
-#endif /* CONFIG_B43_BCMA */
+#endif /* CONFIG_B43_NEXT_BCMA */
 
 /* SSB */
-#ifdef CONFIG_B43_SSB
+#ifdef CONFIG_B43_NEXT_SSB
 static int b43_bus_ssb_bus_may_powerdown(struct b43_bus_dev *dev)
 {
-	return ssb_bus_may_powerdown(dev->sdev->bus);
+	return ssbn_bus_may_powerdown(dev->sdev->bus);
 }
 static int b43_bus_ssb_bus_powerup(struct b43_bus_dev *dev,
 					  bool dynamic_pctl)
 {
-	return ssb_bus_powerup(dev->sdev->bus, dynamic_pctl);
+	return ssbn_bus_powerup(dev->sdev->bus, dynamic_pctl);
 }
 static int b43_bus_ssb_device_is_enabled(struct b43_bus_dev *dev)
 {
-	return ssb_device_is_enabled(dev->sdev);
+	return ssbn_device_is_enabled(dev->sdev);
 }
 static void b43_bus_ssb_device_enable(struct b43_bus_dev *dev,
 					     u32 core_specific_flags)
 {
-	ssb_device_enable(dev->sdev, core_specific_flags);
+	ssbn_device_enable(dev->sdev, core_specific_flags);
 }
 static void b43_bus_ssb_device_disable(struct b43_bus_dev *dev,
 					      u32 core_specific_flags)
 {
-	ssb_device_disable(dev->sdev, core_specific_flags);
+	ssbn_device_disable(dev->sdev, core_specific_flags);
 }
 
 static u16 b43_bus_ssb_read16(struct b43_bus_dev *dev, u16 offset)
 {
-	return ssb_read16(dev->sdev, offset);
+	return ssbn_read16(dev->sdev, offset);
 }
 static u32 b43_bus_ssb_read32(struct b43_bus_dev *dev, u16 offset)
 {
-	return ssb_read32(dev->sdev, offset);
+	return ssbn_read32(dev->sdev, offset);
 }
 static void b43_bus_ssb_write16(struct b43_bus_dev *dev, u16 offset, u16 value)
 {
-	ssb_write16(dev->sdev, offset, value);
+	ssbn_write16(dev->sdev, offset, value);
 }
 static void b43_bus_ssb_write32(struct b43_bus_dev *dev, u16 offset, u32 value)
 {
-	ssb_write32(dev->sdev, offset, value);
+	ssbn_write32(dev->sdev, offset, value);
 }
 static void b43_bus_ssb_block_read(struct b43_bus_dev *dev, void *buffer,
 				   size_t count, u16 offset, u8 reg_width)
 {
-	ssb_block_read(dev->sdev, buffer, count, offset, reg_width);
+	ssbn_block_read(dev->sdev, buffer, count, offset, reg_width);
 }
 static
 void b43_bus_ssb_block_write(struct b43_bus_dev *dev, const void *buffer,
 			     size_t count, u16 offset, u8 reg_width)
 {
-	ssb_block_write(dev->sdev, buffer, count, offset, reg_width);
+	ssbn_block_write(dev->sdev, buffer, count, offset, reg_width);
 }
 
-struct b43_bus_dev *b43_bus_dev_ssb_init(struct ssb_device *sdev)
+struct b43_bus_dev *b43_bus_dev_ssb_init(struct ssbn_device *sdev)
 {
 	struct b43_bus_dev *dev;
 
@@ -218,18 +218,18 @@ struct b43_bus_dev *b43_bus_dev_ssb_init(struct ssb_device *sdev)
 
 	return dev;
 }
-#endif /* CONFIG_B43_SSB */
+#endif /* CONFIG_B43_NEXT_SSB */
 
 void *b43_bus_get_wldev(struct b43_bus_dev *dev)
 {
 	switch (dev->bus_type) {
-#ifdef CONFIG_B43_BCMA
+#ifdef CONFIG_B43_NEXT_BCMA
 	case B43_BUS_BCMA:
-		return bcma_get_drvdata(dev->bdev);
+		return bcmn_get_drvdata(dev->bdev);
 #endif
-#ifdef CONFIG_B43_SSB
+#ifdef CONFIG_B43_NEXT_SSB
 	case B43_BUS_SSB:
-		return ssb_get_drvdata(dev->sdev);
+		return ssbn_get_drvdata(dev->sdev);
 #endif
 	}
 	return NULL;
@@ -238,14 +238,14 @@ void *b43_bus_get_wldev(struct b43_bus_dev *dev)
 void b43_bus_set_wldev(struct b43_bus_dev *dev, void *wldev)
 {
 	switch (dev->bus_type) {
-#ifdef CONFIG_B43_BCMA
+#ifdef CONFIG_B43_NEXT_BCMA
 	case B43_BUS_BCMA:
-		bcma_set_drvdata(dev->bdev, wldev);
+		bcmn_set_drvdata(dev->bdev, wldev);
 		break;
 #endif
-#ifdef CONFIG_B43_SSB
+#ifdef CONFIG_B43_NEXT_SSB
 	case B43_BUS_SSB:
-		ssb_set_drvdata(dev->sdev, wldev);
+		ssbn_set_drvdata(dev->sdev, wldev);
 		break;
 #endif
 	}

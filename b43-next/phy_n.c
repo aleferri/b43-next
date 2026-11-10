@@ -1122,7 +1122,7 @@ static void b43_radio_2056_setup(struct b43_wldev *dev,
 				const struct b43_nphy_channeltab_entry_rev3 *e)
 {
 	struct b43_phy *phy = &dev->phy;
-	struct ssb_sprom *sprom = dev->dev->bus_sprom;
+	struct ssbn_sprom *sprom = dev->dev->bus_sprom;
 	enum nl80211_band band = b43_current_band(dev->wl);
 	u16 offset;
 	u8 i;
@@ -1134,10 +1134,10 @@ static void b43_radio_2056_setup(struct b43_wldev *dev,
 	B43_WARN_ON(dev->phy.rev < 3);
 
 	is_pkg_fab_smic =
-		((dev->dev->chip_id == BCMA_CHIP_ID_BCM43224 ||
-		  dev->dev->chip_id == BCMA_CHIP_ID_BCM43225 ||
-		  dev->dev->chip_id == BCMA_CHIP_ID_BCM43421) &&
-		 dev->dev->chip_pkg == BCMA_PKG_ID_BCM43224_FAB_SMIC);
+		((dev->dev->chip_id == BCMN_CHIP_ID_BCM43224 ||
+		  dev->dev->chip_id == BCMN_CHIP_ID_BCM43225 ||
+		  dev->dev->chip_id == BCMN_CHIP_ID_BCM43421) &&
+		 dev->dev->chip_pkg == BCMN_PKG_ID_BCM43224_FAB_SMIC);
 
 	b43_chantab_radio_2056_upload(dev, e);
 	b2056_upload_syn_pll_cp2(dev, band == NL80211_BAND_5GHZ);
@@ -1146,8 +1146,8 @@ static void b43_radio_2056_setup(struct b43_wldev *dev,
 	    b43_current_band(dev->wl) == NL80211_BAND_2GHZ) {
 		b43_radio_write(dev, B2056_SYN_PLL_LOOPFILTER1, 0x1F);
 		b43_radio_write(dev, B2056_SYN_PLL_LOOPFILTER2, 0x1F);
-		if (dev->dev->chip_id == BCMA_CHIP_ID_BCM4716 ||
-		    dev->dev->chip_id == BCMA_CHIP_ID_BCM47162) {
+		if (dev->dev->chip_id == BCMN_CHIP_ID_BCM4716 ||
+		    dev->dev->chip_id == BCMN_CHIP_ID_BCM47162) {
 			b43_radio_write(dev, B2056_SYN_PLL_LOOPFILTER4, 0x14);
 			b43_radio_write(dev, B2056_SYN_PLL_CP2, 0);
 		} else {
@@ -1177,8 +1177,8 @@ static void b43_radio_2056_setup(struct b43_wldev *dev,
 				b43_radio_write(dev,
 					offset | B2056_TX_PADG_IDAC, 0xcc);
 
-				if (dev->dev->chip_id == BCMA_CHIP_ID_BCM4716 ||
-				    dev->dev->chip_id == BCMA_CHIP_ID_BCM47162) {
+				if (dev->dev->chip_id == BCMN_CHIP_ID_BCM4716 ||
+				    dev->dev->chip_id == BCMN_CHIP_ID_BCM47162) {
 					bias = 0x40;
 					cbias = 0x45;
 					pag_boost = 0x5;
@@ -1435,12 +1435,12 @@ static void b43_radio_init2055_pre(struct b43_wldev *dev)
 static void b43_radio_init2055_post(struct b43_wldev *dev)
 {
 	struct b43_phy_n *nphy = dev->phy.n;
-	struct ssb_sprom *sprom = dev->dev->bus_sprom;
+	struct ssbn_sprom *sprom = dev->dev->bus_sprom;
 	bool workaround = false;
 
 	if (sprom->revision < 4)
 		workaround = (dev->dev->board_vendor != PCI_VENDOR_ID_BROADCOM
-			      && dev->dev->board_type == SSB_BOARD_CB2_4321
+			      && dev->dev->board_type == SSBN_BOARD_CB2_4321
 			      && dev->dev->board_rev >= 0x41);
 	else
 		workaround =
@@ -2484,7 +2484,7 @@ static void b43_nphy_gain_ctl_workarounds_rev7(struct b43_wldev *dev)
 
 static void b43_nphy_gain_ctl_workarounds_rev3(struct b43_wldev *dev)
 {
-	struct ssb_sprom *sprom = dev->dev->bus_sprom;
+	struct ssbn_sprom *sprom = dev->dev->bus_sprom;
 
 	bool ghz5;
 	bool ext_lna;
@@ -2691,7 +2691,7 @@ static void b43_nphy_gain_ctl_workarounds(struct b43_wldev *dev)
 
 static void b43_nphy_workarounds_rev7plus(struct b43_wldev *dev)
 {
-	struct ssb_sprom *sprom = dev->dev->bus_sprom;
+	struct ssbn_sprom *sprom = dev->dev->bus_sprom;
 	struct b43_phy *phy = &dev->phy;
 
 	/* TX to RX */
@@ -3137,7 +3137,7 @@ static void b43_nphy_workarounds_rev7plus(struct b43_wldev *dev)
 static void b43_nphy_workarounds_rev3plus(struct b43_wldev *dev)
 {
 	struct b43_phy_n *nphy = dev->phy.n;
-	struct ssb_sprom *sprom = dev->dev->bus_sprom;
+	struct ssbn_sprom *sprom = dev->dev->bus_sprom;
 
 	/* TX to RX */
 	u8 tx2rx_events[7] = { 0x4, 0x3, 0x5, 0x2, 0x1, 0x8, 0x1F };
@@ -3345,7 +3345,7 @@ static void b43_nphy_workarounds_rev3plus(struct b43_wldev *dev)
 
 static void b43_nphy_workarounds_rev1_2(struct b43_wldev *dev)
 {
-	struct ssb_sprom *sprom = dev->dev->bus_sprom;
+	struct ssbn_sprom *sprom = dev->dev->bus_sprom;
 	struct b43_phy *phy = &dev->phy;
 	struct b43_phy_n *nphy = phy->n;
 
@@ -3356,7 +3356,7 @@ static void b43_nphy_workarounds_rev1_2(struct b43_wldev *dev)
 	u8 delays2[7] = { 0x8, 0x6, 0x2, 0x4, 0x4, 0x6, 0x1 };
 
 	if (sprom->boardflags2_lo & B43_BFL2_SKWRKFEM_BRD ||
-	    dev->dev->board_type == BCMA_BOARD_TYPE_BCM943224M93) {
+	    dev->dev->board_type == BCMN_BOARD_TYPE_BCM943224M93) {
 		delays1[0] = 0x1;
 		delays1[5] = 0x14;
 	}
@@ -3734,7 +3734,7 @@ static void b43_nphy_tx_power_fix(struct b43_wldev *dev)
 {
 	struct b43_phy *phy = &dev->phy;
 	struct b43_phy_n *nphy = dev->phy.n;
-	struct ssb_sprom *sprom = dev->dev->bus_sprom;
+	struct ssbn_sprom *sprom = dev->dev->bus_sprom;
 
 	u8 txpi[2], bbmult, i;
 	u16 tmp, radio_gain, dac_gain;
@@ -4041,7 +4041,7 @@ static void b43_nphy_tx_power_ctl_setup(struct b43_wldev *dev)
 {
 	struct b43_phy *phy = &dev->phy;
 	struct b43_phy_n *nphy = dev->phy.n;
-	struct ssb_sprom *sprom = dev->dev->bus_sprom;
+	struct ssbn_sprom *sprom = dev->dev->bus_sprom;
 
 	s16 a1[2], b0[2], b1[2];
 	u8 idle[2];
@@ -5944,15 +5944,15 @@ static void b43_nphy_superswitch_init(struct b43_wldev *dev, bool init)
 		b43_phy_write(dev, B43_NPHY_GPIO_HIOEN, 0);
 
 		switch (dev->dev->bus_type) {
-#ifdef CONFIG_B43_BCMA
+#ifdef CONFIG_B43_NEXT_BCMA
 		case B43_BUS_BCMA:
-			bcma_chipco_gpio_control(&dev->dev->bdev->bus->drv_cc,
+			bcmn_chipco_gpio_control(&dev->dev->bdev->bus->drv_cc,
 						 0xFC00, 0xFC00);
 			break;
 #endif
-#ifdef CONFIG_B43_SSB
+#ifdef CONFIG_B43_NEXT_SSB
 		case B43_BUS_SSB:
-			ssb_chipco_gpio_control(&dev->dev->sdev->bus->chipco,
+			ssbn_chipco_gpio_control(&dev->dev->sdev->bus->chipco,
 						0xFC00, 0xFC00);
 			break;
 #endif
@@ -5975,7 +5975,7 @@ static void b43_nphy_superswitch_init(struct b43_wldev *dev, bool init)
 /* http://bcm-v4.sipsolutions.net/802.11/PHY/Init/N */
 static int b43_phy_initn(struct b43_wldev *dev)
 {
-	struct ssb_sprom *sprom = dev->dev->bus_sprom;
+	struct ssbn_sprom *sprom = dev->dev->bus_sprom;
 	struct b43_phy *phy = &dev->phy;
 	struct b43_phy_n *nphy = phy->n;
 	u8 tx_pwr_state;
@@ -5990,16 +5990,16 @@ static int b43_phy_initn(struct b43_wldev *dev)
 	   (sprom->boardflags_lo & B43_BFL_EXTLNA) &&
 	   (b43_current_band(dev->wl) == NL80211_BAND_2GHZ)) {
 		switch (dev->dev->bus_type) {
-#ifdef CONFIG_B43_BCMA
+#ifdef CONFIG_B43_NEXT_BCMA
 		case B43_BUS_BCMA:
-			bcma_cc_set32(&dev->dev->bdev->bus->drv_cc,
-				      BCMA_CC_CHIPCTL, 0x40);
+			bcmn_cc_set32(&dev->dev->bdev->bus->drv_cc,
+				      BCMN_CC_CHIPCTL, 0x40);
 			break;
 #endif
-#ifdef CONFIG_B43_SSB
+#ifdef CONFIG_B43_NEXT_SSB
 		case B43_BUS_SSB:
 			chipco_set32(&dev->dev->sdev->bus->chipco,
-				     SSB_CHIPCO_CHIPCTL, 0x40);
+				     SSBN_CHIPCO_CHIPCTL, 0x40);
 			break;
 #endif
 		}
@@ -6056,7 +6056,7 @@ static int b43_phy_initn(struct b43_wldev *dev)
 
 	if (sprom->boardflags2_lo & B43_BFL2_SKWRKFEM_BRD ||
 	    (dev->dev->board_vendor == PCI_VENDOR_ID_APPLE &&
-	     dev->dev->board_type == BCMA_BOARD_TYPE_BCM943224M93))
+	     dev->dev->board_type == BCMN_BOARD_TYPE_BCM943224M93))
 		b43_phy_write(dev, B43_NPHY_TXREALFD, 0xA0);
 	else
 		b43_phy_write(dev, B43_NPHY_TXREALFD, 0xB8);
@@ -6204,15 +6204,15 @@ static void b43_chantab_phy_upload(struct b43_wldev *dev,
 static void b43_nphy_pmu_spur_avoid(struct b43_wldev *dev, bool avoid)
 {
 	switch (dev->dev->bus_type) {
-#ifdef CONFIG_B43_BCMA
+#ifdef CONFIG_B43_NEXT_BCMA
 	case B43_BUS_BCMA:
-		bcma_pmu_spuravoid_pllupdate(&dev->dev->bdev->bus->drv_cc,
+		bcmn_pmu_spuravoid_pllupdate(&dev->dev->bdev->bus->drv_cc,
 					     avoid);
 		break;
 #endif
-#ifdef CONFIG_B43_SSB
+#ifdef CONFIG_B43_NEXT_SSB
 	case B43_BUS_SSB:
-		ssb_pmu_spuravoid_pllupdate(&dev->dev->sdev->bus->chipco,
+		ssbn_pmu_spuravoid_pllupdate(&dev->dev->sdev->bus->chipco,
 					    avoid);
 		break;
 #endif
@@ -6430,7 +6430,7 @@ static void b43_nphy_op_prepare_structs(struct b43_wldev *dev)
 {
 	struct b43_phy *phy = &dev->phy;
 	struct b43_phy_n *nphy = phy->n;
-	struct ssb_sprom *sprom = dev->dev->bus_sprom;
+	struct ssbn_sprom *sprom = dev->dev->bus_sprom;
 
 	memset(nphy, 0, sizeof(*nphy));
 
@@ -6458,9 +6458,9 @@ static void b43_nphy_op_prepare_structs(struct b43_wldev *dev)
 		if (dev->phy.rev >= 2 &&
 		    (sprom->boardflags2_lo & B43_BFL2_TXPWRCTRL_EN)) {
 			nphy->txpwrctrl = true;
-#ifdef CONFIG_B43_SSB
+#ifdef CONFIG_B43_NEXT_SSB
 			if (dev->dev->bus_type == B43_BUS_SSB &&
-			    dev->dev->sdev->bus->bustype == SSB_BUSTYPE_PCI) {
+			    dev->dev->sdev->bus->bustype == SSBN_BUSTYPE_PCI) {
 				struct pci_dev *pdev =
 					dev->dev->sdev->bus->host_pci;
 				if (pdev->device == 0x4328 ||

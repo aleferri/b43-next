@@ -2402,7 +2402,7 @@ void lpphy_write_gain_table_bulk(struct b43_wldev *dev, int offset, int count,
 
 void lpphy_init_tx_gain_table(struct b43_wldev *dev)
 {
-	struct ssb_sprom *sprom = dev->dev->bus_sprom;
+	struct ssbn_sprom *sprom = dev->dev->bus_sprom;
 
 	switch (dev->phy.rev) {
 	case 0:

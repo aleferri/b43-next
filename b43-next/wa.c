@@ -299,11 +299,11 @@ static void b43_wa_cpll_nonpilot(struct b43_wldev *dev)
 
 static void b43_wa_boards_g(struct b43_wldev *dev)
 {
-	struct ssb_sprom *sprom = dev->dev->bus_sprom;
+	struct ssbn_sprom *sprom = dev->dev->bus_sprom;
 	struct b43_phy *phy = &dev->phy;
 
-	if (dev->dev->board_vendor != SSB_BOARDVENDOR_BCM ||
-	    dev->dev->board_type != SSB_BOARD_BU4306 ||
+	if (dev->dev->board_vendor != SSBN_BOARDVENDOR_BCM ||
+	    dev->dev->board_type != SSBN_BOARD_BU4306 ||
 	    dev->dev->board_rev != 0x17) {
 		if (phy->rev < 2) {
 			b43_ofdmtab_write16(dev, B43_OFDMTAB_GAINX_R1, 1, 0x0002);

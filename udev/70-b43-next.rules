@@ -1,0 +1,3 @@
+# Before 80-drivers.rules loads the kernel's bcma or ssb for it, hand a
+# Broadcom PCI device to b43-next if b43-next claims it.
+ACTION=="add", SUBSYSTEM=="pci", ATTR{vendor}=="0x14e4", RUN+="b43-next-bind %k"

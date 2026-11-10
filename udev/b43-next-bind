@@ -1,0 +1,25 @@
+#!/bin/sh
+# b43-next-bind PCI_ADDRESS
+#
+# Gives the device to one of b43-next's PCI bridges, bcma-next's or
+# ssb-next's, when b43-next's own aliases match it: the list of devices
+# lives in one place, the module. The kernel's bcma or ssb may hold the
+# device already (built in, or loaded for another one): then it is unbound
+# first.
+set -eu
+
+pci=/sys/bus/pci
+dev=$pci/devices/$1
+
+modprobe -q --resolve-alias "$(cat "$dev/modalias")" | grep -qx b43_next || exit 0
+modprobe b43_next
+
+for drv in bcma-next-pci-bridge ssb-next-pci-bridge; do
+	[ -e "$dev/driver" ] && [ "$(basename "$(readlink "$dev/driver")")" = "$drv" ] && exit 0
+	echo "$drv" > "$dev/driver_override"
+	[ -e "$dev/driver" ] && echo "$1" > "$dev/driver/unbind"
+	echo "$1" > $pci/drivers_probe
+	[ -e "$dev/driver" ] && exit 0
+done
+echo > "$dev/driver_override"
+echo "$1" > $pci/drivers_probe

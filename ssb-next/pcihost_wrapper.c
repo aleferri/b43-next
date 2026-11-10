@@ -15,17 +15,17 @@
 #include <linux/pci.h>
 #include <linux/export.h>
 #include <linux/slab.h>
-#include <linux/ssb/ssb.h>
+#include <ssb-next/ssbn.h>
 
 
 #ifdef CONFIG_PM_SLEEP
-static int ssb_pcihost_suspend(struct device *d)
+static int ssbn_pcihost_suspend(struct device *d)
 {
 	struct pci_dev *dev = to_pci_dev(d);
-	struct ssb_bus *ssb = pci_get_drvdata(dev);
+	struct ssbn_bus *ssb = pci_get_drvdata(dev);
 	int err;
 
-	err = ssb_bus_suspend(ssb);
+	err = ssbn_bus_suspend(ssb);
 	if (err)
 		return err;
 	pci_save_state(dev);
@@ -40,10 +40,10 @@ static int ssb_pcihost_suspend(struct device *d)
 	return 0;
 }
 
-static int ssb_pcihost_resume(struct device *d)
+static int ssbn_pcihost_resume(struct device *d)
 {
 	struct pci_dev *dev = to_pci_dev(d);
-	struct ssb_bus *ssb = pci_get_drvdata(dev);
+	struct ssbn_bus *ssb = pci_get_drvdata(dev);
 	int err;
 
 	pci_back_from_sleep(dev);
@@ -51,23 +51,23 @@ static int ssb_pcihost_resume(struct device *d)
 	if (err)
 		return err;
 	pci_restore_state(dev);
-	err = ssb_bus_resume(ssb);
+	err = ssbn_bus_resume(ssb);
 	if (err)
 		return err;
 
 	return 0;
 }
 
-static const struct dev_pm_ops ssb_pcihost_pm_ops = {
-	SET_SYSTEM_SLEEP_PM_OPS(ssb_pcihost_suspend, ssb_pcihost_resume)
+static const struct dev_pm_ops ssbn_pcihost_pm_ops = {
+	SET_SYSTEM_SLEEP_PM_OPS(ssbn_pcihost_suspend, ssbn_pcihost_resume)
 };
 
 #endif /* CONFIG_PM_SLEEP */
 
-static int ssb_pcihost_probe(struct pci_dev *dev,
+static int ssbn_pcihost_probe(struct pci_dev *dev,
 			     const struct pci_device_id *id)
 {
-	struct ssb_bus *ssb;
+	struct ssbn_bus *ssb;
 	int err = -ENOMEM;
 	u32 val;
 
@@ -88,7 +88,7 @@ static int ssb_pcihost_probe(struct pci_dev *dev,
 	if ((val & 0x0000ff00) != 0)
 		pci_write_config_dword(dev, 0x40, val & 0xffff00ff);
 
-	err = ssb_bus_pcibus_register(ssb, dev);
+	err = ssbn_bus_pcibus_register(ssb, dev);
 	if (err)
 		goto err_pci_release_regions;
 
@@ -106,25 +106,25 @@ err_kfree_ssb:
 	return err;
 }
 
-static void ssb_pcihost_remove(struct pci_dev *dev)
+static void ssbn_pcihost_remove(struct pci_dev *dev)
 {
-	struct ssb_bus *ssb = pci_get_drvdata(dev);
+	struct ssbn_bus *ssb = pci_get_drvdata(dev);
 
-	ssb_bus_unregister(ssb);
+	ssbn_bus_unregister(ssb);
 	pci_release_regions(dev);
 	pci_disable_device(dev);
 	kfree(ssb);
 	pci_set_drvdata(dev, NULL);
 }
 
-int ssb_pcihost_register(struct pci_driver *driver)
+int ssbn_pcihost_register(struct pci_driver *driver)
 {
-	driver->probe = ssb_pcihost_probe;
-	driver->remove = ssb_pcihost_remove;
+	driver->probe = ssbn_pcihost_probe;
+	driver->remove = ssbn_pcihost_remove;
 #ifdef CONFIG_PM_SLEEP
-	driver->driver.pm = &ssb_pcihost_pm_ops;
+	driver->driver.pm = &ssbn_pcihost_pm_ops;
 #endif
 
 	return pci_register_driver(driver);
 }
-EXPORT_SYMBOL(ssb_pcihost_register);
+EXPORT_SYMBOL(ssbn_pcihost_register);

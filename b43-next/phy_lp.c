@@ -73,7 +73,7 @@ static void b43_lpphy_op_free(struct b43_wldev *dev)
 /* https://bcm-v4.sipsolutions.net/802.11/PHY/LP/ReadBandSrom */
 static void lpphy_read_band_sprom(struct b43_wldev *dev)
 {
-	struct ssb_sprom *sprom = dev->dev->bus_sprom;
+	struct ssbn_sprom *sprom = dev->dev->bus_sprom;
 	struct b43_phy_lp *lpphy = dev->phy.lp;
 	u16 cckpo, maxpwr;
 	u32 ofdmpo;
@@ -196,8 +196,8 @@ static void lpphy_table_init(struct b43_wldev *dev)
 
 static void lpphy_baseband_rev0_1_init(struct b43_wldev *dev)
 {
-	struct ssb_bus *bus = dev->dev->sdev->bus;
-	struct ssb_sprom *sprom = dev->dev->bus_sprom;
+	struct ssbn_bus *bus = dev->dev->sdev->bus;
+	struct ssbn_sprom *sprom = dev->dev->bus_sprom;
 	struct b43_phy_lp *lpphy = dev->phy.lp;
 	u16 tmp, tmp2;
 
@@ -228,15 +228,15 @@ static void lpphy_baseband_rev0_1_init(struct b43_wldev *dev)
 	if ((sprom->boardflags_lo & B43_BFL_FEM) &&
 	   ((b43_current_band(dev->wl) == NL80211_BAND_5GHZ) ||
 	   (sprom->boardflags_hi & B43_BFH_PAREF))) {
-		ssb_pmu_set_ldo_voltage(&bus->chipco, LDO_PAREF, 0x28);
-		ssb_pmu_set_ldo_paref(&bus->chipco, true);
+		ssbn_pmu_set_ldo_voltage(&bus->chipco, LDO_PAREF, 0x28);
+		ssbn_pmu_set_ldo_paref(&bus->chipco, true);
 		if (dev->phy.rev == 0) {
 			b43_phy_maskset(dev, B43_LPPHY_LP_RF_SIGNAL_LUT,
 					0xFFCF, 0x0010);
 		}
 		b43_lptab_write(dev, B43_LPTAB16(11, 7), 60);
 	} else {
-		ssb_pmu_set_ldo_paref(&bus->chipco, false);
+		ssbn_pmu_set_ldo_paref(&bus->chipco, false);
 		b43_phy_maskset(dev, B43_LPPHY_LP_RF_SIGNAL_LUT,
 				0xFFCF, 0x0020);
 		b43_lptab_write(dev, B43_LPTAB16(11, 7), 100);
@@ -269,7 +269,7 @@ static void lpphy_baseband_rev0_1_init(struct b43_wldev *dev)
 		b43_phy_maskset(dev, B43_LPPHY_TR_LOOKUP_8, 0xFFC0, 0x000A);
 		b43_phy_maskset(dev, B43_LPPHY_TR_LOOKUP_8, 0xC0FF, 0x0B00);
 	} else if (b43_current_band(dev->wl) == NL80211_BAND_5GHZ ||
-		   (dev->dev->board_type == SSB_BOARD_BU4312) ||
+		   (dev->dev->board_type == SSBN_BOARD_BU4312) ||
 		   (dev->phy.rev == 0 && (sprom->boardflags_lo & B43_BFL_FEM))) {
 		b43_phy_maskset(dev, B43_LPPHY_TR_LOOKUP_1, 0xFFC0, 0x0001);
 		b43_phy_maskset(dev, B43_LPPHY_TR_LOOKUP_1, 0xC0FF, 0x0400);
@@ -307,7 +307,7 @@ static void lpphy_baseband_rev0_1_init(struct b43_wldev *dev)
 	}
 	if ((sprom->boardflags_hi & B43_BFH_FEM_BT) &&
 	    (dev->dev->chip_id == 0x5354) &&
-	    (dev->dev->chip_pkg == SSB_CHIPPACK_BCM4712S)) {
+	    (dev->dev->chip_pkg == SSBN_CHIPPACK_BCM4712S)) {
 		b43_phy_set(dev, B43_LPPHY_CRSGAIN_CTL, 0x0006);
 		b43_phy_write(dev, B43_LPPHY_GPIO_SELECT, 0x0005);
 		b43_phy_write(dev, B43_LPPHY_GPIO_OUTEN, 0xFFFF);
@@ -501,7 +501,7 @@ struct b2062_freqdata {
 static void lpphy_2062_init(struct b43_wldev *dev)
 {
 	struct b43_phy_lp *lpphy = dev->phy.lp;
-	struct ssb_bus *bus = dev->dev->sdev->bus;
+	struct ssbn_bus *bus = dev->dev->sdev->bus;
 	u32 crystalfreq, tmp, ref;
 	unsigned int i;
 	const struct b2062_freqdata *fd = NULL;
@@ -543,7 +543,7 @@ static void lpphy_2062_init(struct b43_wldev *dev)
 	/* Get the crystal freq, in Hz. */
 	crystalfreq = bus->chipco.pmu.crystalfreq * 1000;
 
-	B43_WARN_ON(!(bus->chipco.capabilities & SSB_CHIPCO_CAP_PMU));
+	B43_WARN_ON(!(bus->chipco.capabilities & SSBN_CHIPCO_CAP_PMU));
 	B43_WARN_ON(crystalfreq == 0);
 
 	if (crystalfreq <= 30000000) {
@@ -1271,7 +1271,7 @@ finish:
 
 static void lpphy_rev2plus_rc_calib(struct b43_wldev *dev)
 {
-	struct ssb_bus *bus = dev->dev->sdev->bus;
+	struct ssbn_bus *bus = dev->dev->sdev->bus;
 	u32 crystal_freq = bus->chipco.pmu.crystalfreq * 1000;
 	u8 tmp = b43_radio_read(dev, B2063_RX_BB_SP8) & 0xFF;
 	int i;
@@ -2387,7 +2387,7 @@ static int lpphy_b2062_tune(struct b43_wldev *dev,
 			    unsigned int channel)
 {
 	struct b43_phy_lp *lpphy = dev->phy.lp;
-	struct ssb_bus *bus = dev->dev->sdev->bus;
+	struct ssbn_bus *bus = dev->dev->sdev->bus;
 	const struct b206x_channel *chandata = NULL;
 	u32 crystal_freq = bus->chipco.pmu.crystalfreq * 1000;
 	u32 tmp1, tmp2, tmp3, tmp4, tmp5, tmp6, tmp7, tmp8, tmp9;
@@ -2477,7 +2477,7 @@ static void lpphy_b2063_vco_calib(struct b43_wldev *dev)
 static int lpphy_b2063_tune(struct b43_wldev *dev,
 			    unsigned int channel)
 {
-	struct ssb_bus *bus = dev->dev->sdev->bus;
+	struct ssbn_bus *bus = dev->dev->sdev->bus;
 
 	static const struct b206x_channel *chandata = NULL;
 	u32 crystal_freq = bus->chipco.pmu.crystalfreq * 1000;

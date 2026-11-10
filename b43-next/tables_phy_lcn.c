@@ -684,7 +684,7 @@ static void b43_phy_lcn_clean_papd_comp_table(struct b43_wldev *dev)
 /* wlc_lcnphy_tbl_init */
 void b43_phy_lcn_tables_init(struct b43_wldev *dev)
 {
-	struct ssb_sprom *sprom = dev->dev->bus_sprom;
+	struct ssbn_sprom *sprom = dev->dev->bus_sprom;
 
 	b43_phy_lcn_upload_static_tables(dev);
 

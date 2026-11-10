@@ -12,10 +12,10 @@
  * Licensed under the GNU/GPL. See COPYING for details.
  */
 
-#include "ssb_private.h"
+#include "ssbn_private.h"
 
-#include <linux/ssb/ssb.h>
-#include <linux/ssb/ssb_regs.h>
+#include <ssb-next/ssbn.h>
+#include <ssb-next/ssbn_regs.h>
 #include <linux/pci.h>
 #include <linux/io.h>
 
@@ -23,74 +23,74 @@
 #include <pcmcia/ds.h>
 
 
-const char *ssb_core_name(u16 coreid)
+const char *ssbn_core_name(u16 coreid)
 {
 	switch (coreid) {
-	case SSB_DEV_CHIPCOMMON:
+	case SSBN_DEV_CHIPCOMMON:
 		return "ChipCommon";
-	case SSB_DEV_ILINE20:
+	case SSBN_DEV_ILINE20:
 		return "ILine 20";
-	case SSB_DEV_SDRAM:
+	case SSBN_DEV_SDRAM:
 		return "SDRAM";
-	case SSB_DEV_PCI:
+	case SSBN_DEV_PCI:
 		return "PCI";
-	case SSB_DEV_MIPS:
+	case SSBN_DEV_MIPS:
 		return "MIPS";
-	case SSB_DEV_ETHERNET:
+	case SSBN_DEV_ETHERNET:
 		return "Fast Ethernet";
-	case SSB_DEV_V90:
+	case SSBN_DEV_V90:
 		return "V90";
-	case SSB_DEV_USB11_HOSTDEV:
+	case SSBN_DEV_USB11_HOSTDEV:
 		return "USB 1.1 Hostdev";
-	case SSB_DEV_ADSL:
+	case SSBN_DEV_ADSL:
 		return "ADSL";
-	case SSB_DEV_ILINE100:
+	case SSBN_DEV_ILINE100:
 		return "ILine 100";
-	case SSB_DEV_IPSEC:
+	case SSBN_DEV_IPSEC:
 		return "IPSEC";
-	case SSB_DEV_PCMCIA:
+	case SSBN_DEV_PCMCIA:
 		return "PCMCIA";
-	case SSB_DEV_INTERNAL_MEM:
+	case SSBN_DEV_INTERNAL_MEM:
 		return "Internal Memory";
-	case SSB_DEV_MEMC_SDRAM:
+	case SSBN_DEV_MEMC_SDRAM:
 		return "MEMC SDRAM";
-	case SSB_DEV_EXTIF:
+	case SSBN_DEV_EXTIF:
 		return "EXTIF";
-	case SSB_DEV_80211:
+	case SSBN_DEV_80211:
 		return "IEEE 802.11";
-	case SSB_DEV_MIPS_3302:
+	case SSBN_DEV_MIPS_3302:
 		return "MIPS 3302";
-	case SSB_DEV_USB11_HOST:
+	case SSBN_DEV_USB11_HOST:
 		return "USB 1.1 Host";
-	case SSB_DEV_USB11_DEV:
+	case SSBN_DEV_USB11_DEV:
 		return "USB 1.1 Device";
-	case SSB_DEV_USB20_HOST:
+	case SSBN_DEV_USB20_HOST:
 		return "USB 2.0 Host";
-	case SSB_DEV_USB20_DEV:
+	case SSBN_DEV_USB20_DEV:
 		return "USB 2.0 Device";
-	case SSB_DEV_SDIO_HOST:
+	case SSBN_DEV_SDIO_HOST:
 		return "SDIO Host";
-	case SSB_DEV_ROBOSWITCH:
+	case SSBN_DEV_ROBOSWITCH:
 		return "Roboswitch";
-	case SSB_DEV_PARA_ATA:
+	case SSBN_DEV_PARA_ATA:
 		return "PATA";
-	case SSB_DEV_SATA_XORDMA:
+	case SSBN_DEV_SATA_XORDMA:
 		return "SATA XOR-DMA";
-	case SSB_DEV_ETHERNET_GBIT:
+	case SSBN_DEV_ETHERNET_GBIT:
 		return "GBit Ethernet";
-	case SSB_DEV_PCIE:
+	case SSBN_DEV_PCIE:
 		return "PCI-E";
-	case SSB_DEV_MIMO_PHY:
+	case SSBN_DEV_MIMO_PHY:
 		return "MIMO PHY";
-	case SSB_DEV_SRAM_CTRLR:
+	case SSBN_DEV_SRAM_CTRLR:
 		return "SRAM Controller";
-	case SSB_DEV_MINI_MACPHY:
+	case SSBN_DEV_MINI_MACPHY:
 		return "Mini MACPHY";
-	case SSB_DEV_ARM_1176:
+	case SSBN_DEV_ARM_1176:
 		return "ARM 1176";
-	case SSB_DEV_ARM_7TDMI:
+	case SSBN_DEV_ARM_7TDMI:
 		return "ARM 7TDMI";
-	case SSB_DEV_ARM_CM3:
+	case SSBN_DEV_ARM_CM3:
 		return "ARM Cortex M3";
 	}
 	return "UNKNOWN";
@@ -157,89 +157,89 @@ static u8 chipid_to_nrcores(u16 chipid)
 	return 1;
 }
 
-static u32 scan_read32(struct ssb_bus *bus, u8 current_coreidx,
+static u32 scan_read32(struct ssbn_bus *bus, u8 current_coreidx,
 		       u16 offset)
 {
 	u32 lo, hi;
 
 	switch (bus->bustype) {
-	case SSB_BUSTYPE_SSB:
-		offset += current_coreidx * SSB_CORE_SIZE;
+	case SSBN_BUSTYPE_SSB:
+		offset += current_coreidx * SSBN_CORE_SIZE;
 		break;
-	case SSB_BUSTYPE_PCI:
+	case SSBN_BUSTYPE_PCI:
 		break;
-	case SSB_BUSTYPE_PCMCIA:
+	case SSBN_BUSTYPE_PCMCIA:
 		if (offset >= 0x800) {
-			ssb_pcmcia_switch_segment(bus, 1);
+			ssbn_pcmcia_switch_segment(bus, 1);
 			offset -= 0x800;
 		} else
-			ssb_pcmcia_switch_segment(bus, 0);
+			ssbn_pcmcia_switch_segment(bus, 0);
 		lo = readw(bus->mmio + offset);
 		hi = readw(bus->mmio + offset + 2);
 		return lo | (hi << 16);
-	case SSB_BUSTYPE_SDIO:
-		offset += current_coreidx * SSB_CORE_SIZE;
-		return ssb_sdio_scan_read32(bus, offset);
+	case SSBN_BUSTYPE_SDIO:
+		offset += current_coreidx * SSBN_CORE_SIZE;
+		return ssbn_sdio_scan_read32(bus, offset);
 	}
 	return readl(bus->mmio + offset);
 }
 
-static int scan_switchcore(struct ssb_bus *bus, u8 coreidx)
+static int scan_switchcore(struct ssbn_bus *bus, u8 coreidx)
 {
 	switch (bus->bustype) {
-	case SSB_BUSTYPE_SSB:
+	case SSBN_BUSTYPE_SSB:
 		break;
-	case SSB_BUSTYPE_PCI:
-		return ssb_pci_switch_coreidx(bus, coreidx);
-	case SSB_BUSTYPE_PCMCIA:
-		return ssb_pcmcia_switch_coreidx(bus, coreidx);
-	case SSB_BUSTYPE_SDIO:
-		return ssb_sdio_scan_switch_coreidx(bus, coreidx);
+	case SSBN_BUSTYPE_PCI:
+		return ssbn_pci_switch_coreidx(bus, coreidx);
+	case SSBN_BUSTYPE_PCMCIA:
+		return ssbn_pcmcia_switch_coreidx(bus, coreidx);
+	case SSBN_BUSTYPE_SDIO:
+		return ssbn_sdio_scan_switch_coreidx(bus, coreidx);
 	}
 	return 0;
 }
 
-void ssb_iounmap(struct ssb_bus *bus)
+void ssbn_iounmap(struct ssbn_bus *bus)
 {
 	switch (bus->bustype) {
-	case SSB_BUSTYPE_SSB:
-	case SSB_BUSTYPE_PCMCIA:
+	case SSBN_BUSTYPE_SSB:
+	case SSBN_BUSTYPE_PCMCIA:
 		iounmap(bus->mmio);
 		break;
-	case SSB_BUSTYPE_PCI:
-#ifdef CONFIG_SSB_PCIHOST
+	case SSBN_BUSTYPE_PCI:
+#ifdef CONFIG_SSBN_PCIHOST
 		pci_iounmap(bus->host_pci, bus->mmio);
 #else
 		WARN_ON(1); /* Can't reach this code. */
 #endif
 		break;
-	case SSB_BUSTYPE_SDIO:
+	case SSBN_BUSTYPE_SDIO:
 		break;
 	}
 	bus->mmio = NULL;
 	bus->mapped_device = NULL;
 }
 
-static void __iomem *ssb_ioremap(struct ssb_bus *bus,
+static void __iomem *ssbn_ioremap(struct ssbn_bus *bus,
 				 unsigned long baseaddr)
 {
 	void __iomem *mmio = NULL;
 
 	switch (bus->bustype) {
-	case SSB_BUSTYPE_SSB:
+	case SSBN_BUSTYPE_SSB:
 		/* Only map the first core for now. */
 		fallthrough;
-	case SSB_BUSTYPE_PCMCIA:
-		mmio = ioremap(baseaddr, SSB_CORE_SIZE);
+	case SSBN_BUSTYPE_PCMCIA:
+		mmio = ioremap(baseaddr, SSBN_CORE_SIZE);
 		break;
-	case SSB_BUSTYPE_PCI:
-#ifdef CONFIG_SSB_PCIHOST
+	case SSBN_BUSTYPE_PCI:
+#ifdef CONFIG_SSBN_PCIHOST
 		mmio = pci_iomap(bus->host_pci, 0, ~0UL);
 #else
 		WARN_ON(1); /* Can't reach this code. */
 #endif
 		break;
-	case SSB_BUSTYPE_SDIO:
+	case SSBN_BUSTYPE_SDIO:
 		/* Nothing to ioremap in the SDIO case, just fake it */
 		mmio = (void __iomem *)baseaddr;
 		break;
@@ -248,15 +248,15 @@ static void __iomem *ssb_ioremap(struct ssb_bus *bus,
 	return mmio;
 }
 
-static int we_support_multiple_80211_cores(struct ssb_bus *bus)
+static int we_support_multiple_80211_cores(struct ssbn_bus *bus)
 {
 	/* More than one 802.11 core is only supported by special chips.
 	 * There are chips with two 802.11 cores, but with dangling
 	 * pins on the second core. Be careful and reject them here.
 	 */
 
-#ifdef CONFIG_SSB_PCIHOST
-	if (bus->bustype == SSB_BUSTYPE_PCI) {
+#ifdef CONFIG_SSBN_PCIHOST
+	if (bus->bustype == SSBN_BUSTYPE_PCI) {
 		if (bus->host_pci->vendor == PCI_VENDOR_ID_BROADCOM &&
 		    ((bus->host_pci->device == 0x4313) ||
 		     (bus->host_pci->device == 0x431A) ||
@@ -264,21 +264,21 @@ static int we_support_multiple_80211_cores(struct ssb_bus *bus)
 		     (bus->host_pci->device == 0x4324)))
 			return 1;
 	}
-#endif /* CONFIG_SSB_PCIHOST */
+#endif /* CONFIG_SSBN_PCIHOST */
 	return 0;
 }
 
-int ssb_bus_scan(struct ssb_bus *bus,
+int ssbn_bus_scan(struct ssbn_bus *bus,
 		 unsigned long baseaddr)
 {
 	int err = -ENOMEM;
 	void __iomem *mmio;
 	u32 idhi, cc, rev, tmp;
 	int dev_i, i;
-	struct ssb_device *dev;
+	struct ssbn_device *dev;
 	int nr_80211_cores = 0;
 
-	mmio = ssb_ioremap(bus, baseaddr);
+	mmio = ssbn_ioremap(bus, baseaddr);
 	if (!mmio)
 		goto out;
 	bus->mmio = mmio;
@@ -287,28 +287,28 @@ int ssb_bus_scan(struct ssb_bus *bus,
 	if (err)
 		goto err_unmap;
 
-	idhi = scan_read32(bus, 0, SSB_IDHIGH);
-	cc = (idhi & SSB_IDHIGH_CC) >> SSB_IDHIGH_CC_SHIFT;
-	rev = (idhi & SSB_IDHIGH_RCLO);
-	rev |= (idhi & SSB_IDHIGH_RCHI) >> SSB_IDHIGH_RCHI_SHIFT;
+	idhi = scan_read32(bus, 0, SSBN_IDHIGH);
+	cc = (idhi & SSBN_IDHIGH_CC) >> SSBN_IDHIGH_CC_SHIFT;
+	rev = (idhi & SSBN_IDHIGH_RCLO);
+	rev |= (idhi & SSBN_IDHIGH_RCHI) >> SSBN_IDHIGH_RCHI_SHIFT;
 
 	bus->nr_devices = 0;
-	if (cc == SSB_DEV_CHIPCOMMON) {
-		tmp = scan_read32(bus, 0, SSB_CHIPCO_CHIPID);
+	if (cc == SSBN_DEV_CHIPCOMMON) {
+		tmp = scan_read32(bus, 0, SSBN_CHIPCO_CHIPID);
 
-		bus->chip_id = (tmp & SSB_CHIPCO_IDMASK);
-		bus->chip_rev = (tmp & SSB_CHIPCO_REVMASK) >>
-				SSB_CHIPCO_REVSHIFT;
-		bus->chip_package = (tmp & SSB_CHIPCO_PACKMASK) >>
-				    SSB_CHIPCO_PACKSHIFT;
+		bus->chip_id = (tmp & SSBN_CHIPCO_IDMASK);
+		bus->chip_rev = (tmp & SSBN_CHIPCO_REVMASK) >>
+				SSBN_CHIPCO_REVSHIFT;
+		bus->chip_package = (tmp & SSBN_CHIPCO_PACKMASK) >>
+				    SSBN_CHIPCO_PACKSHIFT;
 		if (rev >= 4) {
-			bus->nr_devices = (tmp & SSB_CHIPCO_NRCORESMASK) >>
-					  SSB_CHIPCO_NRCORESSHIFT;
+			bus->nr_devices = (tmp & SSBN_CHIPCO_NRCORESMASK) >>
+					  SSBN_CHIPCO_NRCORESSHIFT;
 		}
-		tmp = scan_read32(bus, 0, SSB_CHIPCO_CAP);
+		tmp = scan_read32(bus, 0, SSBN_CHIPCO_CAP);
 		bus->chipco.capabilities = tmp;
 	} else {
-		if (bus->bustype == SSB_BUSTYPE_PCI) {
+		if (bus->bustype == SSBN_BUSTYPE_PCI) {
 			bus->chip_id = pcidev_to_chipid(bus->host_pci);
 			bus->chip_rev = bus->host_pci->revision;
 			bus->chip_package = 0;
@@ -324,17 +324,17 @@ int ssb_bus_scan(struct ssb_bus *bus,
 		bus->nr_devices = chipid_to_nrcores(bus->chip_id);
 	if (bus->nr_devices > ARRAY_SIZE(bus->devices)) {
 		pr_err("More than %d ssb cores found (%d)\n",
-		       SSB_MAX_NR_CORES, bus->nr_devices);
+		       SSBN_MAX_NR_CORES, bus->nr_devices);
 		err = -EINVAL;
 		goto err_unmap;
 	}
-	if (bus->bustype == SSB_BUSTYPE_SSB) {
+	if (bus->bustype == SSBN_BUSTYPE_SSB) {
 		/* Now that we know the number of cores,
 		 * remap the whole IO space for all cores.
 		 */
 		err = -ENOMEM;
 		iounmap(mmio);
-		mmio = ioremap(baseaddr, SSB_CORE_SIZE * bus->nr_devices);
+		mmio = ioremap(baseaddr, SSBN_CORE_SIZE * bus->nr_devices);
 		if (!mmio)
 			goto out;
 		bus->mmio = mmio;
@@ -347,21 +347,21 @@ int ssb_bus_scan(struct ssb_bus *bus,
 			goto err_unmap;
 		dev = &(bus->devices[dev_i]);
 
-		idhi = scan_read32(bus, i, SSB_IDHIGH);
-		dev->id.coreid = (idhi & SSB_IDHIGH_CC) >> SSB_IDHIGH_CC_SHIFT;
-		dev->id.revision = (idhi & SSB_IDHIGH_RCLO);
-		dev->id.revision |= (idhi & SSB_IDHIGH_RCHI) >> SSB_IDHIGH_RCHI_SHIFT;
-		dev->id.vendor = (idhi & SSB_IDHIGH_VC) >> SSB_IDHIGH_VC_SHIFT;
+		idhi = scan_read32(bus, i, SSBN_IDHIGH);
+		dev->id.coreid = (idhi & SSBN_IDHIGH_CC) >> SSBN_IDHIGH_CC_SHIFT;
+		dev->id.revision = (idhi & SSBN_IDHIGH_RCLO);
+		dev->id.revision |= (idhi & SSBN_IDHIGH_RCHI) >> SSBN_IDHIGH_RCHI_SHIFT;
+		dev->id.vendor = (idhi & SSBN_IDHIGH_VC) >> SSBN_IDHIGH_VC_SHIFT;
 		dev->core_index = i;
 		dev->bus = bus;
 		dev->ops = bus->ops;
 
 		pr_debug("Core %d found: %s (cc 0x%03X, rev 0x%02X, vendor 0x%04X)\n",
-			 i, ssb_core_name(dev->id.coreid),
+			 i, ssbn_core_name(dev->id.coreid),
 			 dev->id.coreid, dev->id.revision, dev->id.vendor);
 
 		switch (dev->id.coreid) {
-		case SSB_DEV_80211:
+		case SSBN_DEV_80211:
 			nr_80211_cores++;
 			if (nr_80211_cores > 1) {
 				if (!we_support_multiple_80211_cores(bus)) {
@@ -370,40 +370,40 @@ int ssb_bus_scan(struct ssb_bus *bus,
 				}
 			}
 			break;
-		case SSB_DEV_EXTIF:
-#ifdef CONFIG_SSB_DRIVER_EXTIF
+		case SSBN_DEV_EXTIF:
+#ifdef CONFIG_SSBN_DRIVER_EXTIF
 			if (bus->extif.dev) {
 				pr_warn("WARNING: Multiple EXTIFs found\n");
 				break;
 			}
 			bus->extif.dev = dev;
-#endif /* CONFIG_SSB_DRIVER_EXTIF */
+#endif /* CONFIG_SSBN_DRIVER_EXTIF */
 			break;
-		case SSB_DEV_CHIPCOMMON:
+		case SSBN_DEV_CHIPCOMMON:
 			if (bus->chipco.dev) {
 				pr_warn("WARNING: Multiple ChipCommon found\n");
 				break;
 			}
 			bus->chipco.dev = dev;
 			break;
-		case SSB_DEV_MIPS:
-		case SSB_DEV_MIPS_3302:
-#ifdef CONFIG_SSB_DRIVER_MIPS
+		case SSBN_DEV_MIPS:
+		case SSBN_DEV_MIPS_3302:
+#ifdef CONFIG_SSBN_DRIVER_MIPS
 			if (bus->mipscore.dev) {
 				pr_warn("WARNING: Multiple MIPS cores found\n");
 				break;
 			}
 			bus->mipscore.dev = dev;
-#endif /* CONFIG_SSB_DRIVER_MIPS */
+#endif /* CONFIG_SSBN_DRIVER_MIPS */
 			break;
-		case SSB_DEV_PCI:
-		case SSB_DEV_PCIE:
-#ifdef CONFIG_SSB_DRIVER_PCICORE
-			if (bus->bustype == SSB_BUSTYPE_PCI) {
+		case SSBN_DEV_PCI:
+		case SSBN_DEV_PCIE:
+#ifdef CONFIG_SSBN_DRIVER_PCICORE
+			if (bus->bustype == SSBN_BUSTYPE_PCI) {
 				/* Ignore PCI cores on PCI-E cards.
 				 * Ignore PCI-E cores on PCI cards.
 				 */
-				if (dev->id.coreid == SSB_DEV_PCI) {
+				if (dev->id.coreid == SSBN_DEV_PCI) {
 					if (pci_is_pcie(bus->host_pci))
 						continue;
 				} else {
@@ -416,10 +416,10 @@ int ssb_bus_scan(struct ssb_bus *bus,
 				break;
 			}
 			bus->pcicore.dev = dev;
-#endif /* CONFIG_SSB_DRIVER_PCICORE */
+#endif /* CONFIG_SSBN_DRIVER_PCICORE */
 			break;
-		case SSB_DEV_ETHERNET:
-			if (bus->bustype == SSB_BUSTYPE_PCI) {
+		case SSBN_DEV_ETHERNET:
+			if (bus->bustype == SSBN_BUSTYPE_PCI) {
 				if (bus->host_pci->vendor == PCI_VENDOR_ID_BROADCOM &&
 				    (bus->host_pci->device & 0xFF00) == 0x4300) {
 					/* This is a dangling ethernet core on a
@@ -441,6 +441,6 @@ int ssb_bus_scan(struct ssb_bus *bus,
 out:
 	return err;
 err_unmap:
-	ssb_iounmap(bus);
+	ssbn_iounmap(bus);
 	goto out;
 }

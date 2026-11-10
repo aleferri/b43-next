@@ -13,7 +13,7 @@
 #include <linux/mmc/sdio_func.h>
 #include <linux/mmc/sdio_ids.h>
 #include <linux/slab.h>
-#include <linux/ssb/ssb.h>
+#include <ssb-next/ssbn.h>
 
 #include "sdio.h"
 #include "b43.h"
@@ -29,7 +29,7 @@ static const struct b43_sdio_quirk {
 	u16 device;
 	unsigned int quirks;
 } b43_sdio_quirks[] = {
-	{ 0x14E4, 0x4318, SSB_QUIRK_SDIO_READ_AFTER_WRITE32, },
+	{ 0x14E4, 0x4318, SSBN_QUIRK_SDIO_READ_AFTER_WRITE32, },
 	{ },
 };
 
@@ -62,7 +62,7 @@ static void b43_sdio_interrupt_dispatcher(struct sdio_func *func)
 int b43_sdio_request_irq(struct b43_wldev *dev,
 			 void (*handler)(struct b43_wldev *dev))
 {
-	struct ssb_bus *bus = dev->dev->sdev->bus;
+	struct ssbn_bus *bus = dev->dev->sdev->bus;
 	struct sdio_func *func = bus->host_sdio;
 	struct b43_sdio *sdio = sdio_get_drvdata(func);
 	int err;
@@ -78,7 +78,7 @@ int b43_sdio_request_irq(struct b43_wldev *dev,
 
 void b43_sdio_free_irq(struct b43_wldev *dev)
 {
-	struct ssb_bus *bus = dev->dev->sdev->bus;
+	struct ssbn_bus *bus = dev->dev->sdev->bus;
 	struct sdio_func *func = bus->host_sdio;
 	struct b43_sdio *sdio = sdio_get_drvdata(func);
 
@@ -145,7 +145,7 @@ static int b43_sdio_probe(struct sdio_func *func,
 		dev_err(&func->dev, "failed to allocate ssb bus\n");
 		goto err_disable_func;
 	}
-	error = ssb_bus_sdiobus_register(&sdio->ssb, func,
+	error = ssbn_bus_sdiobus_register(&sdio->ssb, func,
 					 b43_sdio_get_quirks(vendor, device));
 	if (error) {
 		dev_err(&func->dev, "failed to register ssb sdio bus,"
@@ -171,7 +171,7 @@ static void b43_sdio_remove(struct sdio_func *func)
 {
 	struct b43_sdio *sdio = sdio_get_drvdata(func);
 
-	ssb_bus_unregister(&sdio->ssb);
+	ssbn_bus_unregister(&sdio->ssb);
 	sdio_claim_host(func);
 	sdio_disable_func(func);
 	sdio_release_host(func);
@@ -186,7 +186,7 @@ static const struct sdio_device_id b43_sdio_ids[] = {
 };
 
 static struct sdio_driver b43_sdio_driver = {
-	.name		= "b43-sdio",
+	.name		= "b43-next-sdio",
 	.id_table	= b43_sdio_ids,
 	.probe		= b43_sdio_probe,
 	.remove		= b43_sdio_remove,
