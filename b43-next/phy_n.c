@@ -5818,6 +5818,7 @@ static enum b43_txpwr_result b43_nphy_op_recalc_txpower(struct b43_wldev *dev,
 	struct b43_phy_n *nphy = dev->phy.n;
 	struct ieee80211_channel *channel = dev->wl->hw->conf.chandef.chan;
 	struct b43_ppr *ppr = &nphy->tx_pwr_max_ppr;
+	enum b43_band band;
 	u8 max; /* qdBm */
 
 	if (nphy->tx_pwr_last_recalc_freq == channel->center_freq &&
@@ -5825,8 +5826,11 @@ static enum b43_txpwr_result b43_nphy_op_recalc_txpower(struct b43_wldev *dev,
 		return B43_TXPWR_RES_DONE;
 
 	/* HW limitations */
-	b43_ppr_load_sprom_r8(ppr, dev->dev->bus_sprom, B43_BAND_2G, 0x3,
-			      phy->rev >= 3);
+	if (b43_ppr_band(channel, &band))
+		b43_ppr_load_sprom_r8(ppr, dev->dev->bus_sprom, band, 0x3,
+				      phy->rev >= 3);
+	else
+		b43_ppr_clear(ppr);
 
 	/* Regulatory & user settings */
 	max = INT_TO_Q52(phy->chandef->chan->max_power);
