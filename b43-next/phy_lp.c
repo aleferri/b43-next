@@ -1236,10 +1236,10 @@ static void lpphy_rev0_1_rc_calib(struct b43_wldev *dev)
 			mean_sq_pwr = ideal_pwr - normal_pwr;
 			mean_sq_pwr *= mean_sq_pwr;
 			inner_sum += mean_sq_pwr;
-			if ((i == 128) || (inner_sum < mean_sq_pwr_min)) {
-				lpphy->rc_cap = i;
-				mean_sq_pwr_min = inner_sum;
-			}
+		}
+		if ((i == 128) || (inner_sum < mean_sq_pwr_min)) {
+			lpphy->rc_cap = i;
+			mean_sq_pwr_min = inner_sum;
 		}
 	}
 	lpphy_stop_ddfs(dev);
