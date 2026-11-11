@@ -1700,6 +1700,7 @@ static int lpphy_calc_rx_iq_comp(struct b43_wldev *dev, u16 samples)
 	struct lpphy_iq_est iq_est;
 	u16 c0, c1;
 	int prod, ipwr, qpwr, prod_msb, q_msb, tmp1, tmp2, tmp3, tmp4, ret;
+	int div3, div4;
 
 	c1 = b43_phy_read(dev, B43_LPPHY_RX_COMP_COEFF_S);
 	c0 = c1 >> 8;
@@ -1724,21 +1725,21 @@ static int lpphy_calc_rx_iq_comp(struct b43_wldev *dev, u16 samples)
 	prod_msb = fls(abs(prod));
 	q_msb = fls(abs(qpwr));
 	tmp1 = prod_msb - 20;
+	tmp2 = q_msb - 11;
+	div3 = tmp1 >= 0 ? ipwr >> tmp1 : ipwr << -tmp1;
+	div4 = tmp2 >= 0 ? ipwr >> tmp2 : ipwr << -tmp2;
 
-	if (tmp1 >= 0) {
-		tmp3 = ((prod << (30 - prod_msb)) + (ipwr >> (1 + tmp1))) /
-			(ipwr >> tmp1);
-	} else {
-		tmp3 = ((prod << (30 - prod_msb)) + (ipwr << (-1 - tmp1))) /
-			(ipwr << -tmp1);
+	if (!div3 || !div4) {
+		ret = 0;
+		goto out;
 	}
 
-	tmp2 = q_msb - 11;
-
-	if (tmp2 >= 0)
-		tmp4 = (qpwr << (31 - q_msb)) / (ipwr >> tmp2);
+	if (tmp1 >= 0)
+		tmp3 = ((prod << (30 - prod_msb)) + (ipwr >> (1 + tmp1))) / div3;
 	else
-		tmp4 = (qpwr << (31 - q_msb)) / (ipwr << -tmp2);
+		tmp3 = ((prod << (30 - prod_msb)) + (ipwr << (-1 - tmp1))) / div3;
+
+	tmp4 = (qpwr << (31 - q_msb)) / div4;
 
 	tmp4 -= tmp3 * tmp3;
 	tmp4 = -int_sqrt(tmp4);
