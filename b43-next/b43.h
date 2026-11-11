@@ -375,6 +375,7 @@ enum {
 #define  B43_SHM_SH_UCODESTAT_SUSP	3	/* suspended */
 #define  B43_SHM_SH_UCODESTAT_SLEEP	4	/* asleep (PS) */
 #define B43_SHM_SH_MAXBFRAMES		0x0080	/* Maximum number of frames in a burst */
+#define B43_SHM_SH_MBURSTTXOP		0x0082	/* Maximum frame burst TXOP in us */
 #define B43_SHM_SH_SPUWKUP		0x0094	/* pre-wakeup for synth PU in us */
 #define B43_SHM_SH_PRETBTT		0x0096	/* pre-TBTT in us */
 /* SHM_SHARED tx iq workarounds */
@@ -1031,6 +1032,7 @@ struct b43_wldev {
 	struct b43_txbf_link txbf[B43_TXBF_SLOTS];
 	bool radio_hw_enable;	/* saved state of radio hardware enabled state */
 	bool qos_enabled;		/* TRUE, if QoS is used. */
+	bool frameburst;		/* TRUE, if data frames may be burst. */
 	bool hwcrypto_enabled;		/* TRUE, if HW crypto acceleration is enabled. */
 	bool use_pio;			/* TRUE if next init should use PIO */
 

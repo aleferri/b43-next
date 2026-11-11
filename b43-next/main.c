@@ -111,6 +111,10 @@ static int modparam_qos = 1;
 module_param_named(qos, modparam_qos, int, 0444);
 MODULE_PARM_DESC(qos, "Enable QOS support (default on)");
 
+static int modparam_frameburst;
+module_param_named(frameburst, modparam_frameburst, int, 0444);
+MODULE_PARM_DESC(frameburst, "Frame bursting TXOP in us, 0 off (default 0)");
+
 static int modparam_btcoex = 1;
 module_param_named(btcoex, modparam_btcoex, int, 0444);
 MODULE_PARM_DESC(btcoex, "Enable Bluetooth coexistence (default on)");
@@ -5237,6 +5241,30 @@ static void b43_qos_init(struct b43_wldev *dev)
 	b43dbg(dev->wl, "QoS enabled\n");
 }
 
+#define B43_FRAMEBURST_FRAMES	8
+
+/*
+ * Frame bursting, Broadcom's and not 802.11e's: after a frame with
+ * B43_TXH_MAC_FRAMEBURST the microcode of the pre-AC cores sends the next
+ * one, if it has the flag too, a SIFS later and without backoff, until
+ * MAXBFRAMES frames or MBURSTTXOP us from the first (ucode11 and
+ * ucode16_lp, 784.2). When it is off the limits are left at 0.
+ */
+static void b43_frameburst_init(struct b43_wldev *dev)
+{
+	u16 txop = clamp_val(modparam_frameburst, 0, U16_MAX);
+
+	dev->frameburst = txop && !dev->fw.opensource &&
+			  dev->fw.hdr_format != B43_FW_HDR_AC;
+	if (!dev->frameburst)
+		return;
+
+	b43_shm_write16(dev, B43_SHM_SHARED, B43_SHM_SH_MAXBFRAMES,
+			B43_FRAMEBURST_FRAMES);
+	b43_shm_write16(dev, B43_SHM_SHARED, B43_SHM_SH_MBURSTTXOP, txop);
+	b43dbg(dev->wl, "Frame bursting up to %u us\n", txop);
+}
+
 static int b43_op_conf_tx(struct ieee80211_hw *hw,
 			  struct ieee80211_vif *vif,
 			  unsigned int link_id, u16 _queue,
@@ -6821,6 +6849,7 @@ static int b43_wireless_core_init(struct b43_wldev *dev)
 	if (err)
 		goto err_chip_exit;
 	b43_qos_init(dev);
+	b43_frameburst_init(dev);
 	/* Both stock drivers captured at the bus write it once, here. */
 	if (phy->type == B43_PHYTYPE_AC)
 		b43_write32(dev, B43_MMIO_UNK_3DC, 10000000);

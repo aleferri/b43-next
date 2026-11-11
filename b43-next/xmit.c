@@ -1154,6 +1154,9 @@ int b43_generate_txhdr(struct b43_wldev *dev,
 		mac_ctl |= B43_TXH_MAC_5GHZ;
 	if (c.long_frame)
 		mac_ctl |= B43_TXH_MAC_LONGFRAME;
+	if (dev->frameburst && c.ack && c.first_frag &&
+	    ieee80211_is_data_present(fctl) && !ieee80211_has_morefrags(fctl))
+		mac_ctl |= B43_TXH_MAC_FRAMEBURST;
 
 	/* Generate the RTS or CTS-to-self frame */
 	if (c.rts || c.cts) {
