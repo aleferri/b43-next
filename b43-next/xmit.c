@@ -337,6 +337,92 @@ static void b43_txhdr_ctl_get(struct b43_wldev *dev,
 	}
 }
 
+/* Airtime of a @len-byte frame at the legacy rate @rate, in 500 kb/s. */
+static unsigned int b43_legacy_airtime(enum nl80211_band band, u8 rate,
+				       unsigned int len, bool short_preamble)
+{
+	if (b43_is_ofdm_rate(rate))
+		return b43_ofdm_airtime(len, 2 * rate) +
+		       (band == NL80211_BAND_2GHZ ? B43_SIGNAL_EXT : 0);
+	if (rate == B43_CCK_RATE_1MB)
+		short_preamble = false;
+	return (short_preamble ? 96 : 192) + DIV_ROUND_UP(16 * len, rate);
+}
+
+/*
+ * The rate of the CTS or ACK answering a frame sent at @rate, as
+ * ieee80211_duration() picks it: the highest basic rate not above it in the
+ * same modulation, else the highest mandatory one.
+ */
+static u8 b43_tx_resp_rate(const struct ieee80211_supported_band *sband,
+			   u32 basic_rates, u8 rate)
+{
+	bool ofdm = b43_is_ofdm_rate(rate);
+	u8 basic = 0;
+	u8 mandatory = ofdm ? B43_OFDM_RATE_6MB : B43_CCK_RATE_1MB;
+	unsigned int i;
+
+	for (i = 0; i < sband->n_bitrates; i++) {
+		const struct ieee80211_rate *r = &sband->bitrates[i];
+
+		if (b43_is_ofdm_rate(r->hw_value) != ofdm || r->hw_value > rate)
+			continue;
+		if ((basic_rates & BIT(i)) && r->hw_value > basic)
+			basic = r->hw_value;
+		if ((r->flags & (IEEE80211_RATE_MANDATORY_A |
+				 IEEE80211_RATE_MANDATORY_G)) &&
+		    r->hw_value > mandatory)
+			mandatory = r->hw_value;
+	}
+	return basic ? : mandatory;
+}
+
+/*
+ * The TX FES time of a frame of @len bytes on air at @rate, in us: the RTS,
+ * SIFS, CTS and SIFS or the CTS-to-self and SIFS, then the frame, then SIFS
+ * and the ACK. The microcode, ucode11 and ucode16_lp of 784.2, loads SPR
+ * 0x115 with the AC's TXOP limit when it gets the medium and sends the next
+ * frame in the same TXOP only while SPR 0x115 is above that frame's FES
+ * time; the frames it builds itself carry one too.
+ */
+static u16 b43_tx_fes_time(const struct ieee80211_tx_info *info,
+			   const struct ieee80211_supported_band *sband,
+			   const struct b43_txhdr_ctl *c,
+			   unsigned int len, u8 rate, u8 rts_rate)
+{
+	struct ieee80211_vif *vif = info->control.vif;
+	u32 basic = vif ? vif->bss_conf.basic_rates : 0;
+	enum nl80211_band band = info->band;
+	unsigned int sifs = band == NL80211_BAND_2GHZ ? B43_SIFS_2GHZ :
+							B43_SIFS_5GHZ;
+	unsigned int fes;
+	u8 resp;
+
+	fes = b43_legacy_airtime(band, rate, len, c->short_preamble);
+	if (c->ack) {
+		resp = b43_tx_resp_rate(sband, basic, rate);
+		fes += sifs + b43_legacy_airtime(band, resp, 14,
+						 c->short_preamble);
+	}
+	if (c->rts) {
+		resp = b43_tx_resp_rate(sband, basic, rts_rate);
+		fes += b43_legacy_airtime(band, rts_rate, 20, false) + sifs +
+		       b43_legacy_airtime(band, resp, 14, false) + sifs;
+	} else if (c->cts) {
+		fes += b43_legacy_airtime(band, rts_rate, 14, false) + sifs;
+	}
+	return min_t(unsigned int, fes, U16_MAX);
+}
+
+/* Whether the AC of @skb has a TXOP limit, so frames in it get a FES time. */
+static bool b43_tx_has_txop(struct b43_wldev *dev, const struct sk_buff *skb)
+{
+	u16 queue = skb_get_queue_mapping(skb);
+
+	return dev->qos_enabled && queue < B43_QOS_QUEUE_NUM &&
+	       READ_ONCE(dev->wl->qos_params[queue].p.txop);
+}
+
 /*
  * The cores of a rate class, word 0's mask: the cell of the microcode's TX
  * core table, as wlc_stf_txcore_get() picks it for the stock descriptors.
@@ -1003,6 +1089,19 @@ int b43_generate_txhdr(struct b43_wldev *dev,
 	}
 	b43_generate_plcp_hdr((struct b43_plcp_hdr4 *)(&txhdr->plcp_fb),
 			      plcp_fragment_len, rate_fb);
+
+	if (!c.ht && !c.vht && b43_tx_has_txop(dev, skb_frag)) {
+		const struct ieee80211_supported_band *sband =
+			dev->wl->hw->wiphy->bands[info->band];
+		u8 rts_rate_fb = b43_calc_fallback_rate(c.rts_rate, phy->gmode);
+
+		txhdr->tx_fes_time_norm = cpu_to_le16(
+			b43_tx_fes_time(info, sband, &c, plcp_fragment_len,
+					rate, c.rts_rate));
+		txhdr->tx_fes_time_fb = cpu_to_le16(
+			b43_tx_fes_time(info, sband, &c, plcp_fragment_len,
+					rate_fb, rts_rate_fb));
+	}
 
 	/* Extra Frame Types */
 	if (rate_fb_ofdm)

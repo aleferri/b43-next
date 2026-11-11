@@ -4361,15 +4361,6 @@ static void b43_aqm_init_rev42(struct b43_wldev *dev)
 }
 
 /*
- * Airtime of an OFDM frame of @len bytes at 5 GHz, preamble and SIGNAL
- * included, from the bits per symbol of its rate.
- */
-static u16 b43_ofdm_airtime(unsigned int len, unsigned int ndbps)
-{
-	return 20 + 4 * DIV_ROUND_UP(16 + 8 * len + 6, ndbps);
-}
-
-/*
  * What the AC cores' stock driver writes after the band initvals, the same
  * on the agcombo (7.14) and on the MacBookAir6,1 (6.30), where it repeats
  * on every band init:
@@ -4385,7 +4376,6 @@ static u16 b43_ofdm_airtime(unsigned int len, unsigned int ndbps)
 #define B43_RT_ACK_TIME		6
 #define B43_RT_BA_TIME		16
 #define B43_RT_RTS_TIME		18
-#define B43_SIFS_5GHZ		16
 
 static void b43_bsinit_ac(struct b43_wldev *dev)
 {

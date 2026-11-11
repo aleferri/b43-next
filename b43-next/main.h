@@ -57,6 +57,20 @@ static inline int b43_is_ofdm_rate(int rate)
 	return !b43_is_cck_rate(rate);
 }
 
+#define B43_SIFS_2GHZ		10
+#define B43_SIFS_5GHZ		16
+#define B43_SIGNAL_EXT		6
+
+/*
+ * Airtime of an OFDM frame of @len bytes, preamble and SIGNAL included,
+ * from the bits per symbol of its rate. At 2.4 GHz B43_SIGNAL_EXT comes on
+ * top.
+ */
+static inline u16 b43_ofdm_airtime(unsigned int len, unsigned int ndbps)
+{
+	return 20 + 4 * DIV_ROUND_UP(16 + 8 * len + 6, ndbps);
+}
+
 u8 b43_ieee80211_antenna_sanitize(struct b43_wldev *dev,
 				  u8 antenna_nr);
 
