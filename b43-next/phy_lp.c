@@ -1778,11 +1778,13 @@ static void lpphy_start_tx_tone(struct b43_wldev *dev, s32 freq, u16 max)
 
 	if (freq) {
 		/* Find i for which abs(freq) integrally divides 20000 * i */
-		for (i = 1; samples * abs(freq) != 20000 * i; i++) {
+		i = 0;
+		do {
+			i++;
 			samples = (20000 * i) / abs(freq);
-			if(B43_WARN_ON(samples > 63))
+			if (B43_WARN_ON(samples > 63))
 				return;
-		}
+		} while (samples * abs(freq) != 20000 * i);
 	} else {
 		samples = 2;
 	}
