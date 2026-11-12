@@ -4999,6 +4999,88 @@ static void b43_nphy_int_pa_set_tx_dig_filters(struct b43_wldev *dev)
 	}
 }
 
+/*
+ * The TX gain pre-calibration of radio 2057 rev 14 with an external PA at
+ * 2.4 GHz, as wl 7.14.164.18 runs it on the BCM43217 before its TX I/Q-LO
+ * calibration (traced on the ASUS RT-AC56U, b43-next-traces
+ * bcm43217-rev0/rt-ac56u; docs/n-retrace-todo.md). After an idle TSSI read,
+ * each core plays a tone of amplitude 250 with only its baseband
+ * multiplier on and the TX gain forced to PAD 24, then to PAD 19 if the
+ * TSSI over idle was at least 20 and to PAD 31 if it was less, and keeps
+ * the PAD whose TSSI over idle is closer to 20. Returns that gain, with
+ * txgm 1, pga 0 and ipa 2 as wl forces them.
+ */
+static bool b43_nphy_precal_2057_rev14_epa(struct b43_wldev *dev)
+{
+	return dev->phy.rev == 17 && dev->phy.radio_rev == 14 &&
+	       b43_current_band(dev->wl) == NL80211_BAND_2GHZ &&
+	       !dev->phy.n->ipa2g_on;
+}
+
+#define B43_NPHY_PRECAL_GAIN(pad)	(0x1000 | ((pad) << 3) | 0x2)
+#define B43_NPHY_PRECAL_TSSI		20
+#define B43_NPHY_PRECAL_SAMPS		10
+
+static u16 b43_nphy_precal_txgain_2057_rev14_epa(struct b43_wldev *dev)
+{
+	struct b43_phy_n *nphy = dev->phy.n;
+	u32 freq = b43_is_40mhz(dev) ? 5000 : 2500;
+	s32 rssi[4];
+	s32 idle[2], delta[2], best = 0;
+	u16 m0m1 = 0x4040, mult;
+	u8 pad[2], tried, core, step, pick = 24;
+	u32 tmp;
+
+	/* The idle TSSI, with no tone and no gain forced */
+	b43_nphy_rf_ctl_override_rev7(dev, 0x1000, 0, 3, false, 0);
+	b43_nphy_stop_playback(dev);
+	b43_nphy_tx_tone(dev, 4000, 0, false, false, false);
+	udelay(20);
+	tmp = b43_nphy_poll_rssi(dev, N_RSSI_TSSI_2G, rssi, 1);
+	b43_nphy_stop_playback(dev);
+	idle[0] = (s8)(tmp >> 24);
+	idle[1] = (s8)(tmp >> 8);
+
+	b43_ntab_write(dev, B43_NTAB16(15, 87), m0m1);
+	b43_ntab_write(dev, B43_NTAB16(15, 95), m0m1);
+
+	for (core = 0; core < 2; core++) {
+		tried = 24;
+		for (step = 0; step < 2; step++) {
+			b43_nphy_tx_tone(dev, freq, 250, false, false, false);
+			mult = core ? m0m1 & 0x00ff : m0m1 & 0xff00;
+			b43_ntab_write(dev, B43_NTAB16(15, 87), mult);
+			b43_ntab_write(dev, B43_NTAB16(15, 95), mult);
+			b43_nphy_rf_ctl_override_rev7(dev, 0x1000,
+						      B43_NPHY_PRECAL_GAIN(tried),
+						      3, false, 0);
+			udelay(50);
+			b43_nphy_poll_rssi(dev, N_RSSI_TSSI_2G, rssi,
+					   B43_NPHY_PRECAL_SAMPS);
+			nphy->bb_mult_save = 0;
+			b43_nphy_stop_playback(dev);
+
+			delta[step] = rssi[core ? 2 : 0] -
+				      B43_NPHY_PRECAL_SAMPS * idle[core];
+			pad[step] = tried;
+			if (step == 0)
+				tried = delta[0] >= B43_NPHY_PRECAL_TSSI *
+					B43_NPHY_PRECAL_SAMPS ? 19 : 31;
+		}
+		best = abs(delta[0] - B43_NPHY_PRECAL_TSSI * B43_NPHY_PRECAL_SAMPS) <=
+		       abs(delta[1] - B43_NPHY_PRECAL_TSSI * B43_NPHY_PRECAL_SAMPS) ?
+		       0 : 1;
+		/* The cores agree on every capture; core 1's pick is kept */
+		if (core == 0)
+			pick = pad[best];
+	}
+
+	b43_nphy_rf_ctl_override_rev7(dev, 0x1000, 0, 3, true, 0);
+	b43_ntab_write(dev, B43_NTAB16(15, 87), m0m1);
+	b43_ntab_write(dev, B43_NTAB16(15, 95), m0m1);
+	return B43_NPHY_PRECAL_GAIN(pick);
+}
+
 /* https://bcm-v4.sipsolutions.net/802.11/PHY/N/GetTxGain */
 static struct nphy_txgains b43_nphy_get_tx_gains(struct b43_wldev *dev)
 {
@@ -7383,6 +7465,26 @@ static int b43_phy_initn(struct b43_wldev *dev)
 					if (b43_nphy_cal_rx_iq(dev, target, 2, 0) == 0)
 						b43_nphy_save_cal(dev);
 				b43_nphy_precal_tx_gain_restore(dev);
+			} else if (nphy->mphase_cal_phase_id == 0 &&
+				   b43_nphy_precal_2057_rev14_epa(dev)) {
+				/*
+				 * wl's periodic calibration at up on this radio:
+				 * the TX gain pre-calibration, then the TX I/Q-LO
+				 * and RX I/Q calibrations at the gain it found.
+				 */
+				u16 g = b43_nphy_precal_txgain_2057_rev14_epa(dev);
+				int c;
+
+				for (c = 0; c < 2; c++) {
+					target.ipa[c] = g & 0x0007;
+					target.pad[c] = (g & 0x00F8) >> 3;
+					target.pga[c] = (g & 0x0F00) >> 8;
+					target.txgm[c] = (g & 0x7000) >> 12;
+					target.tx_lpf[c] = (g & 0x8000) >> 15;
+				}
+				if (!b43_nphy_cal_tx_iq_lo(dev, target, true, false))
+					if (b43_nphy_cal_rx_iq(dev, target, 2, 0) == 0)
+						b43_nphy_save_cal(dev);
 			} else if (nphy->mphase_cal_phase_id == 0) {
 				/*
 				 * TODO: N PHY Periodic Calibration with arg 3.
