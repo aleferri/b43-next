@@ -34,7 +34,7 @@ KFLAGS += $(if $(shell grep -s '^CONFIG_FUNCTION_TRACER=y' $(AUTOCONF)),-DCC_USI
 UFLAGS := -O2 -g -Wall -Werror -std=gnu11
 
 # flows.c includes phy_ht.c; the others are linked as they are.
-DRIVER := tables_phy_ht.c radio_2059.c phy_common.c
+DRIVER := tables_phy_ht.c radio_2059.c phy_common.c ppr.c
 
 OBJS := $(patsubst %.c,$(B)/%.o,$(DRIVER)) $(B)/cordic.o $(B)/int_sqrt.o \
 	$(B)/flows.o $(B)/trace.o

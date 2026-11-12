@@ -27,9 +27,9 @@ On 2026-11-12, `--min-block 8 --gap-tol 2`:
 
 | capture | grezzo | PHY+radio |
 |---|---|---|
-| cold-2g1-20 | 5334/8502 = 62.74% | 5354/5382 = 99.48% |
-| cold-2g6-20 | 5334/8623 = 61.86% | 5354/5382 = 99.48% |
-| cold-2g11-20 | 5334/8502 = 62.74% | 5354/5382 = 99.48% |
+| cold-2g1-20 | 5340/8496 = 62.85% | 5360/5376 = 99.70% |
+| cold-2g6-20 | 5340/8617 = 61.97% | 5360/5376 = 99.70% |
+| cold-2g11-20 | 5340/8496 = 62.85% | 5360/5376 = 99.70% |
 
 The second row compares the PHY's and radio's operations only: the core's
 MMIO, shared memory and wrapper accesses are outside a harness that
@@ -70,18 +70,17 @@ calibrations match wl's to the value, coefficients included.
 
 | capture | PHY+radio |
 |---|---|
-| cold-2g1-20 | 20450/20500 = 99.76% |
-| cold-2g6-20 | 20457/20507 = 99.76% |
-| cold-2g11-20 | 20442/20492 = 99.76% |
+| cold-2g1-20 | 20468/20482 = 99.93% |
+| cold-2g6-20 | 20475/20489 = 99.93% |
+| cold-2g11-20 | 20460/20474 = 99.93% |
 
 ## Exceptions
 
-Compared by class and address only (`value_free[]` in `trace.c`):
-
-- `TXPCTL_TARG_PWR` and `TXPCTL_TARG_PWR2`: b43 sets the target from
-  `maxp2ga*` (0x60) capped by the regulatory and user limits; wl writes
-  0x20 in the first init and its own target later (0x5a at 20 MHz, 0x56
-  at 40), from a computation not yet known.
+None: every value is compared. The TX power target is brcmsmac's chain
+(`b43_phy_ht_op_recalc_txpower()`) with wl's locale caps on ch 1 and 11; a
+later init starts from the target the configuration before left
+(`HT_PREV_CHANNEL`, which `check.sh` takes from the capture's sequence),
+as wl does before it computes the new one.
 
 ## Flows
 
