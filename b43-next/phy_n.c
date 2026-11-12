@@ -5149,6 +5149,16 @@ static int b43_nphy_cal_rx_iq(struct b43_wldev *dev,
 static void b43_nphy_save_cal(struct b43_wldev *dev);
 static void b43_nphy_tx_pwr_ctrl_coef_setup(struct b43_wldev *dev);
 
+/* brcmsmac's wlc_phy_radio205x_vcocal_nphy() on radio 2057 */
+static void b43_radio_2057_vcocal(struct b43_wldev *dev)
+{
+	b43_radio_maskset(dev, R2057_RFPLL_MISC_EN, ~0x01, 0);
+	b43_radio_maskset(dev, R2057_RFPLL_MISC_CAL_RESETN, ~0x04, 0);
+	b43_radio_maskset(dev, R2057_RFPLL_MISC_CAL_RESETN, ~0x04, 0x04);
+	b43_radio_maskset(dev, R2057_RFPLL_MISC_EN, ~0x01, 0x01);
+	udelay(300);
+}
+
 /*
  * The full TX I/Q-LO calibration in the six phases of the multi-phase
  * calibration, two commands each, as wl 7.14.164.18 runs it at up on the
@@ -5203,6 +5213,10 @@ static void b43_nphy_init_cal_2057_rev14_epa(struct b43_wldev *dev, u16 g)
 		b43_nphy_save_cal(dev);
 		b43_nphy_tx_pwr_ctrl_coef_setup(dev);
 	}
+	/* The RSSI calibration again and the VCO calibration, as at the end
+	 * of brcmsmac's run */
+	b43_nphy_rssi_cal(dev);
+	b43_radio_2057_vcocal(dev);
 }
 
 /* https://bcm-v4.sipsolutions.net/802.11/PHY/N/GetTxGain */

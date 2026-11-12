@@ -183,9 +183,14 @@ with arg 3, at the end of the init) and the TX gain table they start from.
 3. Done: the TX I/Q-LO calibration in wl's six phases of two commands,
    with the TX power control turned on and off between them
    (`b43_nphy_cal_tx_iq_lo_phases()`): 59.58% -> 66.10% at 20 dBm.
-4. The rest: wl's #18914 and #19127 (radio 0x375-0x37c read and the TX
-   calibration radio setup again before the RX I/Q calibration, 1356
-   ops), the TX I/Q-LO phases' inside (4112 of 5667 matched), the
-   coefficient setup after the save (523 of 1036), the small blocks (CRS
+4. Done: the RSSI calibration again and the 2057 VCO calibration after
+   the save, as at the end of brcmsmac's periodic calibration run: the
+   second RSSI calibration matches wl's #27993-#29345 (1208 of 1333), the
+   VCO calibration its eight ops at #29346. 66.10% -> 69.83% at 20 dBm.
+5. The rest: what wl does after the VCO calibration (#29354-#31089: a TX
+   power index set through tables 26 at 0xd9/0x159/0x1d9 and table 7 at
+   0x110, and the power control on and off around the adjusted power
+   table), the block between the TX I/Q-LO and the RX I/Q calibrations
+   (#19740, 726 ops), the TX I/Q-LO phases' inside, the small blocks (CRS
    #952, TX filter #3202, table 7 #3349, RX gain block #3450), a
    `bss_start` flow against `ssid`, and 40 MHz.
