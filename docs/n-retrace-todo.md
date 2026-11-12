@@ -55,6 +55,45 @@ So the init is in place, and what b43 lacks comes after it: #8020-#9594
 and the RSSI calibration values 0x224-0x22f), #10628-#13347 (between the
 power control setup and its enable) and the calibrations from #13518.
 
+## wl's calibration at `up`, step by step
+
+The same steps as brcmsmac's `wlc_phy_cal_perical_nphy_run()` (open source,
+an older wl), on `cold-2g6-20`:
+
+| wl | step |
+|---|---|
+| #10448-#10457 | the original power index from `C1/C2_TXPCTL_STAT` 0x1ed/0x1ee, the original TX gain from table 7 at 0x110 (0x101a on both cores) |
+| #10628 | TX power control off (0x1e7 0xe019 -> 0x0019) |
+| #10628-#13342 | **the TX gain pre-calibration** (b43: `/* TODO N PHY Pre Calibrate TX Gain */`) |
+| #13343-#13517 | the power index read again, the TX power control |
+| #13518-... | the TX I/Q-LO calibration at the gain the pre-calibration found: table 7 at 0x110 = 0x10fa on both cores (#13553) |
+| ...-#31089 | the RX I/Q calibration and the save |
+
+**The pre-calibration** is not brcmsmac's: for rev >= 7 brcmsmac sets a
+fixed index, and its `wlc_phy_cal_txgainctrl_nphy()` estimates the power
+from 0x1e9 and the TX power tables, which wl does not read here. wl 7.14,
+in five rounds of one tone each (table 17, 160 samples):
+
+1. the TSSI path set up as for the idle TSSI (radio 0x175-0x17c and
+   0x195-0x19c, the RSSI select), the tone, one `RSSI1`/`RSSI2` read;
+2. then per core, two rounds: the baseband multiplier of table 15 at 87
+   (and 95) set to that core's byte only (0x4000 for core 1, 0x0040 for
+   core 2, from 0x4040), the TX gain forced through `RFCTL_TXG1`/`TXG2`
+   (0x07c/0x07f, enabled by bit 12 of 0x0e7/0x0ec), the tone, ten
+   `RSSI1`/`RSSI2` reads.
+
+The forced gains are a two-step search on the PAD field (rev 7 layout: txgm
+14:12, pga 11:8, pad 7:3, ipa 2:0), the same on both cores:
+
+| capture | first round | second round | result (table 7, 0x110) |
+|---|---|---|---|
+| 20 MHz, ch 1, 6, 11 and the hot sweep | 0x10c2 (pad 24) | 0x10fa (pad 31) | 0x10fa |
+| 40 MHz, 6l | 0x109a (pad 19) | 0x10c2 (pad 24) | 0x10c2 |
+
+The step from the first round to the second follows from the RSSI read in
+it; the rule is the next thing to fit, with the harness serving the same
+RSSI samples to a port.
+
 ## Why b43 does not calibrate
 
 `b43_nphy_op_prepare_structs()` sets `nphy->perical = 2` ("avoid
@@ -93,7 +132,9 @@ with arg 3, at the end of the init) and the TX gain table they start from.
 
 ## Next
 
-1. The calibrations' place and contents (#10628-#31089).
+1. The calibrations' place and contents (#10628-#31089): run them where
+   wl does (the perical branch), port the pre-calibration above, then
+   compare the TX I/Q-LO and RX I/Q calibrations op by op.
 2. The small blocks: CRS (#952), TX filter (#3202), table 7 (#3349), the RX
    gain block (#3450).
 3. A `bss_start` flow against `ssid`, as `test/phy_ht` has.
