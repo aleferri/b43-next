@@ -160,6 +160,16 @@ with arg 3, at the end of the init) and the TX gain table they start from.
   coefficients again. b43 marks them pending at init and runs them there,
   in `b43_nphy_op_recalc_txpower()`. 33.89% -> 35.40%.
 
+- openwrt/openwrt#25922's N-PHY patches 873 and 875-879 (gain control,
+  RX I/Q calibration, external PAs, TSSI routing, TX I/Q-LO calibration on
+  rev 7, RX I/Q normalisation), with the pre-calibration above run in
+  their place for radio 2057 rev 14 with an external PA, and the TX
+  I/Q-LO wait testing its last poll instead of reading again: PHY+radio
+  59.58% on ch 6. Per patch on ch 6, from 25.42%: 873 25.04%, 875
+  41.75%, 876 and 877 unchanged (876's PMU write is outside the harness),
+  878 with brcmsmac's fixed pre-calibration index 22.95% (its extra read
+  after the wait took a busy poll for a timeout).
+
 ## Next
 
 1. The TX I/Q-LO and RX I/Q calibrations op by op: wl's #18399 (7720 ops

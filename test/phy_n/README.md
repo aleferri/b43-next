@@ -36,16 +36,18 @@ On 2026-11-12, `--min-block 8 --gap-tol 2`:
 
 | capture | grezzo | PHY+radio |
 |---|---|---|
-| cold-2g1-20 | 9927/32409 = 30.63% | 9941/28088 = 35.39% |
-| cold-2g6-20 | 9929/31872 = 31.15% | 9943/28088 = 35.40% |
-| cold-2g11-20 | 9926/31839 = 31.18% | 9940/28096 = 35.38% |
+| cold-2g1-20 | 17382/33506 = 51.88% | 17408/29193 = 59.63% |
+| cold-2g6-20 | 17372/32977 = 52.68% | 17398/29201 = 59.58% |
+| cold-2g11-20 | 17374/32942 = 52.74% | 17400/29207 = 59.57% |
 
 What is left is mapped in `../../docs/n-retrace-todo.md`.
 
 Every run prints, on stderr:
 
-- **reads past the window**: 6 on every capture, all of them reads b43
-  makes and wl does not, in this window: ChipCommon `chipcontrol` (0x028,
+- **reads past the window**: 13 on every capture, all of them reads b43
+  makes and wl does not, in this window: table 15 at 0x50-0x56, which the
+  TX power control coefficient setup after the calibration reads again
+  (wl reads them once, before it); ChipCommon `chipcontrol` (0x028,
   b43 sets bit 6 on a board with an external LNA; wl never accesses it),
   PHY 0x009, 0x0c01 and 0x0c0a, MMIO 0x492, and one radio 0x35e read more
   than wl's. They are served from b43's own writes, or 0.
