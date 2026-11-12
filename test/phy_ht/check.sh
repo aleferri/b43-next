@@ -34,7 +34,16 @@ for f in "$BOARD"/traces/mmio-*/*-ops.txt.gz; do
 	zcat "$f" > "$ops"
 	windows "$ops" | while read -r first last mark; do
 		printf '%-18s %-14s ' "$(basename "$ops" -ops.txt)" "$mark"
-		./ht-trace pctl_init "$ops" "$first" "$last" "$@" || echo FAIL > "$T/failed"
+		# A later init has its target. Compared by address only: the
+		# 40 MHz windows (b43's HT-PHY runs at 20 MHz) and the later
+		# inits on ch 1 and 11, where wl's locale caps the target at
+		# 92 qdBm, a cap b43 does not carry yet.
+		later=1; [ "$mark" = "'up'" ] && later=0
+		unset HT_TARGET_FREE
+		case $f in *-40-*) export HT_TARGET_FREE=1 ;; esac
+		case $f:$later in *2g1-20*:1|*2g11-20*:1) export HT_TARGET_FREE=1 ;; esac
+		HT_LATER=$later \
+			./ht-trace pctl_init "$ops" "$first" "$last" "$@" || echo FAIL > "$T/failed"
 	done
 	rm -f "$ops"
 done

@@ -153,7 +153,7 @@ int ht_run_flow(const char *name)
 		 * The bss_start op when beaconing starts: the PHY init on a PHY
 		 * initialised once, and what follows it. What the up left, the RC
 		 * calibration's results and the table 0x25 pair, is given
-		 * from the capture's up.
+		 * from the capture's up; the TX power target is computed again.
 		 */
 		dev->phy.do_full_init = false;
 		phy_ht.rccal[0] = ht_env("HT_RCCAL0", 0);
@@ -162,12 +162,19 @@ int ht_run_flow(const char *name)
 		phy_ht.t25_off = ht_env("HT_T25", 0);
 		phy_ht.t25_set = true;
 		phy_ht.wd_ticks = ht_env("HT_WD_TICK0", 0);
+		/* The target the up computed */
+		b43_phy_ht_op_recalc_txpower(dev, true);
 		b43_phy_ht_op_bss_start(dev);
 		run_turns(dev);
 	} else if (!strcmp(name, "pctl_init")) {
-		/* The TX power control at the end of b43_phy_ht_op_init() */
+		/*
+		 * The TX power control at the end of b43_phy_ht_op_init(); on
+		 * a later init (HT_LATER) with the target computed before.
+		 */
 		bool saved = phy_ht.tx_pwr_ctl;
 
+		if (ht_env("HT_LATER", 0))
+			b43_phy_ht_op_recalc_txpower(dev, true);
 		b43_phy_ht_tx_power_fix(dev);
 		b43_phy_ht_tx_power_ctl(dev, false);
 		b43_phy_ht_tx_power_ctl_idle_tssi(dev);

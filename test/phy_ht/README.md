@@ -76,10 +76,13 @@ calibrations match wl's to the value, coefficients included.
 
 Compared by class and address only (`value_free[]` in `trace.c`):
 
-- `TXPCTL_TARG_PWR` and `TXPCTL_TARG_PWR2`: b43 sets the target from
-  `maxp2ga*` (0x60) capped by the regulatory and user limits; wl writes
-  0x20 in the first init and its own target later (0x5a at 20 MHz, 0x56
-  at 40), from a computation not yet known.
+- `TXPCTL_TARG_PWR` and `TXPCTL_TARG_PWR2`: the target is brcmsmac's chain
+  (`b43_phy_ht_op_recalc_txpower()`), 0x20 until the first recalculation
+  and 0x5a after it on the R6400 at 20 MHz, wl's values. They are compared
+  by address only where wl's target is one b43 does not compute: the
+  40 MHz windows, and ch 1 and 11, where wl's locale caps it at 0x56
+  (92 qdBm before the margin; the hot capture has the cap on ch 1 and 11
+  only).
 
 ## Flows
 

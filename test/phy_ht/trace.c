@@ -278,6 +278,10 @@ long ht_nvram(const char *name, long dflt)
  * Ops whose value b43 sets by design otherwise than wl: compared by class
  * and address only. See README.md, "Exceptions".
  */
+/*
+ * With HT_TARGET_FREE these are compared by address only, where wl's
+ * target is one b43 does not compute (see check.sh).
+ */
 static const char *const value_free[] = {
 	"PHY.WR addr=0x01ea ",	/* TXPCTL_TARG_PWR: cores 1 and 2 */
 	"PHY.WR addr=0x0966 ",	/* TXPCTL_TARG_PWR2: core 3 */
@@ -289,6 +293,8 @@ static int same(const char *a, const char *b)
 
 	if (!strcmp(a, b))
 		return 1;
+	if (!getenv("HT_TARGET_FREE"))
+		return 0;
 	for (i = 0; i < sizeof(value_free) / sizeof(value_free[0]); i++) {
 		size_t n = strlen(value_free[i]);
 
