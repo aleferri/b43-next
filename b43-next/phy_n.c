@@ -5693,7 +5693,7 @@ static int b43_nphy_cal_tx_iq_lo(struct b43_wldev *dev,
 					break;
 				udelay(10);
 			}
-			if (b43_phy_read(dev, B43_NPHY_IQLOCAL_CMD) & 0xC000) {
+			if (tmp & 0xC000) {
 				b43err(dev->wl,
 				       "TX IQ/LO cal command 0x%04X timed out\n",
 				       cmd);
