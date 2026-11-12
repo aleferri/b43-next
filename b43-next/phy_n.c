@@ -4060,7 +4060,8 @@ static void b43_nphy_tx_power_ctl_idle_tssi(struct b43_wldev *dev)
  * layout of brcmsmac's tx_power_offset[] that
  * b43_nphy_tx_prepare_adjusted_power_table() reads: CCK, then at 20 and at
  * 40 MHz the OFDM rates (SISO, CDD) and the MCS (SISO, CDD, STBC, SDM),
- * then MCS 32.
+ * then MCS 32. The CDD MCS take the back-off of the MCS below them, as wl
+ * 7.14.164.18 writes it on the BCM43217.
  */
 static void b43_nphy_tx_power_offsets(struct b43_wldev *dev,
 				      const struct b43_ppr *ppr)
@@ -4081,7 +4082,9 @@ static void b43_nphy_tx_power_offsets(struct b43_wldev *dev,
 		for (m = B43_PPR_SISO; m < B43_PPR_MODE_NUM; m++)
 			for (i = 0; i < 8; i++)
 				nphy->tx_power_offset[o++] = max -
-					b43_ppr_get_mcs(ppr, bws[b], m, i);
+					b43_ppr_get_mcs(ppr, bws[b], m,
+							m == B43_PPR_CDD && i ?
+							i - 1 : i);
 	}
 }
 
