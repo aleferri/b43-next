@@ -424,6 +424,77 @@ static inline
 				   addr, len, DMA_FROM_DEVICE);
 }
 
+/*
+ * Where the device's streaming buffers need syncs, as the BCM4331 behind the
+ * BCM4708's PCIe, which is not DMA coherent, every map and sync is cache
+ * maintenance, and a map for the device of a buffer the CPU just wrote must
+ * write it back first: the RX poison of b43_poison_rx_buffer() was
+ * invalidated with the cache before it reached memory. There the TX headers
+ * and the RX buffers come from dma_alloc_coherent(), which is uncached on
+ * such a device, allocated once per ring: the CPU's writes reach memory as
+ * they are made, the device's are read without a sync, and a received frame
+ * is copied out of its slot into a new skb.
+ */
+static bool b43_dma_noncoherent(struct b43_wldev *dev)
+{
+	return dev->dma.need_sync;
+}
+
+/* Whether a streaming mapping of this device needs syncs (dma_need_sync()) */
+static bool b43_dma_probe_need_sync(struct b43_wldev *dev)
+{
+	struct device *dma_dev = dev->dev->dma_dev;
+	dma_addr_t addr;
+	bool need;
+	u8 *buf;
+
+	buf = kmalloc(dma_get_cache_alignment(), GFP_KERNEL);
+	if (!buf)
+		return true;
+	addr = dma_map_single(dma_dev, buf, dma_get_cache_alignment(),
+			      DMA_TO_DEVICE);
+	if (dma_mapping_error(dma_dev, addr)) {
+		kfree(buf);
+		return true;
+	}
+	need = dma_need_sync(dma_dev, addr);
+	dma_unmap_single(dma_dev, addr, dma_get_cache_alignment(),
+			 DMA_TO_DEVICE);
+	kfree(buf);
+	return need;
+}
+
+/* The uncached RX buffers come in 16 KiB chunks, an order-2 allocation each */
+#define B43_RX_CHUNK		(16 * 1024)
+
+static u8 *b43_rx_slot_buf(struct b43_dmaring *ring, int slot)
+{
+	return ring->rx_coh[slot / ring->rx_per_chunk] +
+	       slot % ring->rx_per_chunk * ring->rx_stride;
+}
+
+static dma_addr_t b43_rx_slot_dma(struct b43_dmaring *ring, int slot)
+{
+	return ring->rx_coh_dma[slot / ring->rx_per_chunk] +
+	       slot % ring->rx_per_chunk * ring->rx_stride;
+}
+
+static bool b43_txhdr_is_coherent(struct b43_dmaring *ring, dma_addr_t addr)
+{
+	return ring->txhdr_dma && addr >= ring->txhdr_dma &&
+	       addr < ring->txhdr_dma + ring->nr_slots / TX_SLOTS_MIN *
+					   b43_txhdr_size(ring->dev);
+}
+
+/* A TX descriptor's buffer, unless it is a header in uncached memory */
+static void unmap_tx_descbuffer(struct b43_dmaring *ring,
+				struct b43_dmadesc_meta *meta)
+{
+	if (meta->len && !b43_txhdr_is_coherent(ring, meta->dmaaddr))
+		unmap_descbuffer(ring, meta->dmaaddr, meta->len, 1);
+	meta->len = 0;
+}
+
 static inline
     void free_descriptor_buffer(struct b43_dmaring *ring,
 				struct b43_dmadesc_meta *meta)
@@ -605,25 +676,29 @@ address_error:
 /* The bytes after the RX header that b43_poison_rx_buffer() fills. */
 #define B43_RX_POISON_LEN	(sizeof(struct b43_plcp_hdr6) + 2)
 
+static bool b43_rx_buf_is_poisoned(struct b43_dmaring *ring, const u8 *buf)
+{
+	return !memchr_inv(buf + ring->frameoffset, 0xFF, B43_RX_POISON_LEN);
+}
+
 static bool b43_rx_buffer_is_poisoned(struct b43_dmaring *ring, struct sk_buff *skb)
 {
-	return !memchr_inv(skb->data + ring->frameoffset, 0xFF,
-			   B43_RX_POISON_LEN);
+	return b43_rx_buf_is_poisoned(ring, skb->data);
+}
+
+/* This poisons an RX buffer to detect DMA failures. */
+static void b43_poison_rx_buf(struct b43_dmaring *ring, u8 *buf)
+{
+	struct b43_rxhdr_fw4 *rxhdr = (struct b43_rxhdr_fw4 *)buf;
+
+	rxhdr->frame_len = 0;
+	B43_WARN_ON(ring->rx_buffersize < ring->frameoffset + B43_RX_POISON_LEN);
+	memset(buf + ring->frameoffset, 0xFF, B43_RX_POISON_LEN);
 }
 
 static void b43_poison_rx_buffer(struct b43_dmaring *ring, struct sk_buff *skb)
 {
-	struct b43_rxhdr_fw4 *rxhdr;
-	unsigned char *frame;
-
-	/* This poisons the RX buffer to detect DMA failures. */
-
-	rxhdr = (struct b43_rxhdr_fw4 *)(skb->data);
-	rxhdr->frame_len = 0;
-
-	B43_WARN_ON(ring->rx_buffersize < ring->frameoffset + B43_RX_POISON_LEN);
-	frame = skb->data + ring->frameoffset;
-	memset(frame, 0xFF, B43_RX_POISON_LEN);
+	b43_poison_rx_buf(ring, skb->data);
 }
 
 /*
@@ -718,6 +793,17 @@ static int setup_rx_descbuffer(struct b43_dmaring *ring,
 	struct sk_buff *skb;
 
 	B43_WARN_ON(ring->tx);
+
+	if (ring->rx_coh) {
+		int slot = meta - ring->meta;
+
+		b43_poison_rx_buf(ring, b43_rx_slot_buf(ring, slot));
+		meta->skb = NULL;
+		meta->dmaaddr = b43_rx_slot_dma(ring, slot);
+		ring->ops->fill_descriptor(ring, desc, meta->dmaaddr,
+					   ring->rx_buffersize, 0, 0, 0);
+		return 0;
+	}
 
 	skb = b43_rx_alloc_skb(ring, gfp_flags);
 	if (unlikely(!skb))
@@ -951,10 +1037,10 @@ static void free_all_descbuffers(struct b43_dmaring *ring)
 		/* get meta - ignore returned value */
 		ring->ops->idx2desc(ring, i, &meta);
 
-		if (ring->tx && meta->len) {
-			unmap_descbuffer(ring, meta->dmaaddr, meta->len, 1);
-			meta->len = 0;
-		}
+		if (ring->tx)
+			unmap_tx_descbuffer(ring, meta);
+		if (ring->rx_coh)
+			continue;
 		if (!meta->skb || b43_dma_ptr_is_poisoned(meta->skb)) {
 			B43_WARN_ON(!ring->tx);
 			continue;
@@ -997,6 +1083,73 @@ static enum b43_dmatype b43_engine_type(struct b43_wldev *dev)
 }
 
 /* Main initialization function. */
+static void b43_rx_free_uncached(struct b43_dmaring *ring)
+{
+	unsigned int i;
+
+	if (!ring->rx_coh)
+		return;
+	for (i = 0; i < ring->rx_chunks; i++)
+		if (ring->rx_coh[i])
+			dma_free_coherent(ring->dev->dev->dma_dev, B43_RX_CHUNK,
+					  ring->rx_coh[i], ring->rx_coh_dma[i]);
+	kfree(ring->rx_coh);
+	kfree(ring->rx_coh_dma);
+	ring->rx_coh = NULL;
+	ring->rx_coh_dma = NULL;
+}
+
+/* An RX ring's buffers in uncached memory; none if any chunk fails */
+static void b43_rx_alloc_uncached(struct b43_dmaring *ring)
+{
+	struct device *dma_dev = ring->dev->dev->dma_dev;
+	unsigned int i = 0;
+
+	ring->rx_stride = ALIGN(ring->rx_buffersize, dma_get_cache_alignment());
+	ring->rx_per_chunk = B43_RX_CHUNK / ring->rx_stride;
+	if (!ring->rx_per_chunk)
+		return;
+	ring->rx_chunks = DIV_ROUND_UP(ring->nr_slots, ring->rx_per_chunk);
+	ring->rx_coh = kcalloc(ring->rx_chunks, sizeof(*ring->rx_coh),
+			       GFP_KERNEL);
+	ring->rx_coh_dma = kcalloc(ring->rx_chunks, sizeof(*ring->rx_coh_dma),
+				   GFP_KERNEL);
+	if (!ring->rx_coh || !ring->rx_coh_dma)
+		goto fail;
+	for (i = 0; i < ring->rx_chunks; i++) {
+		ring->rx_coh[i] = dma_alloc_coherent(dma_dev, B43_RX_CHUNK,
+						     &ring->rx_coh_dma[i],
+						     GFP_KERNEL);
+		if (!ring->rx_coh[i])
+			goto fail;
+	}
+	return;
+fail:
+	if (ring->rx_coh && ring->rx_coh_dma) {
+		ring->rx_chunks = i;
+		b43_rx_free_uncached(ring);
+		return;
+	}
+	kfree(ring->rx_coh);
+	kfree(ring->rx_coh_dma);
+	ring->rx_coh = NULL;
+	ring->rx_coh_dma = NULL;
+}
+
+/* The TX headers, and the RX buffers when they are uncached */
+static void b43_dma_free_uncached(struct b43_dmaring *ring)
+{
+	struct device *dma_dev = ring->dev->dev->dma_dev;
+
+	if (ring->txhdr_dma)
+		dma_free_coherent(dma_dev, ring->nr_slots / TX_SLOTS_MIN *
+				  b43_txhdr_size(ring->dev),
+				  ring->txhdr_cache, ring->txhdr_dma);
+	else
+		kfree(ring->txhdr_cache);
+	b43_rx_free_uncached(ring);
+}
+
 static
 struct b43_dmaring *b43_setup_dmaring(struct b43_wldev *dev,
 				      int controller_index,
@@ -1063,6 +1216,14 @@ struct b43_dmaring *b43_setup_dmaring(struct b43_wldev *dev,
 		/* An entry of txhdr_cache for each TX_SLOTS_MIN slots */
 		BUILD_BUG_ON(B43_TXRING_SLOTS % TX_SLOTS_MIN != 0);
 
+		if (b43_dma_noncoherent(dev)) {
+			ring->txhdr_cache = dma_alloc_coherent(dev->dev->dma_dev,
+					ring->nr_slots / TX_SLOTS_MIN *
+					b43_txhdr_size(dev),
+					&ring->txhdr_dma, GFP_KERNEL);
+			if (ring->txhdr_cache)
+				goto txhdr_done;
+		}
 		ring->txhdr_cache = kcalloc(ring->nr_slots / TX_SLOTS_MIN,
 					    b43_txhdr_size(dev),
 					    GFP_KERNEL);
@@ -1103,8 +1264,11 @@ struct b43_dmaring *b43_setup_dmaring(struct b43_wldev *dev,
 				 dma_test, b43_txhdr_size(dev),
 				 DMA_TO_DEVICE);
 	}
+txhdr_done:
 
-	if (!for_tx)
+	if (!for_tx && b43_dma_noncoherent(dev))
+		b43_rx_alloc_uncached(ring);
+	if (!for_tx && !ring->rx_coh)
 		b43_rx_pool_create(ring);
 	err = alloc_ringmemory(ring);
 	if (err)
@@ -1120,7 +1284,7 @@ struct b43_dmaring *b43_setup_dmaring(struct b43_wldev *dev,
 	free_ringmemory(ring);
       err_kfree_txhdr_cache:
 	b43_rx_pool_destroy(ring);
-	kfree(ring->txhdr_cache);
+	b43_dma_free_uncached(ring);
       err_kfree_meta:
 	kfree(ring->meta);
       err_kfree_ring:
@@ -1183,7 +1347,7 @@ static void b43_destroy_dmaring(struct b43_dmaring *ring,
 	free_ringmemory(ring);
 	b43_rx_pool_destroy(ring);
 
-	kfree(ring->txhdr_cache);
+	b43_dma_free_uncached(ring);
 	kfree(ring->meta);
 	kfree(ring);
 }
@@ -1262,6 +1426,7 @@ int b43_dma_init(struct b43_wldev *dev)
 		       "the required %u-bit DMA mask\n", type);
 		return err;
 	}
+	dma->need_sync = b43_dma_probe_need_sync(dev);
 
 	switch (dev->dev->bus_type) {
 #ifdef CONFIG_B43_NEXT_BCMA
@@ -1559,12 +1724,16 @@ static int dma_tx_fragment(struct b43_dmaring *ring,
 		return err;
 	}
 
-	meta_hdr->dmaaddr = map_descbuffer(ring, (unsigned char *)header,
-					   hdrsize, 1);
-	if (b43_dma_mapping_error(ring, meta_hdr->dmaaddr, hdrsize, 1)) {
-		ring->current_slot = old_top_slot;
-		ring->used_slots = old_used_slots;
-		return -EIO;
+	if (ring->txhdr_dma) {
+		meta_hdr->dmaaddr = ring->txhdr_dma + (header - ring->txhdr_cache);
+	} else {
+		meta_hdr->dmaaddr = map_descbuffer(ring, (unsigned char *)header,
+						   hdrsize, 1);
+		if (b43_dma_mapping_error(ring, meta_hdr->dmaaddr, hdrsize, 1)) {
+			ring->current_slot = old_top_slot;
+			ring->used_slots = old_used_slots;
+			return -EIO;
+		}
 	}
 	meta_hdr->len = hdrsize;
 	ops->fill_descriptor(ring, desc, meta_hdr->dmaaddr,
@@ -1573,8 +1742,7 @@ static int dma_tx_fragment(struct b43_dmaring *ring,
 	priv_info->bouncebuffer = NULL;
 	err = dma_tx_map_payload(ring, skb);
 	if (unlikely(err)) {
-		unmap_descbuffer(ring, meta_hdr->dmaaddr, hdrsize, 1);
-		meta_hdr->len = 0;
+		unmap_tx_descbuffer(ring, meta_hdr);
 		ring->current_slot = old_top_slot;
 		ring->used_slots = old_used_slots;
 		return err;
@@ -1824,8 +1992,7 @@ dma_handle_txstatus_one(struct b43_wldev *dev,
 			break;
 		}
 
-		unmap_descbuffer(ring, meta->dmaaddr, meta->len, 1);
-		meta->len = 0;
+		unmap_tx_descbuffer(ring, meta);
 		if (meta->skb) {
 			struct b43_private_tx_info *priv_info =
 			     b43_get_priv_tx_info(IEEE80211_SKB_CB(meta->skb));
@@ -1948,6 +2115,65 @@ void b43_dma_handle_txstatus(struct b43_wldev *dev,
 	}
 }
 
+/*
+ * A frame in an uncached RX slot: read where the device wrote it, copied
+ * into a new skb, the slot poisoned again in place for the device.
+ */
+static void dma_rx_uncached(struct b43_dmaring *ring, int *slot)
+{
+	u8 *buf = b43_rx_slot_buf(ring, *slot);
+	struct b43_rxhdr_fw4 *rxhdr = (struct b43_rxhdr_fw4 *)buf;
+	struct sk_buff *skb;
+	u16 len;
+	int i = 0;
+
+	dma_rmb();
+	len = le16_to_cpu(READ_ONCE(rxhdr->frame_len));
+	while (len == 0 && i++ < 5) {
+		udelay(2);
+		dma_rmb();
+		len = le16_to_cpu(READ_ONCE(rxhdr->frame_len));
+	}
+	if (unlikely(len == 0))
+		goto recycle;
+	if (unlikely(b43_rx_buf_is_poisoned(ring, buf))) {
+		b43warn(ring->dev->wl, "DMA RX: Dropping poisoned buffer.\n");
+		goto recycle;
+	}
+	if (unlikely(len + ring->frameoffset > ring->rx_buffersize)) {
+		s32 tmp = len;
+		int cnt = 0;
+
+		/* Over several buffers, which should never happen: dropped */
+		while (1) {
+			b43_poison_rx_buf(ring, b43_rx_slot_buf(ring, *slot));
+			*slot = next_slot(ring, *slot);
+			cnt++;
+			tmp -= ring->rx_buffersize;
+			if (tmp <= 0)
+				break;
+		}
+		b43err(ring->dev->wl, "DMA RX buffer too small "
+		       "(len: %u, buffer: %u, nr-dropped: %d)\n",
+		       len, ring->rx_buffersize, cnt);
+		return;
+	}
+
+	skb = dev_alloc_skb(len + ring->frameoffset);
+	if (unlikely(!skb))
+		goto recycle;
+	memcpy(skb_put(skb, len + ring->frameoffset), buf,
+	       len + ring->frameoffset);
+	b43_poison_rx_buf(ring, buf);
+	rxhdr = (struct b43_rxhdr_fw4 *)skb->data;
+	skb_pull(skb, ring->frameoffset);
+	b43_rx(ring->dev, skb, rxhdr);
+	return;
+
+recycle:
+	b43_poison_rx_buf(ring, buf);
+}
+
 static void dma_rx(struct b43_dmaring *ring, int *slot)
 {
 	const struct b43_dma_ops *ops = ring->ops;
@@ -1960,6 +2186,10 @@ static void dma_rx(struct b43_dmaring *ring, int *slot)
 	dma_addr_t dmaaddr;
 
 	desc = ops->idx2desc(ring, *slot, &meta);
+	if (ring->rx_coh) {
+		dma_rx_uncached(ring, slot);
+		return;
+	}
 
 	/*
 	 * Only the RX header and the first bytes of the frame (the poison
