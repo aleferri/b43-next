@@ -151,9 +151,9 @@ int ht_run_flow(const char *name)
 	} else if (!strcmp(name, "ap_start")) {
 		/*
 		 * What wl runs when beaconing starts, and b43 on a retune: the
-		 * PHY init on a PHY initialised once. What the up left, the RC
-		 * calibration's results and the table 0x25 pair, is given
-		 * from the capture's up.
+		 * PHY init on a PHY initialised once, and channel_calibrate.
+		 * What the up left, the RC calibration's results and the table
+		 * 0x25 pair, is given from the capture's up.
 		 */
 		dev->phy.do_full_init = false;
 		phy_ht.rccal[0] = ht_env("HT_RCCAL0", 0);
@@ -162,6 +162,7 @@ int ht_run_flow(const char *name)
 		phy_ht.t25_off = ht_env("HT_T25", 0);
 		phy_ht.t25_set = true;
 		b43_phy_init(dev);
+		b43_phy_ht_op_channel_calibrate(dev);
 		run_turns(dev);
 	} else if (!strcmp(name, "pctl_init")) {
 		/* The TX power control at the end of b43_phy_ht_op_init() */
