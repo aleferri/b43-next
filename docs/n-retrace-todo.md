@@ -155,12 +155,17 @@ with arg 3, at the end of the init) and the TX gain table they start from.
   gain on every capture and matches wl's #10738-#13040 (2173 of its 2235
   ops); the TX I/Q-LO calibration that follows matches 833 of its 1090
   ops inside wl's #13524-#26551. PHY+radio 25.42% -> 33.89%.
+- Their place: wl runs them in its first power update, between the TX
+  power control setup and its enable, then sets the power control
+  coefficients again. b43 marks them pending at init and runs them there,
+  in `b43_nphy_op_recalc_txpower()`. 33.89% -> 35.40%.
 
 ## Next
 
-1. The TX I/Q-LO and RX I/Q calibrations op by op against wl's
-   #13524-#31089, and their place: wl runs them after the TX power control
-   setup of the first `recalc_txpower`, b43 inside the init.
+1. The TX I/Q-LO and RX I/Q calibrations op by op: wl's #18399 (7720 ops
+   from an RFSEQ read, 0x0a1), #26556 (3744 ops from the RX I/Q
+   compensation, 0x09a) and four blocks of 600 polls of 0x0c7 inside the
+   TX I/Q-LO steps (#14353-#17340), which b43 does not make.
 2. The small blocks: CRS (#952), TX filter (#3202), table 7 (#3349), the RX
    gain block (#3450).
 3. A `bss_start` flow against `ssid`, as `test/phy_ht` has.
