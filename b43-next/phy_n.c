@@ -5083,6 +5083,10 @@ static u16 b43_nphy_precal_txgain_2057_rev14_epa(struct b43_wldev *dev)
 	u8 pad[2], tried, core, step, pick = 24;
 	u32 tmp;
 
+	/* The power indices the calibration restores at its end */
+	nphy->cal_orig_pwr_idx[0] = (b43_phy_read(dev, B43_NPHY_C1_TXPCTL_STAT) >> 8) & 0x7f;
+	nphy->cal_orig_pwr_idx[1] = (b43_phy_read(dev, B43_NPHY_C2_TXPCTL_STAT) >> 8) & 0x7f;
+
 	b43_phy_mask(dev, B43_NPHY_TXPCTL_CMD,
 		     (u16)~(B43_NPHY_TXPCTL_CMD_COEFF |
 			    B43_NPHY_TXPCTL_CMD_HWPCTLEN |
@@ -5145,6 +5149,8 @@ static int b43_nphy_cal_rx_iq(struct b43_wldev *dev,
 			      struct nphy_txgains target, u8 type, bool debug);
 static void b43_nphy_save_cal(struct b43_wldev *dev);
 static void b43_nphy_tx_pwr_ctrl_coef_setup(struct b43_wldev *dev);
+static void b43_nphy_tx_pwr_index(struct b43_wldev *dev, u8 core_mask,
+				  s8 txpwrindex, bool restore);
 
 /* brcmsmac's wlc_phy_radio205x_vcocal_nphy() on radio 2057 */
 static void b43_radio_2057_vcocal(struct b43_wldev *dev)
@@ -5195,6 +5201,8 @@ static int b43_nphy_cal_tx_iq_lo_phases(struct b43_wldev *dev,
  * (brcmsmac's wlc_phy_cal_perical_nphy_run()) */
 static void b43_nphy_init_cal_2057_rev14_epa(struct b43_wldev *dev, u16 g)
 {
+	struct b43_phy_n *nphy = dev->phy.n;
+	bool pctl = nphy->txpwrctrl;
 	struct nphy_txgains target = { };
 	int c;
 
@@ -5214,6 +5222,16 @@ static void b43_nphy_init_cal_2057_rev14_epa(struct b43_wldev *dev, u16 g)
 	 * of brcmsmac's run */
 	b43_nphy_rssi_cal(dev);
 	b43_radio_2057_vcocal(dev);
+
+	/*
+	 * Each core back to the power index it had before the calibration,
+	 * and the TX power control as it was: brcmsmac's restore_tx_gain.
+	 */
+	b43_nphy_tx_pwr_index(dev, 1, nphy->cal_orig_pwr_idx[0], false);
+	b43_nphy_tx_pwr_index(dev, 2, nphy->cal_orig_pwr_idx[1], false);
+	nphy->txpwrindex[0].index = -1;
+	nphy->txpwrindex[1].index = -1;
+	b43_nphy_tx_power_ctrl(dev, pctl);
 }
 
 /* https://bcm-v4.sipsolutions.net/802.11/PHY/N/GetTxGain */
