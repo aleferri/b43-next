@@ -1345,11 +1345,40 @@ static void b43_phy_ht_op_radio_write(struct b43_wldev *dev, u16 reg,
 }
 
 /*
+ * wl's own locale at 2.4 GHz, in qdBm before the margin, by primary channel,
+ * the same at 20 and 40 MHz: measured, as the AC's b43_phy_ac_locale_*,
+ * from the target the R6400 writes on every channel of the hot captures
+ * (0x56 on ch 1 and 11, 0x5a from its SROM elsewhere, at both widths; 7l
+ * and 11u, both centred on 9, differ). A conducted limit, which cfg80211's
+ * per channel EIRP cannot express. Only the rows that bind.
+ */
+static const struct {
+	u8 first, last, limit;
+} b43_phy_ht_locale_2g[] = {
+	{ 1, 1, 92 },
+	{ 11, 11, 92 },
+};
+
+static u8 b43_phy_ht_locale_ceiling(const struct ieee80211_channel *chan)
+{
+	unsigned int i;
+
+	if (chan->band != NL80211_BAND_2GHZ)
+		return 0;
+	for (i = 0; i < ARRAY_SIZE(b43_phy_ht_locale_2g); i++)
+		if (chan->hw_value >= b43_phy_ht_locale_2g[i].first &&
+		    chan->hw_value <= b43_phy_ht_locale_2g[i].last)
+			return b43_phy_ht_locale_2g[i].limit;
+	return 0;
+}
+
+/*
  * The target, the same for every core: brcmsmac's chain, as for the N-PHY
- * and the AC. The SROM's power per rate, capped by the regulatory limit
- * less the antenna gain and by the user's, less brcmsmac's 6 qdBm of
- * hardware gain, at least 8 dBm, the highest rate's. On the R6400 that is
- * 0x60 - 6 = 0x5a at 20 MHz, wl's value.
+ * and the AC. The SROM's power per rate, capped by wl's locale, the
+ * regulatory limit less the antenna gain and the user's, less brcmsmac's
+ * 6 qdBm of hardware gain, at least 8 dBm, the highest rate's. On the
+ * R6400 that is 0x60 - 6 = 0x5a, and 92 - 6 = 0x56 on ch 1 and 11, wl's
+ * values.
  */
 static enum b43_txpwr_result
 b43_phy_ht_op_recalc_txpower(struct b43_wldev *dev, bool ignore_tssi)
@@ -1369,6 +1398,8 @@ b43_phy_ht_op_recalc_txpower(struct b43_wldev *dev, bool ignore_tssi)
 		b43_ppr_load_sprom_r9(ppr, sprom, band, 0x7);
 	else
 		b43_ppr_load_sprom_r8(ppr, sprom, band, 0x7, true);
+	if (b43_phy_ht_locale_ceiling(chan))
+		b43_ppr_apply_max(ppr, b43_phy_ht_locale_ceiling(chan));
 	if (chan->max_power)
 		b43_ppr_apply_max(ppr, max_t(int, INT_TO_Q52(chan->max_power) -
 					     sprom->antenna_gain.a0, 0));
