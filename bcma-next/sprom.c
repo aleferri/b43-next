@@ -184,6 +184,56 @@ static s8 sprom_extract_antgain(const u16 *in, u16 offset, u16 mask, u16 shift)
 	return (s8)gain;
 }
 
+/* Rev 8 only: rev 9 and 10 hold their power per rate in the same words. */
+static void bcmn_sprom_extract_po_r8(struct bcmn_bus *bus, const u16 *sprom)
+{
+	SPEX(cck2gpo, SSBN_SPROM8_CCK2GPO, ~0, 0);
+	SPEX32(ofdm2gpo, SSBN_SPROM8_OFDM2GPO, ~0, 0);
+	SPEX32(ofdm5glpo, SSBN_SPROM8_OFDM5GLPO, ~0, 0);
+	SPEX32(ofdm5gpo, SSBN_SPROM8_OFDM5GPO, ~0, 0);
+	SPEX32(ofdm5ghpo, SSBN_SPROM8_OFDM5GHPO, ~0, 0);
+
+	SPEX_ARRAY8(mcs2gpo, SSBN_SPROM8_2G_MCSPO, ~0, 0);
+	SPEX_ARRAY8(mcs5gpo, SSBN_SPROM8_5G_MCSPO, ~0, 0);
+	SPEX_ARRAY8(mcs5glpo, SSBN_SPROM8_5GL_MCSPO, ~0, 0);
+	SPEX_ARRAY8(mcs5ghpo, SSBN_SPROM8_5GH_MCSPO, ~0, 0);
+
+	SPEX(cddpo, SSBN_SPROM8_CDDPO, ~0, 0);
+	SPEX(stbcpo, SSBN_SPROM8_STBCPO, ~0, 0);
+	SPEX(bw40po, SSBN_SPROM8_BW40PO, ~0, 0);
+	SPEX(bwduppo, SSBN_SPROM8_BWDUPPO, ~0, 0);
+}
+
+static void bcmn_sprom_extract_po_r9(struct bcmn_bus *bus, const u16 *sprom)
+{
+	SPEX(cckbw202gpo, SSBN_SPROM9_2GPO_CCKBW20, ~0, 0);
+	SPEX(cckbw20ul2gpo, SSBN_SPROM9_2GPO_CCKBW20UL, ~0, 0);
+	SPEX32(legofdmbw202gpo, SSBN_SPROM9_2GPO_LOFDMBW20, ~0, 0);
+	SPEX32(legofdmbw20ul2gpo, SSBN_SPROM9_2GPO_LOFDMBW20UL, ~0, 0);
+	SPEX32(legofdmbw205glpo, SSBN_SPROM9_5GLPO_LOFDMBW20, ~0, 0);
+	SPEX32(legofdmbw20ul5glpo, SSBN_SPROM9_5GLPO_LOFDMBW20UL, ~0, 0);
+	SPEX32(legofdmbw205gmpo, SSBN_SPROM9_5GMPO_LOFDMBW20, ~0, 0);
+	SPEX32(legofdmbw20ul5gmpo, SSBN_SPROM9_5GMPO_LOFDMBW20UL, ~0, 0);
+	SPEX32(legofdmbw205ghpo, SSBN_SPROM9_5GHPO_LOFDMBW20, ~0, 0);
+	SPEX32(legofdmbw20ul5ghpo, SSBN_SPROM9_5GHPO_LOFDMBW20UL, ~0, 0);
+
+	SPEX32(mcsbw202gpo, SSBN_SPROM9_2GPO_MCSBW20, ~0, 0);
+	SPEX32(mcsbw20ul2gpo, SSBN_SPROM9_2GPO_MCSBW20UL, ~0, 0);
+	SPEX32(mcsbw402gpo, SSBN_SPROM9_2GPO_MCSBW40, ~0, 0);
+	SPEX32(mcsbw205glpo, SSBN_SPROM9_5GLPO_MCSBW20, ~0, 0);
+	SPEX32(mcsbw20ul5glpo, SSBN_SPROM9_5GLPO_MCSBW20UL, ~0, 0);
+	SPEX32(mcsbw405glpo, SSBN_SPROM9_5GLPO_MCSBW40, ~0, 0);
+	SPEX32(mcsbw205gmpo, SSBN_SPROM9_5GMPO_MCSBW20, ~0, 0);
+	SPEX32(mcsbw20ul5gmpo, SSBN_SPROM9_5GMPO_MCSBW20UL, ~0, 0);
+	SPEX32(mcsbw405gmpo, SSBN_SPROM9_5GMPO_MCSBW40, ~0, 0);
+	SPEX32(mcsbw205ghpo, SSBN_SPROM9_5GHPO_MCSBW20, ~0, 0);
+	SPEX32(mcsbw20ul5ghpo, SSBN_SPROM9_5GHPO_MCSBW20UL, ~0, 0);
+	SPEX32(mcsbw405ghpo, SSBN_SPROM9_5GHPO_MCSBW40, ~0, 0);
+
+	SPEX(mcs32po, SSBN_SPROM9_PO_MCS32, ~0, 0);
+	SPEX(legofdm40duppo, SSBN_SPROM9_PO_LOFDM40DUP, ~0, 0);
+}
+
 static void bcmn_sprom_extract_r8(struct bcmn_bus *bus, const u16 *sprom)
 {
 	u16 v, o;
@@ -357,11 +407,6 @@ static void bcmn_sprom_extract_r8(struct bcmn_bus *bus, const u16 *sprom)
 	SPEX(pa1hib0, SSBN_SPROM8_PA1HIB0, ~0, 0);
 	SPEX(pa1hib1, SSBN_SPROM8_PA1HIB1, ~0, 0);
 	SPEX(pa1hib2, SSBN_SPROM8_PA1HIB2, ~0, 0);
-	SPEX(cck2gpo, SSBN_SPROM8_CCK2GPO, ~0, 0);
-	SPEX32(ofdm2gpo, SSBN_SPROM8_OFDM2GPO, ~0, 0);
-	SPEX32(ofdm5glpo, SSBN_SPROM8_OFDM5GLPO, ~0, 0);
-	SPEX32(ofdm5gpo, SSBN_SPROM8_OFDM5GPO, ~0, 0);
-	SPEX32(ofdm5ghpo, SSBN_SPROM8_OFDM5GHPO, ~0, 0);
 
 	/* Extract the antenna gain values. */
 	bus->sprom.antenna_gain.a0 = sprom_extract_antgain(sprom,
@@ -395,11 +440,6 @@ static void bcmn_sprom_extract_r8(struct bcmn_bus *bus, const u16 *sprom)
 
 	SPEX(opo, SSBN_SPROM8_OFDM2GPO, 0x00ff, 0);
 
-	SPEX_ARRAY8(mcs2gpo, SSBN_SPROM8_2G_MCSPO, ~0, 0);
-	SPEX_ARRAY8(mcs5gpo, SSBN_SPROM8_5G_MCSPO, ~0, 0);
-	SPEX_ARRAY8(mcs5glpo, SSBN_SPROM8_5GL_MCSPO, ~0, 0);
-	SPEX_ARRAY8(mcs5ghpo, SSBN_SPROM8_5GH_MCSPO, ~0, 0);
-
 	SPEX(rawtempsense, SSBN_SPROM8_RAWTS, SSBN_SPROM8_RAWTS_RAWTEMP,
 	     SSBN_SPROM8_RAWTS_RAWTEMP_SHIFT);
 	SPEX(measpower, SSBN_SPROM8_RAWTS, SSBN_SPROM8_RAWTS_MEASPOWER,
@@ -421,11 +461,6 @@ static void bcmn_sprom_extract_r8(struct bcmn_bus *bus, const u16 *sprom)
 	SPEX(hw_iqcal_en, SSBN_SPROM8_HWIQ_IQSWP, SSBN_SPROM8_HWIQ_IQSWP_HW_IQCAL,
 	     SSBN_SPROM8_HWIQ_IQSWP_HW_IQCAL_SHIFT);
 
-	SPEX(bw40po, SSBN_SPROM8_BW40PO, ~0, 0);
-	SPEX(cddpo, SSBN_SPROM8_CDDPO, ~0, 0);
-	SPEX(stbcpo, SSBN_SPROM8_STBCPO, ~0, 0);
-	SPEX(bwduppo, SSBN_SPROM8_BWDUPPO, ~0, 0);
-
 	SPEX(tempthresh, SSBN_SPROM8_THERMAL, SSBN_SPROM8_THERMAL_TRESH,
 	     SSBN_SPROM8_THERMAL_TRESH_SHIFT);
 	SPEX(tempoffset, SSBN_SPROM8_THERMAL, SSBN_SPROM8_THERMAL_OFFSET,
@@ -438,6 +473,11 @@ static void bcmn_sprom_extract_r8(struct bcmn_bus *bus, const u16 *sprom)
 	SPEX(temps_hysteresis, SSBN_SPROM8_TEMPDELTA,
 	     SSBN_SPROM8_TEMPDELTA_HYSTERESIS,
 	     SSBN_SPROM8_TEMPDELTA_HYSTERESIS_SHIFT);
+
+	if (bus->sprom.revision == 8)
+		bcmn_sprom_extract_po_r8(bus, sprom);
+	else
+		bcmn_sprom_extract_po_r9(bus, sprom);
 }
 
 static void bcmn_sprom_unpack_rxgains(struct ssbn_sprom_rxgains *out,
