@@ -1582,11 +1582,14 @@ static void b43_nphy_run_samples(struct b43_wldev *dev, u16 samps, u16 loops,
 	u32 tmp;
 
 	/*
-	 * Only with hang avoidance, like the stop: entering the carrier search
-	 * resets the CCA, which forces the RF sequence back to RX and would
-	 * undo the RX2TX loopback the RX I/Q calibration sets up.
+	 * With hang avoidance, like the stop. Entering the carrier search
+	 * resets the CCA and forces the RF sequence back to RX, which would
+	 * undo the RX I/Q calibration's RX2TX loopback, so the calibrations
+	 * clear hang_avoid. wl 7.14.164.18 does it around every sample play
+	 * on rev 17 nonetheless, and the BCM43217's RX I/Q calibration still
+	 * comes out as wl's within an LSB or two.
 	 */
-	if (nphy->hang_avoid)
+	if (nphy->hang_avoid || dev->phy.rev == 17)
 		b43_nphy_stay_in_carrier_search(dev, true);
 
 	if (phy->rev >= 7) {
@@ -1619,7 +1622,7 @@ static void b43_nphy_run_samples(struct b43_wldev *dev, u16 samps, u16 loops,
 		b43_ntab_write(dev, B43_NTAB16(15, 87), tmp);
 	}
 
-	if (nphy->hang_avoid)
+	if (nphy->hang_avoid || dev->phy.rev == 17)
 		b43_nphy_stay_in_carrier_search(dev, false);
 
 	b43_phy_write(dev, B43_NPHY_SAMP_DEPCNT, (samps - 1));
