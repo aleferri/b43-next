@@ -7241,7 +7241,7 @@ static void b43_phy_ac_op_software_rfkill(struct b43_wldev *dev, bool blocked)
 	 * raised: every radio power-down raises it and the next power-up
 	 * starts by dropping it. A bring-up arrives here with the cold
 	 * preamble's drop done; a channel change on a running interface
-	 * (b43_ac_phy_recycle()) arrives straight from b43_phy_ac_down().
+	 * (b43_phy_recycle()) arrives straight from b43_phy_ac_down().
 	 */
 	if (dev->phy.ac->status_mask & B43_PHY_AC_STATE_PMU_REQ)
 		b43_phy_ac_pmu_req(dev, false);

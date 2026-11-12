@@ -96,7 +96,7 @@ pieces in order. On the D6220 `cold01` (folded, op numbers of
   a new channel is a whole `up`, the agcombo bus ones included.
   The port follows 7.14 without the core part of the cycle: on the AC a
   channel change on a tuned interface takes the PHY down and up again
-  (`b43_ac_phy_recycle()`) on the hot path, keeps the PHY's own state, which
+  (`b43_phy_recycle()`) on the hot path, keeps the PHY's own state, which
   `op_prepare_structs()` resets only together with a core reset, and leaves
   out the core resets, the ucode load and the PLL words, which are the same
   on every channel of every 7.14 capture. In the integration harness a
@@ -785,7 +785,7 @@ sides write agree; what is open:
 `b43_phy_exit()` sets it back to `true` on every `ifconfig down`, so a down/up
 takes the first bring-up branches (`B43_PHY_AC_STATE_FIRST_BRINGUP`), where
 the stock driver's later `up` takes the others. Only a channel change on a
-running interface (`b43_ac_phy_recycle()`), which does not go through
+running interface (`b43_phy_recycle()`), which does not go through
 `b43_phy_exit()`, runs with it false. The hot `up` waits for the hot work.
 
 ## PHY: values
