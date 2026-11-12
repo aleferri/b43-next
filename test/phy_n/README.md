@@ -105,8 +105,16 @@ N_CALREPORT=1 N_HWPCTL=1 ./n-trace full OPS FIRST LAST -o /tmp/t 2> /tmp/b43.rep
 
 In the harness b43's calibration results are computed from wl's own
 measurement reads, so a difference is in the computation, not in the
-hardware. The power control status registers (0x1ed/0x1ee) are read-only
-and the harness has no value for them.
+hardware. Three keys are not b43's in the harness:
+
+- the power control status registers (0x1ed/0x1ee) are read-only, and the
+  harness has no value for them;
+- the RSSI calibration's radio values come from read-backs of the radio,
+  which the harness serves from wl's reads: b43's writes to 0x0b4/0x139
+  are wl's (0x4a/0x4b) though the report prints others;
+- `TXPCTL_CMD`: b43 enables the control (0xe019), then reads the register
+  back for its "recover state" step, and gets wl's read there, so the
+  mirror ends at 0.
 
 ## Environment
 
