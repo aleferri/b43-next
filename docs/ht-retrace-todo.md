@@ -106,3 +106,12 @@ but the two registers; what decides the value is in what wl reads of the
 core (shared memory, MMIO counters), which the harness does not serve. b43
 writes 0x3a on every second turn; the 1l start of the BSS shows the
 difference (99.88%).
+
+In every turn wl reads four shared memory counters, 0x010e, 0x0158,
+0x010c and 0x015e, and the 0x06c0-0x06e2 block. On 1l 0x010e grows by
+400-770 a second, and the writes follow: 0x3a at the init, then 0x45, 0x44,
+0x4f, 0x4e on turns 3, 5, 6 and 8. It looks like brcmsmac's interference
+mitigation adapting the CRS minimum power to the glitch rate (the
+`interf.noise` state of phy_cmn.c and phy_n.c), with 0x010e a glitch
+counter: an inference, to be checked against brcmsmac before a port. The
+harness has to serve the shared memory reads first.
