@@ -58,8 +58,14 @@ static struct b43_wldev *setup(void)
 	chan.hw_value = ht_env("HT_CHANNEL", 6);
 	chan.center_freq = 2407 + 5 * chan.hw_value;
 	hw.conf.chandef.chan = &chan;
-	hw.conf.chandef.width = NL80211_CHAN_WIDTH_20;
-	hw.conf.chandef.center_freq1 = chan.center_freq;
+	/* HT_CENTER: the centre channel of a 40 MHz block */
+	if (ht_env("HT_CENTER", 0)) {
+		hw.conf.chandef.width = NL80211_CHAN_WIDTH_40;
+		hw.conf.chandef.center_freq1 = 2407 + 5 * ht_env("HT_CENTER", 0);
+	} else {
+		hw.conf.chandef.width = NL80211_CHAN_WIDTH_20;
+		hw.conf.chandef.center_freq1 = chan.center_freq;
+	}
 	wl.hw = &hw;
 
 	agent_ops.aread32 = agent_read32;
@@ -160,6 +166,10 @@ int ht_run_flow(const char *name)
 		phy_ht.rccal[1] = ht_env("HT_RCCAL1", 0);
 		phy_ht.rccal[2] = ht_env("HT_RCCAL2", 0);
 		phy_ht.t25_off = ht_env("HT_T25", 0);
+		phy_ht.t25_off2 = ht_env("HT_T25B", 0);
+		/* The width the up left the core at */
+		if (b43_is_40mhz(dev))
+			dev->phy.bw_clkbits = B43_BCMA_IOCTL_PHY_BW_40MHZ;
 		phy_ht.t25_set = true;
 		phy_ht.wd_ticks = ht_env("HT_WD_TICK0", 0);
 		/* The target the up computed */

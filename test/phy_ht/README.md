@@ -15,7 +15,7 @@ make K=... KG=...        # the kernel headers, see ../integration/README.md
 
 ## From the PHY init through up
 
-`gates.sh` scores the cold 20 MHz captures as `../unit/gates.sh` does the
+`gates.sh` scores the six cold captures, 20 and 40 MHz, as `../unit/gates.sh` does the
 AC-PHY's: the window runs from wl's first PHY operation after `up` to the
 `ssid` mark, b43 runs its up on the capture's channel (flow `full`) with
 the window as read oracle, and `../unit/cmp_skip.py --bus` scores the two;
@@ -30,6 +30,9 @@ On 2026-11-12, `--min-block 8 --gap-tol 2`:
 | cold-2g1-20 | 5340/8496 = 62.85% | 5360/5376 = 99.70% |
 | cold-2g6-20 | 5340/8617 = 61.97% | 5360/5376 = 99.70% |
 | cold-2g11-20 | 5340/8496 = 62.85% | 5360/5376 = 99.70% |
+| cold-2g1l-40 | 5346/8540 = 62.60% | 5375/5391 = 99.70% |
+| cold-2g6l-40 | 5345/8746 = 61.11% | 5374/5390 = 99.70% |
+| cold-2g11u-40 | 5346/8540 = 62.60% | 5375/5391 = 99.70% |
 
 The second row compares the PHY's and radio's operations only: the core's
 MMIO, shared memory and wrapper accesses are outside a harness that
@@ -71,6 +74,9 @@ calibrations match wl's to the value, coefficients included.
 | cold-2g1-20 | 20468/20482 = 99.93% |
 | cold-2g6-20 | 20475/20489 = 99.93% |
 | cold-2g11-20 | 20460/20474 = 99.93% |
+| cold-2g1l-40 | 28792/28826 = 99.88% |
+| cold-2g6l-40 | 28795/28809 = 99.95% |
+| cold-2g11u-40 | 28795/28809 = 99.95% |
 
 ## Exceptions
 

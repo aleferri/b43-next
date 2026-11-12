@@ -90,31 +90,19 @@ gate yet.
 
 ## 40 MHz
 
-b43's HT-PHY tunes `chandef->chan`, the primary channel, at 20 MHz whatever
-the width; it does not run 40 MHz yet, while `main.c` advertises it. Run at
-20 MHz on the centre channel against the cold 40 MHz captures (`cold-2g6l-40`,
-primary 6, centre 8), b43's up already follows wl but for the points below,
-and its start of the BSS too. What 40 MHz needs, from those captures:
+b43's HT-PHY runs 40 MHz as wl does on the R6400's cold 40 MHz captures:
+the core's width at the PHY init (`b43_phy_ht_width()`), the 2059 on the
+centre channel, the sideband, two table 0x25 pairs, the AFE setup, table
+7's copies and the calibrations' tones and constants. `gates.sh` scores the
+three 40 MHz cold captures as the 20 MHz ones; the up's PHY and radio
+operations are 99.70% of wl's, the start of the BSS's 99.95% on 6l and 11u.
 
-- **The core's bandwidth.** wl moves the wrapper's IOCTL from 0x2055 to
-  0x209d, 0x2093 and 0x2095 (`B43_BCMA_IOCTL_PHY_BW_40MHZ` with the clock
-  forced and released) and switches the analog on again (#706-#720), before
-  the radio. `phy.bw_clkbits` carries this for the AC.
-- **The radio on the centre channel**, `chandef->center_freq1`.
-- **The sideband**: after the radio's channel, a read-modify-write of 0x0a0,
-  0x0887 for a lower primary (1l, 6l) and 0x0897 for an upper one (11u),
-  and of 0x310 (#881-#884).
-- **The gain control's table 0x25**: two pairs where 20 MHz has one, 0x6a
-  and 0x29 on 6l; the offsets by channel are to be read off the hot 40 MHz
-  capture as for 20 MHz.
-- **The AFE setup** (`b43_phy_ht_afe_unk1()`): bit 0 cleared, not set, and
-  table 8 entries 4 and 5 at 0xfc60 and 0x0c, not 0xa840 and 0x08.
-- **Table 7** at 0x149, 0x159, 0x169 where 20 MHz writes 0x144, 0x154, 0x164.
-- **The calibrations**: tones of 320 samples (sample depth 0x13f), the
-  I/Q LO command N num 0x7987 instead of 0x6876, and bit 0x20 in the RF
-  control 0x849 + 0x20 * core of the RX calibration (0x420, not 0x400).
-  The tones' frequencies at 40 MHz are to be checked against the N-PHY's
-  (5000 kHz for TX, 4000 kHz for RX in brcmsmac).
+## The watchdog's 0x280 and 0x283
 
-The TX power target is the same at 40 MHz on the R6400 (0x5a, 0x56 on a
-primary of 1 or 11), already handled by the locale's caps.
+The low bytes the watchdog writes back are not a constant: on ch 6 and 11
+they stay 0x3a, on 1l wl writes 0x45, 0x44 and 0x4e on later turns, and the
+turns it writes on there are not every second one. The turn has no PHY read
+but the two registers; what decides the value is in what wl reads of the
+core (shared memory, MMIO counters), which the harness does not serve. b43
+writes 0x3a on every second turn; the 1l start of the BSS shows the
+difference (99.88%).
