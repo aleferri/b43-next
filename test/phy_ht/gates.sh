@@ -9,7 +9,7 @@
 #   ./gates.sh --min-block 8 --gap-tol 2 [CAPTURE...]
 #
 # CAPTURE is a name under traces/mmio-cold, e.g. cold-2g6-20; without, the
-# three 20 MHz ones (b43's HT-PHY runs at 20 MHz only). GATE_TMP keeps the
+# six cold ones, 20 and 40 MHz. GATE_TMP keeps the
 # window's trace and b43's. Each capture gets two rows: all the operations,
 # and the PHY's and radio's only, the perimeter of this harness, which
 # compiles no core.
@@ -33,13 +33,20 @@ T=${GATE_TMP:-$(mktemp -d)}
 mkdir -p "$T"
 [ -n "${GATE_TMP:-}" ] || trap 'rm -rf "$T"' EXIT
 
-[ $# -gt 0 ] || set -- cold-2g1-20 cold-2g6-20 cold-2g11-20
+[ $# -gt 0 ] || set -- cold-2g1-20 cold-2g6-20 cold-2g11-20 \
+	cold-2g1l-40 cold-2g6l-40 cold-2g11u-40
 for c in "$@"; do
 	ops=$T/$c.ops
 	zcat "$BOARD/traces/mmio-cold/$c-ops.txt.gz" > "$ops"
 	first=$(awk "/MARK 'up'/ { u = 1; next } u && / PHY\./ { print substr(\$2, 2); exit }" "$ops")
 	last=$(awk "/MARK 'ssid'/ { print substr(\$2, 2) - 1; exit }" "$ops")
 	ch=$(echo "$c" | sed 's/cold-2g\([0-9]*\).*/\1/')
+	# 40 MHz: a lower primary (l) has its block centred 2 above, an upper 2 below
+	case $c in
+	*l-40) export HT_CENTER=$((ch + 2)) ;;
+	*u-40) export HT_CENTER=$((ch - 2)) ;;
+	*) unset HT_CENTER ;;
+	esac
 	# wl's 1 s watchdog turns in a window: each reads MMIO 0x4d0 once,
 	# which nothing else in the captures reads.
 	turns() {
@@ -69,10 +76,13 @@ for c in "$@"; do
 		{ n = substr($2, 2) + 0 }
 		n >= a && /REG\.RD off=0x04d0/ { print int(($1 - t0) / 1.0093 + 0.5); exit }' "$ops")
 	t25=$(awk '/PHY\.WR addr=0x0072 val=0x94/ { print "0x" substr($NF, 9); exit }' "$ops")
+	t25b=0
+	[ -n "${HT_CENTER:-}" ] &&
+		t25b=$(awk '/PHY\.WR addr=0x0072 val=0x94/ && ++k == 2 { print "0x" substr($NF, 9); exit }' "$ops")
 	echo "== $c, ap start, ops $a:$z"
 	HT_CHANNEL=$ch HT_WD_TURNS=$(turns "$a" "$z") HT_WD_TICK0=$tick0 \
 		HT_RCCAL0=$(rc 0x034c) HT_RCCAL1=$(rc 0x034d) \
-		HT_RCCAL2=$(rc 0x034e) HT_T25=$t25 \
+		HT_RCCAL2=$(rc 0x034e) HT_T25=$t25 HT_T25B=$t25b \
 		./ht-trace ap_start "$ops" "$a" "$z" -o "$T/$c.ap.trace" 2>/dev/null
 	grep -E ' (PHY|RAD)\.' "$T/$c.ap.trace" > "$T/$c.ap.phy.trace"
 	python3 ../unit/cmp_skip.py "$T/$c.phy.ops" "$T/$c.ap.phy.trace" \
