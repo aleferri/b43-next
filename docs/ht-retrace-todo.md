@@ -78,9 +78,12 @@ channel) shows where wl initialises the PHY after the first time:
 
 `wl up` does not touch the PHY after the first up since the module was
 loaded; the init comes with the BSS, a later init (no tables, no radio
-calibrations) followed by the calibrations, as at the cold `ssid`. b43
-instead asks for a full init at every up (`b43_phy_exit()` sets
-`do_full_init`, and the core init resets the PHY's state with
-`prepare_structs`), then runs the later init at the start of the BSS. How
-the up after a down should go, as the AC's `FIRST_BRINGUP` branches decide
-for the AC, is the open question; `test/phy_ht` has no hot gate yet.
+calibrations) followed by the calibrations, as at the cold `ssid`.
+
+As for the AC ([`ac-phy.md`](ac-phy.md), [`retrace-todo.md`](retrace-todo.md),
+"`do_full_init` after a down"), the cold bring-up comes first and the hot
+one is deferred, not dropped: `b43_phy_exit()` sets `do_full_init` on every
+down, so a down and up takes the first init, and only the start of the BSS
+(`bss_start`), which does not go through `b43_phy_exit()`, runs the later
+one. Where hot differs from cold, it goes here; `test/phy_ht` has no hot
+gate yet.
