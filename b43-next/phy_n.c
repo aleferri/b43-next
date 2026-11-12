@@ -2494,6 +2494,55 @@ static void b43_nphy_gain_ctl_workarounds_rev19(struct b43_wldev *dev)
 	/* TODO */
 }
 
+/*
+ * What wl 7.14.164.18 writes after its gain control on the BCM43217 (radio
+ * 2057 rev 14, external PA, 2.4 GHz), the same on every channel: table 7 at
+ * 0x050-0x05f and 0x0d0-0x0df, 0x30a/0x308, table 8 at 0x08/0x18/0x0c/0x1c,
+ * AFECTL_C1/C2 bits 2 and 6 (without bit 6 the TSSI I rails read -32 and
+ * +31), 0x09f, 0x323 bit 0, table 16 at 0x108-0x10b and 0x21e bit 0. The
+ * register names are not known.
+ */
+static void b43_nphy_workarounds_2057_rev14_epa_tail(struct b43_wldev *dev)
+{
+	static const u16 t7_50[] = { 0x7, 0x8, 0xe };
+	static const u16 t7_d0[] = { 0x6, 0xf, 0x1 };
+	static const u16 t8_08[] = { 0x8e, 0x96, 0x96, 0x89 };
+	static const u16 t8_18[] = { 0x8f, 0x9f, 0x9f, 0x89 };
+	static const u16 t8_0c[] = { 0x2, 0x2, 0x2, 0x0 };
+	static const u16 t16[] = { 0x14, 0x14, 0x10, 0x10 };
+	unsigned int i;
+
+	b43_ntab_write_bulk(dev, B43_NTAB16(7, 0x050), 3, t7_50);
+	b43_ntab_write_bulk(dev, B43_NTAB16(7, 0x0d0), 3, t7_d0);
+	for (i = 0x053; i <= 0x05f; i++) {
+		b43_ntab_write(dev, B43_NTAB16(7, i), 0x1f);
+		b43_ntab_write(dev, B43_NTAB16(7, i + 0x80), 0x1);
+	}
+	b43_phy_write(dev, B43_PHY_N(0x30a), 0x0001);
+	b43_phy_write(dev, B43_PHY_N(0x308), 0x0034);
+	b43_ntab_write_bulk(dev, B43_NTAB16(8, 0x08), 4, t8_08);
+	b43_ntab_write_bulk(dev, B43_NTAB16(8, 0x18), 4, t8_18);
+	b43_ntab_write_bulk(dev, B43_NTAB16(8, 0x0c), 4, t8_0c);
+	b43_ntab_write_bulk(dev, B43_NTAB16(8, 0x1c), 4, t8_0c);
+	/*
+	 * wl's four read-modify-write pairs: the second and fourth write back
+	 * the value they read, which leaves the register's content as it was
+	 */
+	b43_phy_set(dev, B43_NPHY_AFECTL_C1, 0x0004);
+	b43_phy_set(dev, B43_NPHY_AFECTL_C2, 0x0004);
+	b43_phy_set(dev, B43_NPHY_AFECTL_C1, 0x0004);
+	b43_phy_set(dev, B43_NPHY_AFECTL_C2, 0x0004);
+	b43_phy_set(dev, B43_NPHY_AFECTL_C1, 0x0040);
+	b43_phy_set(dev, B43_NPHY_AFECTL_C2, 0x0040);
+	b43_phy_set(dev, B43_NPHY_AFECTL_C1, 0x0040);
+	b43_phy_set(dev, B43_NPHY_AFECTL_C2, 0x0040);
+	b43_phy_write(dev, B43_PHY_N(0x09f), 0x0001);
+	b43_phy_mask(dev, B43_PHY_N(0x323), ~0x0001);
+	for (i = 0; i < ARRAY_SIZE(t16); i++)
+		b43_ntab_write(dev, B43_NTAB16(16, 0x108 + i), t16[i]);
+	b43_phy_mask(dev, B43_PHY_N(0x21e), ~0x0001);
+}
+
 /* Radio 2057 rev 14 with an external PA at 2.4 GHz (BCM43217 on the ASUS
  * RT-AC56U): the gain control setup of the vendor driver on that board, read
  * back on channels 1 and 6. Tables 0-4 hold three identical 0x80 entry blocks.
@@ -2552,6 +2601,8 @@ static void b43_nphy_gain_ctl_workarounds_2057_rev14_2g(struct b43_wldev *dev)
 	b43_phy_maskset(dev, B43_NPHY_CRSMINPOWERL0, 0xFF00, 0x0071);
 	b43_phy_maskset(dev, B43_NPHY_CRSMINPOWERU0, 0xFF00, 0x0071);
 	b43_phy_write(dev, B43_NPHY_BPHYCRSMINPOWER0, 0x0046);
+
+	b43_nphy_workarounds_2057_rev14_epa_tail(dev);
 }
 
 static void b43_nphy_gain_ctl_workarounds_rev7(struct b43_wldev *dev)
