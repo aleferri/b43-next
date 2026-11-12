@@ -17,6 +17,8 @@ unsigned int n_cc_read32(unsigned short offset);
 void n_cc_write32(unsigned short offset, unsigned int value);
 /* A function marker, ----FN:name---- or ----/FN:name----, if N_FN is set */
 void n_marker(void *fn, int leave);
+/* The driver's calibration report: peek mode on and off */
+void n_peek(int on);
 void n_log(const char *what);
 /* An nvram variable of the board as a number, or dflt if it has none. */
 long n_nvram(const char *name, long dflt);
