@@ -1240,6 +1240,8 @@ static int b43_phy_ht_op_init(struct b43_wldev *dev)
 	b43_phy_ht_tssi_setup(dev);
 	b43_phy_ht_tx_power_ctl(dev, saved_tx_pwr_ctl);
 	phy_ht->wd_turns = 0;
+	if (dev->phy.do_full_init)
+		phy_ht->wd_ticks = 0;
 
 	/* Only after the first init, as wl */
 	if (dev->phy.do_full_init) {
@@ -1395,18 +1397,86 @@ b43_phy_ht_op_recalc_txpower(struct b43_wldev *dev, bool ignore_tssi)
  * index 2 three times, sets the control up again and turns it on.
  */
 /*
+ * wl's temperature measurement: the 2059's 0x00c through 1, 3, 5 and 7,
+ * eight RSSI readings of the first core at each, with the AFE of every
+ * core overridden as for the TX calibration. What wl does with the
+ * readings is not known; nothing is written from them in the captures.
+ */
+static void b43_phy_ht_tempsense(struct b43_wldev *dev)
+{
+	static const u8 t8[4] = { 0x0a, 0x0e, 0x02, 0x03 };
+	static const u16 t8_val[4] = { 0xce, 0x03, 0x00, 0x20 };
+	u16 r0c, t8s[4], afe, over, r1ae, save[3][4];
+	int c, i, v;
+
+	r0c = b43_radio_read(dev, R2059_C1 | 0x00c);
+	for (i = 0; i < 4; i++)
+		t8s[i] = b43_httab_read(dev, B43_HTTAB16(8, t8[i]));
+	afe = b43_phy_read(dev, B43_PHY_HT_AFE_C1);
+	over = b43_phy_read(dev, B43_PHY_HT_AFE_C1_OVER);
+	r1ae = b43_phy_read(dev, 0x1ae);
+	for (i = 0; i < 4; i++)
+		b43_httab_write(dev, B43_HTTAB16(8, t8[i]), t8_val[i]);
+	b43_phy_write(dev, 0x1ae, 0);
+	b43_phy_mask(dev, B43_PHY_HT_AFE_C1, ~0x0080);
+	b43_phy_set(dev, B43_PHY_HT_AFE_C1_OVER, 0x0080);
+	b43_phy_mask(dev, B43_PHY_HT_AFE_C1, ~0x0040);
+	b43_phy_set(dev, B43_PHY_HT_AFE_C1_OVER, 0x0040);
+
+	for (v = 1; v <= 7; v += 2) {
+		b43_radio_write(dev, R2059_C1 | 0x00c, v);
+		for (c = 0; c < 3; c++) {
+			save[c][0] = b43_phy_read(dev, B43_PHY_HT_AFE_C1 + c * 4);
+			save[c][1] = b43_phy_read(dev, B43_PHY_HT_AFE_C1_OVER + c * 4);
+			save[c][2] = b43_phy_read(dev, B43_PHY_EXTG(0x048 + c * 0x20));
+			save[c][3] = b43_phy_read(dev, B43_PHY_EXTG(0x041 + c * 0x20));
+		}
+		for (c = 0; c < 3; c++) {
+			b43_phy_mask(dev, B43_PHY_HT_AFE_C1 + c * 4, ~0x0100);
+			b43_phy_mask(dev, B43_PHY_HT_AFE_C1 + c * 4, ~0x0400);
+			b43_phy_set(dev, B43_PHY_HT_AFE_C1_OVER + c * 4, 0x0200);
+			b43_phy_set(dev, B43_PHY_HT_AFE_C1_OVER + c * 4, 0x0400);
+		}
+		for (i = 0; i < 8; i++)
+			b43_phy_read(dev, B43_PHY_HT_RSSI_C1);
+		for (c = 0; c < 3; c++) {
+			b43_phy_write(dev, B43_PHY_HT_AFE_C1 + c * 4, save[c][0]);
+			b43_phy_write(dev, B43_PHY_HT_AFE_C1_OVER + c * 4, save[c][1]);
+			b43_phy_write(dev, B43_PHY_EXTG(0x048 + c * 0x20), save[c][2]);
+			b43_phy_write(dev, B43_PHY_EXTG(0x041 + c * 0x20), save[c][3]);
+		}
+	}
+
+	b43_radio_write(dev, R2059_C1 | 0x00c, r0c);
+	for (i = 0; i < 4; i++)
+		b43_httab_write(dev, B43_HTTAB16(8, t8[i]), t8s[i]);
+	b43_phy_write(dev, B43_PHY_HT_AFE_C1_OVER, over);
+	b43_phy_write(dev, B43_PHY_HT_AFE_C1, afe);
+	b43_phy_write(dev, 0x1ae, r1ae);
+}
+
+/*
  * wl's 1 s watchdog: on every second turn after an init it writes the low
- * bytes of 0x280 and 0x283 again, with the MAC suspended.
+ * bytes of 0x280 and 0x283 again; on the 17th and 18th of every 30 ticks
+ * of its timer, counted from the driver's first init, it measures the
+ * temperature. Both with the MAC suspended.
  */
 static void b43_phy_ht_op_pwork_1sec(struct b43_wldev *dev)
 {
 	struct b43_phy_ht *phy_ht = dev->phy.ht;
+	bool rewrite = !(++phy_ht->wd_turns % 2);
+	bool temp = (++phy_ht->wd_ticks % 30) == 17 ||
+		    (phy_ht->wd_ticks % 30) == 18;
 
-	if (++phy_ht->wd_turns % 2)
+	if (!rewrite && !temp)
 		return;
 	b43_mac_suspend(dev);
-	b43_phy_maskset(dev, 0x280, 0xff00, 0x3a);
-	b43_phy_maskset(dev, 0x283, 0xff00, 0x3a);
+	if (rewrite) {
+		b43_phy_maskset(dev, 0x280, 0xff00, 0x3a);
+		b43_phy_maskset(dev, 0x283, 0xff00, 0x3a);
+	}
+	if (temp)
+		b43_phy_ht_tempsense(dev);
 	b43_mac_enable(dev);
 }
 
