@@ -5146,6 +5146,12 @@ static u16 b43_nphy_precal_txgain_2057_rev14_epa(struct b43_wldev *dev)
 	b43_nphy_rf_ctl_override_rev7(dev, 0x1000, 0, 3, true, 0);
 	b43_ntab_write(dev, B43_NTAB16(15, 87), m0m1);
 	b43_ntab_write(dev, B43_NTAB16(15, 95), m0m1);
+	/*
+	 * The baseband multiplier the TX I/Q-LO calibration scales its
+	 * ladders by: wl's ladders on the BCM43217 are its percentages of
+	 * 0x40, this multiplier's byte per core.
+	 */
+	nphy->txcal_bbmult = m0m1;
 	return B43_NPHY_PRECAL_GAIN(pick);
 }
 
