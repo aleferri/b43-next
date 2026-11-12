@@ -149,11 +149,18 @@ with arg 3, at the end of the init) and the TX gain table they start from.
   and at `ssid`, on both cores, and in all eleven cycles of the hot sweep.
   PHY+radio 23.47% -> 25.42%.
 
+- The TX gain pre-calibration and the calibrations at init on radio 2057
+  rev 14 with an external PA (`b43_nphy_precal_txgain_2057_rev14_epa()`,
+  run where `perical = 2` ran nothing): the pre-calibration picks wl's
+  gain on every capture and matches wl's #10738-#13040 (2173 of its 2235
+  ops); the TX I/Q-LO calibration that follows matches 833 of its 1090
+  ops inside wl's #13524-#26551. PHY+radio 25.42% -> 33.89%.
+
 ## Next
 
-1. The calibrations' place and contents (#10628-#31089): run them where
-   wl does (the perical branch), port the pre-calibration above, then
-   compare the TX I/Q-LO and RX I/Q calibrations op by op.
+1. The TX I/Q-LO and RX I/Q calibrations op by op against wl's
+   #13524-#31089, and their place: wl runs them after the TX power control
+   setup of the first `recalc_txpower`, b43 inside the init.
 2. The small blocks: CRS (#952), TX filter (#3202), table 7 (#3349), the RX
    gain block (#3450).
 3. A `bss_start` flow against `ssid`, as `test/phy_ht` has.
