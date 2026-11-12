@@ -274,36 +274,6 @@ long ht_nvram(const char *name, long dflt)
 	return v;
 }
 
-/*
- * Ops whose value b43 sets by design otherwise than wl: compared by class
- * and address only. See README.md, "Exceptions".
- */
-/*
- * With HT_TARGET_FREE these are compared by address only, where wl's
- * target is one b43 does not compute (see check.sh).
- */
-static const char *const value_free[] = {
-	"PHY.WR addr=0x01ea ",	/* TXPCTL_TARG_PWR: cores 1 and 2 */
-	"PHY.WR addr=0x0966 ",	/* TXPCTL_TARG_PWR2: core 3 */
-};
-
-static int same(const char *a, const char *b)
-{
-	size_t i;
-
-	if (!strcmp(a, b))
-		return 1;
-	if (!getenv("HT_TARGET_FREE"))
-		return 0;
-	for (i = 0; i < sizeof(value_free) / sizeof(value_free[0]); i++) {
-		size_t n = strlen(value_free[i]);
-
-		if (!strncmp(a, value_free[i], n) && !strncmp(b, value_free[i], n))
-			return 2;
-	}
-	return 0;
-}
-
 /* The window of the capture, without timestamps, numbers and reg names. */
 static int load(const char *path, long first, long last)
 {
@@ -364,7 +334,7 @@ int main(int argc, char **argv)
 {
 	int i, verbose = argc > 5 && !strcmp(argv[5], "-v");
 	const char *trace = argc > 6 && !strcmp(argv[5], "-o") ? argv[6] : NULL;
-	int unread = 0, excepted = 0, r = 1;
+	int unread = 0;
 
 	if (argc < 5) {
 		fprintf(stderr, "usage: %s FLOW OPS FIRST LAST [-v]\n", argv[0]);
@@ -403,16 +373,11 @@ int main(int argc, char **argv)
 	}
 
 	for (i = 0; i < nout && i < nref; i++) {
-		r = same(out[i].text, ref[i].text);
-		if (!r)
+		if (strcmp(out[i].text, ref[i].text))
 			break;
-		excepted += r == 2;
 	}
 	if (i == nout && i == nref && !exhausted && !unread && !nlog) {
-		printf("PASS %-12s %d ops", argv[1], nref);
-		if (excepted)
-			printf(", %d by address only", excepted);
-		printf("\n");
+		printf("PASS %-12s %d ops\n", argv[1], nref);
 		return 0;
 	}
 	printf("FAIL %-12s ops %d/%d, first difference at op %d of the window\n",
