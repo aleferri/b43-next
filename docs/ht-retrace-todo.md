@@ -38,43 +38,13 @@ The PHY's calls into the core (`b43_mac_suspend()`, the shared memory,
 
 ## `ssid`
 
-b43 runs the later init when beaconing starts (the HT-PHY's `bss_start`
-op; flow `ap_start` in `test/phy_ht`), in wl's order, and sets the TX power
-twice after it as wl does (#12660, #13536 on ch 6). What follows in wl is
-missing:
-
-- the end of the first pass (#24095-#24102): the control on, then the
-  indices restored per core; the pass's TX I/Q and LO and RX I/Q
-  calibrations are in b43 (`b43_phy_ht_cal_tx_iq_lo()`,
-  `b43_phy_ht_cal_rx_iq()`) and match wl's to the value;
-- a third setting of the TX power between the two passes (#25010);
-- two passes of calibration (#15069-#24098 and #26530-#35530 on ch 6).
-  Each: the TX power control off with its indices saved, an idle TSSI
-  measurement as `b43_phy_ht_tx_power_ctl_idle_tssi()`, table 0x1a's late
-  part again, then
-  - a TX I/Q and LO calibration (#15765-#17663): tone 2500 kHz at 250,
-    the I/Q LO commands at 0x0c2 and the coefficients in table 13;
-  - an RX I/Q calibration, twelve steps (#17939-#23999): tone 2000 kHz at
-    181, playback, the estimator at 0x129, table 13;
-  - the control on again.
-
-  The steps are those of the N-PHY's rev 3+ calibrations in b43
-  (`b43_nphy_cal_tx_iq_lo()`, `b43_nphy_rev3_cal_rx_iq()`) and in brcmsmac,
-  which are where the port starts from. In the TX I/Q and LO calibration
-  of the trace:
-  - the setup reads table 0x1a entry 0xc0 for each core, saves and
-    overrides the classifier, the clip thresholds, the 2059's 0x155-0x15c
-    of each core, the AFE 0x910/0x911 and RF control 0x84c-0x88c of each
-    core and table 8 entry 3, writes table 7 0x110-0x112 (the gain, 0x10f9)
-    and the baseband multipliers in table 13 0x63/0x73... (0x40);
-  - 0x0c2 (I/Q LO command control) gets 0x8ad9, the N-PHY rev 7 value;
-    table 13 entries 0x40-0x55 are cleared, where the N-PHY uses table 15
-    from 64;
-  - the tone is `b43_nphy_tx_tone()`'s at 2500 kHz and 250;
-  - the commands at 0x0c0 are the N-PHY rev 3 full calibration's,
-    0x8434 0x8334 0x8084 0x8267 0x8056 0x8234 for the first core, 0x94..
-    for the second, and the same set for the third; 0x0c1 is 0x6876 for
-    each; 0x0c0 is polled until done.
+b43 runs what wl runs when the BSS starts (the HT-PHY's `bss_start` op;
+flow `ap_start` in `test/phy_ht`): the later init, the TX power set twice,
+a calibration pass, the TX power again and a second pass, then the 1 s
+watchdog's work, temperature measurement included. Of wl's PHY and radio
+operations from `ssid` to `beaconing` only the twelve of the analog
+switches of wl's core down and up are missing, and the target power's
+values differ, by design.
 
 wl initialises the PHY for the channel again, without the radio init of
 `up`, then calibrates:
