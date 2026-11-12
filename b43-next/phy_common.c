@@ -98,6 +98,8 @@ int b43_phy_init(struct b43_wldev *dev)
 	if (phy->type == B43_PHYTYPE_HT)
 		b43_software_rfkill(dev, true);
 	phy->ops->switch_analog(dev, true);
+	if (phy->type == B43_PHYTYPE_HT)
+		b43_phy_ht_width(dev);
 	b43_software_rfkill(dev, false);
 
 	err = ops->init(dev);
@@ -591,6 +593,33 @@ void b43_phyop_switch_analog_generic(struct b43_wldev *dev, bool on)
 bool b43_is_40mhz(struct b43_wldev *dev)
 {
 	return dev->phy.chandef->width == NL80211_CHAN_WIDTH_40;
+}
+
+/*
+ * The HT-PHY's stock driver, when the width differs from the one the core
+ * runs, resets the PHY with the core's new width (IOCTL 0x2055, 0x209d,
+ * 0x2093, 0x2095 at 40 MHz on the R6400) and switches the analog on again,
+ * between the analog switch of the PHY init and the radio.
+ */
+void b43_phy_ht_width(struct b43_wldev *dev)
+{
+#ifdef CONFIG_B43_NEXT_BCMA
+	u32 bits = b43_is_40mhz(dev) ? B43_BCMA_IOCTL_PHY_BW_40MHZ :
+				       B43_BCMA_IOCTL_PHY_BW_20MHZ;
+	u32 tmp;
+
+	if (dev->dev->bus_type != B43_BUS_BCMA ||
+	    (dev->phy.bw_clkbits ?: B43_BCMA_IOCTL_PHY_BW_20MHZ) == bits)
+		return;
+	dev->phy.bw_clkbits = bits;
+	tmp = bcmn_aread32(dev->dev->bdev, BCMN_IOCTL);
+	tmp &= ~B43_BCMA_IOCTL_PHY_BW;
+	tmp |= bits | B43_BCMA_IOCTL_PHY_RESET;
+	bcmn_awrite32(dev->dev->bdev, BCMN_IOCTL, tmp);
+	udelay(2);
+	b43_phy_take_out_of_reset(dev);
+	dev->phy.ops->switch_analog(dev, true);
+#endif
 }
 
 /* https://bcm-v4.sipsolutions.net/802.11/PHY/N/BmacPhyClkFgc */
