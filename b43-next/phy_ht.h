@@ -7,6 +7,8 @@
 
 
 #define B43_PHY_HT_BBCFG			0x001 /* BB config */
+#define B43_PHY_HT_RXCTL			0x0A0 /* RX control */
+#define  B43_PHY_HT_RXCTL_BSELU20		0x0010 /* Band select upper 20 */
 #define  B43_PHY_HT_BBCFG_RSTCCA		0x4000 /* Reset CCA */
 #define  B43_PHY_HT_BBCFG_RSTRX			0x8000 /* Reset RX */
 #define B43_PHY_HT_BANDCTL			0x009 /* Band control */
@@ -145,7 +147,7 @@ struct b43_phy_ht {
 	u8 idle_tssi[3];
 	u8 tssi_delay;
 	u16 rccal[3];
-	u16 t25_off;
+	u16 t25_off, t25_off2;
 	bool t25_set;
 	unsigned int wd_turns;
 	unsigned int wd_ticks;
