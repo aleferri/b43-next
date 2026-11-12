@@ -29,6 +29,15 @@ enum ht_rssi_type {
 	HT_RSSI_TBD = 6,
 };
 
+/* The channel a 40 MHz block is centred on, the primary one at 20 MHz */
+static int b43_phy_ht_centre_chan(struct b43_wldev *dev)
+{
+	const struct cfg80211_chan_def *cd = dev->phy.chandef;
+	u32 f = b43_is_40mhz(dev) ? cd->center_freq1 : cd->chan->center_freq;
+
+	return f < 5000 ? (f - 2407) / 5 : (f - 5000) / 5;
+}
+
 /**************************************************
  * Radio 2059.
  **************************************************/
@@ -310,10 +319,15 @@ static void b43_phy_ht_afe_unk1(struct b43_wldev *dev)
 	for (i = 0; i < 3; i++) {
 		b43_phy_set(dev, ctl_regs[i][1], 0x4);
 		b43_phy_set(dev, ctl_regs[i][0], 0x4);
-		b43_phy_set(dev, ctl_regs[i][1], 0x1);
+		if (b43_is_40mhz(dev))
+			b43_phy_mask(dev, ctl_regs[i][1], ~0x1);
+		else
+			b43_phy_set(dev, ctl_regs[i][1], 0x1);
 		b43_phy_set(dev, ctl_regs[i][0], 0x1);
-		b43_httab_write(dev, B43_HTTAB16(8, 4 + (i * 0x10)), 0xa840);
-		b43_httab_write(dev, B43_HTTAB16(8, 5 + (i * 0x10)), 0x8);
+		b43_httab_write(dev, B43_HTTAB16(8, 4 + (i * 0x10)),
+				b43_is_40mhz(dev) ? 0xfc60 : 0xa840);
+		b43_httab_write(dev, B43_HTTAB16(8, 5 + (i * 0x10)),
+				b43_is_40mhz(dev) ? 0xc : 0x8);
 		b43_phy_mask(dev, ctl_regs[i][0], ~0x4);
 	}
 }
@@ -895,6 +909,11 @@ static void b43_phy_ht_gain_ctl_setup(struct b43_wldev *dev,
 	 * setup first clears the pair the previous one set.
 	 */
 	static const u16 t25_off[4] = { 0x2a, 0x19, 0x09, 0x3a };
+	/*
+	 * At 40 MHz two pairs, by the centre channel modulo 4, the second
+	 * 0x41 below the first, on every channel of the hot 40 MHz capture.
+	 */
+	static const u16 t25_off40[4] = { 0x6a, 0x5a, 0x4a, 0x7a };
 	struct b43_phy_ht *phy_ht = dev->phy.ht;
 	u16 buf[4];
 	int c, i;
@@ -965,13 +984,27 @@ static void b43_phy_ht_gain_ctl_setup(struct b43_wldev *dev,
 		b43_httab_read(dev, B43_HTTAB16(lna[c], 0x00));
 	}
 
-	if (phy_ht->t25_set)
+	if (phy_ht->t25_set) {
 		b43_httab_write_few(dev, B43_HTTAB32(0x25, phy_ht->t25_off), 2,
 				    0, 0);
-	phy_ht->t25_off = t25_off[channel->hw_value % 4];
+		if (phy_ht->t25_off2)
+			b43_httab_write_few(dev,
+					    B43_HTTAB32(0x25, phy_ht->t25_off2),
+					    2, 0, 0);
+	}
+	if (b43_is_40mhz(dev)) {
+		phy_ht->t25_off = t25_off40[b43_phy_ht_centre_chan(dev) % 4];
+		phy_ht->t25_off2 = phy_ht->t25_off - 0x41;
+	} else {
+		phy_ht->t25_off = t25_off[channel->hw_value % 4];
+		phy_ht->t25_off2 = 0;
+	}
 	phy_ht->t25_set = true;
 	b43_httab_write_few(dev, B43_HTTAB32(0x25, phy_ht->t25_off), 2,
 			    0xa, 0xa);
+	if (phy_ht->t25_off2)
+		b43_httab_write_few(dev, B43_HTTAB32(0x25, phy_ht->t25_off2), 2,
+				    0xa, 0xa);
 	for (c = 0; c < 3; c++) {
 		b43_httab_write(dev, B43_HTTAB16(8, 0x0b + c * 0x10), 0x96);
 		b43_httab_write(dev, B43_HTTAB16(8, 0x0f + c * 0x10), 0);
@@ -1050,14 +1083,22 @@ static int b43_phy_ht_set_channel(struct b43_wldev *dev,
 
 	if (phy->radio_ver == 0x2059) {
 		chent_r2059 = b43_phy_ht_get_channeltab_e_r2059(dev,
-							channel->center_freq);
+				b43_is_40mhz(dev) ? phy->chandef->center_freq1 :
+						    channel->center_freq);
 		if (!chent_r2059)
 			return -ESRCH;
 	} else {
 		return -ESRCH;
 	}
 
-	/* TODO: In case of N-PHY some bandwidth switching goes here */
+	/* The primary channel's sideband at 40 MHz, as the N-PHY rev 7 sets it */
+	if (channel_type == NL80211_CHAN_HT40MINUS) {
+		b43_phy_set(dev, B43_PHY_HT_RXCTL, B43_PHY_HT_RXCTL_BSELU20);
+		b43_phy_set(dev, 0x310, 0x8000);
+	} else if (channel_type == NL80211_CHAN_HT40PLUS) {
+		b43_phy_mask(dev, B43_PHY_HT_RXCTL, ~B43_PHY_HT_RXCTL_BSELU20);
+		b43_phy_mask(dev, 0x310, 0x7fff);
+	}
 
 	if (phy->radio_ver == 0x2059) {
 		b43_radio_2059_channel_setup(dev, chent_r2059);
@@ -1183,13 +1224,13 @@ static int b43_phy_ht_op_init(struct b43_wldev *dev)
 	b43_phy_set(dev, B43_PHY_OFDM(0x044), 0x2000);
 	b43_phy_set(dev, B43_PHY_OFDM(0x084), 0x2000);
 
-	/* Copy some tables entries */
-	tmp = b43_httab_read(dev, B43_HTTAB16(7, 0x144));
-	b43_httab_write(dev, B43_HTTAB16(7, 0x14a), tmp);
-	tmp = b43_httab_read(dev, B43_HTTAB16(7, 0x154));
-	b43_httab_write(dev, B43_HTTAB16(7, 0x15a), tmp);
-	tmp = b43_httab_read(dev, B43_HTTAB16(7, 0x164));
-	b43_httab_write(dev, B43_HTTAB16(7, 0x16a), tmp);
+	/* Copy some tables entries: from 0x144 at 20 MHz, 0x149 at 40, as wl */
+	for (i = 0; i < 3; i++) {
+		u16 src = (b43_is_40mhz(dev) ? 0x149 : 0x144) + i * 0x10;
+
+		tmp = b43_httab_read(dev, B43_HTTAB16(7, src));
+		b43_httab_write(dev, B43_HTTAB16(7, 0x14a + i * 0x10), tmp);
+	}
 
 	/* Reset CCA */
 	b43_phy_force_clock(dev, true);
@@ -1525,8 +1566,9 @@ static void b43_phy_ht_op_adjust_txpower(struct b43_wldev *dev)
  */
 static u16 b43_phy_ht_load_tone(struct b43_wldev *dev, u32 freq, u16 max)
 {
-	u16 len = 20 << 3;
-	s32 rot = (((freq * 36) / 20) << 16) / 100;
+	u16 bw = b43_is_40mhz(dev) ? 40 : 20;
+	u16 len = bw << 3;
+	s32 rot = (((freq * 36) / bw) << 16) / 100;
 	s32 angle = 0;
 	u32 *data;
 	int i;
@@ -1742,7 +1784,7 @@ static void b43_phy_ht_cal_tx_iq_lo(struct b43_wldev *dev)
 			b43_httab_write(dev, B43_HTTAB16(13, 0x40 + c * 8 + i), 0);
 	}
 
-	n = b43_phy_ht_load_tone(dev, 2500, 250);
+	n = b43_phy_ht_load_tone(dev, b43_is_40mhz(dev) ? 5000 : 2500, 250);
 	b43_phy_ht_run_samples(dev, n, 0xffff, 0, true);
 
 	for (i = 0; i < ARRAY_SIZE(b43_phy_ht_txiqlo_cmds); i++) {
@@ -1756,7 +1798,8 @@ static void b43_phy_ht_cal_tx_iq_lo(struct b43_wldev *dev)
 			b43_phy_ht_txcal_ladder(dev, 0x40);
 			laddered[core] = true;
 		}
-		b43_phy_write(dev, B43_PHY_HT_IQLOCAL_CMDNNUM, 0x6876);
+		b43_phy_write(dev, B43_PHY_HT_IQLOCAL_CMDNNUM,
+			      b43_is_40mhz(dev) ? 0x7987 : 0x6876);
 		if (type == 4)
 			b43_httab_write(dev, B43_HTTAB16(13, cb + 3), 0);
 		if (type == 3 || type == 4)
@@ -1978,7 +2021,7 @@ static void b43_phy_ht_rxcal_setup(struct b43_wldev *dev, int core,
 	b43_phy_mask(dev, rf + 0x9, 0xffff);
 	b43_phy_set(dev, rf + 0x9, 0x0400);
 	b43_phy_mask(dev, rf + 0x9, 0xffff);
-	b43_phy_mask(dev, rf + 0x9, 0xffff);
+	b43_phy_maskset(dev, rf + 0x9, ~0x0020, b43_is_40mhz(dev) ? 0x20 : 0);
 	b43_phy_set(dev, rf + 0x2, 0x0020);
 	b43_phy_set(dev, rf + 0x2, 0x0040);
 	b43_phy_set(dev, rf + 0x2, 0x0080);
@@ -2045,6 +2088,7 @@ static void b43_phy_ht_cal_rx_iq(struct b43_wldev *dev)
 {
 	struct b43_phy_ht_rxcal_save sv;
 	struct b43_phy_ht_iq_est est[3];
+	u16 rx_tone = b43_is_40mhz(dev) ? 4000 : 2000;
 	u16 cls, clip[3], comp[6];
 	int core, c, n;
 
@@ -2071,7 +2115,7 @@ static void b43_phy_ht_cal_rx_iq(struct b43_wldev *dev)
 		b43_phy_ht_cal_tx_gain(dev, b43_phy_ht_rxcal_gain[idx][2]);
 
 		while (!done) {
-			n = b43_phy_ht_load_tone(dev, 2000, 181);
+			n = b43_phy_ht_load_tone(dev, rx_tone, 181);
 			b43_phy_ht_run_samples(dev, n, 0xffff, 0, false);
 			b43_phy_ht_rx_iq_est(dev, est, 0x400);
 			pwr = DIV_ROUND_CLOSEST(est[core].i_pwr, 0x400) +
@@ -2111,7 +2155,7 @@ static void b43_phy_ht_cal_rx_iq(struct b43_wldev *dev)
 		b43_phy_ht_rxcal_gain_set(dev, core, optim, max(fine, 0));
 		b43_phy_ht_cal_tx_gain(dev, b43_phy_ht_rxcal_gain[optim][2]);
 
-		n = b43_phy_ht_load_tone(dev, 2000, 181);
+		n = b43_phy_ht_load_tone(dev, rx_tone, 181);
 		b43_phy_ht_run_samples(dev, n, 0xffff, 0, false);
 		for (c = 0; c < 6; c++)
 			comp[c] = b43_phy_read(dev, 0x9a + c);
