@@ -36,9 +36,9 @@ On 2026-11-12, `--min-block 8 --gap-tol 2`:
 
 | capture | PHY+radio, 30 dBm | PHY+radio, `N_MAXPWR=20` |
 |---|---|---|
-| cold-2g1-20 | 21615/30486 = 70.90% | 21785/30316 = 71.86% |
-| cold-2g6-20 | 22781/29323 = 77.69% | 21787/30317 = 71.86% |
-| cold-2g11-20 | 21615/30495 = 70.88% | 21785/30325 = 71.84% |
+| cold-2g1-20 | 21995/30820 = 71.37% | 22165/30650 = 72.32% |
+| cold-2g6-20 | 23497/29321 = 80.14% | 22167/30651 = 72.32% |
+| cold-2g11-20 | 21995/30829 = 71.35% | 22165/30659 = 72.30% |
 
 At 30 dBm the adjusted power table b43 writes (tables 26/27 at 64-147)
 is wl's, and wl rewrites the same table many times, in steps b43 does not

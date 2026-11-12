@@ -5193,6 +5193,15 @@ static int b43_nphy_cal_tx_iq_lo_phases(struct b43_wldev *dev,
 			break;
 	}
 	nphy->mphase_cal_phase_id = 0;
+	/*
+	 * wl wraps two more phases the same way before the RX I/Q
+	 * calibration: the PAPD one, which has nothing to do here, and the
+	 * start of the RX one.
+	 */
+	for (phase = 0; !err && phase < 2; phase++) {
+		b43_nphy_tx_power_ctrl(dev, pctl);
+		b43_nphy_tx_power_ctrl(dev, false);
+	}
 	return err;
 }
 
