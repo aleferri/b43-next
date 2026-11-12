@@ -382,6 +382,66 @@ u8 b43_ppr_load_sprom_r8(struct b43_ppr *ppr, const struct ssbn_sprom *sprom,
 }
 
 /*
+ * Rev 9 and 10 keep the per-core maxima of rev 8 and give each rate its own
+ * offset, a nibble of half dB with the lowest rate in the lowest nibble:
+ * cckbw202gpo for 1-11 Mb/s, legofdmbw20*po for 6-54 Mb/s, mcsbw20*po for
+ * MCS 0-7. No word tells the transmit modes apart, so every MCS mode takes
+ * the MCS offsets, each stream of SDM included, and legacy OFDM over CDD the
+ * legacy ones.
+ */
+u8 b43_ppr_load_sprom_r9(struct b43_ppr *ppr, const struct ssbn_sprom *sprom,
+			 enum b43_band band, u8 coremask)
+{
+	u8 maxp = b43_ppr_sprom_r8_maxpwr(sprom, band, coremask);
+	enum b43_ppr_mode mode;
+	u32 ofdm_po, mcs_po;
+	unsigned int i;
+	u8 *ofdm, *mcs;
+
+	b43_ppr_clear(ppr);
+
+	switch (band) {
+	case B43_BAND_2G:
+		ofdm_po = sprom->legofdmbw202gpo;
+		mcs_po = sprom->mcsbw202gpo;
+		break;
+	case B43_BAND_5G_LO:
+		ofdm_po = sprom->legofdmbw205glpo;
+		mcs_po = sprom->mcsbw205glpo;
+		break;
+	case B43_BAND_5G_MI:
+		ofdm_po = sprom->legofdmbw205gmpo;
+		mcs_po = sprom->mcsbw205gmpo;
+		break;
+	case B43_BAND_5G_HI:
+		ofdm_po = sprom->legofdmbw205ghpo;
+		mcs_po = sprom->mcsbw205ghpo;
+		break;
+	default:
+		WARN_ON_ONCE(1);
+		return 0;
+	}
+
+	if (band == B43_BAND_2G)
+		b43_ppr_load_cck(ppr, maxp, sprom->cckbw202gpo);
+
+	for (mode = B43_PPR_SISO; mode < B43_PPR_OFDM_MODES; mode++) {
+		ofdm = b43_ppr_load_ofdm(ppr, B43_PPR_BW_20, mode);
+		for (i = 0; i < B43_PPR_OFDM_RATES; i++)
+			ofdm[i] = b43_ppr_sub(maxp, b43_ppr_off(ofdm_po, i));
+	}
+
+	ppr->mcs_num = 8;
+	for (mode = B43_PPR_SISO; mode < B43_PPR_MODE_NUM; mode++) {
+		mcs = b43_ppr_load_mcs(ppr, B43_PPR_BW_20, mode);
+		for (i = 0; i < 8; i++)
+			mcs[i] = b43_ppr_sub(maxp, b43_ppr_off(mcs_po, i));
+	}
+
+	return maxp;
+}
+
+/*
  * SROM revision 11, the AC-PHY's. Per-core maxima, maxp2ga on 2.4 GHz and
  * maxp5ga[] over four 5 GHz sub-bands, and power offsets per band, bandwidth
  * and modulation class rather than per rate. Each mcsbw{20,40,80}5g{l,m,h}po

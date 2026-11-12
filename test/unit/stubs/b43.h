@@ -203,6 +203,8 @@ struct ssbn_sprom {
 	u32 ofdm2gpo, ofdm5glpo, ofdm5gpo, ofdm5ghpo;
 	u16 mcs2gpo[8], mcs5glpo[8], mcs5gpo[8], mcs5ghpo[8];
 	u16 cddpo, stbcpo;
+	/* Per-rate offsets of rev 9 and 10 (ppr.c), with mcsbw20* above. */
+	u32 legofdmbw202gpo, legofdmbw205glpo, legofdmbw205gmpo, legofdmbw205ghpo;
 
 	u8 revision;
 	u16 boardflags_lo, boardflags_hi;

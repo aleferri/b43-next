@@ -101,9 +101,11 @@ bool b43_ppr_band(const struct ieee80211_channel *chan, enum b43_band *band);
  * two words of mcs*po, for the LCN-PHY.
  *
  * _r8 reads the per-core maxima of rev 8 to 10, at the lowest over
- * @coremask, and the OFDM and 20 MHz MCS offsets of every mode: the N-PHY
- * and the HT-PHY. @cdd_stbc_po also takes the cddpo and stbcpo nibbles off
- * the CDD and STBC rates.
+ * @coremask, and the OFDM and 20 MHz MCS offsets of every mode of rev 8: the
+ * N-PHY and the HT-PHY. @cdd_stbc_po also takes the cddpo and stbcpo nibbles
+ * off the CDD and STBC rates.
+ *
+ * _r9 reads the same maxima and the per-rate offsets of rev 9 and 10.
  *
  * _r11 is in the comments of ppr.c, by the SROM layout.
  */
@@ -115,6 +117,8 @@ u8 b43_ppr_sprom_r8_maxpwr(const struct ssbn_sprom *sprom, enum b43_band band,
 			   u8 coremask);
 u8 b43_ppr_load_sprom_r8(struct b43_ppr *ppr, const struct ssbn_sprom *sprom,
 			 enum b43_band band, u8 coremask, bool cdd_stbc_po);
+u8 b43_ppr_load_sprom_r9(struct b43_ppr *ppr, const struct ssbn_sprom *sprom,
+			 enum b43_band band, u8 coremask);
 
 unsigned int b43_ppr_sprom_r11_subband(u16 chan, enum nl80211_chan_width width);
 bool b43_ppr_sprom_r11_has_subband_po(const struct ssbn_sprom *sprom);
