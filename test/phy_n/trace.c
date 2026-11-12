@@ -92,6 +92,19 @@ static void tbl_after(struct tbl_port *t, unsigned int a, unsigned int v,
 }
 /* Radio accesses through the registers of core revs before 24 */
 static int old_radio;
+
+/*
+ * Peek mode (the driver's calibration report): reads are served from the
+ * mirror of the driver's writes without consuming the capture's reads, and
+ * nothing is emitted, so the report changes neither the stream nor the
+ * read oracle.
+ */
+static int peek;
+static struct {
+	unsigned int phy_addr, radio_addr;
+	char phy_last;
+	unsigned int tbl_id, tbl_off;
+} peek_save;
 static char phy_last;
 
 static struct queue *queue(const char *key, int create)
@@ -146,6 +159,13 @@ static unsigned int serve(const char *key)
 	struct queue *q = queue(key, 0);
 	int i;
 
+	if (peek) {
+		for (i = 0; i < ncells; i++)
+			if (!strcmp(cells[i].key, key))
+				return cells[i].val;
+		return 0;
+	}
+
 	if (q && q->pos < q->n)
 		return q->vals[q->pos++];
 	exhausted++;
@@ -160,6 +180,8 @@ static unsigned int serve(const char *key)
 static void emit(const char *fmt, const char *cls, unsigned int a,
 		 unsigned int v)
 {
+	if (peek)
+		return;
 	if (nout < MAX_OPS)
 		snprintf(out[nout++].text, LINE, fmt, cls, a, v);
 }
@@ -170,6 +192,8 @@ static void emit(const char *fmt, const char *cls, unsigned int a,
  */
 static void phy_data(const char *cls, int wide, unsigned int v)
 {
+	if (peek)
+		return;
 	if (nout >= MAX_OPS)
 		return;
 	if (wide)
@@ -264,7 +288,9 @@ void n_mmio_write32(unsigned short offset, unsigned int value)
 {
 	char key[24];
 
-	if (offset == 0x120 && nout < MAX_OPS)
+	if (peek)
+		;
+	else if (offset == 0x120 && nout < MAX_OPS)
 		snprintf(out[nout++].text, LINE, "MAC.MCTRL val=0x%08x", value);
 	else if (offset != 0x120)
 		emit("%s off=0x%04x val=0x%08x", "REG.WR", offset, value);
@@ -361,6 +387,24 @@ void n_marker(void *fn, int leave)
 		if (syms[i].addr == (unsigned long)fn)
 			name = syms[i].name;
 	snprintf(out[nout++].text, LINE, "----%sFN:%s----", leave ? "/" : "", name);
+}
+
+void n_peek(int on)
+{
+	if (on) {
+		peek_save.phy_addr = phy_addr;
+		peek_save.radio_addr = radio_addr;
+		peek_save.phy_last = phy_last;
+		peek_save.tbl_id = b43_tbl.id;
+		peek_save.tbl_off = b43_tbl.off;
+	} else {
+		phy_addr = peek_save.phy_addr;
+		radio_addr = peek_save.radio_addr;
+		phy_last = peek_save.phy_last;
+		b43_tbl.id = peek_save.tbl_id;
+		b43_tbl.off = peek_save.tbl_off;
+	}
+	peek = on;
 }
 
 void n_log(const char *what)
