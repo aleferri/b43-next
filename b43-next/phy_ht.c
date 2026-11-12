@@ -714,7 +714,7 @@ static void b43_phy_ht_tx_power_ctl_setup(struct b43_wldev *dev)
 
 	for (c = 0; c < 3; c++) {
 		s32 num, den, pwr;
-		u32 regval[64];
+		u8 regval[64];
 
 		for (i = 0; i < 64; i++) {
 			num = 8 * (16 * b0[c] + b1[c] * i);
@@ -722,7 +722,7 @@ static void b43_phy_ht_tx_power_ctl_setup(struct b43_wldev *dev)
 			pwr = max((4 * num + den / 2) / den, -8);
 			regval[i] = pwr;
 		}
-		b43_httab_write_bulk(dev, B43_HTTAB16(26 + c, 0), 64, regval);
+		b43_httab_write_bulk(dev, B43_HTTAB8(26 + c, 0), 64, regval);
 	}
 }
 
