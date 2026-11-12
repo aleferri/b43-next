@@ -320,6 +320,14 @@ static void b43_phy_ht_read_clip_detection(struct b43_wldev *dev, u16 *clip_st)
 	clip_st[2] = b43_phy_read(dev, B43_PHY_HT_C3_CLIP1THRES);
 }
 
+static void b43_phy_ht_write_clip_detection(struct b43_wldev *dev,
+					    const u16 *clip_st)
+{
+	b43_phy_write(dev, B43_PHY_HT_C1_CLIP1THRES, clip_st[0]);
+	b43_phy_write(dev, B43_PHY_HT_C2_CLIP1THRES, clip_st[1]);
+	b43_phy_write(dev, B43_PHY_HT_C3_CLIP1THRES, clip_st[2]);
+}
+
 static void b43_phy_ht_bphy_init(struct b43_wldev *dev)
 {
 	unsigned int i;
@@ -387,32 +395,25 @@ static void b43_phy_ht_stop_playback(struct b43_wldev *dev)
 	}
 }
 
-static u16 b43_phy_ht_load_samples(struct b43_wldev *dev)
+static void b43_phy_ht_save_bb_mult(struct b43_wldev *dev)
 {
+	struct b43_phy_ht *phy_ht = dev->phy.ht;
 	int i;
-	u16 len = 20 << 3;
 
-	b43_phy_write(dev, B43_PHY_HT_TABLE_ADDR, 0x4400);
-
-	for (i = 0; i < len; i++) {
-		b43_phy_write(dev, B43_PHY_HT_TABLE_DATAHI, 0);
-		b43_phy_write(dev, B43_PHY_HT_TABLE_DATALO, 0);
-	}
-
-	return len;
+	for (i = 0; i < 3; i++)
+		if (phy_ht->bb_mult_save[i] < 0)
+			phy_ht->bb_mult_save[i] =
+				b43_httab_read(dev, B43_HTTAB16(13, 0x63 + i * 4));
 }
 
 static void b43_phy_ht_run_samples(struct b43_wldev *dev, u16 samps, u16 loops,
 				   u16 wait)
 {
-	struct b43_phy_ht *phy_ht = dev->phy.ht;
 	u16 save_seq_mode;
 	int i;
 
-	for (i = 0; i < 3; i++) {
-		if (phy_ht->bb_mult_save[i] < 0)
-			phy_ht->bb_mult_save[i] = b43_httab_read(dev, B43_HTTAB16(13, 0x63 + i * 4));
-	}
+	b43_phy_ht_save_bb_mult(dev);
+	b43_phy_ht_reset_cca(dev);
 
 	b43_phy_write(dev, B43_PHY_HT_SAMP_DEP_CNT, samps - 1);
 	if (loops != 0xFFFF)
@@ -441,14 +442,6 @@ static void b43_phy_ht_run_samples(struct b43_wldev *dev, u16 samps, u16 loops,
 		b43err(dev->wl, "run samples timeout\n");
 
 	b43_phy_write(dev, B43_PHY_HT_RF_SEQ_MODE, save_seq_mode);
-}
-
-static void b43_phy_ht_tx_tone(struct b43_wldev *dev)
-{
-	u16 samp;
-
-	samp = b43_phy_ht_load_samples(dev);
-	b43_phy_ht_run_samples(dev, samp, 0xFFFF, 0);
 }
 
 /**************************************************
@@ -609,6 +602,9 @@ static void b43_phy_ht_tx_power_ctl_idle_tssi(struct b43_wldev *dev)
 	struct b43_phy_ht *phy_ht = dev->phy.ht;
 	static const u16 base[] = { 0x840, 0x860, 0x880 };
 	u16 save_regs[3][3];
+	u16 clip_state[3];
+	static const u16 clip_off[3] = { 0xffff, 0xffff, 0xffff };
+	u16 class;
 	s32 rssi_buf[6];
 	int core;
 
@@ -624,9 +620,26 @@ static void b43_phy_ht_tx_power_ctl_idle_tssi(struct b43_wldev *dev)
 		b43_phy_set(dev, base[core] + 0, 0x1000);
 	}
 
-	b43_phy_ht_tx_tone(dev);
+	/* A silent tone: the baseband multipliers at 0 */
+	b43_phy_ht_save_bb_mult(dev);
+	for (core = 0; core < 3; core++) {
+		b43_httab_write(dev, B43_HTTAB16(13, 0x63 + core * 4), 0);
+		b43_httab_write(dev, B43_HTTAB16(13, 0x73 + core * 4), 0);
+	}
+	class = b43_phy_ht_classifier(dev, 0, 0);
+	b43_phy_ht_classifier(dev, B43_PHY_HT_CLASS_CTL_CCK_EN |
+				   B43_PHY_HT_CLASS_CTL_OFDM_EN, 0);
+	b43_phy_ht_read_clip_detection(dev, clip_state);
+	b43_phy_ht_write_clip_detection(dev, clip_off);
+
+	b43_phy_ht_run_samples(dev, 1, 0xFFFF, 0);
+
+	b43_phy_ht_classifier(dev, B43_PHY_HT_CLASS_CTL_CCK_EN |
+				   B43_PHY_HT_CLASS_CTL_OFDM_EN, class);
+	b43_phy_ht_write_clip_detection(dev, clip_state);
+
 	udelay(20);
-	b43_phy_ht_poll_rssi(dev, HT_RSSI_TSSI_2G, rssi_buf, 1);
+	b43_phy_ht_poll_rssi(dev, HT_RSSI_TSSI_2G, rssi_buf, 8);
 	b43_phy_ht_stop_playback(dev);
 	b43_phy_ht_reset_cca(dev);
 
@@ -738,7 +751,7 @@ static void b43_phy_ht_tx_power_ctl_setup(struct b43_wldev *dev)
 			idle[2] << B43_PHY_HT_TXPCTL_IDLE_TSSI2_C3_SHIFT);
 
 	b43_phy_maskset(dev, B43_PHY_HT_TXPCTL_N, ~B43_PHY_HT_TXPCTL_N_TSSID,
-			0xf0);
+			phy_ht->tssi_delay);
 	b43_phy_maskset(dev, B43_PHY_HT_TXPCTL_N, ~B43_PHY_HT_TXPCTL_N_NPTIL2,
 			0x3 << B43_PHY_HT_TXPCTL_N_NPTIL2_SHIFT);
 #if 0
@@ -917,6 +930,7 @@ static int b43_phy_ht_op_init(struct b43_wldev *dev)
 	u16 tmp;
 	u16 clip_state[3];
 	bool saved_tx_pwr_ctl;
+	int i;
 
 	if (dev->dev->bus_type != B43_BUS_BCMA) {
 		b43err(dev->wl, "HT-PHY is supported only on BCMA bus!\n");
@@ -975,16 +989,18 @@ static int b43_phy_ht_op_init(struct b43_wldev *dev)
 	b43_httab_write(dev, B43_HTTAB16(8, 0x10), 0x02);
 	b43_httab_write(dev, B43_HTTAB16(8, 0x20), 0x02);
 
-	b43_httab_write_few(dev, B43_HTTAB16(8, 0x08), 4,
-			    0x8e, 0x96, 0x96, 0x96);
-	b43_httab_write_few(dev, B43_HTTAB16(8, 0x18), 4,
-			    0x8f, 0x9f, 0x9f, 0x9f);
-	b43_httab_write_few(dev, B43_HTTAB16(8, 0x28), 4,
-			    0x8f, 0x9f, 0x9f, 0x9f);
+	b43_httab_write_few(dev, B43_HTTAB16(8, 0x08), 3, 0x8e, 0x96, 0x96);
+	b43_httab_write_few(dev, B43_HTTAB16(8, 0x18), 3, 0x8f, 0x9f, 0x9f);
+	b43_httab_write_few(dev, B43_HTTAB16(8, 0x28), 3, 0x8f, 0x9f, 0x9f);
 
-	b43_httab_write_few(dev, B43_HTTAB16(8, 0x0c), 4, 0x2, 0x2, 0x2, 0x2);
-	b43_httab_write_few(dev, B43_HTTAB16(8, 0x1c), 4, 0x2, 0x2, 0x2, 0x2);
-	b43_httab_write_few(dev, B43_HTTAB16(8, 0x2c), 4, 0x2, 0x2, 0x2, 0x2);
+	b43_httab_write_few(dev, B43_HTTAB16(8, 0x0c), 3, 0x2, 0x2, 0x2);
+	b43_httab_write_few(dev, B43_HTTAB16(8, 0x1c), 3, 0x2, 0x2, 0x2);
+	b43_httab_write_few(dev, B43_HTTAB16(8, 0x2c), 3, 0x2, 0x2, 0x2);
+
+	for (i = 0; i < 3; i++) {
+		b43_httab_write(dev, B43_HTTAB16(8, 0x0b + i * 0x10), 0x96);
+		b43_httab_write(dev, B43_HTTAB16(8, 0x0f + i * 0x10), 0);
+	}
 
 	b43_phy_maskset(dev, 0x0280, 0xff00, 0x3e);
 	b43_phy_maskset(dev, 0x0283, 0xff00, 0x3e);
