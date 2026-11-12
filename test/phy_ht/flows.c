@@ -161,6 +161,7 @@ int ht_run_flow(const char *name)
 		phy_ht.rccal[2] = ht_env("HT_RCCAL2", 0);
 		phy_ht.t25_off = ht_env("HT_T25", 0);
 		phy_ht.t25_set = true;
+		phy_ht.wd_ticks = ht_env("HT_WD_TICK0", 0);
 		b43_phy_init(dev);
 		b43_phy_ht_op_channel_calibrate(dev);
 		run_turns(dev);
