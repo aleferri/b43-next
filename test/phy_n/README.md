@@ -36,9 +36,9 @@ On 2026-11-12, `--min-block 8 --gap-tol 2`:
 
 | capture | PHY+radio, 30 dBm | PHY+radio, `N_MAXPWR=20` |
 |---|---|---|
-| cold-2g1-20 | 20871/30304 = 68.87% | 21041/30134 = 69.82% |
-| cold-2g6-20 | 21869/29309 = 74.62% | 21043/30135 = 69.83% |
-| cold-2g11-20 | 20871/30313 = 68.85% | 21041/30143 = 69.80% |
+| cold-2g1-20 | 21615/30486 = 70.90% | 21785/30316 = 71.86% |
+| cold-2g6-20 | 22781/29323 = 77.69% | 21787/30317 = 71.86% |
+| cold-2g11-20 | 21615/30495 = 70.88% | 21785/30325 = 71.84% |
 
 At 30 dBm the adjusted power table b43 writes (tables 26/27 at 64-147)
 is wl's, and wl rewrites the same table many times, in steps b43 does not
@@ -51,7 +51,7 @@ What is left is mapped in `../../docs/n-retrace-todo.md`.
 
 Every run prints, on stderr:
 
-- **reads past the window**: 58 on every capture, all of them reads b43
+- **reads past the window**: 60 on every capture, all of them reads b43
   makes and wl does not, in this window: table 15 at 0x50-0x57, which
   b43_nphy_tx_power_ctrl() reads again each time it turns the control on,
   between the TX I/Q-LO phases and after the calibration (wl reads them
