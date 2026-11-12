@@ -153,7 +153,8 @@ int ht_run_flow(const char *name)
 		 * What wl runs when beaconing starts, and b43 on a retune: the
 		 * PHY init on a PHY initialised once, and channel_calibrate.
 		 * What the up left, the RC calibration's results and the table
-		 * 0x25 pair, is given from the capture's up.
+		 * 0x25 pair, is given from the capture's up; the TX power target
+		 * is computed again.
 		 */
 		dev->phy.do_full_init = false;
 		phy_ht.rccal[0] = ht_env("HT_RCCAL0", 0);
@@ -162,13 +163,25 @@ int ht_run_flow(const char *name)
 		phy_ht.t25_off = ht_env("HT_T25", 0);
 		phy_ht.t25_set = true;
 		phy_ht.wd_ticks = ht_env("HT_WD_TICK0", 0);
+		/* The target the up computed */
+		b43_phy_ht_op_recalc_txpower(dev, true);
 		b43_phy_init(dev);
 		b43_phy_ht_op_channel_calibrate(dev);
 		run_turns(dev);
 	} else if (!strcmp(name, "pctl_init")) {
-		/* The TX power control at the end of b43_phy_ht_op_init() */
+		/*
+		 * The TX power control at the end of b43_phy_ht_op_init(); on
+		 * a later init (HT_LATER) with the target of the configuration
+		 * before (HT_PREV_CHANNEL).
+		 */
 		bool saved = phy_ht.tx_pwr_ctl;
 
+		if (ht_env("HT_LATER", 0)) {
+			/* The target the previous configuration left */
+			chan.hw_value = ht_env("HT_PREV_CHANNEL", chan.hw_value);
+			b43_phy_ht_op_recalc_txpower(dev, true);
+			chan.hw_value = ht_env("HT_CHANNEL", 6);
+		}
 		b43_phy_ht_tx_power_fix(dev);
 		b43_phy_ht_tx_power_ctl(dev, false);
 		b43_phy_ht_tx_power_ctl_idle_tssi(dev);

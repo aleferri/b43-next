@@ -34,7 +34,18 @@ for f in "$BOARD"/traces/mmio-*/*-ops.txt.gz; do
 	zcat "$f" > "$ops"
 	windows "$ops" | while read -r first last mark; do
 		printf '%-18s %-14s ' "$(basename "$ops" -ops.txt)" "$mark"
-		./ht-trace pctl_init "$ops" "$first" "$last" "$@" || echo FAIL > "$T/failed"
+		# A later init starts from the target the configuration before left;
+		later=1; [ "$mark" = "'up'" ] && later=0
+		ch=$(echo "$(basename "$ops")$mark" |
+			sed -n "s/^cold-2g\([0-9]*\).*/\1/p; s/^hot.*ssid-\([0-9]*\).*/\1/p")
+		# the hot cycle comes from the channel before, ch 6 before the first
+		prev=$ch
+		case $(echo "$mark" | tr -d "'") in
+		ssid-1|ssid-1[lu]) prev=6 ;;
+		ssid-*) prev=$((ch - 1)) ;;
+		esac
+		HT_LATER=$later HT_CHANNEL=$ch HT_PREV_CHANNEL=$prev \
+			./ht-trace pctl_init "$ops" "$first" "$last" "$@" || echo FAIL > "$T/failed"
 	done
 	rm -f "$ops"
 done
