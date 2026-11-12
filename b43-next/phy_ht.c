@@ -677,27 +677,6 @@ static void b43_phy_ht_tssi_setup(struct b43_wldev *dev)
 	}
 }
 
-/* The TX power control's target of each core from the SROM, in qdBm */
-static void b43_phy_ht_sprom_target(struct b43_wldev *dev, u8 *target)
-{
-	struct ssbn_sprom *sprom = dev->dev->bus_sprom;
-	u16 freq = dev->phy.chandef->chan->center_freq;
-	int c;
-
-	for (c = 0; c < 3; c++) {
-		if (b43_current_band(dev->wl) == NL80211_BAND_2GHZ)
-			target[c] = sprom->core_pwr_info[c].maxpwr_2g;
-		else if (freq >= 4900 && freq < 5100)
-			target[c] = sprom->core_pwr_info[c].maxpwr_5gl;
-		else if (freq >= 5100 && freq < 5500)
-			target[c] = sprom->core_pwr_info[c].maxpwr_5g;
-		else if (freq >= 5500)
-			target[c] = sprom->core_pwr_info[c].maxpwr_5gh;
-		else
-			target[c] = 52;
-	}
-}
-
 static void b43_phy_ht_tx_power_ctl_setup(struct b43_wldev *dev)
 {
 	struct b43_phy_ht *phy_ht = dev->phy.ht;
@@ -740,10 +719,9 @@ static void b43_phy_ht_tx_power_ctl_setup(struct b43_wldev *dev)
 		b1[0] = b1[1] = b1[2] = -1393;
 	}
 
-	b43_phy_ht_sprom_target(dev, target);
+	/* Until the first recalculation, the chain's floor, as wl */
 	for (c = 0; c < 3; c++)
-		if (phy_ht->tx_pwr_target[c])
-			target[c] = phy_ht->tx_pwr_target[c];
+		target[c] = phy_ht->tx_pwr_target[c] ?: INT_TO_Q52(8);
 
 	b43_phy_set(dev, B43_PHY_HT_TSSIMODE, B43_PHY_HT_TSSIMODE_EN);
 	b43_phy_mask(dev, B43_PHY_HT_TXPCTL_CMD_C1,
@@ -1367,28 +1345,43 @@ static void b43_phy_ht_op_radio_write(struct b43_wldev *dev, u16 reg,
 }
 
 /*
- * The target of each core: its SROM maximum for the band, capped by the
- * regulatory and the user's limit.
+ * The target, the same for every core: brcmsmac's chain, as for the N-PHY
+ * and the AC. The SROM's power per rate, capped by the regulatory limit
+ * less the antenna gain and by the user's, less brcmsmac's 6 qdBm of
+ * hardware gain, at least 8 dBm, the highest rate's. On the R6400 that is
+ * 0x60 - 6 = 0x5a at 20 MHz, wl's value.
  */
 static enum b43_txpwr_result
 b43_phy_ht_op_recalc_txpower(struct b43_wldev *dev, bool ignore_tssi)
 {
 	struct b43_phy *phy = &dev->phy;
 	struct b43_phy_ht *phy_ht = phy->ht;
-	u8 target[3], cap = 0xff;
+	const struct ssbn_sprom *sprom = dev->dev->bus_sprom;
+	struct ieee80211_channel *chan = phy->chandef->chan;
+	struct b43_ppr *ppr = &phy_ht->tx_pwr_ppr;
+	enum b43_band band;
+	u8 target;
 	int c;
 
-	if (phy->chandef->chan->max_power)
-		cap = min_t(int, cap, phy->chandef->chan->max_power * 4);
-	if (phy->desired_txpower)
-		cap = min_t(int, cap, phy->desired_txpower * 4);
-
-	b43_phy_ht_sprom_target(dev, target);
-	for (c = 0; c < 3; c++)
-		target[c] = min(target[c], cap);
-	if (!memcmp(target, phy_ht->tx_pwr_target, sizeof(target)))
+	if (!b43_ppr_band(chan, &band))
 		return B43_TXPWR_RES_DONE;
-	memcpy(phy_ht->tx_pwr_target, target, sizeof(target));
+	if (sprom->revision >= 9)
+		b43_ppr_load_sprom_r9(ppr, sprom, band, 0x7);
+	else
+		b43_ppr_load_sprom_r8(ppr, sprom, band, 0x7, true);
+	if (chan->max_power)
+		b43_ppr_apply_max(ppr, max_t(int, INT_TO_Q52(chan->max_power) -
+					     sprom->antenna_gain.a0, 0));
+	if (phy->desired_txpower)
+		b43_ppr_apply_max(ppr, INT_TO_Q52(phy->desired_txpower));
+	b43_ppr_add(ppr, -6);
+	b43_ppr_apply_min(ppr, INT_TO_Q52(8));
+	target = b43_ppr_get_max(ppr);
+
+	if (phy_ht->tx_pwr_target[0] == target)
+		return B43_TXPWR_RES_DONE;
+	for (c = 0; c < 3; c++)
+		phy_ht->tx_pwr_target[c] = target;
 	return B43_TXPWR_RES_NEED_ADJUST;
 }
 

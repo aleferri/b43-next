@@ -3,6 +3,7 @@
 #define B43_PHY_HT_H_
 
 #include "phy_common.h"
+#include "ppr.h"
 
 
 #define B43_PHY_HT_BBCFG			0x001 /* BB config */
@@ -137,6 +138,7 @@ struct b43_phy_ht {
 	bool tx_pwr_ctl;
 	u8 tx_pwr_idx[3];
 	u8 tx_pwr_target[3];
+	struct b43_ppr tx_pwr_ppr;
 
 	s32 bb_mult_save[3];
 
