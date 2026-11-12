@@ -3,12 +3,12 @@
 The gate is `test/phy_n/gates.sh --min-block 8 --gap-tol 2`, against the
 RT-AC56U's cold captures (BCM43217, N-PHY rev 17, radio 2057 rev 14,
 external PA and LNA; wl 7.14.164.18 under DD-WRT r66477). Numbers here are
-from `cold-2g6-20`, window #189-#31089, main c702e11.
+from `cold-2g6-20`, window #189-#31089.
 
 ## Where the operations are
 
 `up` is 30901 of wl's operations, of which 27188 are the PHY's and the
-radio's; b43's `full` flow makes 6985 PHY and radio operations. `ssid`
+radio's; b43's `full` flow makes 7517 PHY and radio operations. `ssid`
 (#31090-#73468, about 42k) and `bss-up` are what wl does when the BSS
 starts; b43's N-PHY has no `bss_start` op, and they are not scored yet.
 
@@ -24,18 +24,17 @@ In wl's order:
 | 37 against 5 | #3349 | table 7 0x152-... (0x2b48, 0x3389, ...) | 0x32f | table 7 entries b43 does not write |
 | 313 | #3450 | 0x0c75 = 1, then 0x021/0x2a8 polled, gain tables 0-3, 7, 8 | - | an RX gain block (inference: AGC/clip setup) |
 | 18 | #4007 | `AFECTL_OVER1` 0x08f read-back, 0x0aa, table 7 0x110, table 15 0x57 | - | |
-| 514 | #4933 | tables 26 and 27 at 192, 128 32-bit cells each | - | **the TX gain table**: b43 has none for rev 17 with an external PA ("No 2GHz EPA gain table available") |
 | 158 against 58 | #8020 | 0x020/0x2a7, 0x021/0x2a8, 0x280 reads | radio 0x16 ... | |
 | 360 | #9871 | tables 26/27 at 64-147 | - | the adjusted power table, written again |
 | 2598 | #10628 | `TXPCTL_CMD` 0x1e7, `RSSI1`/`RSSI2` 0x219/0x21a, five tone loads in table 17, tables 26/27 at 64-147 | - | the TX power control's TSSI measurement (inference) |
-| 1072 against 1 | #13518 | `IQLOCAL_CMD` 0x0c0 polled, table 15, table 17 | - | the first TX I/Q-LO calibration pass |
-| 15125 | #14630 | `C1_TXPCTL_STAT` 0x1ed, `IQLOCAL_CMD` 0x0c0 (1078 reads), `IQEST_CMD` 0x129 (171 reads), table 15 (388 writes), table 17 (eight tone loads), tables 26/27 0x040-0x23f (2944 writes each) | - | **the TX I/Q-LO and RX I/Q calibrations** |
+| 16202 against 6 | #13518 | `IQLOCAL_CMD` 0x0c0 polled, table 15, table 17, then | - | the first TX I/Q-LO calibration pass, and |
+| (of which 15125) | #14630 | `C1_TXPCTL_STAT` 0x1ed, `IQLOCAL_CMD` 0x0c0 (1078 reads), `IQEST_CMD` 0x129 (171 reads), table 15 (388 writes), table 17 (eight tone loads), tables 26/27 0x040-0x23f (2944 writes each) | - | **the TX I/Q-LO and RX I/Q calibrations** |
 
 Before #4933 and between the gaps, b43's operations are wl's in the same
 order: the radio 2057 init and channel tune (radio writes 0x082, 0x0c4,
 0x149, 0x1b7 and 0x1c2 apart, and 0x047/0x0e3 written with other values),
-most of the PHY init and the tables' static contents. The equal blocks
-hold 6496 operations.
+most of the PHY init, the tables' static contents and the TX gain table
+(tables 26 and 27 at 192, #4933). The equal blocks hold 7035 operations.
 
 ## Why b43 does not calibrate
 
@@ -66,13 +65,17 @@ with arg 3, at the end of the init) and the TX gain table they start from.
   and `ssid`. b43 does not set them; they are outside this harness, which
   compiles no bcma.
 
+## Done
+
+- The 2.4 GHz EPA TX gain table of radio 2057 rev 14: wl's 128 cells at
+  tables 26 and 27, 192, are the same on ch 1-11 at 20 and 40 MHz, at `up`
+  and at `ssid`, on both cores, and in all eleven cycles of the hot sweep.
+  PHY+radio 23.47% -> 25.42%.
+
 ## Next
 
-1. The TX gain table for N-PHY rev 17 with an external PA, from the 514
-   operations at #4933: 128 cells per core, the same on all three channels
-   (to check on the hot sweeps).
-2. The calibrations' place and contents (#10628-#31089).
-3. The small blocks: CRS (#952), TX filter (#3202), table 7 (#3349), the RX
+1. The calibrations' place and contents (#10628-#31089).
+2. The small blocks: CRS (#952), TX filter (#3202), table 7 (#3349), the RX
    gain block (#3450).
-4. A `bss_start` flow against `ssid`, as `test/phy_ht` has.
-5. The 40 MHz captures (`cold-2g6l-40`, ...), once the flow sets the width.
+3. A `bss_start` flow against `ssid`, as `test/phy_ht` has.
+4. The 40 MHz captures (`cold-2g6l-40`, ...), once the flow sets the width.

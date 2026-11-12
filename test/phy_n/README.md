@@ -30,13 +30,13 @@ parameters. The second row compares the PHY's and radio's operations only:
 the core's MMIO, shared memory and wrapper accesses are outside a harness
 that compiles no core, and its calls into the core are counted on stderr.
 
-On 2026-11-12, main c702e11, `--min-block 8 --gap-tol 2`:
+On 2026-11-12, `--min-block 8 --gap-tol 2`:
 
 | capture | grezzo | PHY+radio |
 |---|---|---|
-| cold-2g1-20 | 6478/31969 = 20.26% | 6495/27677 = 23.47% |
-| cold-2g6-20 | 6479/31432 = 20.61% | 6496/27677 = 23.47% |
-| cold-2g11-20 | 6477/31398 = 20.63% | 6494/27684 = 23.46% |
+| cold-2g1-20 | 7017/31962 = 21.95% | 7034/27670 = 25.42% |
+| cold-2g6-20 | 7018/31425 = 22.33% | 7035/27670 = 25.42% |
+| cold-2g11-20 | 7016/31391 = 22.35% | 7033/27677 = 25.41% |
 
 What is left is mapped in `../../docs/n-retrace-todo.md`.
 
@@ -51,8 +51,8 @@ Every run prints, on stderr:
   through the registers of core revs before 24; wl, on this core rev 30,
   through 0x3d8/0x3da. The harness prints both as `RAD.*`, so the stream
   compares the radio registers; the count says how many go the other way.
-- **b43 messages**: "No 2GHz EPA gain table available for this device",
-  twice: b43 has no TX gain table for an N-PHY rev 17 with an external PA.
+- **b43 messages**: none. Before the 2.4 GHz EPA TX gain table of radio
+  2057 rev 14, "No 2GHz EPA gain table available for this device", twice.
 
 ## How the harness differs from ../phy_ht
 
