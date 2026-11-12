@@ -36,9 +36,17 @@ On 2026-11-12, `--min-block 8 --gap-tol 2`:
 
 | capture | grezzo | PHY+radio |
 |---|---|---|
-| cold-2g1-20 | 17382/33506 = 51.88% | 17408/29193 = 59.63% |
-| cold-2g6-20 | 17372/32977 = 52.68% | 17398/29201 = 59.58% |
-| cold-2g11-20 | 17374/32942 = 52.74% | 17400/29207 = 59.57% |
+| cold-2g1-20 | | 16245/30356 = 53.51% |
+| cold-2g6-20 | | 16400/30199 = 54.31% |
+| cold-2g11-20 | | 16237/30370 = 53.46% |
+
+These are lower than before the per-rate back-off (59.58% on ch 6)
+although b43's operations are the same and the adjusted power table it
+writes (tables 26/27 at 64-147) now equals wl's in every write: wl writes
+that table many times in calibration steps b43 does not have, and with
+equal contents the alignment pairs b43's writes with later ones of wl's.
+The trace with the table values of a run at 20 dBm, which are zeros,
+scores 59.58%. Read the score of this window with that in mind.
 
 What is left is mapped in `../../docs/n-retrace-todo.md`.
 

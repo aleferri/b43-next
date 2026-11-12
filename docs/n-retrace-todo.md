@@ -172,13 +172,10 @@ with arg 3, at the end of the init) and the TX gain table they start from.
 
 ## Next
 
-1. neheb's 822 (back off each rate from the highest target in the
-   adjusted power table), adapted to b43-next's per-rate power: the
-   table then matches wl's in 77 of its 84 entries; wl's CDD column on
-   MCS 0-7 at 20 MHz is that of MCS i-1 (one board, so not certain).
-   With it test/phy_n falls from 59.58% to 54.22% at 30 dBm: the
-   calibration takes another path (#10036 on). Find which read of the
-   power index or of the tables makes b43 take it.
+1. Done: neheb's 822 (576a172) and the CDD shift (b1a6748): the adjusted
+   power table is wl's in all 84 entries of every write. The gate falls
+   (59.58% -> 54.31%) by alignment, see test/phy_n/README.md; a gate
+   that pairs repeated table writes by position would show it.
 2. neheb's 823 (keep the TX power control from drifting: main.c and
    phy_n.c) and 840 (HT20 for N-PHY: core and DMA, which b43-next
    reworked).
