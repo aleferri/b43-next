@@ -952,6 +952,9 @@ struct b43_phy_n {
 	bool band5g_pwrgain;
 	bool use_int_tx_iq_lo_cal;
 	bool lpf_bw_overrode_for_sample_play;
+	/* The init calibration runs in the first recalc_txpower (radio 2057
+	 * rev 14, external PA), where wl runs it */
+	bool init_cal_pending;
 
 	u8 mphase_cal_phase_id;
 	u16 mphase_txcal_cmdidx;

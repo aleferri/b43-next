@@ -5031,6 +5031,11 @@ static u16 b43_nphy_precal_txgain_2057_rev14_epa(struct b43_wldev *dev)
 	u8 pad[2], tried, core, step, pick = 24;
 	u32 tmp;
 
+	b43_phy_mask(dev, B43_NPHY_TXPCTL_CMD,
+		     (u16)~(B43_NPHY_TXPCTL_CMD_COEFF |
+			    B43_NPHY_TXPCTL_CMD_HWPCTLEN |
+			    B43_NPHY_TXPCTL_CMD_PCTLEN));
+
 	/* The idle TSSI, with no tone and no gain forced */
 	b43_nphy_rf_ctl_override_rev7(dev, 0x1000, 0, 3, false, 0);
 	b43_nphy_stop_playback(dev);
@@ -5079,6 +5084,36 @@ static u16 b43_nphy_precal_txgain_2057_rev14_epa(struct b43_wldev *dev)
 	b43_ntab_write(dev, B43_NTAB16(15, 87), m0m1);
 	b43_ntab_write(dev, B43_NTAB16(15, 95), m0m1);
 	return B43_NPHY_PRECAL_GAIN(pick);
+}
+
+static int b43_nphy_cal_tx_iq_lo(struct b43_wldev *dev,
+				 struct nphy_txgains target,
+				 bool full, bool mphase);
+static int b43_nphy_cal_rx_iq(struct b43_wldev *dev,
+			      struct nphy_txgains target, u8 type, bool debug);
+static void b43_nphy_save_cal(struct b43_wldev *dev);
+static void b43_nphy_tx_pwr_ctrl_coef_setup(struct b43_wldev *dev);
+
+/* The TX I/Q-LO and RX I/Q calibrations at the pre-calibration's gain, the
+ * save and the TX power control coefficients, as wl's periodic calibration
+ * (brcmsmac's wlc_phy_cal_perical_nphy_run()) */
+static void b43_nphy_init_cal_2057_rev14_epa(struct b43_wldev *dev, u16 g)
+{
+	struct nphy_txgains target = { };
+	int c;
+
+	for (c = 0; c < 2; c++) {
+		target.ipa[c] = g & 0x0007;
+		target.pad[c] = (g & 0x00F8) >> 3;
+		target.pga[c] = (g & 0x0F00) >> 8;
+		target.txgm[c] = (g & 0x7000) >> 12;
+		target.tx_lpf[c] = (g & 0x8000) >> 15;
+	}
+	if (!b43_nphy_cal_tx_iq_lo(dev, target, true, false) &&
+	    b43_nphy_cal_rx_iq(dev, target, 2, 0) == 0) {
+		b43_nphy_save_cal(dev);
+		b43_nphy_tx_pwr_ctrl_coef_setup(dev);
+	}
 }
 
 /* https://bcm-v4.sipsolutions.net/802.11/PHY/N/GetTxGain */
@@ -7121,6 +7156,7 @@ static enum b43_txpwr_result b43_nphy_op_recalc_txpower(struct b43_wldev *dev,
 	const struct ssbn_sprom *sprom = dev->dev->bus_sprom;
 	struct b43_ppr *ppr = &nphy->tx_pwr_max_ppr;
 	u8 max; /* qdBm */
+	u16 cal_gain = 0;
 
 	if (nphy->tx_pwr_last_recalc_freq == channel->center_freq &&
 	    nphy->tx_pwr_last_recalc_limit == phy->desired_txpower)
@@ -7159,6 +7195,8 @@ static enum b43_txpwr_result b43_nphy_op_recalc_txpower(struct b43_wldev *dev,
 	/* Apply */
 	b43_mac_suspend(dev);
 	b43_nphy_tx_power_ctl_setup(dev);
+	if (nphy->init_cal_pending)
+		cal_gain = b43_nphy_precal_txgain_2057_rev14_epa(dev);
 	if (dev->dev->core_rev == 11 || dev->dev->core_rev == 12) {
 		b43_maskset32(dev, B43_MMIO_MACCTL, ~0, B43_MACCTL_PHY_LOCK);
 		b43_read32(dev, B43_MMIO_MACCTL);
@@ -7167,6 +7205,10 @@ static enum b43_txpwr_result b43_nphy_op_recalc_txpower(struct b43_wldev *dev,
 	b43_nphy_tx_power_ctrl(dev, nphy->txpwrctrl);
 	if (dev->dev->core_rev == 11 || dev->dev->core_rev == 12)
 		b43_maskset32(dev, B43_MMIO_MACCTL, ~B43_MACCTL_PHY_LOCK, 0);
+	if (nphy->init_cal_pending) {
+		b43_nphy_init_cal_2057_rev14_epa(dev, cal_gain);
+		nphy->init_cal_pending = false;
+	}
 	b43_mac_enable(dev);
 
 	nphy->tx_pwr_last_recalc_freq = channel->center_freq;
@@ -7468,23 +7510,11 @@ static int b43_phy_initn(struct b43_wldev *dev)
 			} else if (nphy->mphase_cal_phase_id == 0 &&
 				   b43_nphy_precal_2057_rev14_epa(dev)) {
 				/*
-				 * wl's periodic calibration at up on this radio:
-				 * the TX gain pre-calibration, then the TX I/Q-LO
-				 * and RX I/Q calibrations at the gain it found.
+				 * wl calibrates this radio after the TX power
+				 * control setup of its first power update: see
+				 * b43_nphy_op_recalc_txpower().
 				 */
-				u16 g = b43_nphy_precal_txgain_2057_rev14_epa(dev);
-				int c;
-
-				for (c = 0; c < 2; c++) {
-					target.ipa[c] = g & 0x0007;
-					target.pad[c] = (g & 0x00F8) >> 3;
-					target.pga[c] = (g & 0x0F00) >> 8;
-					target.txgm[c] = (g & 0x7000) >> 12;
-					target.tx_lpf[c] = (g & 0x8000) >> 15;
-				}
-				if (!b43_nphy_cal_tx_iq_lo(dev, target, true, false))
-					if (b43_nphy_cal_rx_iq(dev, target, 2, 0) == 0)
-						b43_nphy_save_cal(dev);
+				nphy->init_cal_pending = true;
 			} else if (nphy->mphase_cal_phase_id == 0) {
 				/*
 				 * TODO: N PHY Periodic Calibration with arg 3.
