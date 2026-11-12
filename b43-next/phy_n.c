@@ -1586,7 +1586,8 @@ static void b43_nphy_run_samples(struct b43_wldev *dev, u16 samps, u16 loops,
 	 * resets the CCA, which forces the RF sequence back to RX and would
 	 * undo the RX2TX loopback the RX I/Q calibration sets up.
 	 */
-	if (nphy->hang_avoid)
+	/* wl 7.14.164.18 does it around the sample play on rev 17 too */
+	if (nphy->hang_avoid || dev->phy.rev == 17)
 		b43_nphy_stay_in_carrier_search(dev, true);
 
 	if (phy->rev >= 7) {
@@ -1619,7 +1620,7 @@ static void b43_nphy_run_samples(struct b43_wldev *dev, u16 samps, u16 loops,
 		b43_ntab_write(dev, B43_NTAB16(15, 87), tmp);
 	}
 
-	if (nphy->hang_avoid)
+	if (nphy->hang_avoid || dev->phy.rev == 17)
 		b43_nphy_stay_in_carrier_search(dev, false);
 
 	b43_phy_write(dev, B43_NPHY_SAMP_DEPCNT, (samps - 1));
