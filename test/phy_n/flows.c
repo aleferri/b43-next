@@ -117,6 +117,17 @@ static void core_write32(struct bcmn_device *c, u16 offset, u32 value)
 
 int b43_modparam_calreport;
 
+void b43_calreport(struct b43_wl *w, const char *fmt, ...)
+{
+	char line[512];
+	va_list ap;
+
+	va_start(ap, fmt);
+	vscnprintf(line, sizeof(line), fmt, ap);
+	va_end(ap);
+	n_report(line);
+}
+
 void b43info(struct b43_wl *w, const char *fmt, ...)
 {
 	char line[512];
