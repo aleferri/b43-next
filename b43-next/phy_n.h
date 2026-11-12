@@ -955,6 +955,11 @@ struct b43_phy_n {
 	/* The init calibration runs in the first recalc_txpower (radio 2057
 	 * rev 14, external PA), where wl runs it */
 	bool init_cal_pending;
+	/* The TX gain pre-calibration of radio 2057 rev 14, for the report */
+	s8 precal_idle[2];
+	u8 precal_pad[2][2];
+	s16 precal_delta[2][2];
+	u16 precal_gain;
 
 	u8 mphase_cal_phase_id;
 	u16 mphase_txcal_cmdidx;

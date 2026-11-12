@@ -22,6 +22,8 @@ void n_log(const char *what);
 long n_nvram(const char *name, long dflt);
 /* An environment variable as a number, or dflt. */
 long n_env(const char *name, long dflt);
+/* A line of the driver's calibration report */
+void n_report(const char *line);
 /* A call into b43's core, which the harness does not compile. */
 void n_core(const char *fn);
 
