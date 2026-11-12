@@ -441,6 +441,24 @@ void b43info(struct b43_wl *wl, const char *fmt, ...)
 	va_end(args);
 }
 
+/*
+ * The calibration report (calreport): not rate limited, as b43info() is,
+ * since a calibration prints a few dozen lines at once and every one is
+ * needed.
+ */
+void b43_calreport(struct b43_wl *wl, const char *fmt, ...)
+{
+	struct va_format vaf;
+	va_list args;
+
+	va_start(args, fmt);
+	vaf.fmt = fmt;
+	vaf.va = &args;
+	printk(KERN_INFO "b43-%s: %pV",
+	       (wl && wl->hw) ? wiphy_name(wl->hw->wiphy) : "wlan", &vaf);
+	va_end(args);
+}
+
 void b43err(struct b43_wl *wl, const char *fmt, ...)
 {
 	struct va_format vaf;
