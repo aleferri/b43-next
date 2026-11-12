@@ -116,6 +116,10 @@ module_param_named(btcoex, modparam_btcoex, int, 0444);
 MODULE_PARM_DESC(btcoex, "Enable Bluetooth coexistence (default on)");
 
 int b43_modparam_verbose = B43_VERBOSITY_DEFAULT;
+
+int b43_modparam_calreport;
+module_param_named(calreport, b43_modparam_calreport, int, 0644);
+MODULE_PARM_DESC(calreport, "Print the PHY calibration results and TX power values after each calibration (N-PHY)");
 module_param_named(verbose, b43_modparam_verbose, int, 0644);
 MODULE_PARM_DESC(verbose, "Log message verbosity: 0=error, 1=warn, 2=info(default), 3=debug");
 

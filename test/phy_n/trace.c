@@ -379,6 +379,34 @@ long n_env(const char *name, long dflt)
 	return v ? strtol(v, NULL, 0) : dflt;
 }
 
+void n_report(const char *line)
+{
+	fprintf(stderr, "%s", line);
+}
+
+/* The kernel's string formatting, for the driver side: libc's */
+#include <stdarg.h>
+int vscnprintf(char *buf, size_t size, const char *fmt, va_list args)
+{
+	int n;
+
+	if (!size)
+		return 0;
+	n = vsnprintf(buf, size, fmt, args);
+	return n < 0 ? 0 : ((size_t)n >= size ? (int)size - 1 : n);
+}
+
+int scnprintf(char *buf, size_t size, const char *fmt, ...)
+{
+	va_list ap;
+	int n;
+
+	va_start(ap, fmt);
+	n = vscnprintf(buf, size, fmt, ap);
+	va_end(ap);
+	return n;
+}
+
 /* Calls into b43's core, by name, for the summary of a trace run. */
 static struct {
 	const char *fn;

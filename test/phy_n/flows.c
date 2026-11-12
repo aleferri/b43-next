@@ -320,6 +320,19 @@ u64 b43_hf_read(struct b43_wldev *dev)
 	n_core("b43_hf_read");
 	return 0;
 }
+int b43_modparam_calreport;
+
+void b43info(struct b43_wl *w, const char *fmt, ...)
+{
+	char line[512];
+	va_list ap;
+
+	va_start(ap, fmt);
+	vscnprintf(line, sizeof(line), fmt, ap);
+	va_end(ap);
+	n_report(line);
+}
+
 void b43_hf_write(struct b43_wldev *dev, u64 value)
 {
 	n_core("b43_hf_write");
