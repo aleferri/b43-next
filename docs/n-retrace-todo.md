@@ -172,11 +172,17 @@ with arg 3, at the end of the init) and the TX gain table they start from.
 
 ## Next
 
-1. The TX I/Q-LO and RX I/Q calibrations op by op: wl's #18399 (7720 ops
-   from an RFSEQ read, 0x0a1), #26556 (3744 ops from the RX I/Q
-   compensation, 0x09a) and four blocks of 600 polls of 0x0c7 inside the
-   TX I/Q-LO steps (#14353-#17340), which b43 does not make.
-2. The small blocks: CRS (#952), TX filter (#3202), table 7 (#3349), the RX
-   gain block (#3450).
-3. A `bss_start` flow against `ssid`, as `test/phy_ht` has.
-4. The 40 MHz captures (`cold-2g6l-40`, ...), once the flow sets the width.
+1. neheb's 822 (back off each rate from the highest target in the
+   adjusted power table), adapted to b43-next's per-rate power: the
+   table then matches wl's in 77 of its 84 entries; wl's CDD column on
+   MCS 0-7 at 20 MHz is that of MCS i-1 (one board, so not certain).
+   With it test/phy_n falls from 59.58% to 54.22% at 30 dBm: the
+   calibration takes another path (#10036 on). Find which read of the
+   power index or of the tables makes b43 take it.
+2. neheb's 823 (keep the TX power control from drifting: main.c and
+   phy_n.c) and 840 (HT20 for N-PHY: core and DMA, which b43-next
+   reworked).
+3. The rest of the calibrations against wl (#18914, the RX I/Q steps at
+   #24433/#25210), the small blocks (CRS #952, TX filter #3202, table 7
+   #3349, the RX gain block #3450), a `bss_start` flow against `ssid`,
+   and 40 MHz.
