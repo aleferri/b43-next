@@ -595,12 +595,15 @@ static void b43_phy_ht_tx_power_ctl(struct b43_wldev *dev, bool enable)
 						0x32);
 		}
 
-		for (i = 0; i < 3; i++)
+		/* Once: a later enable leaves the index to the hardware */
+		for (i = 0; i < 3; i++) {
 			if (phy_ht->tx_pwr_idx[i] <=
 			    B43_PHY_HT_TXPCTL_CMD_C1_INIT)
 				b43_phy_maskset(dev, cmd_regs[i],
 						~B43_PHY_HT_TXPCTL_CMD_C1_INIT,
 						phy_ht->tx_pwr_idx[i]);
+			phy_ht->tx_pwr_idx[i] = B43_PHY_HT_TXPCTL_CMD_C1_INIT + 1;
+		}
 	}
 
 	phy_ht->tx_pwr_ctl = enable;
