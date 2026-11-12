@@ -5779,18 +5779,19 @@ static bool b43_ac_radar_arm_wanted(struct b43_wl *wl,
 }
 
 /*
- * Whether this config call needs the radio retuned. mac80211 passes
+ * Whether this config call needs the radio retuned, on a PHY that retunes
+ * with a later init (b43_phy_recycle()). mac80211 passes
  * IEEE80211_CONF_CHANGE_CHANNEL also when only radar_enabled changes, and
  * around a channel availability check it releases the channel -- 20 MHz
- * without HT on the same primary -- and tunes it again for start_ap. On the AC
- * PHY a retune is a full channel setup with its calibrations, and none of
- * these calls needs one: the radio stays where it is, and nothing transmits
- * while nothing beacons. With OpenWrt's backports 7.2 (RT-AC66U B1, ch 52/80)
- * the release after the check goes to mac80211's default chandef instead,
- * ch 36, which is a retune, and start_ap retunes ch 52.
+ * without HT on the same primary -- and tunes it again for start_ap. A
+ * retune is a full channel setup with its calibrations, and none of these
+ * calls needs one: the radio stays where it is, and nothing transmits while
+ * nothing beacons. With OpenWrt's backports 7.2 (RT-AC66U B1, ch 52/80) the
+ * release after the check goes to mac80211's default chandef instead, ch 36,
+ * which is a retune, and start_ap retunes ch 52.
  */
-static bool b43_ac_retune_needed(struct b43_wldev *dev,
-				 const struct cfg80211_chan_def *def)
+static bool b43_retune_needed(struct b43_wldev *dev,
+			      const struct cfg80211_chan_def *def)
 {
 	const struct cfg80211_chan_def *cur = &dev->tuned_chandef;
 
@@ -5804,23 +5805,36 @@ static bool b43_ac_retune_needed(struct b43_wldev *dev,
 }
 
 /*
- * A channel change on a running AC interface. The stock driver changes
- * channel only through a down and an up; this is that cycle for the PHY.
- * The up's core resets, ucode load and PLL setup are left out: the PLL
- * words are the same on every channel of every capture. The PHY's state is
- * kept: op_prepare_structs() goes with the core reset of
- * b43_wireless_core_init(), which clears the hardware state the PHY tracks,
- * and here nothing is reset. phy->do_full_init stays false, so
- * b43_phy_init() takes the hot path and writes the new chanspec first.
+ * Whether the PHY's stock driver changes channel only through a down and an
+ * up, which b43 replays on a running core as a later init
+ * (b43_phy_recycle()): wl on the AC-PHY and on the HT-PHY.
+ */
+static bool b43_phy_recycles(struct b43_wldev *dev)
+{
+	return dev->phy.type == B43_PHYTYPE_AC ||
+	       dev->phy.type == B43_PHYTYPE_HT;
+}
+
+/*
+ * A channel change on a running interface of b43_phy_recycles(): the
+ * stock driver's down and up, for the PHY. The up's core resets, ucode
+ * load and PLL setup are left out: the PLL words are the same on every
+ * channel of every capture. The PHY's state is kept: op_prepare_structs()
+ * goes with the core reset of b43_wireless_core_init(), which clears the
+ * hardware state the PHY tracks, and here nothing is reset.
+ * phy->do_full_init stays false, so b43_phy_init() takes the later path.
+ * The radio goes off as at the down; b43_phy_init() turns the HT-PHY's
+ * off itself.
  *
  * A failed b43_phy_init() leaves the radio off and asks for a full init,
  * which a running core cannot take; the controller restart gives it one.
  */
-static int b43_ac_phy_recycle(struct b43_wldev *dev)
+static int b43_phy_recycle(struct b43_wldev *dev)
 {
 	int err;
 
-	b43_software_rfkill(dev, true);
+	if (dev->phy.type != B43_PHYTYPE_HT)
+		b43_software_rfkill(dev, true);
 	err = b43_phy_init(dev);
 	if (err)
 		b43_controller_restart(dev, "PHY cycle failed");
@@ -5887,6 +5901,7 @@ static int b43_op_config(struct ieee80211_hw *hw, int radio_idx, u32 changed)
 	struct b43_phy *phy = &dev->phy;
 	struct ieee80211_conf *conf = &hw->conf;
 	bool ac = phy->type == B43_PHYTYPE_AC;
+	bool recycles = b43_phy_recycles(dev);
 	bool cac_was = dev->cac_pending;
 	bool retune = true;
 	bool switched = false;
@@ -5921,10 +5936,11 @@ static int b43_op_config(struct ieee80211_hw *hw, int radio_idx, u32 changed)
 		 * b43_op_bss_info_changed(), and the release in between leaves
 		 * it as it is.
 		 */
+		if (recycles)
+			retune = b43_retune_needed(dev, &conf->chandef);
 		if (ac) {
 			bool cac = b43_ac_cac_needed(wl, conf);
 
-			retune = b43_ac_retune_needed(dev, &conf->chandef);
 			if (cac || retune)
 				dev->cac_pending = cac;
 			/*
@@ -5942,18 +5958,18 @@ static int b43_op_config(struct ieee80211_hw *hw, int radio_idx, u32 changed)
 			/* Switch to the requested channel.
 			 * The firmware takes care of races with the TX handler.
 			 */
-			if (ac && dev->tuned_chandef.chan) {
-				err = b43_ac_phy_recycle(dev);
+			if (recycles && dev->tuned_chandef.chan) {
+				err = b43_phy_recycle(dev);
 				if (err)
 					goto out_mac_enable;
 			} else {
 				b43_switch_channel(dev, phy->channel);
 			}
 			switched = true;
-			if (ac) {
+			if (recycles)
 				dev->tuned_chandef = conf->chandef;
+			if (ac)
 				b43_txbf_update_slots(dev);
-			}
 		}
 
 		if (ac && dev->cac_pending != cac_was)
