@@ -176,9 +176,10 @@ with arg 3, at the end of the init) and the TX gain table they start from.
    power table is wl's in all 84 entries of every write. The gate falls
    (59.58% -> 54.31%) by alignment, see test/phy_n/README.md; a gate
    that pairs repeated table writes by position would show it.
-2. neheb's 823 (keep the TX power control from drifting: main.c and
-   phy_n.c) and 840 (HT20 for N-PHY: core and DMA, which b43-next
-   reworked).
+2. Done: neheb's 823 (0ffe883). Not ported: 840 (HT20 for N-PHY), which
+   builds HT TX headers in xmit.c and sizes the RX buffers in dma.c;
+   b43-next has its own HT/VHT TX path for the AC cores, so the two need
+   merging by design, outside this harness.
 3. The rest of the calibrations against wl (#18914, the RX I/Q steps at
    #24433/#25210), the small blocks (CRS #952, TX filter #3202, table 7
    #3349, the RX gain block #3450), a `bss_start` flow against `ssid`,
