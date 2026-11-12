@@ -12,6 +12,7 @@
 #include "b43.h"
 #include "radio_2057.h"
 #include "phy_common.h"
+#include "phy_n.h"
 
 static u16 r2057_rev4_init[][2] = {
 	{ 0x0E, 0x20 }, { 0x31, 0x00 }, { 0x32, 0x00 }, { 0x33, 0x00 },
@@ -111,6 +112,20 @@ static u16 r2057_rev14_init[][2] = {
 	{ 0x14d, 0x01 }, { 0x14e, 0x01 }, { 0x1af, 0x40 }, { 0x1b0, 0x40 },
 	{ 0x1cc, 0x01 }, { 0x1cf, 0x10 }, { 0x1d0, 0x0f }, { 0x1d3, 0x10 },
 	{ 0x1d4, 0x0f },
+};
+
+/*
+ * Radio 2057 rev 14 with an external 2.4 GHz PA: the init wl 7.14.164.18
+ * writes on the BCM43217 of the ASUS RT-AC56U (extpagain2g=3), the same at
+ * attach and at every up in b43-next-traces bcm43217-rev0/rt-ac56u. The
+ * table above is another driver's (6.30.223.248) and writes registers this
+ * one leaves, NB_MASTER_CORE0 (0x0b4) among them: its 0x44 clears bit 3,
+ * which wl keeps set through its RSSI calibration's VCM sweep.
+ */
+static u16 r2057_rev14_epa_init[][2] = {
+	{ 0x082, 0x08 }, { 0x0c4, 0x10 }, { 0x0c9, 0x01 }, { 0x107, 0x08 },
+	{ 0x149, 0x10 }, { 0x14e, 0x01 }, { 0x1af, 0x40 }, { 0x1b0, 0x40 },
+	{ 0x1b7, 0x05 }, { 0x1c2, 0xa0 }, { 0x1cc, 0x6c },
 };
 
 #define RADIOREGS7(r00, r01, r02, r03, r04, r05, r06, r07, r08, r09, \
@@ -554,7 +569,10 @@ void r2057_upload_inittabs(struct b43_wldev *dev)
 		}
 		break;
 	case 17:
-		if (phy->radio_rev == 14) {
+		if (phy->radio_rev == 14 && !phy->n->ipa2g_on) {
+			table = r2057_rev14_epa_init[0];
+			size = ARRAY_SIZE(r2057_rev14_epa_init);
+		} else if (phy->radio_rev == 14) {
 			table = r2057_rev14_init[0];
 			size = ARRAY_SIZE(r2057_rev14_init);
 		}
