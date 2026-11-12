@@ -36,6 +36,25 @@ order: the radio 2057 init and channel tune (radio writes 0x082, 0x0c4,
 most of the PHY init, the tables' static contents and the TX gain table
 (tables 26 and 27 at 192, #4933). The equal blocks hold 7035 operations.
 
+## b43's calls against wl's ops
+
+`test/phy_n/fnmap.py` (with `N_FN=1`) places each of b43's calls in wl's
+stream, `cold-2g6-20`:
+
+| b43 | wl |
+|---|---|
+| the analog switches, `b43_radio_2057_init()`, the channel | #189-#951 |
+| `b43_phy_initn()`, from the workarounds through `b43_nphy_tx_power_ctrl()` | #978-#8016, 6560 of its 6606 ops matched |
+| ... of which `b43_nphy_rssi_cal()` | #5447-#6799 |
+| `b43_phy_init()`'s channel switch after the init | none: wl does not tune again |
+| `b43_nphy_op_recalc_txpower()`: `tx_power_ctl_setup()` | #9595-#10627 |
+| ... `tx_power_ctrl()` | #13348-#13517 |
+
+So the init is in place, and what b43 lacks comes after it: #8020-#9594
+(mostly the core; on the PHY, a save and restore of the gains, 0x280/0x283
+and the RSSI calibration values 0x224-0x22f), #10628-#13347 (between the
+power control setup and its enable) and the calibrations from #13518.
+
 ## Why b43 does not calibrate
 
 `b43_nphy_op_prepare_structs()` sets `nphy->perical = 2` ("avoid

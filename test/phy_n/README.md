@@ -13,6 +13,8 @@ make K=... KG=...        # the kernel headers, see ../integration/README.md
 ./gates.sh --min-block 8 --gap-tol 2   # PHY init to `wl up`, scored
 ./n-trace FLOW OPS FIRST LAST [-v | -o TRACE]
 ./regions.py OPS TRACE FIRST:LAST      # where the two streams part, largest first
+make N_FN=1 && N_FN=1 ./n-trace full OPS FIRST LAST -o TRACE
+./fnmap.py OPS TRACE FIRST:LAST        # each b43 call and the wl ops it matches
 ```
 
 `gates.sh` needs `$TRACE_TOOLS` for `tracelib`; `GATE_TMP=DIR` keeps the
@@ -81,4 +83,8 @@ Every run prints, on stderr:
 ## Environment
 
 `N_NVRAM` (the board's nvram file), `N_CHANNEL` (1-14, default 6),
-`N_PERICAL`, `N_DEBUG=1` (each read past the window on stderr).
+`N_PERICAL`, `N_DEBUG=1` (each read past the window on stderr), `N_FN=1`
+(function markers, `----FN:name----` and `----/FN:name----`, in the trace;
+the binary must be built with `make N_FN=1`, which instruments the
+functions of `phy_n.c` but not the register accessors; `cmp_skip.py` skips
+the markers, so the score is the same).

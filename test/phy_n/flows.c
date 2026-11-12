@@ -293,6 +293,14 @@ void bcmn_pmu_spuravoid_pllupdate(struct bcmn_drv_cc *cc, int spuravoid)
 {
 	n_core("bcmn_pmu_spuravoid_pllupdate");
 }
+/* The hooks of -finstrument-functions (Makefile, N_FN=1) */
+void __cyg_profile_func_enter(void *fn, void *site)
+	__attribute__((no_instrument_function));
+void __cyg_profile_func_exit(void *fn, void *site)
+	__attribute__((no_instrument_function));
+void __cyg_profile_func_enter(void *fn, void *site) { n_marker(fn, 0); }
+void __cyg_profile_func_exit(void *fn, void *site) { n_marker(fn, 1); }
+
 /* b43's debug messages are not errors: they are not counted */
 void b43dbg(struct b43_wl *w, const char *fmt, ...) { }
 unsigned int __sw_hweight32(unsigned int w) { return __builtin_popcount(w); }
