@@ -116,6 +116,8 @@ static struct b43_wldev *setup(void)
 {
 	chan.hw_value = n_env("N_CHANNEL", 6);
 	chan.center_freq = 2407 + 5 * chan.hw_value;
+	/* The regulatory limit: the US one at 2.4 GHz, 30 dBm, by default */
+	chan.max_power = n_env("N_MAXPWR", 30);
 	hw.conf.chandef.chan = &chan;
 	hw.conf.chandef.width = NL80211_CHAN_WIDTH_20;
 	hw.conf.chandef.center_freq1 = chan.center_freq;
