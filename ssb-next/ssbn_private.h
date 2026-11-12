@@ -3,6 +3,8 @@
 #define LINUX_SSBN_PRIVATE_H_
 
 #define PFX		"ssb-next: "
+/* compat.h may have brought <linux/printk.h>, and its default, first */
+#undef pr_fmt
 #define pr_fmt(fmt)	PFX fmt
 
 #include <ssb-next/ssbn.h>

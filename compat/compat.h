@@ -12,8 +12,9 @@
 #error "b43-next follows the kernel's API from Linux 6.18"
 #endif
 
-/* The typed allocators came with 7.0 */
-#if LINUX_VERSION_CODE < KERNEL_VERSION(7, 0, 0)
+/* The typed allocators came with 7.0, and with 6.18.y stable updates */
+#include <linux/slab.h>
+#ifndef kzalloc_obj
 #define kzalloc_obj(obj)	kzalloc(sizeof(obj), GFP_KERNEL)
 #endif
 
