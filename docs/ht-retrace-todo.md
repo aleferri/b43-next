@@ -64,3 +64,23 @@ The tones are exactly those of the N-PHY's `b43_nphy_gen_load_samples()`:
 
 Mostly the core: 2117 MMIO reads, 976 writes, 614 shared memory accesses;
 546 PHY accesses.
+
+## The hot cycle
+
+The hot capture (`hot-2g-20`, `wl down; chanspec; wl up; ssid; bss up` per
+channel) shows where wl initialises the PHY after the first time:
+
+| segment | wl's PHY and radio operations |
+|---|---|
+| `down-N` | 265 |
+| `up-N` | 0 |
+| `ssid-N` | 20003, or 20547 on the turns with the temperature measurement |
+
+`wl up` does not touch the PHY after the first up since the module was
+loaded; the init comes with the BSS, a later init (no tables, no radio
+calibrations) followed by the calibrations, as at the cold `ssid`. b43
+instead asks for a full init at every up (`b43_phy_exit()` sets
+`do_full_init`, and the core init resets the PHY's state with
+`prepare_structs`), then runs the later init at the start of the BSS. How
+the up after a down should go, as the AC's `FIRST_BRINGUP` branches decide
+for the AC, is the open question; `test/phy_ht` has no hot gate yet.
