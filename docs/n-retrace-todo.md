@@ -90,9 +90,28 @@ The forced gains are a two-step search on the PAD field (rev 7 layout: txgm
 | 20 MHz, ch 1, 6, 11 and the hot sweep | 0x10c2 (pad 24) | 0x10fa (pad 31) | 0x10fa |
 | 40 MHz, 6l | 0x109a (pad 19) | 0x10c2 (pad 24) | 0x10c2 |
 
-The step from the first round to the second follows from the RSSI read in
-it; the rule is the next thing to fit, with the harness serving the same
-RSSI samples to a port.
+**The rule**, fitted on all twelve cold runs and the 25 + 28 cycles of the hot
+sweeps (`rounds.py`-style extraction: each round's forced gain, the core whose
+multiplier is on, and the mean of its ten RSSI reads, 6-bit signed):
+
+- idle: one read per core with no tone gain forced (-23/-24 at 20 MHz,
+  -24/-25 at 40 MHz);
+- delta = mean TSSI at the forced gain - that core's idle TSSI;
+- first round per core: pad 24. If delta >= 20, the second round tries
+  pad 19, otherwise pad 31 (every case, including the 40 MHz cycles where
+  core 2 measured -5.0 against an idle -24, delta 19, and went up, and -5.0
+  against -25, delta 20, and went down);
+- the result, written to table 7 at 0x110 for both cores before the TX
+  I/Q-LO calibration, is the pad whose delta is closest to 20: 31 at 20 MHz
+  (deltas 14/20 and 13/19), 24 at 40 MHz (22/16, and on 1l core 2 19/26).
+  The two cores' picks agree in every capture, so what wl does when they
+  differ is not observable here.
+
+| capture | core 1: pad 24 / second | core 2: pad 24 / second | result |
+|---|---|---|---|
+| cold-2g6-20 | 14 / 31: 20 | 13 / 31: 19 | pad 31 (0x10fa) |
+| cold-2g6l-40 | 22 / 19: 16 | 20 / 19: 14 | pad 24 (0x10c2) |
+| cold-2g1l-40 | 21 / 19: 15 | 19 / 31: 26 | pad 24 (0x10c2) |
 
 ## Why b43 does not calibrate
 
