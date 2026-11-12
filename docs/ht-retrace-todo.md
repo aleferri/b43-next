@@ -87,3 +87,22 @@ down, so a down and up takes the first init, and only a retune
 (`b43_phy_recycle()`), which does not go through `b43_phy_exit()`, runs the
 later one, with `channel_calibrate` after it. Where hot differs from cold,
 it goes here; `test/phy_ht` has no hot gate yet.
+
+## 40 MHz
+
+b43's HT-PHY runs 40 MHz as wl does on the R6400's cold 40 MHz captures:
+the core's width at the PHY init (`b43_phy_ht_width()`), the 2059 on the
+centre channel, the sideband, two table 0x25 pairs, the AFE setup, table
+7's copies and the calibrations' tones and constants. `gates.sh` scores the
+three 40 MHz cold captures as the 20 MHz ones; the up's PHY and radio
+operations are 99.70% of wl's, the start of the BSS's 99.95% on 6l and 11u.
+
+## The watchdog's 0x280 and 0x283
+
+The low bytes the watchdog writes back are not a constant: on ch 6 and 11
+they stay 0x3a, on 1l wl writes 0x45, 0x44 and 0x4e on later turns, and the
+turns it writes on there are not every second one. The turn has no PHY read
+but the two registers; what decides the value is in what wl reads of the
+core (shared memory, MMIO counters), which the harness does not serve. b43
+writes 0x3a on every second turn; the 1l start of the BSS shows the
+difference (99.88%).
