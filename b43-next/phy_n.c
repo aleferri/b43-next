@@ -3017,6 +3017,25 @@ static void b43_nphy_workarounds_rev7plus(struct b43_wldev *dev)
 			rccal_ovrd = true;
 			break;
 		}
+	} else if (phy->radio_rev == 14 &&
+		   b43_current_band(dev->wl) == NL80211_BAND_2GHZ) {
+		/*
+		 * wl 7.14.164.18 on the BCM43217 with an external PA: the 11n
+		 * entries at the RC calibration's caps + 8, LPF 1 at
+		 * 20 MHz and 3 at 40 MHz; 0x158 then gets the 11b entry.
+		 */
+		for (core = 0; core < 2; core++) {
+			scap_val_11b[core] = scap_val;
+			bcap_val_11b[core] = bcap_val;
+			scap_val_11n_20[core] = scap_val + 8;
+			bcap_val_11n_20[core] = bcap_val + 8;
+			scap_val_11n_40[core] = scap_val + 8;
+			bcap_val_11n_40[core] = bcap_val + 8;
+			lpf_ofdm_20mhz[core] = 1;
+			lpf_ofdm_40mhz[core] = 3;
+		}
+
+		rccal_ovrd = true;
 	} else {
 		if (phy->radio_rev == 5) {
 			for (core = 0; core < 2; core++) {
@@ -3076,6 +3095,10 @@ static void b43_nphy_workarounds_rev7plus(struct b43_wldev *dev)
 				       rx2tx_lut_40_11n[core]);
 			b43_ntab_write(dev, B43_NTAB16(7, 0x159 + core * 16),
 				       rx2tx_lut_40_11n[core]);
+			if (phy->radio_rev == 14 && !b43_nphy_ipa(dev))
+				b43_ntab_write(dev,
+					       B43_NTAB16(7, 0x158 + core * 16),
+					       rx2tx_lut_20_11b[core]);
 		}
 	}
 
@@ -5155,7 +5178,7 @@ static u16 b43_nphy_precal_txgain_2057_rev14_epa(struct b43_wldev *dev)
 	u32 freq = b43_is_40mhz(dev) ? 5000 : 2500;
 	s32 rssi[4];
 	s32 idle[2], delta[2], best = 0;
-	u16 m0m1 = 0x4040, mult, tbl8[4], bbcfg, rad[2][4];
+	u16 m0m1 = 0x4040, mult, tbl8[4], bbcfg, rad[2][4], afe_over[2];
 	u8 pad[2], tried, core, step, pick = 24;
 	u32 tmp;
 
@@ -5202,6 +5225,10 @@ static u16 b43_nphy_precal_txgain_2057_rev14_epa(struct b43_wldev *dev)
 	 * BBCFG cleared, and per core the radio's TSSI registers, with
 	 * TSSI_VCM, TX_SSI_MUX, TSSIG and TSSIA saved first.
 	 */
+	afe_over[0] = b43_phy_read(dev, B43_NPHY_AFECTL_OVER1);
+	afe_over[1] = b43_phy_read(dev, B43_NPHY_AFECTL_OVER);
+	b43_phy_set(dev, B43_NPHY_AFECTL_OVER1, 0x0100);
+	b43_phy_set(dev, B43_NPHY_AFECTL_OVER, 0x0100);
 	tbl8[0] = b43_ntab_read(dev, B43_NTAB16(8, 0x0b));
 	tbl8[1] = b43_ntab_read(dev, B43_NTAB16(8, 0x0f));
 	tbl8[2] = b43_ntab_read(dev, B43_NTAB16(8, 0x1b));
@@ -5234,6 +5261,16 @@ static u16 b43_nphy_precal_txgain_2057_rev14_epa(struct b43_wldev *dev)
 	 * with them the I rails read -32 and +31.
 	 */
 	nphy->tssi_route_kept = true;
+
+	/*
+	 * wl's RF switch setup for the rounds: the interrupt control off, the
+	 * PA control at 0, override 0x8 at 0 and the T/R switch forced to 2,
+	 * on both cores.
+	 */
+	b43_nphy_rf_ctl_intc_override_rev7(dev, N_INTC_OVERRIDE_OFF, 0, 3);
+	b43_nphy_rf_ctl_intc_override_rev7(dev, N_INTC_OVERRIDE_PA, 0, 3);
+	b43_nphy_rf_ctl_override_rev7(dev, 0x8, 0, 3, false, 0);
+	b43_nphy_rf_ctl_intc_override_rev7(dev, N_INTC_OVERRIDE_TRSW, 2, 3);
 
 	/* The idle TSSI, with no tone and no gain forced */
 	b43_nphy_rf_ctl_override_rev7(dev, 0x1000, 0, 3, false, 0);
@@ -5294,6 +5331,11 @@ static u16 b43_nphy_precal_txgain_2057_rev14_epa(struct b43_wldev *dev)
 	b43_nphy_rf_ctl_override_rev7(dev, 0x1000, 0, 3, true, 0);
 	b43_ntab_write(dev, B43_NTAB16(15, 87), m0m1);
 	b43_ntab_write(dev, B43_NTAB16(15, 95), m0m1);
+	/* wl releases the switches without an RF sequence */
+	b43_phy_write(dev, B43_NPHY_RFCTL_INTC1, 0);
+	b43_phy_write(dev, B43_NPHY_RFCTL_INTC2, 0);
+	b43_phy_mask(dev, 0x2ff, ~0x2000);
+	b43_nphy_rf_ctl_override_rev7(dev, 0x8, 0, 3, true, 0);
 
 	nphy->tssi_route_kept = false;
 	for (core = 0; core < 2; core++) {
@@ -5309,6 +5351,8 @@ static u16 b43_nphy_precal_txgain_2057_rev14_epa(struct b43_wldev *dev)
 	b43_ntab_write(dev, B43_NTAB16(8, 0x1b), tbl8[2]);
 	b43_ntab_write(dev, B43_NTAB16(8, 0x1f), tbl8[3]);
 	b43_phy_write(dev, B43_NPHY_BBCFG, bbcfg);
+	b43_phy_write(dev, B43_NPHY_AFECTL_OVER1, afe_over[0]);
+	b43_phy_write(dev, B43_NPHY_AFECTL_OVER, afe_over[1]);
 	/*
 	 * The baseband multiplier the TX I/Q-LO calibration scales its
 	 * ladders by: wl's ladders on the BCM43217 are its percentages of
