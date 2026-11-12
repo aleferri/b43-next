@@ -5099,9 +5099,32 @@ static u16 b43_nphy_precal_txgain_2057_rev14_epa(struct b43_wldev *dev)
 	u32 freq = b43_is_40mhz(dev) ? 5000 : 2500;
 	s32 rssi[4];
 	s32 idle[2], delta[2], best = 0;
-	u16 m0m1 = 0x4040, mult;
+	u16 m0m1 = 0x4040, mult, tbl8[4], bbcfg, rad[2][4];
 	u8 pad[2], tried, core, step, pick = 24;
 	u32 tmp;
+
+	if (b43_modparam_calreport) {
+		static const u16 rad[] = { 0x0b4, 0x139, 0x175, 0x176, 0x177,
+			0x178, 0x179, 0x17a, 0x17b, 0x17c, 0x195, 0x196, 0x197,
+			0x198, 0x199, 0x19a, 0x19b, 0x19c };
+		static const u16 phyr[] = { 0x08f, 0x0a5, 0x0a6, 0x0a7, 0x091,
+			0x092, 0x0e7, 0x0ec, 0x2ff, 0x07a, 0x07d, 0x07c, 0x07f,
+			0x340, 0x341, 0x342, 0x343, 0x0f9, 0x0fb, 0x0e5, 0x0e6 };
+		char buf[22 * 9 + 1];
+		int len = 0, k;
+
+		B43_NPHY_REPORT_BEGIN(dev);
+		for (k = 0; k < ARRAY_SIZE(rad); k++)
+			len += scnprintf(buf + len, sizeof(buf) - len, " %03x=%02x",
+					 rad[k], b43_radio_read(dev, rad[k]));
+		b43_calreport(dev->wl, "N-PHY cal: precal state radio%s\n", buf);
+		len = 0;
+		for (k = 0; k < ARRAY_SIZE(phyr); k++)
+			len += scnprintf(buf + len, sizeof(buf) - len, " %03x=%04x",
+					 phyr[k], b43_phy_read(dev, phyr[k]));
+		b43_calreport(dev->wl, "N-PHY cal: precal state phy%s\n", buf);
+		B43_NPHY_REPORT_END(dev);
+	}
 
 	/* The power indices the calibration restores at its end */
 	nphy->cal_orig_pwr_idx[0] = (b43_phy_read(dev, B43_NPHY_C1_TXPCTL_STAT) >> 8) & 0x7f;
@@ -5111,6 +5134,39 @@ static u16 b43_nphy_precal_txgain_2057_rev14_epa(struct b43_wldev *dev)
 		     (u16)~(B43_NPHY_TXPCTL_CMD_COEFF |
 			    B43_NPHY_TXPCTL_CMD_HWPCTLEN |
 			    B43_NPHY_TXPCTL_CMD_PCTLEN));
+
+	/*
+	 * wl's setup of the TSSI path for the pre-calibration, restored at
+	 * its end: table 8 at 0x0b/0x1b (0x019e) and 0x0f/0x1f (0x0005),
+	 * BBCFG cleared, and per core the radio's TSSI/IQ test registers
+	 * 0x175-0x17c (0x195-0x19c), with 0x178-0x17b saved first.
+	 */
+	b43_ntab_read_bulk(dev, B43_NTAB16(8, 0x0b), 1, &tbl8[0]);
+	b43_ntab_read_bulk(dev, B43_NTAB16(8, 0x0f), 1, &tbl8[1]);
+	b43_ntab_read_bulk(dev, B43_NTAB16(8, 0x1b), 1, &tbl8[2]);
+	b43_ntab_read_bulk(dev, B43_NTAB16(8, 0x1f), 1, &tbl8[3]);
+	bbcfg = b43_phy_read(dev, B43_NPHY_BBCFG);
+	b43_phy_write(dev, B43_NPHY_BBCFG, 0);
+	for (core = 0; core < 2; core++) {
+		u16 r = core ? 0x20 : 0;
+
+		rad[core][0] = b43_radio_read(dev, 0x178 + r);
+		rad[core][1] = b43_radio_read(dev, 0x179 + r);
+		rad[core][2] = b43_radio_read(dev, 0x17b + r);
+		rad[core][3] = b43_radio_read(dev, 0x17a + r);
+		b43_radio_write(dev, 0x175 + r, 0x05);
+		b43_radio_write(dev, 0x179 + r, 0x0e);
+		b43_radio_write(dev, 0x17a + r, 0x00);
+		b43_radio_write(dev, 0x17b + r, 0x11);
+		b43_radio_write(dev, 0x176 + r, 0x00);
+		b43_radio_write(dev, 0x177 + r, 0x00);
+		b43_radio_write(dev, 0x178 + r, 0x03);
+		b43_radio_write(dev, 0x17c + r, 0x00);
+	}
+	b43_ntab_write(dev, B43_NTAB16(8, 0x0b), 0x019e);
+	b43_ntab_write(dev, B43_NTAB16(8, 0x1b), 0x019e);
+	b43_ntab_write(dev, B43_NTAB16(8, 0x0f), 0x0005);
+	b43_ntab_write(dev, B43_NTAB16(8, 0x1f), 0x0005);
 
 	/* The idle TSSI, with no tone and no gain forced */
 	b43_nphy_rf_ctl_override_rev7(dev, 0x1000, 0, 3, false, 0);
@@ -5171,6 +5227,20 @@ static u16 b43_nphy_precal_txgain_2057_rev14_epa(struct b43_wldev *dev)
 	b43_nphy_rf_ctl_override_rev7(dev, 0x1000, 0, 3, true, 0);
 	b43_ntab_write(dev, B43_NTAB16(15, 87), m0m1);
 	b43_ntab_write(dev, B43_NTAB16(15, 95), m0m1);
+
+	for (core = 0; core < 2; core++) {
+		u16 r = core ? 0x20 : 0;
+
+		b43_radio_write(dev, 0x178 + r, rad[core][0]);
+		b43_radio_write(dev, 0x179 + r, rad[core][1]);
+		b43_radio_write(dev, 0x17b + r, rad[core][2]);
+		b43_radio_write(dev, 0x17a + r, rad[core][3]);
+	}
+	b43_ntab_write(dev, B43_NTAB16(8, 0x0b), tbl8[0]);
+	b43_ntab_write(dev, B43_NTAB16(8, 0x0f), tbl8[1]);
+	b43_ntab_write(dev, B43_NTAB16(8, 0x1b), tbl8[2]);
+	b43_ntab_write(dev, B43_NTAB16(8, 0x1f), tbl8[3]);
+	b43_phy_write(dev, B43_NPHY_BBCFG, bbcfg);
 	/*
 	 * The baseband multiplier the TX I/Q-LO calibration scales its
 	 * ladders by: wl's ladders on the BCM43217 are its percentages of
