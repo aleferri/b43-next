@@ -36,9 +36,9 @@ On 2026-11-12, `--min-block 8 --gap-tol 2`:
 
 | capture | PHY+radio, 30 dBm | PHY+radio, `N_MAXPWR=20` |
 |---|---|---|
-| cold-2g1-20 | 19660/30174 = 65.16% | 19830/30004 = 66.09% |
-| cold-2g6-20 | 20658/29179 = 70.80% | 19832/30005 = 66.10% |
-| cold-2g11-20 | 19660/30183 = 65.14% | 19830/30013 = 66.07% |
+| cold-2g1-20 | 20871/30304 = 68.87% | 21041/30134 = 69.82% |
+| cold-2g6-20 | 21869/29309 = 74.62% | 21043/30135 = 69.83% |
+| cold-2g11-20 | 20871/30313 = 68.85% | 21041/30143 = 69.80% |
 
 At 30 dBm the adjusted power table b43 writes (tables 26/27 at 64-147)
 is wl's, and wl rewrites the same table many times, in steps b43 does not
@@ -51,10 +51,11 @@ What is left is mapped in `../../docs/n-retrace-todo.md`.
 
 Every run prints, on stderr:
 
-- **reads past the window**: 13 on every capture, all of them reads b43
-  makes and wl does not, in this window: table 15 at 0x50-0x56, which the
-  TX power control coefficient setup after the calibration reads again
-  (wl reads them once, before it); ChipCommon `chipcontrol` (0x028,
+- **reads past the window**: 58 on every capture, all of them reads b43
+  makes and wl does not, in this window: table 15 at 0x50-0x57, which
+  b43_nphy_tx_power_ctrl() reads again each time it turns the control on,
+  between the TX I/Q-LO phases and after the calibration (wl reads them
+  once, before it); ChipCommon `chipcontrol` (0x028,
   b43 sets bit 6 on a board with an external LNA; wl never accesses it),
   PHY 0x009, 0x0c01 and 0x0c0a, MMIO 0x492, and one radio 0x35e read more
   than wl's. They are served from b43's own writes, or 0.
