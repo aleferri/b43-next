@@ -2043,8 +2043,8 @@ static void b43_phy_ht_cal_rx_iq(struct b43_wldev *dev)
 /*
  * One calibration pass of wl's at the start of the BSS: the TX power
  * control off with its indices kept, the idle TSSI measured and the
- * control set up again, then the calibrations, and the control on. The
- * RX I/Q calibration that follows the TX one in wl is not ported yet.
+ * control set up again, the TX I/Q and LO and the RX I/Q calibrations,
+ * and the control on.
  */
 static void b43_phy_ht_cal_pass(struct b43_wldev *dev)
 {
@@ -2058,10 +2058,9 @@ static void b43_phy_ht_cal_pass(struct b43_wldev *dev)
 
 /*
  * When the BSS starts, wl initialises the PHY again, on the radio and PHY
- * it has initialised once (no tables, no radio calibrations), then sets
- * the TX power twice and calibrates. The core's down and up around it are
- * left out, as in b43_ac_phy_recycle(); the calibrations are not ported
- * yet.
+ * it has initialised once (no tables, no radio calibrations), sets the TX
+ * power twice, calibrates, sets it again and calibrates again. The core's
+ * down and up around it are left out, as in b43_ac_phy_recycle().
  */
 static void b43_phy_ht_op_bss_start(struct b43_wldev *dev)
 {
@@ -2070,6 +2069,8 @@ static void b43_phy_ht_op_bss_start(struct b43_wldev *dev)
 		return;
 	}
 	b43_phy_ht_op_adjust_txpower(dev);
+	b43_phy_ht_op_adjust_txpower(dev);
+	b43_phy_ht_cal_pass(dev);
 	b43_phy_ht_op_adjust_txpower(dev);
 	b43_phy_ht_cal_pass(dev);
 }
