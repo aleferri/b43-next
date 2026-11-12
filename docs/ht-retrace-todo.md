@@ -38,26 +38,13 @@ The PHY's calls into the core (`b43_mac_suspend()`, the shared memory,
 
 ## `ssid`
 
-b43 runs the later init on a retune (`b43_phy_recycle()`; flow `ap_start`
-in `test/phy_ht`), in wl's order up to the TX power control.
-What follows in wl is missing:
-
-- the TX power recalculation of `b43_phy_ht_op_adjust_txpower()`, two or
-  three times inside the start of the BSS (#12660, #13536, #25010 on ch 6),
-  not on watchdog turns;
-- two passes of calibration (#15069-#24098 and #26530-#35530 on ch 6).
-  Each: the TX power control off with its indices saved, an idle TSSI
-  measurement as `b43_phy_ht_tx_power_ctl_idle_tssi()`, table 0x1a's late
-  part again, then
-  - a TX I/Q and LO calibration (#15765-#17663): tone 2500 kHz at 250,
-    the I/Q LO commands at 0x0c2 and the coefficients in table 13;
-  - an RX I/Q calibration, twelve steps (#17939-#23999): tone 2000 kHz at
-    181, playback, the estimator at 0x129, table 13;
-  - the control on again.
-
-  The steps are those of the N-PHY's rev 3+ calibrations in b43
-  (`b43_nphy_cal_tx_iq_lo()`, `b43_nphy_rev3_cal_rx_iq()`) and in brcmsmac,
-  which are where the port starts from.
+b43 runs what wl runs when the BSS starts on a retune (`b43_phy_recycle()`
+and the HT-PHY's `channel_calibrate`; flow `ap_start` in `test/phy_ht`):
+the later init, the TX power set twice, a calibration pass, the TX power
+again and a second pass, then the 1 s watchdog's work, temperature
+measurement included. Of wl's PHY and radio operations from `ssid` to
+`beaconing` only the twelve of the analog switches of wl's core down and up
+are missing, and the target power's values differ, by design.
 
 wl initialises the PHY for the channel again, without the radio init of
 `up`, then calibrates:

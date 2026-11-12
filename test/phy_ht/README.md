@@ -54,20 +54,25 @@ All 14 windows pass.
 
 ## The start of the BSS
 
-When beaconing starts wl initialises the HT-PHY again; b43 does that on a
-retune (`b43_phy_recycle()`), and the flow replays it at `ssid`. `gates.sh` scores that too:
+When beaconing starts wl initialises the HT-PHY again, sets the TX power
+twice, runs a calibration pass (TX I/Q and LO, then RX I/Q), sets the TX
+power again and runs a second pass; b43 does that on a retune
+(`b43_phy_recycle()` and the HT-PHY's `channel_calibrate`), and the flow
+replays it at `ssid`; the 1 s work then runs on wl's turns, the temperature
+measurement on the ticks wl's timer has reached (`HT_WD_TICK0`). `gates.sh`
+scores that too:
 flow `ap_start`, on the PHY state the up left (the RC calibration's results
 and the table 0x25 pair, read off the capture's up), against the window from
 the `ssid` mark to `beaconing`, PHY and radio only. b43's operations there
 are wl's in order, but for the twelve of the analog switches of wl's core
-down and up, which b43 does not make; the calibrations wl runs after the
-init are not in b43 yet.
+down and up, which b43 does not make, and the target power's values; the
+calibrations match wl's to the value, coefficients included.
 
 | capture | PHY+radio |
 |---|---|
-| cold-2g1-20 | 1552/20489 = 7.57% |
-| cold-2g6-20 | 1552/20500 = 7.57% |
-| cold-2g11-20 | 1552/20481 = 7.58% |
+| cold-2g1-20 | 20450/20500 = 99.76% |
+| cold-2g6-20 | 20457/20507 = 99.76% |
+| cold-2g11-20 | 20442/20492 = 99.76% |
 
 ## Exceptions
 
