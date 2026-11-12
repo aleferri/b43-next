@@ -6,8 +6,11 @@
  * whose accesses go to trace.c, and runs one flow. Nothing of b43 is
  * modified.
  */
-#include "phy_n.c"
 #include "n_trace.h"
+/* The calibration report reads without disturbing the stream: peek mode */
+#define B43_NPHY_REPORT_BEGIN(dev)	n_peek(1)
+#define B43_NPHY_REPORT_END(dev)	n_peek(0)
+#include "phy_n.c"
 
 static struct ieee80211_channel chan = {
 	.band = NL80211_BAND_2GHZ,
@@ -112,8 +115,22 @@ static void core_write32(struct bcmn_device *c, u16 offset, u32 value)
 		n_log("unreached: bcma write32 of the 802.11 core");
 }
 
+int b43_modparam_calreport;
+
+void b43info(struct b43_wl *w, const char *fmt, ...)
+{
+	char line[512];
+	va_list ap;
+
+	va_start(ap, fmt);
+	vscnprintf(line, sizeof(line), fmt, ap);
+	va_end(ap);
+	n_report(line);
+}
+
 static struct b43_wldev *setup(void)
 {
+	b43_modparam_calreport = n_env("N_CALREPORT", 0);
 	chan.hw_value = n_env("N_CHANNEL", 6);
 	chan.center_freq = 2407 + 5 * chan.hw_value;
 	/* The regulatory limit: the US one at 2.4 GHz, 30 dBm, by default */
@@ -157,6 +174,8 @@ static struct b43_wldev *setup(void)
 	wldev.phy.radio_rev = 14;
 	wldev.phy.channel = chan.hw_value;
 	wldev.phy.chandef = &hw.conf.chandef;
+	/* b43's hwpctl module parameter, off by default; wl runs it on */
+	wldev.phy.hardware_power_control = n_env("N_HWPCTL", 0);
 
 	b43_nphy_op_prepare_structs(&wldev);
 	/*
@@ -315,6 +334,16 @@ void b43_hf_write(struct b43_wldev *dev, u64 value)
 {
 	n_core("b43_hf_write");
 }
+/* bcma-next's PMU chip control access, as driver_chipcommon_pmu.c makes it */
+void bcmn_chipco_chipctl_maskset(struct bcmn_drv_cc *cc, u32 offset, u32 mask,
+				 u32 set)
+{
+	n_cc_write32(BCMN_CC_PMU_CHIPCTL_ADDR, offset);
+	n_cc_read32(BCMN_CC_PMU_CHIPCTL_ADDR);
+	n_cc_write32(BCMN_CC_PMU_CHIPCTL_DATA,
+		     (n_cc_read32(BCMN_CC_PMU_CHIPCTL_DATA) & mask) | set);
+}
+
 /* ChipCommon's GPIO control, through bcma: outside the 802.11 core */
 u32 bcmn_chipco_gpio_control(struct bcmn_drv_cc *cc, u32 mask, u32 value)
 {

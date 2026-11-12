@@ -90,10 +90,30 @@ Every run prints, on stderr:
   neither the TX I/Q-LO nor the RX I/Q calibration. An experiment, not
   b43's flow; see the todo.
 
+## The calibration report
+
+`N_CALREPORT=1` runs the driver's calibration report (module parameter
+`calreport`) and prints it on stderr; the report reads in peek mode, from
+the mirror of the driver's writes, and changes neither the stream nor the
+reads served. `wlref.py OPS FIRST:LAST` prints the same keys from wl's
+operations in the window, so the two diff line by line:
+
+```sh
+N_CALREPORT=1 N_HWPCTL=1 ./n-trace full OPS FIRST LAST -o /tmp/t 2> /tmp/b43.rep
+./wlref.py OPS FIRST:LAST > /tmp/wl.rep
+```
+
+In the harness b43's calibration results are computed from wl's own
+measurement reads, so a difference is in the computation, not in the
+hardware. The power control status registers (0x1ed/0x1ee) are read-only
+and the harness has no value for them.
+
 ## Environment
 
 `N_NVRAM` (the board's nvram file), `N_CHANNEL` (1-14, default 6),
-`N_PERICAL`, `N_DEBUG=1` (each read past the window on stderr), `N_FN=1`
+`N_PERICAL`, `N_MAXPWR` (the channel's regulatory limit, 30 dBm), `N_HWPCTL`
+(the hwpctl module parameter), `N_CALREPORT=1` (above), `N_DEBUG=1` (each
+read past the window on stderr), `N_FN=1`
 (function markers, `----FN:name----` and `----/FN:name----`, in the trace;
 the binary must be built with `make N_FN=1`, which instruments the
 functions of `phy_n.c` but not the register accessors; `cmp_skip.py` skips
