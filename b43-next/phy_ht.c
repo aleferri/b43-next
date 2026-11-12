@@ -111,10 +111,13 @@ static void b43_radio_2059_rcal(struct b43_wldev *dev)
 		b43err(dev->wl, "Radio 0x2059 rcal timeout\n");
 		b43_cal_report(dev, HT_CAL_RCAL_TIMEOUT, 0x2059);
 	}
+
+    /* wl reads the code, as brcmsmac's 2057 rcal (status & 0x3e) */
+	u16 rccal = b43_radio_read(dev, R2059_C3 | R2059_RCAL_STATUS);
+
 	if (b43_cal_on(dev)) {
 		B43_CAL_PEEK(dev, 1);
-		b43_cal_report(dev, HT_CAL_RCAL_STATUS,
-			       b43_radio_read(dev, R2059_C3 | R2059_RCAL_STATUS));
+		b43_cal_report(dev, HT_CAL_RCAL_STATUS, rccal);
 		B43_CAL_PEEK(dev, 0);
 	}
 
@@ -175,6 +178,18 @@ static void b43_radio_2059_init(struct b43_wldev *dev)
 	int i;
 
 	/* Prepare (reset?) radio */
+	b43_radio_2059_init_pre(dev);
+
+	/*
+	 * Between two of these wl writes 8 to 0x39 of each core through the
+	 * other radio interface, the core in bits 12-13. Which register that
+	 * is, is not known.
+	 */
+	for (i = 0; i < ARRAY_SIZE(routing); i++) {
+		b43_write16(dev, B43_MMIO_RADIO_CONTROL, i << 12 | 0x39);
+		b43_read16(dev, B43_MMIO_RADIO_CONTROL);
+		b43_write16(dev, B43_MMIO_RADIO_DATA_LOW, 0x8);
+	}
 	b43_radio_2059_init_pre(dev);
 
 	r2059_upload_inittabs(dev);
