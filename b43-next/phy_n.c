@@ -5101,6 +5101,8 @@ static u16 b43_nphy_precal_txgain_2057_rev14_epa(struct b43_wldev *dev)
 	b43_nphy_stop_playback(dev);
 	idle[0] = (s8)(tmp >> 24);
 	idle[1] = (s8)(tmp >> 8);
+	nphy->precal_idle[0] = idle[0];
+	nphy->precal_idle[1] = idle[1];
 
 	b43_ntab_write(dev, B43_NTAB16(15, 87), m0m1);
 	b43_ntab_write(dev, B43_NTAB16(15, 95), m0m1);
@@ -5124,6 +5126,8 @@ static u16 b43_nphy_precal_txgain_2057_rev14_epa(struct b43_wldev *dev)
 			delta[step] = rssi[core ? 2 : 0] -
 				      B43_NPHY_PRECAL_SAMPS * idle[core];
 			pad[step] = tried;
+			nphy->precal_pad[core][step] = tried;
+			nphy->precal_delta[core][step] = delta[step];
 			if (step == 0)
 				tried = delta[0] >= B43_NPHY_PRECAL_TSSI *
 					B43_NPHY_PRECAL_SAMPS ? 19 : 31;
@@ -5167,6 +5171,108 @@ static void b43_radio_2057_vcocal(struct b43_wldev *dev)
 	b43_radio_maskset(dev, R2057_RFPLL_MISC_CAL_RESETN, ~0x04, 0x04);
 	b43_radio_maskset(dev, R2057_RFPLL_MISC_EN, ~0x01, 0x01);
 	udelay(300);
+}
+
+#ifndef B43_NPHY_REPORT_BEGIN
+#define B43_NPHY_REPORT_BEGIN(dev)	do { } while (0)
+#define B43_NPHY_REPORT_END(dev)	do { } while (0)
+#endif
+
+/*
+ * With the calreport module parameter, the calibration results and the TX
+ * power values once the calibration is done, as key=value lines, so that a
+ * run on hardware can be put next to the stock driver's values for the
+ * same board and channel.
+ */
+static void b43_nphy_cal_report(struct b43_wldev *dev)
+{
+	struct b43_phy_n *nphy = dev->phy.n;
+	struct ssbn_sprom *sprom = dev->dev->bus_sprom;
+	char buf[84 * 3 + 1];
+	u16 t15[11], r[11];
+	u32 chipctl = 0, pmu1 = 0;
+	unsigned int i, c;
+	int len;
+
+	if (!b43_modparam_calreport)
+		return;
+	B43_NPHY_REPORT_BEGIN(dev);
+
+	b43info(dev->wl, "N-PHY cal: ch %u rev %u radio rev %u\n",
+		dev->phy.channel, dev->phy.rev, dev->phy.radio_rev);
+	if (b43_nphy_precal_2057_rev14_epa(dev))
+		b43info(dev->wl,
+			"N-PHY cal: precal idle=%d,%d core0 pad%u=%d pad%u=%d core1 pad%u=%d pad%u=%d gain=0x%04x\n",
+			nphy->precal_idle[0], nphy->precal_idle[1],
+			nphy->precal_pad[0][0], nphy->precal_delta[0][0],
+			nphy->precal_pad[0][1], nphy->precal_delta[0][1],
+			nphy->precal_pad[1][0], nphy->precal_delta[1][0],
+			nphy->precal_pad[1][1], nphy->precal_delta[1][1],
+			nphy->precal_gain);
+	b43info(dev->wl, "N-PHY cal: orig_pwr_idx=%u,%u txcal_bbmult=0x%04x\n",
+		nphy->cal_orig_pwr_idx[0], nphy->cal_orig_pwr_idx[1],
+		nphy->txcal_bbmult);
+
+	b43_ntab_read_bulk(dev, B43_NTAB16(15, 80), 11, t15);
+	len = 0;
+	for (i = 0; i < 11; i++)
+		len += scnprintf(buf + len, sizeof(buf) - len, " %04x", t15[i]);
+	b43info(dev->wl, "N-PHY cal: txiqlo tbl15[80..90]=%s\n", buf);
+
+	for (i = 0; i < 4; i++)
+		r[i] = b43_phy_read(dev, B43_NPHY_C1_RXIQ_COMPA0 + i);
+	b43info(dev->wl, "N-PHY cal: rxiq a0=%04x b0=%04x a1=%04x b1=%04x\n",
+		r[0], r[1], r[2], r[3]);
+
+	len = 0;
+	for (i = 0; i < ARRAY_SIZE(nphy->rssical_cache.rssical_phy_regs_2G); i++)
+		len += scnprintf(buf + len, sizeof(buf) - len, " %04x",
+				 nphy->rssical_cache.rssical_phy_regs_2G[i]);
+	b43info(dev->wl, "N-PHY cal: rssi radio=%04x,%04x phy=%s\n",
+		nphy->rssical_cache.rssical_radio_regs_2G[0],
+		nphy->rssical_cache.rssical_radio_regs_2G[1], buf);
+
+	b43info(dev->wl,
+		"N-PHY cal: txpctl cmd=%04x n=%04x itssi=%04x tpwr=%04x bidx=%04x stat=%04x,%04x idle_tssi=%u,%u\n",
+		b43_phy_read(dev, B43_NPHY_TXPCTL_CMD),
+		b43_phy_read(dev, B43_NPHY_TXPCTL_N),
+		b43_phy_read(dev, B43_NPHY_TXPCTL_ITSSI),
+		b43_phy_read(dev, B43_NPHY_TXPCTL_TPWR),
+		b43_phy_read(dev, B43_NPHY_TXPCTL_BIDX),
+		b43_phy_read(dev, B43_NPHY_C1_TXPCTL_STAT),
+		b43_phy_read(dev, B43_NPHY_C2_TXPCTL_STAT),
+		nphy->pwr_ctl_info[0].idle_tssi_2g,
+		nphy->pwr_ctl_info[1].idle_tssi_2g);
+	for (c = 0; c < 2; c++)
+		b43info(dev->wl, "N-PHY cal: core%u maxp=0x%02x pa=%04x,%04x,%04x\n",
+			c, sprom->core_pwr_info[c].maxpwr_2g,
+			sprom->core_pwr_info[c].pa_2g[0],
+			sprom->core_pwr_info[c].pa_2g[1],
+			sprom->core_pwr_info[c].pa_2g[2]);
+
+	len = 0;
+	for (i = 0; i < ARRAY_SIZE(nphy->adj_pwr_tbl); i++)
+		len += scnprintf(buf + len, sizeof(buf) - len, "%x%s",
+				 nphy->adj_pwr_tbl[i] & 0xff,
+				 i + 1 < ARRAY_SIZE(nphy->adj_pwr_tbl) ? "," : "");
+	b43info(dev->wl, "N-PHY cal: ppr_max=%u adj_pwr_tbl=%s\n",
+		b43_ppr_get_max(&nphy->tx_pwr_max_ppr), buf);
+
+#ifdef CONFIG_B43_NEXT_BCMA
+	if (dev->dev->bus_type == B43_BUS_BCMA) {
+		struct bcmn_drv_cc *cc = &dev->dev->bdev->bus->drv_cc;
+
+		chipctl = bcmn_cc_read32(cc, BCMN_CC_CHIPCTL);
+		bcmn_cc_write32(cc, BCMN_CC_PMU_CHIPCTL_ADDR, 1);
+		pmu1 = bcmn_cc_read32(cc, BCMN_CC_PMU_CHIPCTL_DATA);
+	}
+#endif
+	b43info(dev->wl,
+		"N-PHY cal: chipctl=%08x (bit6 %u) pmu_chipctl1=%08x (extpa c0 %u c1 %u)\n",
+		chipctl, !!(chipctl & 0x40), pmu1, !!(pmu1 & BIT(13)),
+		!!(pmu1 & BIT(8)));
+
+	B43_NPHY_REPORT_END(dev);
 }
 
 /*
@@ -5248,6 +5354,7 @@ static void b43_nphy_init_cal_2057_rev14_epa(struct b43_wldev *dev, u16 g)
 	nphy->txpwrindex[0].index = -1;
 	nphy->txpwrindex[1].index = -1;
 	b43_nphy_tx_power_ctrl(dev, pctl);
+	b43_nphy_cal_report(dev);
 }
 
 /* https://bcm-v4.sipsolutions.net/802.11/PHY/N/GetTxGain */
