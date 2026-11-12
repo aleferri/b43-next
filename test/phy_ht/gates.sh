@@ -63,9 +63,14 @@ for c in "$@"; do
 	a=$(awk "/MARK 'ssid'/ { print substr(\$2, 2) + 1; exit }" "$ops")
 	z=$(awk "/MARK 'beaconing'/ { print substr(\$2, 2) - 1; exit }" "$ops")
 	rc() { awk -v r="RAD.RD addr=$1 " 'index($0, r) { print $NF; exit }' "$ops" | sed 's/val=//'; }
+	# The ticks of wl's timer before the window's first turn, from the
+	# capture's first turn: a tick is 1.0093 s on this board.
+	tick0=$(awk -v a="$a" '/REG\.RD off=0x04d0/ { if (!t0) t0 = $1 + 0 }
+		{ n = substr($2, 2) + 0 }
+		n >= a && /REG\.RD off=0x04d0/ { print int(($1 - t0) / 1.0093 + 0.5); exit }' "$ops")
 	t25=$(awk '/PHY\.WR addr=0x0072 val=0x94/ { print "0x" substr($NF, 9); exit }' "$ops")
 	echo "== $c, ap start, ops $a:$z"
-	HT_CHANNEL=$ch HT_WD_TURNS=$(turns "$a" "$z") \
+	HT_CHANNEL=$ch HT_WD_TURNS=$(turns "$a" "$z") HT_WD_TICK0=$tick0 \
 		HT_RCCAL0=$(rc 0x034c) HT_RCCAL1=$(rc 0x034d) \
 		HT_RCCAL2=$(rc 0x034e) HT_T25=$t25 \
 		./ht-trace ap_start "$ops" "$a" "$z" -o "$T/$c.ap.trace" 2>/dev/null
