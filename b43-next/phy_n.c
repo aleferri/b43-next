@@ -1816,7 +1816,10 @@ static void b43_nphy_rev3_rssi_select(struct b43_wldev *dev, u8 code,
 						val = (band == NL80211_BAND_5GHZ) ? 0xC : 0xE;
 					else
 						val = 0x11;
-					if (dev->phy.rev >= 7) {
+					if (dev->phy.rev >= 7 &&
+					    dev->phy.n->tssi_route_kept) {
+						/* the caller set the TSSI path up itself */
+					} else if (dev->phy.rev >= 7) {
 						b43_radio_write(dev, i == 0 ?
 								R2057_TX0_TX_SSI_MUX :
 								R2057_TX1_TX_SSI_MUX,
@@ -5216,6 +5219,12 @@ static u16 b43_nphy_precal_txgain_2057_rev14_epa(struct b43_wldev *dev)
 	b43_ntab_write(dev, B43_NTAB16(8, 0x1b), 0x019e);
 	b43_ntab_write(dev, B43_NTAB16(8, 0x0f), 0x0005);
 	b43_ntab_write(dev, B43_NTAB16(8, 0x1f), 0x0005);
+	/*
+	 * wl reads the TSSI through this setup in every round, without the
+	 * TX SSI mux and IQTEST power-up b43_nphy_rev3_rssi_select() writes:
+	 * with them the I rails read -32 and +31.
+	 */
+	nphy->tssi_route_kept = true;
 
 	/* The idle TSSI, with no tone and no gain forced */
 	b43_nphy_rf_ctl_override_rev7(dev, 0x1000, 0, 3, false, 0);
@@ -5277,6 +5286,7 @@ static u16 b43_nphy_precal_txgain_2057_rev14_epa(struct b43_wldev *dev)
 	b43_ntab_write(dev, B43_NTAB16(15, 87), m0m1);
 	b43_ntab_write(dev, B43_NTAB16(15, 95), m0m1);
 
+	nphy->tssi_route_kept = false;
 	for (core = 0; core < 2; core++) {
 		u16 r = core ? 0x20 : 0;
 
