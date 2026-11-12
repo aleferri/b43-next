@@ -16,6 +16,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <regex.h>
+#include <unistd.h>
 #include "n_trace.h"
 
 #define PHY_VER		0x3e0
@@ -311,6 +312,57 @@ void n_cc_write32(unsigned short offset, unsigned int value)
 	store(key, value);
 }
 
+/* The binary's own symbols, for the markers */
+static struct sym {
+	unsigned long addr;
+	char name[64];
+} *syms;
+static int nsyms, fn_markers = -1;
+
+static void load_syms(void)
+{
+	char cmd[300], line[200], exe[256];
+	ssize_t n = readlink("/proc/self/exe", exe, sizeof(exe) - 1);
+	FILE *p;
+
+	if (n <= 0)
+		return;
+	exe[n] = 0;
+	snprintf(cmd, sizeof(cmd), "nm '%s'", exe);
+	p = popen(cmd, "r");
+	while (p && fgets(line, sizeof(line), p)) {
+		unsigned long a;
+		char t, name[64];
+
+		if (sscanf(line, "%lx %c %63s", &a, &t, name) != 3 ||
+		    (t != 't' && t != 'T'))
+			continue;
+		syms = realloc(syms, (nsyms + 1) * sizeof(*syms));
+		syms[nsyms].addr = a;
+		snprintf(syms[nsyms++].name, sizeof(syms[0].name), "%s", name);
+	}
+	if (p)
+		pclose(p);
+}
+
+void n_marker(void *fn, int leave)
+{
+	int i;
+	const char *name = "?";
+
+	if (fn_markers < 0) {
+		fn_markers = getenv("N_FN") != NULL;
+		if (fn_markers)
+			load_syms();
+	}
+	if (!fn_markers || nout >= MAX_OPS)
+		return;
+	for (i = 0; i < nsyms; i++)
+		if (syms[i].addr == (unsigned long)fn)
+			name = syms[i].name;
+	snprintf(out[nout++].text, LINE, "----%sFN:%s----", leave ? "/" : "", name);
+}
+
 void n_log(const char *what)
 {
 	nlog++;
@@ -489,7 +541,8 @@ int main(int argc, char **argv)
 			return 2;
 		}
 		for (i = 0; i < nout; i++)
-			fprintf(f, "cpu0 %s\n", out[i].text);
+			fprintf(f, out[i].text[0] == '-' ? "%s\n" : "cpu0 %s\n",
+				out[i].text);
 		fclose(f);
 		fprintf(stderr, "%d ops; reads past the window %d, window reads "
 			"not taken %d, b43 messages %d, radio accesses through "
