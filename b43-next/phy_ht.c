@@ -581,7 +581,8 @@ static void b43_phy_ht_tx_power_ctl(struct b43_wldev *dev, bool enable)
 			/* We disable enabled TX pwr ctl, save it's state */
 			for (i = 0; i < 3; i++)
 				phy_ht->tx_pwr_idx[i] =
-					b43_phy_read(dev, status_regs[i]);
+					(b43_phy_read(dev, status_regs[i]) >> 8) &
+					B43_PHY_HT_TXPCTL_CMD_C1_INIT;
 		}
 		b43_phy_mask(dev, B43_PHY_HT_TXPCTL_CMD_C1, 0xffff & ~en_bits);
 	} else {
