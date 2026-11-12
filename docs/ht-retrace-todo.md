@@ -87,3 +87,34 @@ down, so a down and up takes the first init, and only the start of the BSS
 (`bss_start`), which does not go through `b43_phy_exit()`, runs the later
 one. Where hot differs from cold, it goes here; `test/phy_ht` has no hot
 gate yet.
+
+## 40 MHz
+
+b43's HT-PHY tunes `chandef->chan`, the primary channel, at 20 MHz whatever
+the width; it does not run 40 MHz yet, while `main.c` advertises it. Run at
+20 MHz on the centre channel against the cold 40 MHz captures (`cold-2g6l-40`,
+primary 6, centre 8), b43's up already follows wl but for the points below,
+and its start of the BSS too. What 40 MHz needs, from those captures:
+
+- **The core's bandwidth.** wl moves the wrapper's IOCTL from 0x2055 to
+  0x209d, 0x2093 and 0x2095 (`B43_BCMA_IOCTL_PHY_BW_40MHZ` with the clock
+  forced and released) and switches the analog on again (#706-#720), before
+  the radio. `phy.bw_clkbits` carries this for the AC.
+- **The radio on the centre channel**, `chandef->center_freq1`.
+- **The sideband**: after the radio's channel, a read-modify-write of 0x0a0,
+  0x0887 for a lower primary (1l, 6l) and 0x0897 for an upper one (11u),
+  and of 0x310 (#881-#884).
+- **The gain control's table 0x25**: two pairs where 20 MHz has one, 0x6a
+  and 0x29 on 6l; the offsets by channel are to be read off the hot 40 MHz
+  capture as for 20 MHz.
+- **The AFE setup** (`b43_phy_ht_afe_unk1()`): bit 0 cleared, not set, and
+  table 8 entries 4 and 5 at 0xfc60 and 0x0c, not 0xa840 and 0x08.
+- **Table 7** at 0x149, 0x159, 0x169 where 20 MHz writes 0x144, 0x154, 0x164.
+- **The calibrations**: tones of 320 samples (sample depth 0x13f), the
+  I/Q LO command N num 0x7987 instead of 0x6876, and bit 0x20 in the RF
+  control 0x849 + 0x20 * core of the RX calibration (0x420, not 0x400).
+  The tones' frequencies at 40 MHz are to be checked against the N-PHY's
+  (5000 kHz for TX, 4000 kHz for RX in brcmsmac).
+
+The TX power target is the same at 40 MHz on the R6400 (0x5a, 0x56 on a
+primary of 1 or 11), already handled by the locale's caps.
