@@ -191,7 +191,11 @@ with arg 3, at the end of the init) and the TX gain table they start from.
    had before the calibration (read from 0x1ed/0x1ee where wl reads it),
    and the TX power control as it was: brcmsmac's restore_tx_gain.
    69.83% -> 71.86% at 20 dBm.
-6. The rest: the block between the TX I/Q-LO and the RX I/Q calibrations
-   (#19740, 726 ops), the TX I/Q-LO phases' inside, the small blocks (CRS
-   #952, TX filter #3202, table 7 #3349, RX gain block #3450), a
-   `bss_start` flow against `ssid`, and 40 MHz.
+6. Done: the block between the TX I/Q-LO and the RX I/Q calibrations
+   (#19740) is two more phases wl wraps in the TX power control, the PAPD
+   one with nothing to do and the start of the RX one. 71.86% -> 72.32% at
+   20 dBm.
+7. The rest: inside the RX I/Q calibration (#24659-#25600, b43 writes
+   table 27 at 0x14a where wl does other things), the TX I/Q-LO phases'
+   inside, the small blocks (CRS #952, TX filter #3202, table 7 #3349, RX
+   gain block #3450), a `bss_start` flow against `ssid`, and 40 MHz.
