@@ -7435,16 +7435,23 @@ static enum b43_txpwr_result b43_nphy_op_recalc_txpower(struct b43_wldev *dev,
 		b43dbg(dev->wl, "Calculated TX power: " Q52_FMT "\n",
 		       Q52_ARG(b43_ppr_get_max(ppr)));
 
-	/* TODO: Enable this once we get gains working */
-#if 0
-	/* Some extra gains */
-	hw_gain = 6; /* N-PHY specific */
-	if (b43_current_band(dev->wl) == NL80211_BAND_2GHZ)
-		hw_gain += sprom->antenna_gain.a0;
-	else
-		hw_gain += sprom->antenna_gain.a1;
-	b43_ppr_add(ppr, -hw_gain);
-#endif
+	/*
+	 * Some extra gains, as brcmsmac's wlc_phy_txpower_recalc_target():
+	 * 6 quarter-dB for the N-PHY and the SROM's antenna gain. On radio
+	 * 2057 rev 14 with an external PA, wl 7.14.164.18 aims at the highest
+	 * per-rate target less these on the BCM43217 (0x60 against the 0x66
+	 * of the RT-AC56U's SROM rates). Elsewhere: TODO, once the gains are
+	 * known to work there.
+	 */
+	if (b43_nphy_precal_2057_rev14_epa(dev)) {
+		int hw_gain = 6; /* N-PHY specific */
+
+		if (b43_current_band(dev->wl) == NL80211_BAND_2GHZ)
+			hw_gain += sprom->antenna_gain.a0;
+		else
+			hw_gain += sprom->antenna_gain.a1;
+		b43_ppr_add(ppr, -hw_gain);
+	}
 
 	/* Make sure we didn't go too low */
 	b43_ppr_apply_min(ppr, INT_TO_Q52(8));
