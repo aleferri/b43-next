@@ -5146,6 +5146,40 @@ static int b43_nphy_cal_rx_iq(struct b43_wldev *dev,
 static void b43_nphy_save_cal(struct b43_wldev *dev);
 static void b43_nphy_tx_pwr_ctrl_coef_setup(struct b43_wldev *dev);
 
+/*
+ * The full TX I/Q-LO calibration in the six phases of the multi-phase
+ * calibration, two commands each, as wl 7.14.164.18 runs it at up on the
+ * BCM43217: the TX power control is turned back on and off again between
+ * two phases, as brcmsmac's wlc_phy_cal_perical_nphy_run() does around each.
+ */
+#define B43_NPHY_TXCAL_PHASE0	2
+#define B43_NPHY_TXCAL_PHASE5	7
+#define B43_NPHY_TXCAL_NUMCMDS	2
+
+static int b43_nphy_cal_tx_iq_lo_phases(struct b43_wldev *dev,
+					struct nphy_txgains target)
+{
+	struct b43_phy_n *nphy = dev->phy.n;
+	bool pctl = nphy->txpwrctrl;
+	int phase, err = 0;
+
+	nphy->mphase_txcal_cmdidx = 0;
+	nphy->mphase_txcal_numcmds = B43_NPHY_TXCAL_NUMCMDS;
+	for (phase = B43_NPHY_TXCAL_PHASE0; phase <= B43_NPHY_TXCAL_PHASE5;
+	     phase++) {
+		if (phase > B43_NPHY_TXCAL_PHASE0) {
+			b43_nphy_tx_power_ctrl(dev, pctl);
+			b43_nphy_tx_power_ctrl(dev, false);
+		}
+		nphy->mphase_cal_phase_id = phase;
+		err = b43_nphy_cal_tx_iq_lo(dev, target, true, true);
+		if (err)
+			break;
+	}
+	nphy->mphase_cal_phase_id = 0;
+	return err;
+}
+
 /* The TX I/Q-LO and RX I/Q calibrations at the pre-calibration's gain, the
  * save and the TX power control coefficients, as wl's periodic calibration
  * (brcmsmac's wlc_phy_cal_perical_nphy_run()) */
@@ -5161,7 +5195,7 @@ static void b43_nphy_init_cal_2057_rev14_epa(struct b43_wldev *dev, u16 g)
 		target.txgm[c] = (g & 0x7000) >> 12;
 		target.tx_lpf[c] = (g & 0x8000) >> 15;
 	}
-	if (!b43_nphy_cal_tx_iq_lo(dev, target, true, false) &&
+	if (!b43_nphy_cal_tx_iq_lo_phases(dev, target) &&
 	    b43_nphy_cal_rx_iq(dev, target, 2, 0) == 0) {
 		b43_nphy_save_cal(dev);
 		b43_nphy_tx_pwr_ctrl_coef_setup(dev);

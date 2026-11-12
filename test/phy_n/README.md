@@ -34,19 +34,18 @@ that compiles no core, and its calls into the core are counted on stderr.
 
 On 2026-11-12, `--min-block 8 --gap-tol 2`:
 
-| capture | grezzo | PHY+radio |
+| capture | PHY+radio, 30 dBm | PHY+radio, `N_MAXPWR=20` |
 |---|---|---|
-| cold-2g1-20 | | 16245/30356 = 53.51% |
-| cold-2g6-20 | | 16400/30199 = 54.31% |
-| cold-2g11-20 | | 16237/30370 = 53.46% |
+| cold-2g1-20 | 19660/30174 = 65.16% | 19830/30004 = 66.09% |
+| cold-2g6-20 | 20658/29179 = 70.80% | 19832/30005 = 66.10% |
+| cold-2g11-20 | 19660/30183 = 65.14% | 19830/30013 = 66.07% |
 
-These are lower than before the per-rate back-off (59.58% on ch 6)
-although b43's operations are the same and the adjusted power table it
-writes (tables 26/27 at 64-147) now equals wl's in every write: wl writes
-that table many times in calibration steps b43 does not have, and with
-equal contents the alignment pairs b43's writes with later ones of wl's.
-The trace with the table values of a run at 20 dBm, which are zeros,
-scores 59.58%. Read the score of this window with that in mind.
+At 30 dBm the adjusted power table b43 writes (tables 26/27 at 64-147)
+is wl's, and wl rewrites the same table many times, in steps b43 does not
+have yet: with equal contents the alignment pairs b43's writes with one
+or another of wl's, so the scores at 30 dBm move from capture to capture
+for that reason alone. At 20 dBm the table is all zeros, the operations
+are otherwise the same, and the scores are steadier.
 
 What is left is mapped in `../../docs/n-retrace-todo.md`.
 
