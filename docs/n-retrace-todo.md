@@ -180,7 +180,12 @@ with arg 3, at the end of the init) and the TX gain table they start from.
    builds HT TX headers in xmit.c and sizes the RX buffers in dma.c;
    b43-next has its own HT/VHT TX path for the AC cores, so the two need
    merging by design, outside this harness.
-3. The rest of the calibrations against wl (#18914, the RX I/Q steps at
-   #24433/#25210), the small blocks (CRS #952, TX filter #3202, table 7
-   #3349, the RX gain block #3450), a `bss_start` flow against `ssid`,
-   and 40 MHz.
+3. Done: the TX I/Q-LO calibration in wl's six phases of two commands,
+   with the TX power control turned on and off between them
+   (`b43_nphy_cal_tx_iq_lo_phases()`): 59.58% -> 66.10% at 20 dBm.
+4. The rest: wl's #18914 and #19127 (radio 0x375-0x37c read and the TX
+   calibration radio setup again before the RX I/Q calibration, 1356
+   ops), the TX I/Q-LO phases' inside (4112 of 5667 matched), the
+   coefficient setup after the save (523 of 1036), the small blocks (CRS
+   #952, TX filter #3202, table 7 #3349, RX gain block #3450), a
+   `bss_start` flow against `ssid`, and 40 MHz.
