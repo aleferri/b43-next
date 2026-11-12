@@ -39,9 +39,10 @@ The PHY's calls into the core (`b43_mac_suspend()`, the shared memory,
 
 ## `ssid`
 
-b43 runs the later init wl runs here on a retune (`b43_phy_recycle()`;
-`up_hot` in `test/phy_ht`), in order up to the TX power control's target.
-
+b43 runs the later init on a retune (`b43_phy_recycle()`; flow `ap_start`
+in `test/phy_ht`), in wl's order up to the TX power control.
+What follows in wl is missing: the TX power recalculation, twice, and two
+passes of calibrations.
 
 wl initialises the PHY for the channel again, without the radio init of
 `up`, then calibrates:
