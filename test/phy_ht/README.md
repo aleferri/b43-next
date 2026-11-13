@@ -101,8 +101,8 @@ temperature measurements of 25 configurations.
 
 | MHz | window | PHY+radio |
 |---|---|---|
-| 20 | ssid-1 | 19899/20023 = 99.38% |
-| 20 | ssid-2 | 20442/20566 = 99.40% |
+| 20 | ssid-1 | 19914/20008 = 99.53% |
+| 20 | ssid-2 | 20457/20551 = 99.54% |
 | 20 | ssid-3 | 19903/20009 = 99.47% |
 | 20 | ssid-4 | 20452/20562 = 99.47% |
 | 20 | ssid-5 | 19911/20017 = 99.47% |
@@ -111,9 +111,9 @@ temperature measurements of 25 configurations.
 | 20 | ssid-8 | 20439/20533 = 99.54% |
 | 20 | ssid-9 | 19920/20014 = 99.53% |
 | 20 | ssid-10 | 20442/20536 = 99.54% |
-| 20 | ssid-11 | 19899/20023 = 99.38% |
-| 40 | ssid-1l | 28223/28353 = 99.54% |
-| 40 | ssid-2l | 28761/28901 = 99.52% |
+| 20 | ssid-11 | 19914/20008 = 99.53% |
+| 40 | ssid-1l | 28238/28338 = 99.65% |
+| 40 | ssid-2l | 28776/28886 = 99.62% |
 | 40 | ssid-3l | 28250/28352 = 99.64% |
 | 40 | ssid-4l | 28790/28884 = 99.67% |
 | 40 | ssid-5l | 28248/28342 = 99.67% |
@@ -125,18 +125,15 @@ temperature measurements of 25 configurations.
 | 40 | ssid-8u | 28239/28341 = 99.64% |
 | 40 | ssid-9u | 28764/28870 = 99.63% |
 | 40 | ssid-10u | 28246/28340 = 99.67% |
-| 40 | ssid-11u | 28745/28881 = 99.53% |
+| 40 | ssid-11u | 28760/28866 = 99.63% |
 
-The rest falls in four kinds, on every window:
+The rest falls in three kinds, on every window:
 
 - the fourteen of wl's core down and up, twenty on 1l;
 - at the later init wl restores the gain state four times, with the clip
   thresholds between, after the table 0x1c writes (76 operations), and does
   not write 0x280 and 0x283 in the gain control setup, where b43 writes
   them as wl does at the cold `ssid` (4);
-- where the target differs from the window before's (on ch 1 and 11, and
-  on the channel after 1) wl's first TX power set writes the new target,
-  b43 the one before (30);
 - the values the watchdog writes to 0x280 and 0x283 where wl raises them
   (`../../docs/ht-retrace-todo.md`, "The watchdog's 0x280 and 0x283").
 

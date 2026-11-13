@@ -37,12 +37,10 @@ and up takes the first init, and only `bss_start` runs the later one.
   0x280 and 0x283 in the gain control setup; at the cold `ssid` it does
   the opposite, and b43 does as there. In these captures the channel
   changes whenever wl was down before, so which of the two decides is open.
-- The target. wl's later init runs the TX power control with the target of
-  the configuration before and sets the new channel's at the first TX
-  power set after it. b43 computes the target on its TX power checks (a
-  new power level, a TX status at most every 2 s, the 60 s work), not on
-  the channel change: on ch 1 and 11, where wl's locale caps it at 0x56,
-  b43 can keep the 0x5a of the channel before until the next check.
+- The target on a channel switch of a running BSS. With no BSS start b43
+  keeps the target of the channel before until its next TX power check (a
+  new power level, a TX status at most every 2 s, the 60 s work): on ch 1
+  and 11, 0x5a over wl's 0x56.
 
 ## The watchdog's 0x280 and 0x283
 
