@@ -401,6 +401,13 @@ struct sk_buff *ieee80211_beacon_get_tim(struct ieee80211_hw *hw,
 					 unsigned int link_id)
 {
 	static const u8 rates[] = { 0x8c, 0x12, 0x98, 0x24, 0xb0, 0x48, 0x60, 0x6c };
+	/* mac80211's on 2.4 GHz: the CCK ones basic, the rest extended */
+	static const u8 rates_2g[] = { 0x82, 0x84, 0x8b, 0x96,
+				       0x0c, 0x12, 0x18, 0x24 };
+	static const u8 ext_rates_2g[] = { 0x30, 0x48, 0x60, 0x6c };
+	enum nl80211_band band = hw->conf.chandef.chan ?
+				 hw->conf.chandef.chan->band :
+				 NL80211_BAND_5GHZ;
 	struct ieee80211_mgmt *m = (struct ieee80211_mgmt *)shim_beacon;
 	long ssid_len = b43_test_env_long("B43_SSID_LEN", 7);
 	struct ieee80211_tx_info *info;
@@ -420,21 +427,33 @@ struct sk_buff *ieee80211_beacon_get_tim(struct ieee80211_hw *hw,
 	memset(p, 'X', ssid_len);
 	p += ssid_len;
 	*p++ = WLAN_EID_SUPP_RATES;
-	*p++ = sizeof(rates);
-	memcpy(p, rates, sizeof(rates));
-	p += sizeof(rates);
+	if (band == NL80211_BAND_2GHZ) {
+		*p++ = sizeof(rates_2g);
+		memcpy(p, rates_2g, sizeof(rates_2g));
+		p += sizeof(rates_2g);
+	} else {
+		*p++ = sizeof(rates);
+		memcpy(p, rates, sizeof(rates));
+		p += sizeof(rates);
+	}
 	*p++ = WLAN_EID_TIM;
 	*p++ = 4;
 	*p++ = 0;				/* DTIM count */
 	*p++ = vif->bss_conf.dtim_period;
 	*p++ = 0;
 	*p++ = 0;
+	if (band == NL80211_BAND_2GHZ) {
+		*p++ = WLAN_EID_EXT_SUPP_RATES;
+		*p++ = sizeof(ext_rates_2g);
+		memcpy(p, ext_rates_2g, sizeof(ext_rates_2g));
+		p += sizeof(ext_rates_2g);
+	}
 
 	memset(&shim_beacon_skb, 0, sizeof(shim_beacon_skb));
 	shim_beacon_skb.data = shim_beacon;
 	shim_beacon_skb.len = p - shim_beacon;
 	info = IEEE80211_SKB_CB(&shim_beacon_skb);
-	info->band = NL80211_BAND_5GHZ;
+	info->band = band;
 	info->control.rates[0].idx = 0;
 	return &shim_beacon_skb;
 }
@@ -594,16 +613,15 @@ void ieee80211_rx_napi(struct ieee80211_hw *hw, struct ieee80211_sta *sta,
 		       struct sk_buff *skb, struct napi_struct *napi) { }
 
 /*
- * Le vtable degli altri PHY: a NULL, e non e' pigrizia. b43_phy_allocate()
- * dispaccia su phy->type, quindi su questo hardware prende solo il ramo AC:
- * se un giorno prendesse un altro ramo il puntatore nullo lo fa vedere
- * subito, invece di far girare una vtable finta e produrre una traccia
- * plausibile del PHY sbagliato.
+ * Le vtable dei PHY che la suite non compila: a NULL, e non e' pigrizia.
+ * b43_phy_allocate() dispaccia su phy->type, quindi prende solo il ramo AC o
+ * HT della board: se un giorno prendesse un altro ramo il puntatore nullo lo
+ * fa vedere subito, invece di far girare una vtable finta e produrre una
+ * traccia plausibile del PHY sbagliato.
  */
 const struct b43_phy_operations *b43_phyops_g;
 const struct b43_phy_operations *b43_phyops_n;
 const struct b43_phy_operations *b43_phyops_lp;
-const struct b43_phy_operations *b43_phyops_ht;
 
 /*
  * I work item si eseguono in linea, non si accodano.

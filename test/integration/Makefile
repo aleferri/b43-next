@@ -47,8 +47,8 @@ KINC := -I$(REPO)/include -I$(KG)/include -I$(K)/include -I$(K)/include/uapi \
 KFLAGS := -nostdinc -I$(REPO)/b43-next -I$(REPO) $(KINC) -D__KERNEL__ -DMODULE -DKBUILD_MODNAME=\"b43\" \
           -include $(K)/include/linux/kconfig.h \
           -include $(K)/include/linux/compiler_types.h \
-          -DCONFIG_B43_NEXT_BCMA=1 -DCONFIG_B43_NEXT_PHY_AC=1 -DCONFIG_B43_NEXT_LEDS=1 \
-          -DCONFIG_BCM63XX=1 \
+          -DCONFIG_B43_NEXT_BCMA=1 -DCONFIG_B43_NEXT_PHY_AC=1 \
+          -DCONFIG_B43_NEXT_PHY_HT=1 -DCONFIG_B43_NEXT_LEDS=1 \
           -O2 -fno-strict-aliasing -fno-common -std=gnu11 \
           -Wno-address-of-packed-member \
           -mno-red-zone \
@@ -75,7 +75,10 @@ KFLAGS += $(if $(shell grep -sw 'define kzalloc_obj' $(K)/include/linux/slab.h),
 # CONFIG_BCM63XX: il bersaglio e le board della collezione sono router BCM63xx
 # con la radio su PCIe, e su quegli host b43 rilegge gli indirizzi dei
 # registri come il driver stock (flush_writes in b43/bus.c). Gli header non
-# lo usano.
+# lo usano. BCM63XX=0 per una board su un altro host, come l'R6400 v1 sul suo
+# BCM4708, dove ne' b43 ne' wl rileggono.
+BCM63XX ?= 1
+KFLAGS += $(if $(filter 1,$(BCM63XX)),-DCONFIG_BCM63XX=1)
 #
 # Build per il backtrace: -O2 resta, perche' lo chiedono gli header; -fno-inline
 # -g tengono i frame, cosi' gdb dice in quale funzione di b43 la probe muore
@@ -87,11 +90,20 @@ endif
 # I file di b43 che si compilano come sono. Tutti e tre a zero errori.
 UPSTREAM := main.c phy_common.c bus.c xmit.c dma.c leds.c rfkill.c \
             phy_ac.c tables_phy_ac.c radio_2069.c \
+            phy_ht.c tables_phy_ht.c radio_2059.c \
             ppr.c radar_ac.c
 
 # La gestione del core di bcma, anche lei com'e': reset, clock e PLL del
 # core passano dal wrapper e da clk_ctl_st, che lo stub traccia.
-BCMA := core.c driver_chipcommon.c driver_chipcommon_pmu.c driver_pcie2.c
+BCMA := core.c driver_chipcommon.c driver_chipcommon_pmu.c driver_pci.c \
+        driver_pcie2.c
+
+# The SPROM of a board without one, from its NVRAM (B43_NVRAM), as on the
+# Broadcom routers.
+NVRAM := bcm47xx_sprom.c
+
+# The kernel's CORDIC, which the HT-PHY's calibrations use.
+KLIB := lib/math/cordic.c
 
 # I nostri: il bus finto che emette le op. L'aggancio e' la vtable
 # bcmn_host_ops, non i simboli bcmn_* che il link chiede.
@@ -117,10 +129,12 @@ endif
 
 # Cio' che trace_out.c chiede a libc: si risolve al link finale, quindi va
 # tenuto fuori dal conto del lavoro rimasto o il numero mente.
-LIBC := pipe|fork|execl|dup2|close|waitpid|fdopen|fflush|fputs|perror|_exit|exit|atexit|memmove|fprintf|fopen|fclose|fgets|fwrite|getenv|memset|memcpy|stdout|stderr|strcmp|strstr|strnlen|snprintf|sscanf|__isoc99_sscanf|calloc|realloc|free|abort|_GLOBAL_OFFSET_TABLE_|__stack_chk_fail|__printf_chk|__fprintf_chk|__vfprintf_chk|setvbuf|strtol|rewind|fseek|ftell|fread|__fread_chk|malloc|strlen|__snprintf_chk
+LIBC := pipe|fork|execl|dup2|close|waitpid|fdopen|fflush|fputs|perror|_exit|exit|atexit|memmove|fprintf|fopen|fclose|fgets|fwrite|getenv|memset|memcpy|stdout|stderr|strcmp|strstr|strnlen|snprintf|sscanf|__isoc99_sscanf|calloc|realloc|free|abort|_GLOBAL_OFFSET_TABLE_|__stack_chk_fail|__printf_chk|__fprintf_chk|__vfprintf_chk|setvbuf|strtol|strtoll|strtoull|strncmp|strcspn|strsep|rewind|fseek|ftell|fread|__fread_chk|malloc|strlen|__snprintf_chk
 
 DRV_OBJS := $(patsubst %.c,$(B)/b43-next/%.o,$(UPSTREAM)) \
-            $(patsubst %.c,$(B)/bcma-next/%.o,$(BCMA))
+            $(patsubst %.c,$(B)/bcma-next/%.o,$(BCMA)) \
+            $(patsubst %.c,$(B)/nvram/%.o,$(NVRAM)) \
+            $(patsubst %.c,$(B)/klib/%.o,$(notdir $(KLIB)))
 
 .PHONY: all check link run clean
 all: b43-trace
@@ -136,9 +150,15 @@ check:
 # Traguardo 2: quanto manca al link, per famiglia. Il numero e' la mappa del
 # lavoro rimasto, e il README lo spiega voce per voce.
 link:
-	@mkdir -p $(B)/b43-next $(B)/bcma-next
+	@mkdir -p $(B)/b43-next $(B)/bcma-next $(B)/nvram $(B)/klib
 	@for f in $(addprefix b43-next/,$(UPSTREAM)) $(addprefix bcma-next/,$(BCMA)); do \
 	    gcc -c $(REPO)/$$f -o $(B)/$${f%.c}.o $(KFLAGS) || exit 1; done
+	@for f in $(addprefix nvram/,$(NVRAM)); do \
+	    gcc -c $(REPO)/$$f -o $(B)/$${f%.c}.o $(KFLAGS) \
+	        -DCONFIG_BCM47XX_NVRAM=1 || exit 1; done
+	@for f in $(KLIB); do \
+	    gcc -c $(K)/$$f -o $(B)/klib/$$(basename $${f%.c}).o $(KFLAGS) \
+	        || exit 1; done
 	@for f in $(LOCAL); do gcc -c $$f -o $${f%.c}.o $(KFLAGS) -I.; done
 	@for f in $(USER); do gcc -c $$f -o $${f%.c}.o $(UFLAGS) -I.; done
 	@ld -r $(DRV_OBJS) \
