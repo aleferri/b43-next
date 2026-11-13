@@ -27,6 +27,9 @@ lets an AP on the AC-PHY run on radar channels (tested on the RT-AC66U B1
 only, not a certified detector). What the kernel's Kconfig decided for b43,
 ssb and bcma is decided in [`Kbuild`](Kbuild).
 
+Of the 6.18 stable kernels, 6.18.33 to 6.18.38 are not supported: their
+typed allocators take a mandatory GFP and lack `kzalloc_flex()`.
+
 ## Installing
 
 ```sh

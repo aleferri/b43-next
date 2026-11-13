@@ -62,9 +62,14 @@ ccflags-y += $(foreach o,$(ssbn-opts),-DCONFIG_SSBN_$(o)=1)
 ccflags-y += $(foreach o,$(bcmn-opts),-DCONFIG_BCMN_$(o)=1)
 ccflags-y += $(foreach o,$(b43n-opts),-DCONFIG_B43_NEXT_$(o)=1)
 
-# compat.h comes before slab.h: the kernel's kzalloc_obj() is looked for here.
-ifneq ($(shell grep -sw 'define kzalloc_obj' $(srctree)/include/linux/slab.h),)
+# compat.h comes before slab.h, so the kernel's typed allocators are looked
+# for here. 6.18.33-6.18.38 have them with a mandatory GFP and without
+# kzalloc_flex(), and compat.h can't redefine them.
+b43n-slab := $(srctree)/include/linux/slab.h
+ifneq ($(shell grep -sw 'define kzalloc_flex' $(b43n-slab)),)
 ccflags-y += -DB43_NEXT_HAVE_KZALLOC_OBJ
+else ifneq ($(shell grep -sw 'define kzalloc_obj' $(b43n-slab)),)
+$(error b43-next: kzalloc_obj() without kzalloc_flex(): 6.18.33-6.18.38 are not supported)
 endif
 
 obj-m += b43-next.o
