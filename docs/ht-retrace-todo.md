@@ -8,7 +8,10 @@ scores are in `test/phy_ht/README.md`. Operation numbers here are from
 ## The core
 
 The harness compiles no core, so the `grezzo` line of `gates.sh` stays
-near 62%. The larger unmatched runs of the `up` window are the core's:
+near 72%. Of the core it has the watchdog's turn only, the shared memory
+accessors and copies of main.c's MAC suspend and enable, TSF read and
+watchdog poll. The larger unmatched runs of the `up` window are the core's
+init:
 
 | ops | what |
 |---|---|
@@ -16,10 +19,28 @@ near 62%. The larger unmatched runs of the `up` window are the core's:
 | #962-#992 | wrapper and chipcommon |
 | #5738-#8731 | after the TX power control: MMIO reads, shared memory |
 
-`bss-up` is mostly the core too: 2117 MMIO reads, 976 writes, 614 shared
-memory accesses. The PHY's calls into the core (`b43_mac_suspend()`, the
-shared memory, `b43_mac_switch_freq()`, the PLL) emit nothing: on the AC
-`test/unit/main.c` mirrors them, here they are only counted.
+To compare them b43's core has to run against these captures, which is what
+`test/integration` does for the AC-PHY: corerev 42, the PCIe2 core and the
+AC boards' profiles. The 4331 is corerev 29 with an HT-PHY, and its host
+interface is not the AC chips' PCIe2.
+
+In the watchdog's turn b43's operations are wl's but for:
+
+- MACCTL's bit 31 (`B43_MACCTL_GMODE` in `b43.h`): wl reads it set and
+  writes MACCTL with it clear, 0x04160402 against 0x84160402 read, where
+  b43's read-modify-write keeps it. brcmsmac sets G mode through the core's
+  I/O control (`SICF_GMODE`) and never writes `MCTL_GMODE`, which it only
+  reads back after a core reset; b43 writes it at the core reset, the
+  chip init and the AC-PHY's band switch, in main.c;
+- the MAC suspend: wl reads MACINTSTATUS before it writes MACCTL, b43 after;
+- the RX ring's index, whose value is b43's ring's, not wl's; the harness
+  has no ring and does not emit it.
+
+wl also reads the core's registers and the statistics at its inits and in
+its interrupt handling, where b43 reads others, and `bss-up` is mostly the
+core: 2117 MMIO reads, 976 writes, 614 shared memory accesses. The PHY's
+other calls into the core (`b43_mac_switch_freq()`, the PLL) emit nothing:
+on the AC `test/unit/main.c` mirrors them, here they are only counted.
 
 ## The hot cycle
 
@@ -104,6 +125,6 @@ turns' fits worse: 129 of 201 turns against 174.
 gives 46 of 70 turns: on 6l, 9u and 11u wl writes 0x45 at the second turn
 and 0x44 two later, at the start of the turn as always, after turns with a
 handful of counts, and 2l, 4l, 5l, 7u and 8u depart from it too. Something
-else raises the value at 40 MHz, or the rule is another. A port needs the
-harness to serve the counters, and the rule a capture with an interferer
-switched on and off on purpose.
+else raises the value at 40 MHz, or the rule is another. b43 reads the four
+counters on every turn and the harness serves them; the rule needs a capture
+with an interferer switched on and off on purpose.
