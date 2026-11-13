@@ -10,9 +10,9 @@
 #
 # CAPTURE is a name under traces/mmio-cold, e.g. cold-2g6-20; without, the
 # six cold ones, 20 and 40 MHz. GATE_TMP keeps the
-# window's trace and b43's. Each capture gets two rows: all the operations,
+# window's trace and b43's. Each window gets two rows: all the operations,
 # and the PHY's and radio's only, the perimeter of this harness, which
-# compiles no core.
+# compiles no core but its shared memory accessors.
 set -u
 REPO=$(cd "$(dirname "$0")/../.." && pwd)
 . "$REPO/test/paths.sh"
@@ -84,6 +84,8 @@ for c in "$@"; do
 		HT_RCCAL0=$(rc 0x034c) HT_RCCAL1=$(rc 0x034d) \
 		HT_RCCAL2=$(rc 0x034e) HT_T25=$t25 HT_T25B=$t25b \
 		./ht-trace ap_start "$ops" "$a" "$z" -o "$T/$c.ap.trace" 2>/dev/null
+	python3 ../unit/cmp_skip.py "$ops" "$T/$c.ap.trace" "$a:$z" \
+		--board r6400v1 --bus $B | grep -A2 '^grezzo'
 	grep -E ' (PHY|RAD)\.' "$T/$c.ap.trace" > "$T/$c.ap.phy.trace"
 	python3 ../unit/cmp_skip.py "$T/$c.phy.ops" "$T/$c.ap.phy.trace" \
 		"$a:$z" --board r6400v1 --bus $B | grep -A2 '^grezzo' |

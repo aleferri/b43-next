@@ -1,8 +1,9 @@
 #!/bin/sh
 # Scores b43's start of the BSS against the R6400 v1's hot captures, one
-# window per channel, from the `ssid-N` mark to `down-N`, PHY and radio
-# only: flow `ap_start`, as gates.sh does for the cold `ssid`, on every
-# 2.4 GHz channel at 20 MHz and on 1l-7l and 5u-11u at 40.
+# window per channel, from the `ssid-N` mark to `down-N`, all the operations
+# and the PHY's and radio's only: flow `ap_start`, as gates.sh does for the
+# cold `ssid`, on every 2.4 GHz channel at 20 MHz and on 1l-7l and 5u-11u
+# at 40.
 #
 #   ./hot.sh --min-block 8 --gap-tol 2 [CAPTURE [SEGMENT...]]
 #
@@ -94,6 +95,8 @@ for c in $caps; do
 				HT_WD_TICK0=$tick0 HT_RCCAL0=$rc0 \
 				HT_RCCAL1=$rc1 HT_RCCAL2=$rc2 HT_T25=$t25 HT_T25B=$t25b \
 				./ht-trace ap_start "$ops" "$a" "$z" -o "$T/$c.$seg.trace" 2>/dev/null
+			python3 ../unit/cmp_skip.py "$ops" "$T/$c.$seg.trace" "$a:$z" \
+				--board r6400v1 --bus $B | grep -A2 '^grezzo'
 			grep -E ' (PHY|RAD)\.' "$T/$c.$seg.trace" > "$T/$c.$seg.phy.trace"
 			python3 ../unit/cmp_skip.py "$T/$c.phy.ops" "$T/$c.$seg.phy.trace" \
 				"$a:$z" --board r6400v1 --bus $B | grep -A2 '^grezzo' |
