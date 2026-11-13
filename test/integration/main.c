@@ -35,6 +35,8 @@
 #include "bcma-next/bcmn_private.h"
 
 void b43_test_cc_seed(u16 off, u32 val);
+void b43_test_chip_identity(unsigned int core_rev, u16 phy_ver, u16 radio,
+			    u16 radio_rev);
 #include "trace_out.h"
 
 extern const struct bcmn_host_ops b43_test_bcma_ops;
@@ -69,12 +71,16 @@ static struct pci_dev test_pci;
 static struct bcmn_bus test_bus;
 static struct bcmn_device test_core;
 static struct bcmn_device test_cc_core;
-static struct bcmn_device test_pcie2_core;
+static struct bcmn_device test_host_core;
 /* What bcma gives a PCI host's cores for DMA, the PCI device: dma-mapping.h's
  * inlines read it before they call the stubs. */
 static struct device test_dma_dev;
 
 #define TEST_PHY_TYPE_AC	0x0b	/* B43_PHYTYPE_AC */
+
+/* The SPROM from an NVRAM dump, for a board without one */
+void bcm47xx_fill_sprom(struct ssbn_sprom *sprom, const char *prefix,
+			bool fallback);
 
 static char vchip_board[256];
 
@@ -82,6 +88,7 @@ static void build_core(void)
 {
 	const struct board_profile *board =
 		board_profile_lookup(b43_test_env("B43_BOARD"));
+	unsigned int core_rev = board->core_rev ?: TEST_CORE_REV;
 
 	/*
 	 * The virtual chip's board: the core revision b43 sees, the PHY
@@ -94,9 +101,14 @@ static void build_core(void)
 		 "--corerev %u --phy-ver 0x%04x --phy 0xb=0x2bdb "
 		 "--radio-id 0x%x --radio 0=0x%x --radio 1=0x%x --radio 0x90b=0x100 "
 		 "--tx-engine 20,10,30",
-		 TEST_CORE_REV, TEST_PHY_TYPE_AC << 8 | board->phy_rev,
+		 core_rev, (board->phy_type ?: TEST_PHY_TYPE_AC) << 8 |
+		 board->phy_rev,
 		 board->radio_ver, board->radio_rev, board->radio_ver);
 	b43_chip_board(vchip_board);
+	if (board->phy_type)
+		b43_test_chip_identity(core_rev, board->phy_type << 8 |
+				       board->phy_rev, board->radio_ver,
+				       board->radio_rev);
 
 	test_bus.ops = &b43_test_bcma_ops;
 	test_bus.hosttype = BCMN_HOSTTYPE_PCI;
@@ -128,10 +140,14 @@ static void build_core(void)
 					   board->cc_chipstatus));
 	b43_test_cc_seed(BCMN_CC_PMU_CAP, board->pmu_caps);
 
-	/* The PCIe2 host bridge of the 4360 family, rev 1 in the archer's EROM. */
-	test_pcie2_core.bus = &test_bus;
-	test_pcie2_core.id.id = BCMN_CORE_PCIE2;
-	test_pcie2_core.id.rev = 1;
+	/*
+	 * The host interface: the PCIe2 of the 4360 family, rev 1 in the
+	 * archer's EROM, or the first generation's PCIe, between rev 15 and 20
+	 * on the 4331 (wl's power save writes 0x7f64 to MDIO block 1's MGMT1).
+	 */
+	test_host_core.bus = &test_bus;
+	test_host_core.id.id = board->host_core ?: BCMN_CORE_PCIE2;
+	test_host_core.id.rev = board->host_core ? 15 : 1;
 
 	/*
 	 * La SROM. Senza, b43 gira su una board azzerata: femctrl=0 -- che il
@@ -143,11 +159,14 @@ static void build_core(void)
 	 * Su hardware la riempie bcmn_sprom_extract_r11(); qui il profilo sta
 	 * al suo posto, con le stesse maschere.
 	 */
-	board_profile_to_sprom(board, &test_bus.sprom);
+	if (board->nvram_prefix)
+		bcm47xx_fill_sprom(&test_bus.sprom, board->nvram_prefix, false);
+	else
+		board_profile_to_sprom(board, &test_bus.sprom);
 
 	test_core.bus = &test_bus;
 	test_core.id.id = TEST_CORE_ID;
-	test_core.id.rev = TEST_CORE_REV;
+	test_core.id.rev = core_rev;
 	test_core.id.manuf = BCMN_MANUF_BCM;
 	test_core.core_index = 0;
 	test_core.dma_dev = &test_dma_dev;
@@ -161,8 +180,9 @@ struct bcmn_device *bcmn_find_core_unit(struct bcmn_bus *bus, u16 coreid,
 	switch (coreid) {
 	case BCMN_CORE_CHIPCOMMON:
 		return &test_cc_core;
+	case BCMN_CORE_PCIE:
 	case BCMN_CORE_PCIE2:
-		return &test_pcie2_core;
+		return coreid == test_host_core.id.id ? &test_host_core : NULL;
 	case TEST_CORE_ID:
 		return &test_core;
 	}
@@ -171,7 +191,7 @@ struct bcmn_device *bcmn_find_core_unit(struct bcmn_bus *bus, u16 coreid,
 
 /*
  * What bcmn_bus_register() runs before it registers the cores' drivers: the
- * ChipCommon and PMU init, then the PCIe2 workarounds. With the capability
+ * ChipCommon and PMU init, then the host interface's workarounds. With the capability
  * words of the profile at zero the PMU stays out, as on a board the suite
  * has no reset values for.
  */
@@ -186,8 +206,13 @@ static void test_bcma_bus_init(void)
 	 */
 	if (!test_bus.drv_cc.pmu.core)
 		test_bus.drv_cc.pmu.core = &test_cc_core;
-	test_bus.drv_pcie2.core = &test_pcie2_core;
-	bcmn_core_pcie2_init(&test_bus.drv_pcie2);
+	if (test_host_core.id.id == BCMN_CORE_PCIE) {
+		test_bus.drv_pci[0].core = &test_host_core;
+		bcmn_core_pci_init(&test_bus.drv_pci[0]);
+	} else {
+		test_bus.drv_pcie2.core = &test_host_core;
+		bcmn_core_pcie2_init(&test_bus.drv_pcie2);
+	}
 }
 
 /*

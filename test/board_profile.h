@@ -118,6 +118,16 @@ struct board_profile {
 	u8 ledbh[16];
 	/* Revision of the microcode the board's wl runs; 0 for 7.14's, 928. */
 	u16 ucode;
+	/* The PHY's type, B43_PHYTYPE_*; 0 for the AC-PHY. */
+	u8 phy_type;
+	/* The host interface's core, BCMN_CORE_*; 0 for the PCIe2. */
+	u16 host_core;
+	/*
+	 * A board without a SROM: its NVRAM's prefix, the SPROM read from the
+	 * dump B43_NVRAM names (nvram/bcm47xx_sprom.c) instead of the fields
+	 * above, which are the AC boards'.
+	 */
+	const char *nvram_prefix;
 };
 
 /*
@@ -626,6 +636,18 @@ static const struct board_profile PROFILE_R7000_5G = {
 	.rccal_g = 0x01a8,
 };
 
+/*
+ * The R6400 v1's 2.4 GHz radio, `wl revinfo`: BCM4331 rev 2, corerev 29, an
+ * HT-PHY rev 1 with the radio 2059 rev 0, behind a PCIe core of the first
+ * generation; its SROM is in the router's NVRAM under pci/1/1/.
+ */
+static const struct board_profile PROFILE_R6400V1 = {
+	.name = "r6400v1", .chip_id = 0x4331, .chip_rev = 0x2,
+	.pci_device = 0x4332, .radio_ver = 0x2059, .radio_rev = 0,
+	.phy_rev = 1, .core_rev = 29, .phy_type = 0x07,
+	.host_core = 0x820, .nvram_prefix = "pci/1/1/",
+};
+
 /* One-shot mock storage. Lives for the whole run. */
 /* Il profilo per nome, come lo passano le due suite (argv o B43_BOARD). */
 static inline const struct board_profile *board_profile_lookup(const char *name)
@@ -644,6 +666,8 @@ static inline const struct board_profile *board_profile_lookup(const char *name)
 		return &PROFILE_R7000_2G;
 	if (name && !strcmp(name, "r7000-5g"))
 		return &PROFILE_R7000_5G;
+	if (name && !strcmp(name, "r6400v1"))
+		return &PROFILE_R6400V1;
 	return &PROFILE_D6220;
 }
 

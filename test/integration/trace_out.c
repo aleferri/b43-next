@@ -135,6 +135,14 @@ static int oracle_is_latch(const char *cls, u16 addr)
 	return 0;
 }
 
+/*
+ * The address the vendor gave its RX ring 0 (the first write of DMA64 RX
+ * ring 0's low address, 0x0228, in a capture taken at the bus), for the
+ * slots its status reads carry.
+ */
+static unsigned vendor_rx_ringlo;
+static int vendor_rx_ringlo_seen;
+
 static struct oracle_key okeys[ORACLE_KEYS];
 static unsigned n_okeys;
 static int oracle_loaded;
@@ -278,6 +286,11 @@ static void oracle_load(void)
 		} else if (!strcmp(cls, "PHY.WR"))
 			tbl_note_addr(&vendor_tbl_id, &vendor_tbl_off,
 				      (u16)addr, val);
+		else if (!strcmp(cls, "REG.WR") && addr == 0x0228 &&
+			 !vendor_rx_ringlo_seen) {
+			vendor_rx_ringlo = val;
+			vendor_rx_ringlo_seen = 1;
+		}
 		else if (strstr(cls, ".RD"))
 			oracle_push(cls, (u16)addr, val);
 		else if (!strcmp(cls, "PHY.MOD") || !strcmp(cls, "PHY.AND") ||
@@ -520,6 +533,14 @@ void b43_trace_fill(void *buf, unsigned long count, u16 off, u8 reg_width)
 u32 b43_trace_read(const char *cls, u16 addr, int width)
 {
 	return oracle_lookup(cls, addr, width);
+}
+
+int b43_trace_vendor_rx_ringlo(u32 *v)
+{
+	if (!oracle_loaded)
+		oracle_load();
+	*v = vendor_rx_ringlo;
+	return vendor_rx_ringlo_seen;
 }
 
 int b43_trace_has(const char *cls, u16 addr)

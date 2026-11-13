@@ -30,6 +30,8 @@ u32  b43_trace_read(const char *cls, u16 addr, int width);
 u32  b43_trace_read_raw(u16 off, int width);
 /* Se la cattura porta almeno una lettura di (cls, addr). */
 int  b43_trace_has(const char *cls, u16 addr);
+/* The vendor's RX ring 0 address, if the capture has its write */
+int  b43_trace_vendor_rx_ringlo(u32 *v);
 /* Le letture di shared memory, con la coda dello spazio `routing` (i 16 bit
  * alti di B43_MMIO_SHM_CONTROL, il `sel=` della cattura). */
 u32  b43_trace_read_shm(u32 routing, u16 addr, int width);
