@@ -2969,7 +2969,7 @@ static void b43_do_interrupt_thread(struct b43_wldev *dev)
 
 	if (unlikely(reason & B43_IRQ_UCODE_DEBUG))
 		handle_irq_ucode_debug(dev);
-	if (dev->phy.type == B43_PHYTYPE_AC) {
+	if (dev->phy.type == B43_PHYTYPE_AC || dev->ht) {
 		/* As brcmsmac: the PSM watchdog resets, the timer is stopped. */
 		if (unlikely(reason & B43_IRQ_TIMER0)) {
 			b43err_restart(dev->wl,
@@ -6738,6 +6738,9 @@ static void setup_struct_wldev_for_init(struct b43_wldev *dev)
 		dev->irq_mask = B43_IRQ_MASKTEMPLATE;
 		if (b43_modparam_verbose < B43_VERBOSITY_DEBUG)
 			dev->irq_mask &= ~B43_IRQ_PHY_TXERR;
+		/* The PSM microcode watchdog, as on the AC cores. */
+		if (dev->ht)
+			dev->irq_mask |= B43_IRQ_TIMER0;
 	}
 
 	dev->mac_suspended = 1;
