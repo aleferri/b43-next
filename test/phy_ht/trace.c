@@ -178,6 +178,8 @@ void ht_mmio_write16(unsigned short offset, unsigned short value)
 	}
 }
 
+static unsigned int macctl = 1;
+
 unsigned int ht_mmio_read32(unsigned short offset)
 {
 	char key[24];
@@ -185,6 +187,13 @@ unsigned int ht_mmio_read32(unsigned short offset)
 
 	snprintf(key, sizeof(key), "REG %04x", offset);
 	v = serve(key);
+	/*
+	 * The microcode's answer, which no capture can serve in b43's
+	 * order: with the MAC's enable bit clear, GEN_IRQ_REASON says
+	 * suspended.
+	 */
+	if (offset == 0x128 && !(macctl & 1))
+		v |= 1;
 	emit("%s off=0x%04x val=0x%08x", "REG.RD", offset, v);
 	return v;
 }
@@ -193,6 +202,8 @@ void ht_mmio_write32(unsigned short offset, unsigned int value)
 {
 	char key[24];
 
+	if (offset == 0x120)
+		macctl = value;
 	/* MACCTL and MACCMD, which mmio2ops names */
 	if ((offset == 0x120 || offset == 0x124) && nout < MAX_OPS)
 		snprintf(out[nout++].text, LINE, "%s val=0x%08x",
@@ -255,9 +266,11 @@ void ht_wrap_write32(unsigned short offset, unsigned int value)
 }
 
 /*
- * Turn k of the window starts. wl reads the shared memory outside its
- * turns too, at the inits, and b43 does not: its reads of a turn take the
- * values wl read from the same turn on, not the ones before it.
+ * Turn k of the window starts. wl reads the core's registers and shared
+ * memory outside its turns too, at the inits and in its interrupt
+ * handling, where b43 reads others: its reads of a turn take the values wl
+ * read from the same turn on, not the ones before it. The PHY's and the
+ * radio's reads keep their order across the window.
  */
 void ht_turn(int k)
 {
@@ -268,7 +281,7 @@ void ht_turn(int k)
 	for (i = 0; i < nqueues; i++) {
 		struct queue *q = &queues[i];
 
-		if (strncmp(q->key, "OBJ ", 4))
+		if (!strncmp(q->key, "PHY ", 4) || !strncmp(q->key, "RAD ", 4))
 			continue;
 		while (q->pos < q->n && q->at[q->pos] < turn_at[k])
 			q->pos++;

@@ -173,9 +173,12 @@ int ht_run_flow(const char *name)
 		 */
 		dev->phy.chandef = NULL;
 		dev->phy.do_full_init = true;
+		dev->mac_suspended = 1;
 		dev->phy.ops->switch_analog(dev, true);
 		dev->phy.ops->switch_analog(dev, true);
 		b43_phy_init(dev);
+		/* The MAC enabled at the end of the core's init */
+		b43_mac_enable(dev);
 		/* mac80211's first config sets the power: the check, then its work */
 		b43_phy_txpower_check(dev, B43_TXPWR_IGNORE_TIME |
 				      B43_TXPWR_IGNORE_TSSI);
@@ -200,7 +203,10 @@ int ht_run_flow(const char *name)
 		phy_ht.t25_set = true;
 		phy_ht.wd_ticks = ht_env("HT_WD_TICK0", 0);
 		prev_target(dev);
+		/* b43_op_bss_info_changed() suspends the MAC around it */
+		b43_mac_suspend(dev);
 		b43_phy_ht_op_bss_start(dev);
+		b43_mac_enable(dev);
 		run_turns(dev);
 	} else if (!strcmp(name, "pctl_init")) {
 		/*
@@ -283,8 +289,6 @@ void b43_controller_restart(struct b43_wldev *dev, const char *reason)
 {
 	ht_log(reason);
 }
-void b43_mac_suspend(struct b43_wldev *dev) { ht_core("b43_mac_suspend"); }
-void b43_mac_enable(struct b43_wldev *dev) { ht_core("b43_mac_enable"); }
 void b43_mac_switch_freq(struct b43_wldev *dev, u8 spurmode)
 {
 	ht_core("b43_mac_switch_freq");
@@ -296,10 +300,6 @@ void b43_mac_phy_clock_set(struct b43_wldev *dev, bool on)
 void b43_wireless_core_phy_pll_reset(struct b43_wldev *dev)
 {
 	ht_core("b43_wireless_core_phy_pll_reset");
-}
-void b43_power_saving_ctl_bits(struct b43_wldev *dev, unsigned int ps_flags)
-{
-	ht_core("b43_power_saving_ctl_bits");
 }
 u32 b43_shm_read32(struct b43_wldev *dev, u16 routing, u16 offset)
 {
@@ -317,4 +317,70 @@ void bcmn_core_pll_ctl(struct bcmn_device *c, u32 req, u32 status, bool on)
 void bcmn_pmu_spuravoid_pllupdate(struct bcmn_drv_cc *cc, int spuravoid)
 {
 	ht_core("bcmn_pmu_spuravoid_pllupdate");
+}
+
+/*
+ * The core calls of the watchdog's turn and of the MAC's suspend and enable,
+ * copies of main.c's as they reach the bus. b43_power_saving_ctl_bits() is
+ * main.c's as its FIXME leaves it: awake, hardware power saving off.
+ */
+void b43_power_saving_ctl_bits(struct b43_wldev *dev, unsigned int ps_flags)
+{
+	u32 old = b43_read32(dev, B43_MMIO_MACCTL);
+	u32 macctl = (old & ~B43_MACCTL_HWPS) | B43_MACCTL_AWAKE;
+	int i;
+
+	if (macctl == old)
+		return;
+	b43_write32(dev, B43_MMIO_MACCTL, macctl);
+	b43_read32(dev, B43_MMIO_MACCTL);
+	for (i = 0; i < 100; i++)
+		if (b43_shm_read16(dev, B43_SHM_SHARED, B43_SHM_SH_UCODESTAT) !=
+		    B43_SHM_SH_UCODESTAT_SLEEP)
+			break;
+}
+
+void b43_mac_suspend(struct b43_wldev *dev)
+{
+	int i;
+
+	if (dev->mac_suspended++)
+		return;
+	b43_power_saving_ctl_bits(dev, B43_PS_AWAKE);
+	b43_maskset32(dev, B43_MMIO_MACCTL, ~B43_MACCTL_ENABLED, 0);
+	b43_read32(dev, B43_MMIO_MACCTL);
+	for (i = 0; i < 75; i++)
+		if (b43_read32(dev, B43_MMIO_GEN_IRQ_REASON) &
+		    B43_IRQ_MAC_SUSPENDED)
+			return;
+	ht_log("MAC suspend failed");
+}
+
+void b43_mac_enable(struct b43_wldev *dev)
+{
+	if (--dev->mac_suspended)
+		return;
+	b43_maskset32(dev, B43_MMIO_MACCTL, ~0, B43_MACCTL_ENABLED);
+	b43_write32(dev, B43_MMIO_GEN_IRQ_REASON, B43_IRQ_MAC_SUSPENDED);
+	b43_read32(dev, B43_MMIO_MACCTL);
+	b43_read32(dev, B43_MMIO_GEN_IRQ_REASON);
+	b43_power_saving_ctl_bits(dev, 0);
+}
+
+void b43_tsf_read(struct b43_wldev *dev, u64 *tsf)
+{
+	u32 low = b43_read32(dev, B43_MMIO_REV3PLUS_TSF_LOW);
+
+	*tsf = (u64)b43_read32(dev, B43_MMIO_REV3PLUS_TSF_HIGH) << 32 | low;
+}
+
+void b43_watchdog_poll(struct b43_wldev *dev)
+{
+	int i;
+
+	b43_read16(dev, B43_MMIO_PSM_PC_REG1);
+	b43_read32(dev, B43_MMIO_RADIO_HWENABLED_HI);
+	for (i = 0; i < 6; i++)
+		b43_read32(dev, B43_MMIO_DMA0_REASON + i * 8);
+	ht_core("b43_dma_rx_repost");
 }
