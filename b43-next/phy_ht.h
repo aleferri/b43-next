@@ -150,8 +150,19 @@ struct b43_phy_ht {
 	u16 rccal[3];
 	u16 t25_off, t25_off2;
 	bool t25_set;
-	unsigned int wd_turns;
 	unsigned int wd_ticks;
+
+	/*
+	 * The CRS minimum power the watchdog writes to 0x280 and 0x283: its
+	 * index, the turns since the last write, the last turn's glitch and
+	 * bad PLCP counters and whether the last two turns were over the
+	 * threshold (bit 0 the last).
+	 */
+	unsigned int crsmin_idx;
+	unsigned int crsmin_since;
+	u16 glitch_prev[4];
+	bool glitch_prev_valid;
+	u8 glitch_high;
 
 	/* The channel the radio is tuned to since it came on */
 	bool tuned;
