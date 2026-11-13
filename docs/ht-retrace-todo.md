@@ -37,6 +37,16 @@ restores it twice more, after the table 0x1c writes, and does not write
 opposite, and b43 does as there. In these captures the channel changes
 whenever wl was down before, so which of the two decides is open.
 
+What it restores is what wl's interference state keeps as stored defaults
+(`struct interference_info`, left in brcmsmac's `phy_int.h`): the CRS
+minimum power, 0x280 and 0x283, and the initial gain's RF sequence, table
+7 (the N-PHY's RFSEQ) at 0x106, where brcmsmac writes `rfseq_init_gain`.
+The same structure has `curr_home_channel`, which points to a reset on a
+change of channel rather than on a down: an inference. A hot cycle on one
+channel decides it, the R6400's `hot.sh` with the same chanspec repeated
+(`hot.sh hot-2g-6 6 6 6`): four restores there mean the down, none the
+channel.
+
 ## The watchdog's 0x280 and 0x283
 
 0x280 and 0x283 are, at the N-PHY's addresses, `CRSMINPOWERL0` and
@@ -67,21 +77,31 @@ of the 55 turns of `hot-2g-20`:
 - a turn's count is the OFDM glitches and bad PLCPs, d(0x010e) -
   d(0x0158) + d(0x010c) - d(0x015e), the counts since the reset after a
   core reset;
-- two turns in a row over a threshold raise the value by 11, every further
+- two turns in a row over a threshold raise an index by 16, every further
   one again;
-- otherwise, two turns after the last write the value goes down by 1, not
-  below 0x3a: the 0x3a every second turn of a quiet channel;
-- an init writes 0x3a and starts the two turns again, and keeps the turns
-  over the threshold.
+- otherwise, two turns after the last write the index goes down by 1, not
+  below 0: the 0x3a every second turn of a quiet channel;
+- an init writes 0x3a and sets the index to 0, starts the two turns again
+  and keeps the turns over the threshold;
+- the value written is floor(58 + 11 i / 16): 0x3a at 0, 0x43-0x45 at
+  14-16, 0x4e-0x50 at 30-32, 0x5b at 48, the values the captures have.
 
 The threshold lies between 336 and 376: every count of 376 or more is over
 it, every count of 336 or less is not. It is an inference from these
-captures, not wl's code: brcmsmac has the N-PHY's constants (`NPHY_NOISE_*`
-in `phy_n.c`, 400 to enter on glitches and bad PLCPs) but not their code,
-and 400 does not fit 1l, where 0x45 follows a turn of 391. `hot-2g-20`
-misses the last three turns of ch 6. On `hot-2g-40` the rule gives 46 of 70
-turns: on 6l, 9u and 11u wl writes 0x45 at the second turn and 0x44 two
-later with a handful of counts, and 2l, 4l, 5l, 7u and 8u depart from it
-too; at 40 MHz something else raises the value, or the rule is another. A
-port needs the harness to serve the counters and a capture that moves the
-glitch rate on purpose.
+captures, not wl's code. brcmsmac keeps the N-PHY's names but not their
+code: `crsminpwr_index` in `struct interference_info` (`phy_int.h`),
+`NPHY_NOISE_NOASSOC_CRSIDX_INCR` 16 (8 with a station associated), up to
+`NPHY_NOISE_CRSMINPWR_ARRAY_MAX_INDEX_REV_7` 56, and 400 to enter on
+glitches and bad PLCPs (`phy_n.c`), which does not fit 1l, where 0x45
+follows a turn of 391. The structure also keeps a moving average of the
+bad PLCPs over 8 turns, which the rule does not need. Counting every read
+of the four counters, the init's and the BSS start's too, instead of the
+turns' fits worse: 129 of 201 turns against 174.
+
+`hot-2g-20` misses the last three turns of ch 6. On `hot-2g-40` the rule
+gives 46 of 70 turns: on 6l, 9u and 11u wl writes 0x45 at the second turn
+and 0x44 two later, at the start of the turn as always, after turns with a
+handful of counts, and 2l, 4l, 5l, 7u and 8u depart from it too. Something
+else raises the value at 40 MHz, or the rule is another. A port needs the
+harness to serve the counters, and the rule a capture with an interferer
+switched on and off on purpose.
