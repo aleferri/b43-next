@@ -1075,6 +1075,9 @@ struct b43_wldev {
 	bool use_pio;			/* TRUE if next init should use PIO */
 	/* HT support */
 	bool ht;
+	/* HT TX and RX core masks; core init applies them. */
+	u8 txchain;
+	u8 rxchain;
 	/* Channel of the N-PHY noise round in progress. */
 	unsigned int noise_channel;
 	/* HT receive rate context, protected by wl->mutex. */
