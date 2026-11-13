@@ -7640,6 +7640,55 @@ static void b43_nphy_set_rx_core_state(struct b43_wldev *dev, u8 mask)
  * before the regulatory domain is set; this follows every change of the
  * channel or the limit.
  */
+/*
+ * wl's limits on the 2.4 GHz band edges, in quarter dBm before the N-PHY's
+ * 6 quarter-dB margin, per primary channel and width: CCK, then OFDM and
+ * MCS on one chain, then on two (CDD, STBC, SDM). Measured on the
+ * RT-AC56U's BCM43217 (wl 7.14.164.18, country US): on ch 1 and 11 wl
+ * aims at 0x56 with every OFDM and MCS rate at 0x50 on one chain and 0x4e
+ * on two at 20 MHz, 0x48 and 0x42 at 40 MHz; on ch 6 at the SROM's
+ * powers. Like the AC-PHY's locale table (b43_phy_ac_locale_ceiling()),
+ * a cap that never raises a rate.
+ */
+struct b43_nphy_band_edge {
+	u8 chan;
+	u8 bw;		/* enum b43_ppr_bw */
+	u8 cck, siso, multi;
+};
+
+static const struct b43_nphy_band_edge b43_nphy_band_edges[] = {
+	{  1, B43_PPR_BW_20, 0x5c, 0x56, 0x54 },
+	{ 11, B43_PPR_BW_20, 0x5c, 0x56, 0x54 },
+	{  1, B43_PPR_BW_40, 0x5c, 0x4e, 0x48 },
+	{ 11, B43_PPR_BW_40, 0x5c, 0x4e, 0x48 },
+};
+
+static void b43_nphy_band_edge_caps(struct b43_wldev *dev,
+				    struct b43_ppr *ppr)
+{
+	enum b43_ppr_bw bw = b43_ppr_bw(dev->phy.chandef->width);
+	const struct b43_nphy_band_edge *e = NULL;
+	unsigned int i, m;
+
+	for (i = 0; i < ARRAY_SIZE(b43_nphy_band_edges); i++)
+		if (b43_nphy_band_edges[i].chan == dev->phy.channel &&
+		    b43_nphy_band_edges[i].bw == bw)
+			e = &b43_nphy_band_edges[i];
+	if (!e)
+		return;
+
+	for (i = 0; i < B43_PPR_CCK_RATES; i++)
+		ppr->cck[i] = min(ppr->cck[i], e->cck);
+	for (m = B43_PPR_SISO; m < B43_PPR_OFDM_MODES; m++)
+		for (i = 0; i < B43_PPR_OFDM_RATES; i++)
+			ppr->ofdm[bw][m][i] = min(ppr->ofdm[bw][m][i],
+				m == B43_PPR_SISO ? e->siso : e->multi);
+	for (m = B43_PPR_SISO; m < B43_PPR_MODE_NUM; m++)
+		for (i = 0; i < B43_PPR_MCS_RATES; i++)
+			ppr->mcs[bw][m][i] = min(ppr->mcs[bw][m][i],
+				m == B43_PPR_SISO ? e->siso : e->multi);
+}
+
 static void b43_nphy_pwr_report(struct b43_wldev *dev, u8 limit)
 {
 	struct b43_phy_n *nphy = dev->phy.n;
@@ -7706,13 +7755,12 @@ static enum b43_txpwr_result b43_nphy_op_recalc_txpower(struct b43_wldev *dev,
 	 * known to work there.
 	 */
 	if (b43_nphy_precal_2057_rev14_epa(dev)) {
-		int hw_gain = 6; /* N-PHY specific */
-
 		if (b43_current_band(dev->wl) == NL80211_BAND_2GHZ)
-			hw_gain += sprom->antenna_gain.a0;
+			b43_ppr_add(ppr, -sprom->antenna_gain.a0);
 		else
-			hw_gain += sprom->antenna_gain.a1;
-		b43_ppr_add(ppr, -hw_gain);
+			b43_ppr_add(ppr, -sprom->antenna_gain.a1);
+		b43_nphy_band_edge_caps(dev, ppr);
+		b43_ppr_add(ppr, -6); /* N-PHY specific */
 	}
 
 	/* Make sure we didn't go too low */
