@@ -1141,9 +1141,12 @@ static void b43_phy_ht_op_prepare_structs(struct b43_wldev *dev)
 {
 	struct b43_phy *phy = &dev->phy;
 	struct b43_phy_ht *phy_ht = phy->ht;
+	u8 glitch_high = phy_ht->glitch_high;
 	int i;
 
 	memset(phy_ht, 0, sizeof(*phy_ht));
+	/* wl keeps the turns over the glitch threshold across a down */
+	phy_ht->glitch_high = glitch_high;
 
 	phy_ht->tx_pwr_ctl = true;
 	for (i = 0; i < 3; i++)
@@ -1269,7 +1272,8 @@ static int b43_phy_ht_op_init(struct b43_wldev *dev)
 	b43_phy_ht_tx_power_ctl_setup(dev);
 	b43_phy_ht_tssi_setup(dev);
 	b43_phy_ht_tx_power_ctl(dev, saved_tx_pwr_ctl);
-	phy_ht->wd_turns = 0;
+	phy_ht->crsmin_idx = 0;
+	phy_ht->crsmin_since = 0;
 	if (dev->phy.do_full_init)
 		phy_ht->wd_ticks = 0;
 
@@ -1572,19 +1576,68 @@ static void b43_phy_ht_op_noise_sample_done(struct b43_wldev *dev)
 }
 
 /*
+ * The CRS minimum power wl's watchdog keeps, from the R6400 v1's captures
+ * (docs/ht-retrace-todo.md, "The watchdog's 0x280 and 0x283"): two turns in
+ * a row with the glitches and bad PLCPs over the threshold raise the index
+ * by 16, each further one again; otherwise, two turns after the last write,
+ * it goes down by 1. The threshold lies between 336 and 376 in the
+ * captures; 376 is the lowest count they show over it. The cap is the
+ * N-PHY's in brcmsmac, NPHY_NOISE_CRSMINPWR_ARRAY_MAX_INDEX_REV_7, which no
+ * capture reaches.
+ */
+#define B43_PHY_HT_GLITCH_HIGH		376
+#define B43_PHY_HT_CRSMIN_IDX_MAX	56
+
+static void b43_phy_ht_crsmin_write(struct b43_wldev *dev)
+{
+	u8 val = (58 * 16 + 11 * dev->phy.ht->crsmin_idx) / 16;
+
+	b43_phy_maskset(dev, 0x280, 0xff00, val);
+	b43_phy_maskset(dev, 0x283, 0xff00, val);
+	dev->phy.ht->crsmin_since = 0;
+}
+
+static void b43_phy_ht_crsmin_update(struct b43_wldev *dev)
+{
+	struct b43_phy_ht *phy_ht = dev->phy.ht;
+
+	if (phy_ht->glitch_high == 3) {
+		phy_ht->crsmin_idx = min(phy_ht->crsmin_idx + 16,
+					 (unsigned int)B43_PHY_HT_CRSMIN_IDX_MAX);
+		b43_phy_ht_crsmin_write(dev);
+	} else if (++phy_ht->crsmin_since >= 2) {
+		if (phy_ht->crsmin_idx)
+			phy_ht->crsmin_idx--;
+		b43_phy_ht_crsmin_write(dev);
+	}
+}
+
+/*
  * The statistics wl reads on every turn: four macstat counters, the
- * rxcrsglitch, bphy_rxcrsglitch, rxbadplcp and bphy_badplcp the CRS minimum
- * power follows on wl (docs/ht-retrace-todo.md), the block at 0x06c0, and
- * its first six 32-bit counters high, low, high. b43 does not use them yet.
+ * rxcrsglitch, bphy_rxcrsglitch, rxbadplcp and bphy_badplcp, the block at
+ * 0x06c0, and its first six 32-bit counters high, low, high. The first four
+ * give the turn's OFDM glitches and bad PLCPs, since the turn before or,
+ * after the counters were reset, since then.
  */
 static void b43_phy_ht_wd_stats(struct b43_wldev *dev)
 {
 	static const u16 macstat[] = { 0x010e, 0x0158, 0x010c, 0x015e };
+	struct b43_phy_ht *phy_ht = dev->phy.ht;
+	u16 cnt[ARRAY_SIZE(macstat)], d[ARRAY_SIZE(macstat)];
+	bool reset;
 	u16 off;
 	int i;
 
 	for (i = 0; i < ARRAY_SIZE(macstat); i++)
-		b43_shm_read16(dev, B43_SHM_SHARED, macstat[i]);
+		cnt[i] = b43_shm_read16(dev, B43_SHM_SHARED, macstat[i]);
+	reset = !phy_ht->glitch_prev_valid || cnt[0] < phy_ht->glitch_prev[0];
+	for (i = 0; i < ARRAY_SIZE(macstat); i++)
+		d[i] = reset ? cnt[i] : cnt[i] - phy_ht->glitch_prev[i];
+	memcpy(phy_ht->glitch_prev, cnt, sizeof(cnt));
+	phy_ht->glitch_prev_valid = true;
+	phy_ht->glitch_high = (phy_ht->glitch_high << 1 |
+		((int)d[0] - d[1] + d[2] - d[3] >= B43_PHY_HT_GLITCH_HIGH)) & 3;
+
 	for (off = 0x06c0; off <= 0x06e2; off += 2)
 		b43_shm_read16(dev, B43_SHM_SHARED, off);
 	for (off = 0x06c0; off <= 0x06d4; off += 4) {
@@ -1604,26 +1657,21 @@ static void b43_phy_ht_wd_tempsense(struct b43_wldev *dev)
 
 /*
  * wl's 1 s watchdog: after the core's part (b43_watchdog_poll()), a MAC
- * suspend in which it writes the low bytes of 0x280 and 0x283 again on
- * every second turn after an init, then it asks for a noise sample, reads
- * its statistics and the TSF. On the 17th and 18th of every 30 ticks of its
- * timer, counted from the driver's first init, it measures the temperature:
- * on the 17th after the TSF, on the 18th right after the request, in every
- * capture.
+ * suspend in which it updates the CRS minimum power, then it asks for a
+ * noise sample, reads its statistics and the TSF. On the 17th and 18th of
+ * every 30 ticks of its timer, counted from the driver's first init, it
+ * measures the temperature: on the 17th after the TSF, on the 18th right
+ * after the request, in every capture.
  */
 static void b43_phy_ht_op_pwork_1sec(struct b43_wldev *dev)
 {
 	struct b43_phy_ht *phy_ht = dev->phy.ht;
-	bool rewrite = !(++phy_ht->wd_turns % 2);
 	unsigned int tick = ++phy_ht->wd_ticks % 30;
 	u64 tsf;
 
 	b43_watchdog_poll(dev);
 	b43_mac_suspend(dev);
-	if (rewrite) {
-		b43_phy_maskset(dev, 0x280, 0xff00, 0x3a);
-		b43_phy_maskset(dev, 0x283, 0xff00, 0x3a);
-	}
+	b43_phy_ht_crsmin_update(dev);
 	b43_mac_enable(dev);
 	b43_phy_ht_noise_sample_request(dev);
 	if (tick == 18)
