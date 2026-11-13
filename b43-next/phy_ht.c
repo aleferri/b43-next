@@ -1528,10 +1528,59 @@ static void b43_phy_ht_tempsense(struct b43_wldev *dev)
 }
 
 /*
+ * A background noise sample, which wl asks for on every turn: the result
+ * window cleared, then the command bit written alone. The microcode answers
+ * with B43_IRQ_NOISESAMPLE_OK, and the core calls
+ * b43_phy_ht_op_noise_sample_done().
+ */
+static void b43_phy_ht_noise_sample_request(struct b43_wldev *dev)
+{
+	u16 off;
+
+	for (off = 0x0308; off <= 0x0312; off += 2)
+		b43_shm_write16(dev, B43_SHM_SHARED, off, 0);
+	b43_write32(dev, B43_MMIO_MACCMD, B43_MACCMD_BGNOISE);
+}
+
+/* The sample: 0x008c, then a 32-bit cell per core from 0x0308, and 0x0314 */
+static void b43_phy_ht_op_noise_sample_done(struct b43_wldev *dev)
+{
+	u16 off;
+
+	b43_shm_read16(dev, B43_SHM_SHARED, 0x008c);
+	for (off = 0x0308; off <= 0x0314; off += 2)
+		b43_shm_read16(dev, B43_SHM_SHARED, off);
+}
+
+/*
+ * The statistics wl reads on every turn: four macstat counters, the
+ * rxcrsglitch, bphy_rxcrsglitch, rxbadplcp and bphy_badplcp the CRS minimum
+ * power follows on wl (docs/ht-retrace-todo.md), the block at 0x06c0, and
+ * its first six 32-bit counters high, low, high. b43 does not use them yet.
+ */
+static void b43_phy_ht_wd_stats(struct b43_wldev *dev)
+{
+	static const u16 macstat[] = { 0x010e, 0x0158, 0x010c, 0x015e };
+	u16 off;
+	int i;
+
+	for (i = 0; i < ARRAY_SIZE(macstat); i++)
+		b43_shm_read16(dev, B43_SHM_SHARED, macstat[i]);
+	for (off = 0x06c0; off <= 0x06e2; off += 2)
+		b43_shm_read16(dev, B43_SHM_SHARED, off);
+	for (off = 0x06c0; off <= 0x06d4; off += 4) {
+		b43_shm_read16(dev, B43_SHM_SHARED, off + 2);
+		b43_shm_read16(dev, B43_SHM_SHARED, off);
+		b43_shm_read16(dev, B43_SHM_SHARED, off + 2);
+	}
+}
+
+/*
  * wl's 1 s watchdog: on every second turn after an init it writes the low
  * bytes of 0x280 and 0x283 again; on the 17th and 18th of every 30 ticks
  * of its timer, counted from the driver's first init, it measures the
- * temperature. Both with the MAC suspended.
+ * temperature, both with the MAC suspended. Then, on every turn, it asks
+ * for a noise sample and reads its statistics.
  */
 static void b43_phy_ht_op_pwork_1sec(struct b43_wldev *dev)
 {
@@ -1540,16 +1589,18 @@ static void b43_phy_ht_op_pwork_1sec(struct b43_wldev *dev)
 	bool temp = (++phy_ht->wd_ticks % 30) == 17 ||
 		    (phy_ht->wd_ticks % 30) == 18;
 
-	if (!rewrite && !temp)
-		return;
-	b43_mac_suspend(dev);
-	if (rewrite) {
-		b43_phy_maskset(dev, 0x280, 0xff00, 0x3a);
-		b43_phy_maskset(dev, 0x283, 0xff00, 0x3a);
+	if (rewrite || temp) {
+		b43_mac_suspend(dev);
+		if (rewrite) {
+			b43_phy_maskset(dev, 0x280, 0xff00, 0x3a);
+			b43_phy_maskset(dev, 0x283, 0xff00, 0x3a);
+		}
+		if (temp)
+			b43_phy_ht_tempsense(dev);
+		b43_mac_enable(dev);
 	}
-	if (temp)
-		b43_phy_ht_tempsense(dev);
-	b43_mac_enable(dev);
+	b43_phy_ht_noise_sample_request(dev);
+	b43_phy_ht_wd_stats(dev);
 }
 
 /*
@@ -2230,5 +2281,6 @@ const struct b43_phy_operations b43_phyops_ht = {
 	.recalc_txpower		= b43_phy_ht_op_recalc_txpower,
 	.adjust_txpower		= b43_phy_ht_op_adjust_txpower,
 	.pwork_1sec		= b43_phy_ht_op_pwork_1sec,
+	.noise_sample_done	= b43_phy_ht_op_noise_sample_done,
 	.bss_start		= b43_phy_ht_op_bss_start,
 };
