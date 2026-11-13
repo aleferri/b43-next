@@ -7868,6 +7868,15 @@ static u8 b43_nphy_papd_find_pad(struct b43_wldev *dev, u8 core)
 	return 15 - step;
 }
 
+static u8 b43_nphy_txpwr_idx_cur(struct b43_wldev *dev, u8 core)
+{
+	u16 stat = b43_phy_read(dev, core ? B43_NPHY_C2_TXPCTL_STAT :
+					    B43_NPHY_C1_TXPCTL_STAT);
+
+	return (stat & B43_NPHY_TXPCTL_STAT_BIDX) >>
+		B43_NPHY_TXPCTL_STAT_BIDX_SHIFT;
+}
+
 static void b43_nphy_papd_cal(struct b43_wldev *dev)
 {
 	struct b43_phy_n *nphy = dev->phy.n;
@@ -7879,6 +7888,8 @@ static void b43_nphy_papd_cal(struct b43_wldev *dev)
 	int i;
 
 	b43_nphy_stay_in_carrier_search(dev, true);
+	for (core = 0; core < 2; core++)
+		nphy->papd_txpwr_idx[core] = b43_nphy_txpwr_idx_cur(dev, core);
 	b43_nphy_tx_power_ctrl(dev, false);
 
 	b43_ntab_write_bulk(dev, B43_NTAB32(32, 0),
@@ -8328,14 +8339,8 @@ static void b43_nphy_perical_run(struct b43_wldev *dev)
 	b43_phy_lock(dev);
 
 	if (nphy->mphase_cal_phase_id <= 1) {
-		nphy->cal_orig_pwr_idx[0] =
-			(b43_phy_read(dev, B43_NPHY_C1_TXPCTL_STAT) &
-			 B43_NPHY_TXPCTL_STAT_BIDX) >>
-			B43_NPHY_TXPCTL_STAT_BIDX_SHIFT;
-		nphy->cal_orig_pwr_idx[1] =
-			(b43_phy_read(dev, B43_NPHY_C2_TXPCTL_STAT) &
-			 B43_NPHY_TXPCTL_STAT_BIDX) >>
-			B43_NPHY_TXPCTL_STAT_BIDX_SHIFT;
+		nphy->cal_orig_pwr_idx[0] = b43_nphy_txpwr_idx_cur(dev, 0);
+		nphy->cal_orig_pwr_idx[1] = b43_nphy_txpwr_idx_cur(dev, 1);
 	}
 	target = b43_nphy_get_tx_gains(dev);
 	state = nphy->txpwrctrl;
@@ -9391,10 +9396,48 @@ static void b43_nphy_op_channel_calibrate(struct b43_wldev *dev)
 	b43_mac_enable(dev);
 }
 
+/*
+ * Calibrate PAPD again when the TX power control has moved the gain index
+ * of a core by 4 or more since the last calibration.
+ */
+static void b43_nphy_txpwr_papd_cal(struct b43_wldev *dev)
+{
+	struct b43_phy_n *nphy = dev->phy.n;
+	u8 rxchain = nphy->phyrxchain;
+	u8 core;
+
+	if (!b43_nphy_2057_rev9_2g(dev) || !b43_nphy_ipa(dev) ||
+	    !nphy->txpwrctrl || nphy->mphase_cal_phase_id ||
+	    !dev->phy.radio_on ||
+	    dev->wl->hw->conf.flags & IEEE80211_CONF_OFFCHANNEL)
+		return;
+
+	b43_mac_suspend(dev);
+	for (core = 0; core < 2; core++)
+		if (abs(b43_nphy_txpwr_idx_cur(dev, core) -
+			nphy->papd_txpwr_idx[core]) >= 4)
+			break;
+	if (core == 2) {
+		b43_mac_enable(dev);
+		return;
+	}
+
+	b43_phy_lock(dev);
+	/* The calibration measures through each core's own receiver. */
+	if (rxchain != 3)
+		b43_nphy_set_rx_core_state(dev, 3);
+	b43_nphy_papd_cal(dev);
+	if (rxchain != 3)
+		b43_nphy_set_rx_core_state(dev, rxchain);
+	b43_phy_unlock(dev);
+	b43_mac_enable(dev);
+}
+
 static void b43_nphy_op_pwork_15sec(struct b43_wldev *dev)
 {
 	if (time_after_eq(jiffies, dev->phy.n->perical_last + 120 * HZ))
 		b43_nphy_perical(dev, B43_NPHY_PERICAL_WATCHDOG);
+	b43_nphy_txpwr_papd_cal(dev);
 }
 
 static unsigned int b43_nphy_op_get_default_chan(struct b43_wldev *dev)

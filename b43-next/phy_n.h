@@ -954,6 +954,7 @@ struct b43_phy_n {
 	bool hang_avoid;
 	bool mute;
 	u16 papd_epsilon_offset[2];
+	u8 papd_txpwr_idx[2];
 	s32 preamble_override;
 	u32 bb_mult_save;
 
