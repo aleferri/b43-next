@@ -2440,8 +2440,12 @@ u8 b43_ieee80211_antenna_sanitize(struct b43_wldev *dev,
 }
 
 /* Convert a b43 antenna number value to the PHY TX control value. */
-static u16 b43_antenna_to_phyctl(int antenna)
+static u16 b43_antenna_to_phyctl(struct b43_wldev *dev, int antenna)
 {
+	/* On the N-PHY cores with HT the field holds the mask of TX cores. */
+	if (dev->phy.nphy_ht)
+		return dev->txchain << B43_TXH_PHY_ANT_SHIFT;
+
 	switch (antenna) {
 	case B43_ANTENNA0:
 		return B43_TXH_PHY_ANT0;
@@ -2478,7 +2482,7 @@ static void b43_write_beacon_phytxctl(struct b43_wldev *dev, u16 rate)
 	ctl &= ~B43_TXH_PHY_SHORTPRMBL;
 	ctl &= ~B43_TXH_PHY_ANT;
 	ctl &= ~B43_TXH_PHY_ENC;
-	ctl |= b43_antenna_to_phyctl(B43_ANTENNA_DEFAULT);
+	ctl |= b43_antenna_to_phyctl(dev, B43_ANTENNA_DEFAULT);
 	if (b43_is_cck_rate(rate))
 		ctl |= B43_TXH_PHY_ENC_CCK;
 	else
@@ -4409,7 +4413,7 @@ static void b43_set_phytxctl_defaults(struct b43_wldev *dev)
 		return;
 
 	ctl |= B43_TXH_PHY_ENC_CCK;
-	ctl |= B43_TXH_PHY_ANT01AUTO;
+	ctl |= b43_antenna_to_phyctl(dev, B43_ANTENNA_DEFAULT);
 	ctl |= B43_TXH_PHY_TXPWR;
 
 	b43_shm_write16(dev, B43_SHM_SHARED, B43_SHM_SH_BEACPHYCTL, ctl);
@@ -4425,7 +4429,7 @@ static void b43_mgmtframe_txantenna(struct b43_wldev *dev, int antenna)
 
 	if (!b43_phytxctl_in_shm(dev))
 		return;
-	ant = b43_antenna_to_phyctl(antenna);
+	ant = b43_antenna_to_phyctl(dev, antenna);
 
 	/* For ACK/CTS */
 	tmp = b43_shm_read16(dev, B43_SHM_SHARED, B43_SHM_SH_ACKCTSPHYCTL);
@@ -7093,10 +7097,6 @@ static int b43_phy_versioning(struct b43_wldev *dev)
 	phy->nphy_ht = core_rev == 30 && phy_type == B43_PHYTYPE_N &&
 		       b43_nphy_ht_core(phy_rev, radio_rev);
 
-	/* The BCM43227's core, N-PHY and radio revisions */
-	dev->ht = core_rev == 30 && phy_type == B43_PHYTYPE_N &&
-		  phy_rev == 16 && radio_rev == 9;
-
 	return 0;
 }
 
@@ -8162,6 +8162,61 @@ static int b43_op_ampdu_action(struct ieee80211_hw *hw,
 	}
 }
 
+/* mac80211 sends a peer only MCS that are in our own RX MCS set, up to the
+ * TX stream limit.
+ */
+static void b43_ht_set_chains(struct b43_wldev *dev)
+{
+	struct ieee80211_sta_ht_cap *ht = &dev->wl->band_2ghz_ht.ht_cap;
+	unsigned int tx_streams = hweight8(dev->txchain);
+	unsigned int rx_streams = hweight8(dev->rxchain);
+	/* MCS 7 with the short GI, per stream */
+	unsigned int highest = ht->cap & IEEE80211_HT_CAP_SUP_WIDTH_20_40 ?
+			       150 : 72;
+
+	ht->mcs.rx_mask[1] = rx_streams > 1 ? 0xff : 0;
+	ht->mcs.rx_highest = cpu_to_le16(highest * rx_streams);
+	ht->mcs.tx_params = IEEE80211_HT_MCS_TX_DEFINED;
+	if (tx_streams != rx_streams)
+		ht->mcs.tx_params |= IEEE80211_HT_MCS_TX_RX_DIFF |
+				     (tx_streams - 1) <<
+				     IEEE80211_HT_MCS_TX_MAX_STREAMS_SHIFT;
+}
+
+/* mac80211 allows this only while the device is stopped. */
+static int b43_op_set_antenna(struct ieee80211_hw *hw, int radio_idx,
+			      u32 tx_ant, u32 rx_ant)
+{
+	struct b43_wl *wl = hw_to_b43_wl(hw);
+	struct b43_wldev *dev = wl->current_dev;
+
+	if (!tx_ant || !rx_ant)
+		return -EINVAL;
+
+	mutex_lock(&wl->mutex);
+	dev->txchain = tx_ant;
+	dev->rxchain = rx_ant;
+	if (b43_nphy_ht_enabled(dev))
+		b43_ht_set_chains(dev);
+	mutex_unlock(&wl->mutex);
+
+	return 0;
+}
+
+static int b43_op_get_antenna(struct ieee80211_hw *hw, int radio_idx,
+			      u32 *tx_ant, u32 *rx_ant)
+{
+	struct b43_wl *wl = hw_to_b43_wl(hw);
+	struct b43_wldev *dev = wl->current_dev;
+
+	mutex_lock(&wl->mutex);
+	*tx_ant = dev->txchain;
+	*rx_ant = dev->rxchain;
+	mutex_unlock(&wl->mutex);
+
+	return 0;
+}
+
 static const struct ieee80211_ops b43_hw_ops = {
 	.add_chanctx = ieee80211_emulate_add_chanctx,
 	.remove_chanctx = ieee80211_emulate_remove_chanctx,
@@ -8193,6 +8248,8 @@ static const struct ieee80211_ops b43_hw_ops = {
 	.flush			= b43_op_flush,
 	.get_survey		= b43_op_get_survey,
 	.ampdu_action		= b43_op_ampdu_action,
+	.set_antenna		= b43_op_set_antenna,
+	.get_antenna		= b43_op_get_antenna,
 	.rfkill_poll		= b43_rfkill_poll,
 };
 
@@ -8452,6 +8509,15 @@ static int b43_setup_bands(struct b43_wldev *dev,
 			hw->wiphy->bands[NL80211_BAND_5GHZ] = &b43_band_5GHz_aphy;
 	}
 
+	if (dev->phy.nphy_ht) {
+		const struct ssbn_sprom *sprom = dev->dev->bus_sprom;
+
+		/* The board's chains, as on the AC; unset is both cores. */
+		dev->rxchain = sprom->rxchain & 0x3 ? : 0x3;
+		dev->txchain = sprom->txchain & 0x3 ? : dev->rxchain;
+		hw->wiphy->available_antennas_tx = dev->txchain;
+		hw->wiphy->available_antennas_rx = dev->rxchain;
+	}
 	/* An HT STA is a QoS STA. The shared legacy band templates stay
 	 * unchanged.
 	 */
@@ -8467,9 +8533,7 @@ static int b43_setup_bands(struct b43_wldev *dev,
 		ht->ampdu_factor = IEEE80211_HT_MAX_AMPDU_64K;
 		ht->ampdu_density = IEEE80211_HT_MPDU_DENSITY_4;
 		ht->mcs.rx_mask[0] = 0xff;
-		ht->mcs.rx_mask[1] = 0xff;
-		ht->mcs.rx_highest = cpu_to_le16(144);
-		ht->mcs.tx_params = IEEE80211_HT_MCS_TX_DEFINED;
+		b43_ht_set_chains(dev);
 		ieee80211_hw_set(hw, AMPDU_AGGREGATION);
 		hw->max_rx_aggregation_subframes = IEEE80211_MAX_AMPDU_BUF_HT;
 		hw->max_tx_aggregation_subframes = B43_AMPDU_TX_WINDOW;
