@@ -4128,11 +4128,13 @@ static void b43_adjust_opmode(struct b43_wldev *dev)
 	if (wl->filter_flags & FIF_BCN_PRBRESP_PROMISC)
 		ctl |= B43_MACCTL_BEACPROMISC;
 	/*
-	 * The AC cores' stock driver runs an AP with beacon promiscuity on
-	 * (MACCONTROL 0x0416040x at the bus on every board captured); it sets
-	 * it wherever an AP is active on an HT-capable band.
+	 * The AC and HT cores' stock driver runs an AP with beacon
+	 * promiscuity on (MACCONTROL 0x0416040x at the bus on every board
+	 * captured, the R6400 v1 too); it sets it wherever an AP is active on
+	 * an HT-capable band.
 	 */
-	if ((ctl & B43_MACCTL_AP) && dev->phy.type == B43_PHYTYPE_AC)
+	if ((ctl & B43_MACCTL_AP) && (dev->phy.type == B43_PHYTYPE_AC ||
+				      dev->phy.type == B43_PHYTYPE_HT))
 		ctl |= B43_MACCTL_BEACPROMISC;
 
 	/* Workaround: On old hardware the HW-MAC-address-filter
@@ -4550,12 +4552,13 @@ static int b43_chip_init(struct b43_wldev *dev)
 
 	/*
 	 * Initialize the MAC control. The AC's stock drivers, 6.30 and 7.14,
-	 * keep the ucode awake here and never set SHM_ENABLED, nor does
-	 * brcmsmac (MCTL_SHM_EN); shared memory is reached through the
-	 * object window all the same.
+	 * and the HT-PHY's 7.14 on the R6400 v1 (0x04000400) keep the ucode
+	 * awake here and never set SHM_ENABLED, nor does brcmsmac
+	 * (MCTL_SHM_EN); shared memory is reached through the object window
+	 * all the same.
 	 */
 	macctl = B43_MACCTL_IHR_ENABLED;
-	if (dev->phy.type == B43_PHYTYPE_AC)
+	if (dev->phy.type == B43_PHYTYPE_AC || dev->phy.type == B43_PHYTYPE_HT)
 		macctl |= B43_MACCTL_AWAKE;
 	else
 		macctl |= B43_MACCTL_SHM_ENABLED;
