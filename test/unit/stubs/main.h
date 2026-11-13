@@ -6,4 +6,7 @@
 #ifndef _STUB_MAIN_H
 #define _STUB_MAIN_H
 #include "b43.h"
+
+/* calreport=1, from AC_CALREPORT in main.c */
+extern int b43_modparam_calreport;
 #endif
