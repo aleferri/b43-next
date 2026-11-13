@@ -112,6 +112,8 @@ static struct b43_wldev *setup(void)
 	wldev.phy.chandef = &hw.conf.chandef;
 
 	b43_phy_ht_op_prepare_structs(&wldev);
+	/* The TX gain index a BSS before left, from its RX calibration */
+	phy_ht.tx_gain_idx = ht_env("HT_TX_GAIN_IDX", phy_ht.tx_gain_idx);
 	return &wldev;
 }
 
