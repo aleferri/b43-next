@@ -164,7 +164,7 @@ void b43_radio_lock(struct b43_wldev *dev)
 
 	macctl = b43_read32(dev, B43_MMIO_MACCTL);
 	macctl |= B43_MACCTL_RADIOLOCK;
-	b43_write32(dev, B43_MMIO_MACCTL, macctl);
+	b43_macctl_write(dev, macctl);
 	/* Commit the write and wait for the firmware
 	 * to finish any radio register access. */
 	b43_read32(dev, B43_MMIO_MACCTL);
@@ -185,7 +185,7 @@ void b43_radio_unlock(struct b43_wldev *dev)
 	/* unlock */
 	macctl = b43_read32(dev, B43_MMIO_MACCTL);
 	macctl &= ~B43_MACCTL_RADIOLOCK;
-	b43_write32(dev, B43_MMIO_MACCTL, macctl);
+	b43_macctl_write(dev, macctl);
 }
 
 void b43_phy_lock(struct b43_wldev *dev)
