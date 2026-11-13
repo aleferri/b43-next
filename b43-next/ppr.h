@@ -105,6 +105,13 @@ bool b43_ppr_band(const struct ieee80211_channel *chan, enum b43_band *band);
  * N-PHY and the HT-PHY. @cdd_stbc_po also takes the cddpo and stbcpo nibbles
  * off the CDD and STBC rates.
  *
+ * _r8_40 adds the 40 MHz rows of rev 8 to a table _r8 filled from @maxp, for
+ * the N-PHY. With @mcs40po (N-PHY rev 5 and later), words 4 and 5 of mcs*po
+ * give one stream, CDD and STBC less their cddpo and stbcpo nibbles, words 6
+ * and 7 SDM, and the OFDM rates of each mode take the power of its MCS;
+ * without it, each 40 MHz rate takes the power of its 20 MHz one. @bw40po
+ * then takes the bw40po nibble off every 40 MHz rate.
+ *
  * _r9 reads the same maxima and the per-rate offsets of rev 9 and 10.
  *
  * _r11 is in the comments of ppr.c, by the SROM layout.
@@ -117,6 +124,10 @@ u8 b43_ppr_sprom_r8_maxpwr(const struct ssbn_sprom *sprom, enum b43_band band,
 			   u8 coremask);
 u8 b43_ppr_load_sprom_r8(struct b43_ppr *ppr, const struct ssbn_sprom *sprom,
 			 enum b43_band band, u8 coremask, bool cdd_stbc_po);
+void b43_ppr_load_sprom_r8_40(struct b43_ppr *ppr,
+			      const struct ssbn_sprom *sprom,
+			      enum b43_band band, u8 maxp, bool mcs40po,
+			      bool bw40po);
 u8 b43_ppr_load_sprom_r9(struct b43_ppr *ppr, const struct ssbn_sprom *sprom,
 			 enum b43_band band, u8 coremask);
 

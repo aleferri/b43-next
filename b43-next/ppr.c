@@ -298,13 +298,14 @@ u8 b43_ppr_sprom_r8_maxpwr(const struct ssbn_sprom *sprom, enum b43_band band,
 }
 
 /*
- * One MCS mode at 20 MHz from two words of mcs*po, MCS 0-3 and 4-7, less
+ * One MCS mode at @bw from two words of mcs*po, MCS 0-3 and 4-7, less
  * @extra half dB on every rate.
  */
-static void b43_ppr_load_r8_mcs(struct b43_ppr *ppr, enum b43_ppr_mode mode,
-				u8 maxp, const u16 *po, u8 extra)
+static void b43_ppr_load_r8_mcs(struct b43_ppr *ppr, enum b43_ppr_bw bw,
+				enum b43_ppr_mode mode, u8 maxp,
+				const u16 *po, u8 extra)
 {
-	u8 *mcs = b43_ppr_load_mcs(ppr, B43_PPR_BW_20, mode);
+	u8 *mcs = b43_ppr_load_mcs(ppr, bw, mode);
 	unsigned int i;
 
 	for (i = 0; i < 8; i++)
@@ -369,9 +370,12 @@ u8 b43_ppr_load_sprom_r8(struct b43_ppr *ppr, const struct ssbn_sprom *sprom,
 		cdd_po = (sprom->cddpo >> (4 * nib)) & 0xf;
 		stbc_po = (sprom->stbcpo >> (4 * nib)) & 0xf;
 	}
-	b43_ppr_load_r8_mcs(ppr, B43_PPR_CDD, maxp, &mcs_po[0], cdd_po);
-	b43_ppr_load_r8_mcs(ppr, B43_PPR_STBC, maxp, &mcs_po[0], stbc_po);
-	b43_ppr_load_r8_mcs(ppr, B43_PPR_SDM, maxp, &mcs_po[2], 0);
+	b43_ppr_load_r8_mcs(ppr, B43_PPR_BW_20, B43_PPR_CDD, maxp, &mcs_po[0],
+			    cdd_po);
+	b43_ppr_load_r8_mcs(ppr, B43_PPR_BW_20, B43_PPR_STBC, maxp, &mcs_po[0],
+			    stbc_po);
+	b43_ppr_load_r8_mcs(ppr, B43_PPR_BW_20, B43_PPR_SDM, maxp, &mcs_po[2],
+			    0);
 
 	cdd = ppr->mcs[B43_PPR_BW_20][B43_PPR_CDD];
 	ofdm = b43_ppr_load_ofdm(ppr, B43_PPR_BW_20, B43_PPR_CDD);
@@ -379,6 +383,70 @@ u8 b43_ppr_load_sprom_r8(struct b43_ppr *ppr, const struct ssbn_sprom *sprom,
 		ofdm[i] = cdd[ofdm_from_cdd_mcs[i]];
 
 	return maxp;
+}
+
+void b43_ppr_load_sprom_r8_40(struct b43_ppr *ppr,
+			      const struct ssbn_sprom *sprom,
+			      enum b43_band band, u8 maxp, bool mcs40po,
+			      bool bw40po)
+{
+	/* The nibble of each band in cddpo, stbcpo and bw40po. */
+	static const u8 band_nib[B43_BAND_NUM] = { 0, 2, 1, 3 };
+	/* The MCS each OFDM rate takes its power from. */
+	static const u8 ofdm_from_mcs[8] = { 0, 0, 1, 2, 3, 4, 5, 6 };
+	const u16 *mcs_po[B43_BAND_NUM] = {
+		sprom->mcs2gpo, sprom->mcs5glpo, sprom->mcs5gpo,
+		sprom->mcs5ghpo,
+	};
+	enum b43_ppr_mode mode;
+	unsigned int i, nib;
+	u8 *ofdm, *mcs, po;
+
+	if (WARN_ON_ONCE(band >= B43_BAND_NUM))
+		return;
+	nib = band_nib[band];
+
+	if (mcs40po) {
+		b43_ppr_load_r8_mcs(ppr, B43_PPR_BW_40, B43_PPR_SISO, maxp,
+				    &mcs_po[band][4], 0);
+		b43_ppr_load_r8_mcs(ppr, B43_PPR_BW_40, B43_PPR_CDD, maxp,
+				    &mcs_po[band][4],
+				    (sprom->cddpo >> (4 * nib)) & 0xf);
+		b43_ppr_load_r8_mcs(ppr, B43_PPR_BW_40, B43_PPR_STBC, maxp,
+				    &mcs_po[band][4],
+				    (sprom->stbcpo >> (4 * nib)) & 0xf);
+		b43_ppr_load_r8_mcs(ppr, B43_PPR_BW_40, B43_PPR_SDM, maxp,
+				    &mcs_po[band][6], 0);
+		for (mode = B43_PPR_SISO; mode < B43_PPR_OFDM_MODES; mode++) {
+			mcs = ppr->mcs[B43_PPR_BW_40][mode];
+			ofdm = b43_ppr_load_ofdm(ppr, B43_PPR_BW_40, mode);
+			for (i = 0; i < B43_PPR_OFDM_RATES; i++)
+				ofdm[i] = mcs[ofdm_from_mcs[i]];
+		}
+	} else {
+		for (mode = B43_PPR_SISO; mode < B43_PPR_OFDM_MODES; mode++)
+			memcpy(b43_ppr_load_ofdm(ppr, B43_PPR_BW_40, mode),
+			       ppr->ofdm[B43_PPR_BW_20][mode],
+			       B43_PPR_OFDM_RATES);
+		for (mode = B43_PPR_SISO; mode < B43_PPR_MODE_NUM; mode++)
+			memcpy(b43_ppr_load_mcs(ppr, B43_PPR_BW_40, mode),
+			       ppr->mcs[B43_PPR_BW_20][mode],
+			       B43_PPR_MCS_RATES);
+	}
+
+	if (!bw40po)
+		return;
+	po = ((sprom->bw40po >> (4 * nib)) & 0xf) * 2;
+	for (mode = B43_PPR_SISO; mode < B43_PPR_OFDM_MODES; mode++) {
+		ofdm = ppr->ofdm[B43_PPR_BW_40][mode];
+		for (i = 0; i < B43_PPR_OFDM_RATES; i++)
+			ofdm[i] = b43_ppr_sub(ofdm[i], po);
+	}
+	for (mode = B43_PPR_SISO; mode < B43_PPR_MODE_NUM; mode++) {
+		mcs = ppr->mcs[B43_PPR_BW_40][mode];
+		for (i = 0; i < 8; i++)
+			mcs[i] = b43_ppr_sub(mcs[i], po);
+	}
 }
 
 /*
