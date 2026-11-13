@@ -152,6 +152,11 @@ struct b43_phy_ht {
 	bool t25_set;
 	unsigned int wd_turns;
 	unsigned int wd_ticks;
+
+	/* The channel the radio is tuned to since it came on */
+	bool tuned;
+	unsigned int tuned_channel;
+	enum nl80211_channel_type tuned_type;
 };
 
 

@@ -1321,6 +1321,7 @@ static void b43_phy_ht_op_software_rfkill(struct b43_wldev *dev,
 		else
 			B43_WARN_ON(1);
 
+		dev->phy.ht->tuned = false;
 		b43_switch_channel(dev, dev->phy.channel);
 	}
 }
@@ -1344,12 +1345,19 @@ static void b43_phy_ht_op_switch_analog(struct b43_wldev *dev, bool on)
 	}
 }
 
+/*
+ * As the AC-PHY's: the radio stays on the channel it is tuned to, which
+ * mac80211's configuration after the start asks for again. wl tunes once in
+ * its up.
+ */
 static int b43_phy_ht_op_switch_channel(struct b43_wldev *dev,
 					unsigned int new_channel)
 {
+	struct b43_phy_ht *phy_ht = dev->phy.ht;
 	struct ieee80211_channel *channel = dev->wl->hw->conf.chandef.chan;
 	enum nl80211_channel_type channel_type =
 		cfg80211_get_chandef_type(&dev->wl->hw->conf.chandef);
+	int err;
 
 	if (b43_current_band(dev->wl) == NL80211_BAND_2GHZ) {
 		if ((new_channel < 1) || (new_channel > 14))
@@ -1358,7 +1366,18 @@ static int b43_phy_ht_op_switch_channel(struct b43_wldev *dev,
 		return -EINVAL;
 	}
 
-	return b43_phy_ht_set_channel(dev, channel, channel_type);
+	if (phy_ht->tuned && phy_ht->tuned_channel == channel->hw_value &&
+	    phy_ht->tuned_type == channel_type)
+		return 0;
+
+	phy_ht->tuned = false;
+	err = b43_phy_ht_set_channel(dev, channel, channel_type);
+	if (err)
+		return err;
+	phy_ht->tuned = true;
+	phy_ht->tuned_channel = channel->hw_value;
+	phy_ht->tuned_type = channel_type;
+	return 0;
 }
 
 static unsigned int b43_phy_ht_op_get_default_chan(struct b43_wldev *dev)
