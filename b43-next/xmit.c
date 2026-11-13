@@ -2075,7 +2075,9 @@ void b43_rx(struct b43_wldev *dev, struct sk_buff *skb, const void *_rxhdr)
 		dev->rx_ht_valid = false;
 
 	if (unlikely(macstat & B43_RX_MAC_FCSERR)) {
-		dev->wl->ieee_stats.dot11FCSErrorCount++;
+		/* The BCM43227's microcode counts all of them. */
+		if (!dev->phy.nphy_ht)
+			dev->wl->ieee_stats.dot11FCSErrorCount++;
 		status.flag |= RX_FLAG_FAILED_FCS_CRC;
 	}
 	if (unlikely(phystat0 & (B43_RX_PHYST0_PLCPHCF | B43_RX_PHYST0_PLCPFV)))
@@ -2336,7 +2338,13 @@ void b43_handle_txstatus(struct b43_wldev *dev,
 {
 	b43_debugfs_log_txstat(dev, status);
 
+	if (dev->phy.nphy_ht && ++dev->macstat_txstatus >= 1024)
+		b43_macstat_update(dev, true);
 	if (status->for_ampdu) {
+		/* A Block Ack was missed, as brcmsmac counts it. */
+		if (dev->phy.nphy_ht && !status->acked &&
+		    status->supp_reason == B43_TXST_SUPP_NONE)
+			dev->wl->ieee_stats.dot11ACKFailureCount++;
 		/* Only DMA sends A-MPDUs (b43_dma_tx_ampdu()). */
 		if (!b43_using_pio_transfers(dev))
 			b43_dma_handle_ampdu_txstatus(dev, status);
@@ -2351,9 +2359,16 @@ void b43_handle_txstatus(struct b43_wldev *dev,
 	    status->supp_reason != B43_TXST_SUPP_FLUSH)
 		b43warn(dev->wl, "TX suppressed: reason %u, cookie 0x%04x, status %08x\n",
 			status->supp_reason, status->cookie, status->raw[0]);
-	if (!status->acked)
+	if (dev->phy.nphy_ht) {
+		/* Every transmission without an ACK; the microcode counts
+		 * RTS frames (b43_macstat_update()). */
+		if (status->frame_count)
+			dev->wl->ieee_stats.dot11ACKFailureCount +=
+				status->frame_count - !!status->acked;
+	} else if (!status->acked) {
 		dev->wl->ieee_stats.dot11ACKFailureCount++;
-	if (status->rts_count) {
+	}
+	if (status->rts_count && !dev->phy.nphy_ht) {
 		if (status->rts_count == 0xF)	//FIXME
 			dev->wl->ieee_stats.dot11RTSFailureCount++;
 		else
