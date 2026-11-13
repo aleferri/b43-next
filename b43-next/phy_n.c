@@ -8198,6 +8198,14 @@ static void b43_nphy_channel_setup(struct b43_wldev *dev,
 	}
 
 	b43_phy_write(dev, B43_NPHY_NDATAT_DUP40, 0x3830);
+	/*
+	 * wl 7.14.164.18 on the BCM43217 with an external PA (RT-AC56U, every
+	 * capture, 20 and 40 MHz)
+	 */
+	if (phy->rev == 17 && phy->radio_rev == 14 && !phy->n->ipa2g_on) {
+		b43_phy_write(dev, B43_NPHY_STRA_2U, 0x1591);
+		b43_phy_write(dev, B43_NPHY_STRA_2L, 0x1591);
+	}
 
 	if (phy->rev >= 3)
 		b43_nphy_spur_workaround(dev);
