@@ -109,6 +109,7 @@ static void build_core(void)
 		b43_test_chip_identity(core_rev, board->phy_type << 8 |
 				       board->phy_rev, board->radio_ver,
 				       board->radio_rev);
+	b43_trace_ht_tables(board->phy_type == 0x07);
 
 	test_bus.ops = &b43_test_bcma_ops;
 	test_bus.hosttype = BCMN_HOSTTYPE_PCI;

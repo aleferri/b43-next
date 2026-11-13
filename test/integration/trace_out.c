@@ -98,17 +98,28 @@ static const struct { const char *cls; u16 addr; } oracle_latch[] = {
 };
 
 /*
- * Le letture dalle porte dati delle tabelle del PHY (0x000f-0x0011) hanno
- * una coda per indirizzo di tabella, id da 0x000d e offset da 0x000e: le
- * letture di un accesso consumano in ordine la coda del suo indirizzo
- * d'inizio, e una tabella che il port legge e il vendor no non tocca le code
- * delle altre.
+ * Le letture dalle porte dati delle tabelle del PHY hanno una coda per
+ * indirizzo di tabella: le letture di un accesso consumano in ordine la coda
+ * del suo indirizzo d'inizio, e una tabella che il port legge e il vendor no
+ * non tocca le code delle altre. Sull'AC le porte sono 0x000f-0x0011, con
+ * l'id da 0x000d e l'offset da 0x000e; sull'HT 0x0073 e 0x0074, con id e
+ * offset insieme in 0x0072 (id << 10 | offset).
  */
 static u16 vendor_tbl_id, vendor_tbl_off, port_tbl_id, port_tbl_off;
+static int tbl_ht;
+
+void b43_trace_ht_tables(int on)
+{
+	tbl_ht = on;
+}
 
 static int tbl_port(const char *cls, u16 addr)
 {
-	return !strcmp(cls, "PHY.RD") && addr >= 0x000f && addr <= 0x0011;
+	if (strcmp(cls, "PHY.RD"))
+		return 0;
+	if (tbl_ht)
+		return addr == 0x0073 || addr == 0x0074;
+	return addr >= 0x000f && addr <= 0x0011;
 }
 
 static void tbl_key(char *buf, size_t len, u16 id, u16 off)
@@ -118,6 +129,13 @@ static void tbl_key(char *buf, size_t len, u16 id, u16 off)
 
 static void tbl_note_addr(u16 *id, u16 *off, u16 addr, u32 val)
 {
+	if (tbl_ht) {
+		if (addr == 0x0072) {
+			*id = (u16)val >> 10;
+			*off = (u16)val & 0x3ff;
+		}
+		return;
+	}
 	if (addr == 0x000d)
 		*id = (u16)val;
 	else if (addr == 0x000e)
