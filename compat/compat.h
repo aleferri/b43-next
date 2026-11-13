@@ -14,7 +14,14 @@
 
 /* Kbuild looks for the kernel's typed allocators in its slab.h */
 #ifndef B43_NEXT_HAVE_KZALLOC_OBJ
-#define kzalloc_obj(obj)	kzalloc(sizeof(obj), GFP_KERNEL)
+#define __b43n_gfp(a, gfp, ...)	gfp
+#define b43n_gfp(...)		__b43n_gfp(, ##__VA_ARGS__, GFP_KERNEL)
+#define kmalloc_obj(obj, ...)	kmalloc(sizeof(obj), b43n_gfp(__VA_ARGS__))
+#define kzalloc_obj(obj, ...)	kzalloc(sizeof(obj), b43n_gfp(__VA_ARGS__))
+#define kzalloc_objs(obj, n, ...) \
+	kcalloc(n, sizeof(obj), b43n_gfp(__VA_ARGS__))
+#define kzalloc_flex(obj, fam, n, ...) \
+	kzalloc(struct_size_t(typeof(obj), fam, n), b43n_gfp(__VA_ARGS__))
 #endif
 
 #endif /* B43_NEXT_COMPAT_H_ */
