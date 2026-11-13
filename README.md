@@ -22,10 +22,13 @@ library; MMC adds the SDIO host, MAC80211_LEDS with LEDS_CLASS the LEDs,
 HW_RANDOM the RNG, BMIPS_GENERIC with OF the host of the BCM6362's integrated
 WLAN, and BCM47XX_NVRAM, on the Broadcom routers, the board data of boards
 without a SROM. `B43_NEXT_DEBUG=y` builds debugfs and the debug
-messages; `B43_NEXT_DFS=y`, on a kernel with CFG80211_CERTIFICATION_ONUS,
-lets an AP on the AC-PHY run on radar channels (tested on the RT-AC66U B1
-only, not a certified detector). What the kernel's Kconfig decided for b43,
-ssb and bcma is decided in [`Kbuild`](Kbuild).
+messages, and `B43_NEXT_CALREPORT=y` on top of it the calibration report:
+`echo 1 > /sys/kernel/debug/b43_next/phy0/calreport` starts it, reading
+the file returns it. `B43_NEXT_DFS=y`, on a kernel with
+CFG80211_CERTIFICATION_ONUS, lets an AP on the AC-PHY run on radar
+channels (tested on the RT-AC66U B1 only, not a certified detector). What
+the kernel's Kconfig decided for b43, ssb and bcma is decided in
+[`Kbuild`](Kbuild).
 
 Of the 6.18 stable kernels, 6.18.33 to 6.18.38 are not supported: their
 typed allocators take a mandatory GFP and lack `kzalloc_flex()`.
