@@ -14,9 +14,7 @@ core but the watchdog turn's calls into it. From `up` to `beaconing`,
 
 | capture | grezzo | PHY+radio+MAC |
 |---|---|---|
-| cold-2g1-20 | 47.32% | 96.12% |
-| cold-2g6-20 | 64.98% | 96.09% |
-| cold-2g11-20 | 53.79% | 96.14% |
+| cold-2g6-20 | 65.06% | 96.51% |
 
 The second score has the PHY's and the radio's operations, MACCTL and the
 core's I/O control with its forced gated clock. wl's power saving while no
@@ -31,12 +29,14 @@ What is left of the PHY's, the radio's and the MAC's operations on
 | ops | what | needs |
 |---|---|---|
 | 565 | the temperature turns: wl measures at its timer's ticks, b43 at its own, which the harness does not place | the harness |
-| 91 | the MAC enabled and suspended four times around the idle TSSI measurement (0x1e7 = 0xe019), twice per BSS start, AWAKE dropped once, which b43 does not do | the driver |
-| 88 | the BSS start: wl's core down and up, its resets and the radio's power | the driver |
+| 91 | after `bss-up`, around each of its six TX power adjustments, wl enables the MAC, lets the ucode sleep (AWAKE cleared, then set again) and suspends it; b43 keeps the MAC suspended and the ucode awake | a decision on the ucode's sleep |
+| 88 | the BSS start: wl's core down and up, its resets and the radio's power | a decision on a core reset at the BSS start |
 | 71 | the probe and the core's init: b43's attach, which the capture has not, and its first reset with G mode in the I/O control, where wl's has it after | an attach capture |
-| 22 | MACCTL's bit 31 and `DISCPMQ`, below | the driver |
-| 19 | the I/O control's `MACPHYCLKEN` (0x10), set by wl at the core's init and by b43 after the PHY's | the driver |
 | 4 | 0x280 and 0x283 read back in another order | the hot cycle |
+
+MACCTL is written as wl writes it on the HT-PHY's core (no G mode, which
+the I/O control carries; `DISCPMQ` cleared on an AP), and the MAC init with
+the MAC-PHY clock comes before the PHY, as wl's.
 
 Of the MAC's operations b43's are wl's but for:
 
@@ -45,17 +45,9 @@ Of the MAC's operations b43's are wl's but for:
   through a reset (0x07, 0x05, 0x4d, 0x43, 0x45) four times in the first
   17 ms of `up` (#7-#219) and three in the first 9 ms of `ssid`
   (#20300-#20451). The four between them, every 2 s while no BSS is up,
-  are its power saving, not scored. b43 resets
-  three times in the whole run, all before its PHY work: twice at the probe,
-  once at the core's init, and not at the BSS's start;
-- MACCTL's bit 31 (`B43_MACCTL_GMODE`): wl reads it set and never writes
-  it, 0x04160403 against 0x84160403 read. brcmsmac sets G mode through the
-  core's I/O control (`SICF_GMODE`) and only reads `MCTL_GMODE` back after
-  a core reset; b43 writes it at the core reset and the chip init, and its
-  read-modify-writes keep it;
-- MACCTL's `DISCPMQ`: wl sets it through the init and clears it when the
-  AP starts (0x44020403, then 0x04160403); b43 keeps it, as it implements
-  no power management queue;
+  are its power saving, not scored. b43 resets three times in the whole
+  run, all before its PHY work: twice at the probe, once at the core's
+  init, and not at the BSS's start;
 - the MAC suspend: wl reads MACINTSTATUS before it writes MACCTL, b43 after;
 - the RX ring's index, whose value is b43's ring's, not wl's.
 
@@ -118,7 +110,8 @@ reaches. Turn by turn, `test/phy_ht` writes wl's values on all 76 turns of
 the cold windows and on 99 of the 125 of the hot ones; `hot.sh` hands each
 window the last two turns before it.
 
-Open: on `hot-2g-20` the last three turns of ch 6 (wl goes down to 0x4f
-where the rule raises to 0x5b), and at 40 MHz, in standby, 6l, 9u and 11u, where wl writes
-0x45 at the second turn and 0x44 two later after turns with a handful of
-counts, and 2l, 4l, 5l, 7u and 8u.
+Open: on `hot-2g-20` the last three turns of ch 6, which no other count or
+threshold of the four counters gives either (wl goes down to 0x4f where the
+rule raises to 0x5b), and at 40 MHz, in standby, 6l, 9u and 11u, where wl
+writes 0x45 at the second turn and 0x44 two later after turns with a handful
+of counts, and 2l, 4l, 5l, 7u and 8u.

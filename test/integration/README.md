@@ -154,8 +154,8 @@ The second score has the PHY's and the radio's operations and the MAC's
 around them, MACCTL and the core's I/O control with its forced gated clock.
 wl's power saving while no BSS is up is not scored
 (`drop_power_save()` in `../unit/compare.py`). On `cold-2g6-20`,
-2026-11-13: `grezzo` 37443/57623 = 64.98%, PHY+radio+MAC 25689/26733 =
-96.09%.
+2026-11-13: `grezzo` 37472/57594 = 65.06%, PHY+radio+MAC 25746/26676 =
+96.51%.
 
 ### bcma's PMU against the stock attach
 
