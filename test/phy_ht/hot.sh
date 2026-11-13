@@ -22,8 +22,9 @@ REPO=$(cd "$(dirname "$0")/../.." && pwd)
 . "$REPO/test/paths.sh"
 
 # The second score's operations: the PHY's and the radio's, and the MAC's
-# around them, MACCTL and the core's I/O control with its forced gated clock
-PHYSEL=' (PHY|RAD)\.| MAC\.MCTRL | WRAP\.(RD|WR) +off=0x0408 '
+# around them, MACCTL and the core's I/O control with its forced gated
+# clock; and the marks, which bound what the score ignores of wl's
+PHYSEL=' (PHY|RAD)\.| MAC\.MCTRL | WRAP\.(RD|WR) +off=0x0408 | MARK '
 
 cd "$(dirname "$0")"
 

@@ -631,6 +631,38 @@ def drop_solo_port(ops, vendor=()):
     return out, dropped
 
 
+def drop_power_save(ops):
+    """Togli dal vendor il suo risparmio energetico senza BSS.
+
+    Senza un BSS su, al terzo turno del watchdog dopo `wl up` wl legge la
+    tabella 13 all'entrata 0x5f (PHY.WR 0x72 = 0x345f), ferma i DMA, mette il
+    core in reset, e poi ogni 2 s lo tira fuori e ce lo rimette (il PHY
+    spento, l'interruttore radio letto) finche' la configurazione dopo non lo
+    riporta su. b43 non ha questo risparmio e non lo emette: e' una scelta,
+    non un debito del port, e non conta nel punteggio.
+
+    Il tratto va da quella lettura al primo MARK dopo, se prima del MARK il
+    core va giu': il reset alzato (WRAP.WR 0x800 = 1) o il clock tolto
+    (WRAP.WR 0x408 = 0), che resta anche dove il punteggio prende solo l'I/O
+    control. La stessa lettura dentro una configurazione, senza il core giu'
+    dopo, resta. Va chiamata prima di drop_solo_vendor(), che toglie i
+    MARK."""
+    down = re.compile(r'^WRAP\.WR off=0x(?:800 val=0x1|408 val=0x0)(?: |$)')
+    out, dropped, i = [], [], 0
+    while i < len(ops):
+        if ops[i].startswith('PHY.WR addr=0x72 val=0x345f'):
+            j = i
+            while j < len(ops) and not ops[j].startswith('MARK'):
+                j += 1
+            if any(down.match(o) for o in ops[i:j]):
+                dropped += ops[i:j]
+                i = j
+                continue
+        out.append(ops[i])
+        i += 1
+    return out, dropped
+
+
 def drop_solo_vendor(ops):
     """Togli dal vendor le op che nessun codice b43 puo' emettere."""
     out, dropped = [], []

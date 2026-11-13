@@ -567,6 +567,7 @@ def main():
     # Op che nessuna cattura puo' contenere: via da entrambi i lati, o il
     # denominatore e il numeratore parlano di cose diverse. Definite in
     # compare.py, come il perimetro.
+    V0, ps = C.drop_power_save(V0)
     V0, sv = C.drop_solo_vendor(V0)
     V0, mv_used, mv_ops = apply_moves(V0, moves)
     T, sp = C.drop_solo_port(T, V0)
@@ -586,6 +587,9 @@ def main():
     print(f"board {args.board}, finestra {lo}:{hi}")
     if espanse:
         print(f"bulk espanse    : {C.format_espanse(espanse)}")
+    if ps:
+        print(f"risparmio       : {len(ps)} op del risparmio energetico di "
+              f"wl senza BSS, vedi drop_power_save()")
     if sv:
         print(f"solo vendor     : {len(sv)} op che nessun codice b43 "
               f"puo' emettere")
