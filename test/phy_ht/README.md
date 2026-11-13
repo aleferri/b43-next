@@ -29,19 +29,23 @@ On 2026-11-13, `--min-block 8 --gap-tol 2`:
 
 | capture | grezzo | PHY+radio |
 |---|---|---|
-| cold-2g1-20 | 5451/7449 = 73.18% | 5360/5376 = 99.70% |
-| cold-2g6-20 | 5447/7574 = 71.92% | 5360/5376 = 99.70% |
-| cold-2g11-20 | 5447/7453 = 73.08% | 5360/5376 = 99.70% |
-| cold-2g1l-40 | 5368/7582 = 70.80% | 5375/5391 = 99.70% |
-| cold-2g6l-40 | 5453/7702 = 70.80% | 5374/5390 = 99.70% |
-| cold-2g11u-40 | 5454/7496 = 72.76% | 5375/5391 = 99.70% |
+| cold-2g1-20 | 5473/7511 = 72.87% | 5360/5376 = 99.70% |
+| cold-2g6-20 | 5469/7636 = 71.62% | 5360/5376 = 99.70% |
+| cold-2g11-20 | 5469/7515 = 72.77% | 5360/5376 = 99.70% |
+| cold-2g1l-40 | 5473/7561 = 72.38% | 5375/5391 = 99.70% |
+| cold-2g6l-40 | 5481/7758 = 70.65% | 5374/5390 = 99.70% |
+| cold-2g11u-40 | 5476/7558 = 72.45% | 5375/5391 = 99.70% |
 
 The second row compares the PHY's and radio's operations only: the core's
 MMIO and wrapper accesses are outside a harness that compiles no core, and
-its calls into the core are counted on stderr. The shared memory is not:
-the core's 16-bit accessors are served from the window, and from each of
-wl's watchdog turns on (each turn reads MMIO 0x4d0 once), since wl reads
-the statistics at its inits too and b43 does not. `full`
+its calls into the core are counted on stderr. Not the ones of the
+watchdog's turn: the 16-bit shared memory accessors, and copies of
+main.c's `b43_mac_suspend()`, `b43_mac_enable()`, `b43_tsf_read()` and
+`b43_watchdog_poll()` (but its RX ring's index), make their operations as
+on the bus. Their reads are served from each of wl's turns on (each reads
+MMIO 0x4d0 once), since wl reads the core's registers and shared memory at
+its inits and in its interrupt handling too; GEN_IRQ_REASON says suspended
+while MACCTL's enable bit is clear, the microcode's answer. `full`
 makes the PHY calls of b43's core in its order: the analog switch of
 `b43_wireless_core_reset()` and of `b43_phy_bringup()`, `b43_phy_init()`,
 the TX power check of mac80211's first config and the adjustment it
@@ -49,11 +53,13 @@ queues, then the HT-PHY's 1 s work once per turn of wl's 1 s watchdog in
 the window, each followed by the noise sample's interrupt (`ap_start`
 too).
 
-The turn's shared memory and MAC command are wl's: the noise sample asked
-for (0x0308-0x0312 cleared, `MACCMD` 0x10) and read back after its
-interrupt (0x008c, 0x0308-0x0314), and the statistics (the four macstat
-counters, the block at 0x06c0 and its 32-bit counters). What the core does
-around them on wl is in `../../docs/ht-retrace-todo.md`, "The core".
+The turn is wl's: the core's poll (0x4d0, the radio switch at 0x158, the
+DMA channels' status), a MAC suspend with the 0x280 and 0x283 rewrite and
+the temperature in it, the noise sample asked for (0x0308-0x0312 cleared,
+`MACCMD` 0x10), the statistics (the four macstat counters, the block at
+0x06c0 and its 32-bit counters), the TSF, and the sample read back after its
+interrupt (0x008c, 0x0308-0x0314). What differs is in
+`../../docs/ht-retrace-todo.md`, "The core".
 
 The 16 of wl's PHY and radio operations left are its power saving while no
 BSS is up, which b43 does not have: at the watchdog's third turn after
@@ -92,12 +98,12 @@ wl's to the value, coefficients included.
 
 | capture | grezzo | PHY+radio |
 |---|---|---|
-| cold-2g1-20 | 21121/37751 = 55.95% | 20468/20482 = 99.93% |
-| cold-2g6-20 | 21116/28521 = 74.04% | 20475/20489 = 99.93% |
-| cold-2g11-20 | 21122/33686 = 62.70% | 20460/20474 = 99.93% |
-| cold-2g1l-40 | 29438/46550 = 63.24% | 28792/28826 = 99.88% |
-| cold-2g6l-40 | 29423/36822 = 79.91% | 28795/28809 = 99.95% |
-| cold-2g11u-40 | 29428/40666 = 72.37% | 28795/28809 = 99.95% |
+| cold-2g1-20 | 21307/37787 = 56.39% | 20468/20482 = 99.93% |
+| cold-2g6-20 | 21388/28492 = 75.07% | 20475/20489 = 99.93% |
+| cold-2g11-20 | 21316/33714 = 63.23% | 20460/20474 = 99.93% |
+| cold-2g1l-40 | 29715/46516 = 63.88% | 28792/28826 = 99.88% |
+| cold-2g6l-40 | 29696/36792 = 80.71% | 28795/28809 = 99.95% |
+| cold-2g11u-40 | 29704/40633 = 73.10% | 28795/28809 = 99.95% |
 
 ## The start of the BSS, hot
 
@@ -112,31 +118,31 @@ configurations.
 
 | MHz | window | grezzo | PHY+radio |
 |---|---|---|---|
-| 20 | ssid-1 | 20418/31121 = 65.61% | 19914/20008 = 99.53% |
-| 20 | ssid-2 | 20836/28210 = 73.86% | 20457/20551 = 99.54% |
-| 20 | ssid-3 | 20404/26444 = 77.16% | 19903/20009 = 99.47% |
-| 20 | ssid-4 | 20838/26327 = 79.15% | 20452/20562 = 99.47% |
-| 20 | ssid-5 | 20417/25560 = 79.88% | 19911/20017 = 99.47% |
-| 20 | ssid-6 | 20834/27404 = 76.03% | 20454/20564 = 99.47% |
-| 20 | ssid-7 | 20409/26514 = 76.97% | 19905/19999 = 99.53% |
-| 20 | ssid-8 | 20814/29969 = 69.45% | 20439/20533 = 99.54% |
-| 20 | ssid-9 | 20349/26921 = 75.59% | 19920/20014 = 99.53% |
-| 20 | ssid-10 | 20828/26402 = 78.89% | 20442/20536 = 99.54% |
-| 20 | ssid-11 | 20418/28842 = 70.79% | 19914/20008 = 99.53% |
-| 40 | ssid-1l | 28731/38815 = 74.02% | 28238/28338 = 99.65% |
-| 40 | ssid-2l | 29162/36559 = 79.77% | 28776/28886 = 99.62% |
-| 40 | ssid-3l | 28757/35417 = 81.20% | 28250/28352 = 99.64% |
-| 40 | ssid-4l | 29174/34559 = 84.42% | 28790/28884 = 99.67% |
-| 40 | ssid-5l | 28748/33984 = 84.59% | 28248/28342 = 99.67% |
-| 40 | ssid-6l | 29138/35136 = 82.93% | 28771/28877 = 99.63% |
-| 40 | ssid-7l | 28734/36496 = 78.73% | 28233/28327 = 99.67% |
-| 40 | ssid-5u | 29153/34641 = 84.16% | 28781/28875 = 99.67% |
-| 40 | ssid-6u | 28738/34977 = 82.16% | 28239/28333 = 99.67% |
-| 40 | ssid-7u | 29154/36717 = 79.40% | 28775/28881 = 99.63% |
-| 40 | ssid-8u | 28745/37776 = 76.09% | 28239/28341 = 99.64% |
-| 40 | ssid-9u | 29141/37092 = 78.56% | 28764/28870 = 99.63% |
-| 40 | ssid-10u | 28751/34224 = 84.01% | 28246/28340 = 99.67% |
-| 40 | ssid-11u | 29140/37437 = 77.84% | 28760/28866 = 99.63% |
+| 20 | ssid-1 | 20486/31169 = 65.73% | 19914/20008 = 99.53% |
+| 20 | ssid-2 | 21035/28149 = 74.73% | 20457/20551 = 99.54% |
+| 20 | ssid-3 | 20466/26498 = 77.24% | 19903/20009 = 99.47% |
+| 20 | ssid-4 | 21041/26262 = 80.12% | 20452/20562 = 99.47% |
+| 20 | ssid-5 | 20479/25614 = 79.95% | 19911/20017 = 99.47% |
+| 20 | ssid-6 | 20942/27434 = 76.34% | 20454/20564 = 99.47% |
+| 20 | ssid-7 | 20478/26561 = 77.10% | 19905/19999 = 99.53% |
+| 20 | ssid-8 | 21021/29900 = 70.30% | 20439/20533 = 99.54% |
+| 20 | ssid-9 | 20402/26984 = 75.61% | 19920/20014 = 99.53% |
+| 20 | ssid-10 | 21024/26344 = 79.81% | 20442/20536 = 99.54% |
+| 20 | ssid-11 | 20486/28890 = 70.91% | 19914/20008 = 99.53% |
+| 40 | ssid-1l | 28807/38855 = 74.14% | 28238/28338 = 99.65% |
+| 40 | ssid-2l | 29273/36586 = 80.01% | 28776/28886 = 99.62% |
+| 40 | ssid-3l | 28825/35465 = 81.28% | 28250/28352 = 99.64% |
+| 40 | ssid-4l | 29364/34507 = 85.10% | 28790/28884 = 99.67% |
+| 40 | ssid-5l | 28817/34031 = 84.68% | 28248/28342 = 99.67% |
+| 40 | ssid-6l | 29246/35166 = 83.17% | 28771/28877 = 99.63% |
+| 40 | ssid-7l | 28799/36547 = 78.80% | 28233/28327 = 99.67% |
+| 40 | ssid-5u | 29355/34577 = 84.90% | 28781/28875 = 99.67% |
+| 40 | ssid-6u | 28807/35024 = 82.25% | 28239/28333 = 99.67% |
+| 40 | ssid-7u | 29355/36654 = 80.09% | 28775/28881 = 99.63% |
+| 40 | ssid-8u | 28813/37824 = 76.18% | 28239/28341 = 99.64% |
+| 40 | ssid-9u | 29249/37122 = 78.79% | 28764/28870 = 99.63% |
+| 40 | ssid-10u | 28819/34272 = 84.09% | 28246/28340 = 99.67% |
+| 40 | ssid-11u | 29349/37366 = 78.54% | 28760/28866 = 99.63% |
 
 Of the PHY's and the radio's operations, the rest falls in three kinds, on
 every window:
@@ -150,11 +156,9 @@ every window:
   (`../../docs/ht-retrace-todo.md`, "The watchdog's 0x280 and 0x283").
 
 b43's noise sample and statistics operations pair with wl's, values
-included, but for 4 to 6 per window, 68 on ssid-9; on the cold windows of
-the start of the BSS 54 to 131 of 495 to 550 do not. Where they do not,
-wl's turn has another shape than b43's, not other values: the temperature
-measured after the statistics or after the request, the counters read
-twice in a turn.
+included, but for up to 13 of about 500 on a window, and about 70 on hot
+ssid-6, ssid-9, 2l, 6l and 9u: there wl reads the counters a second time
+in the first turns, and the turns pair one off.
 
 ## Exceptions
 
