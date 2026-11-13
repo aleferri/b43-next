@@ -1575,32 +1575,44 @@ static void b43_phy_ht_wd_stats(struct b43_wldev *dev)
 	}
 }
 
+/* The temperature measurement, in a MAC suspend of its own */
+static void b43_phy_ht_wd_tempsense(struct b43_wldev *dev)
+{
+	b43_mac_suspend(dev);
+	b43_phy_ht_tempsense(dev);
+	b43_mac_enable(dev);
+}
+
 /*
- * wl's 1 s watchdog: on every second turn after an init it writes the low
- * bytes of 0x280 and 0x283 again; on the 17th and 18th of every 30 ticks
- * of its timer, counted from the driver's first init, it measures the
- * temperature, both with the MAC suspended. Then, on every turn, it asks
- * for a noise sample and reads its statistics.
+ * wl's 1 s watchdog: after the core's part (b43_watchdog_poll()), a MAC
+ * suspend in which it writes the low bytes of 0x280 and 0x283 again on
+ * every second turn after an init, then it asks for a noise sample, reads
+ * its statistics and the TSF. On the 17th and 18th of every 30 ticks of its
+ * timer, counted from the driver's first init, it measures the temperature:
+ * on the 17th after the TSF, on the 18th right after the request, in every
+ * capture.
  */
 static void b43_phy_ht_op_pwork_1sec(struct b43_wldev *dev)
 {
 	struct b43_phy_ht *phy_ht = dev->phy.ht;
 	bool rewrite = !(++phy_ht->wd_turns % 2);
-	bool temp = (++phy_ht->wd_ticks % 30) == 17 ||
-		    (phy_ht->wd_ticks % 30) == 18;
+	unsigned int tick = ++phy_ht->wd_ticks % 30;
+	u64 tsf;
 
-	if (rewrite || temp) {
-		b43_mac_suspend(dev);
-		if (rewrite) {
-			b43_phy_maskset(dev, 0x280, 0xff00, 0x3a);
-			b43_phy_maskset(dev, 0x283, 0xff00, 0x3a);
-		}
-		if (temp)
-			b43_phy_ht_tempsense(dev);
-		b43_mac_enable(dev);
+	b43_watchdog_poll(dev);
+	b43_mac_suspend(dev);
+	if (rewrite) {
+		b43_phy_maskset(dev, 0x280, 0xff00, 0x3a);
+		b43_phy_maskset(dev, 0x283, 0xff00, 0x3a);
 	}
+	b43_mac_enable(dev);
 	b43_phy_ht_noise_sample_request(dev);
+	if (tick == 18)
+		b43_phy_ht_wd_tempsense(dev);
 	b43_phy_ht_wd_stats(dev);
+	b43_tsf_read(dev, &tsf);
+	if (tick == 17)
+		b43_phy_ht_wd_tempsense(dev);
 }
 
 /*
