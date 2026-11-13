@@ -537,6 +537,27 @@ static u32 chip_note_read(u16 off, int width)
 	}
 }
 
+/*
+ * With B43_VCHIP_PHY=oracle the virtual chip answers the MAC side only: the
+ * PHY's and the radio's reads, whose values the chip's register files do not
+ * have, come from the capture, and the chip still sees every write.
+ */
+static bool chip_answers(u16 off)
+{
+	static int phy_oracle = -1;
+
+	if (!chip_owns(off))
+		return false;
+	if (phy_oracle < 0) {
+		const char *e = b43_test_env("B43_VCHIP_PHY");
+
+		phy_oracle = e && !strcmp(e, "oracle");
+	}
+	return !phy_oracle || (off != B43_MMIO_PHY_DATA &&
+			       off != B43_MMIO_RADIO24_DATA &&
+			       off != B43_MMIO_PHY_VER);
+}
+
 static u32 note_read(struct bcmn_device *core, u16 off, int width)
 {
 	u32 v, vendor_lo;
@@ -544,7 +565,7 @@ static u32 note_read(struct bcmn_device *core, u16 off, int width)
 
 	if (other_core_read(core, off, width, &v))
 		return v;
-	if (chip_owns(off))
+	if (chip_answers(off))
 		return chip_note_read(off, width);
 	switch (off) {
 	case B43_MMIO_PHY_VER:
