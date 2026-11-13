@@ -2,7 +2,7 @@
 # repository. REPO is the root of this one.
 #
 #   TRACES       the captures, one directory per board (router-data layout)
-#   TRACE_TOOLS  the capture decoders (reverse-tools layout)
+#   TRACE_TOOLS  the capture decoders, the b43trace package under src/
 #   B43_TOOLS    b43-tools, for the virtual chip
 TRACES=${TRACES:-$REPO/../b43-next-traces}
 TRACE_TOOLS=${TRACE_TOOLS:-$REPO/../b43-next-trace-tools}
