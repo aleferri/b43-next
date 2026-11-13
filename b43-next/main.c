@@ -35,6 +35,7 @@
 #include <linux/dma-mapping.h>
 #include <linux/slab.h>
 #include <linux/unaligned.h>
+#include <linux/bitfield.h>
 
 #include "b43.h"
 #include "main.h"
@@ -1926,10 +1927,29 @@ static bool b43_txstatus_read_ac(struct b43_wldev *dev,
 	return true;
 }
 
+/* An A-MPDU's block ack bitmap starts at its status's sequence number. */
+static void b43_decode_txstatus(u32 v0, u32 v1, struct b43_txstatus *stat)
+{
+	u16 tmp;
+
+	stat->cookie = (v0 >> 16);
+	stat->seq = (v1 & 0x0000FFFF);
+	stat->phy_stat = ((v1 & 0x00FF0000) >> 16);
+	tmp = (v0 & 0x0000FFFF);
+	stat->frame_count = ((tmp & 0xF000) >> 12);
+	stat->rts_count = ((tmp & 0x0F00) >> 8);
+	stat->supp_reason = ((tmp & 0x001C) >> 2);
+	stat->pm_indicated = !!(tmp & 0x0080);
+	stat->intermediate = !!(tmp & 0x0040);
+	stat->for_ampdu = !!(tmp & 0x0020);
+	stat->acked = !!(tmp & 0x0002);
+	stat->ba_ssn = IEEE80211_SEQ_TO_SN(stat->seq);
+	stat->ba_bitmap = 0;
+}
+
 static void handle_irq_transmit_status(struct b43_wldev *dev)
 {
 	u32 v0, v1;
-	u16 tmp;
 	struct b43_txstatus stat = {};
 
 	if (dev->fw.hdr_format == B43_FW_HDR_AC) {
@@ -1940,22 +1960,46 @@ static void handle_irq_transmit_status(struct b43_wldev *dev)
 
 	while (1) {
 		v0 = b43_read32(dev, B43_MMIO_XMITSTAT_0);
-		if (!(v0 & 0x00000001))
-			break;
-		v1 = b43_read32(dev, B43_MMIO_XMITSTAT_1);
+		if (dev->ampdu_txstat_pending) {
+			/* The Block Ack bitmap follows an acked A-MPDU status
+			 * as a second package. */
+			if (!(v0 & 0x00000001) &&
+			    read_poll_timeout_atomic(b43_read32, v0,
+						     v0 & 0x00000001, 1, 10,
+						     true, dev,
+						     B43_MMIO_XMITSTAT_0))
+				break;
+			v1 = b43_read32(dev, B43_MMIO_XMITSTAT_1);
+			b43_decode_txstatus(dev->ampdu_txstat[0],
+					    dev->ampdu_txstat[1], &stat);
+			dev->ampdu_txstat_pending = false;
+			if ((v0 & 0x0060) == 0x0020) {
+				stat.ba_bitmap = stat.frame_count |
+					((u64)((v0 >> 1) & 0xF) << 4) |
+					((u64)(v0 >> 8) << 8) |
+					((u64)v1 << 32);
+				b43_handle_txstatus(dev, &stat);
+				continue;
+			}
+			/* Not a bitmap package: complete without Block Ack and
+			 * decode this word pair as a new status. */
+			b43dbg(dev->wl,
+			       "Missing A-MPDU Block Ack status 0x%08X\n", v0);
+			b43_handle_txstatus(dev, &stat);
+		} else {
+			if (!(v0 & 0x00000001))
+				break;
+			v1 = b43_read32(dev, B43_MMIO_XMITSTAT_1);
+		}
 
-		stat.cookie = (v0 >> 16);
-		stat.seq = (v1 & 0x0000FFFF);
-		stat.phy_stat = ((v1 & 0x00FF0000) >> 16);
-		tmp = (v0 & 0x0000FFFF);
-		stat.frame_count = ((tmp & 0xF000) >> 12);
-		stat.rts_count = ((tmp & 0x0F00) >> 8);
-		stat.supp_reason = ((tmp & 0x001C) >> 2);
-		stat.pm_indicated = !!(tmp & 0x0080);
-		stat.intermediate = !!(tmp & 0x0040);
-		stat.for_ampdu = !!(tmp & 0x0020);
-		stat.acked = !!(tmp & 0x0002);
-
+		b43_decode_txstatus(v0, v1, &stat);
+		if (stat.for_ampdu && stat.acked) {
+			/* Bitmap bits 0-3 replace the frame count. */
+			dev->ampdu_txstat[0] = v0;
+			dev->ampdu_txstat[1] = v1;
+			dev->ampdu_txstat_pending = true;
+			continue;
+		}
 		b43_handle_txstatus(dev, &stat);
 	}
 }
@@ -1965,6 +2009,7 @@ static void drain_txstatus_queue(struct b43_wldev *dev)
 	struct b43_txstatus stat;
 	u32 dummy;
 
+	dev->ampdu_txstat_pending = false;
 	if (dev->dev->core_rev < 5)
 		return;
 	if (dev->fw.hdr_format == B43_FW_HDR_AC) {
@@ -4968,6 +5013,7 @@ static int b43_rng_init(struct b43_wl *wl)
 }
 
 static void b43_tx_pull(struct b43_wldev *dev);
+static void b43_ps_release(struct b43_wl *wl);
 
 /* Whether @skb goes out with OFDM or HT modulation */
 static bool b43_tx_is_ofdm(struct b43_wldev *dev, struct sk_buff *skb)
@@ -4998,6 +5044,8 @@ static void b43_tx_work(struct work_struct *work)
 		return;
 	}
 
+	if (atomic_xchg(&wl->ps_release, 0))
+		b43_ps_release(wl);
 	for (queue_num = 0; queue_num < B43_QOS_QUEUE_NUM; queue_num++) {
 		while (skb_queue_len(&wl->tx_queue[queue_num])) {
 			skb = skb_dequeue(&wl->tx_queue[queue_num]);
@@ -5130,17 +5178,84 @@ static bool b43_op_can_aggregate_in_amsdu(struct ieee80211_hw *hw,
 
 static bool b43_tx_pulls(struct b43_wldev *dev)
 {
-	return dev && dev->phy.type == B43_PHYTYPE_AC &&
+	return dev && (dev->phy.type == B43_PHYTYPE_AC || dev->ht) &&
 	       !b43_using_pio_transfers(dev);
+}
+
+/*
+ * The BCM43227 (dev->ht) with DMA pulls as well, as an A-MPDU takes the
+ * frames of one station and TID: a TX queue with a block ack session gives
+ * one A-MPDU per round (b43_dma_tx_ampdu()) and keeps its place while
+ * frames of the session wait in the driver, and the rounds go on while
+ * they give frames and the ring has room. A dozing station's queues wait
+ * until it wakes up (b43_dma_ampdu_tx_sta_ps()).
+ */
+static bool b43_tx_pull_asleep(struct ieee80211_txq *txq)
+{
+	struct b43_ampdu_tx_tid *t;
+
+	if (!txq->sta ||
+	    !READ_ONCE(((struct b43_sta *)txq->sta->drv_priv)->asleep))
+		return false;
+	/* Its TIM bit announces the frames the driver holds for it. */
+	t = b43_dma_ampdu_txq(txq);
+	if (t && !skb_queue_empty(&t->queue))
+		ieee80211_sta_set_buffered(txq->sta, txq->tid, true);
+	return true;
+}
+
+/* One round over the TX queues of @ac. Returns the number of frames taken. */
+static int b43_tx_pull_round(struct b43_wldev *dev, int ac)
+{
+	struct b43_wl *wl = dev->wl;
+	struct ieee80211_hw *hw = wl->hw;
+	struct b43_ampdu_tx_tid *t;
+	struct ieee80211_txq *txq;
+	struct sk_buff *skb;
+	int err, taken = 0;
+
+	ieee80211_txq_schedule_start(hw, ac);
+	while (b43_dma_tx_room(dev, ac) &&
+	       (txq = ieee80211_next_txq(hw, ac))) {
+		if (dev->ht && b43_tx_pull_asleep(txq))
+			continue;
+		t = dev->ht ? b43_dma_ampdu_txq(txq) : NULL;
+		if (t) {
+			taken += b43_dma_tx_ampdu(dev, txq, t);
+			ieee80211_return_txq(hw, txq,
+					     !skb_queue_empty(&t->queue));
+			continue;
+		}
+		while (b43_dma_tx_room(dev, ac) &&
+		       (skb = ieee80211_tx_dequeue(hw, txq))) {
+			taken++;
+			if (unlikely(skb->len < 2 + 2 + 6 ||
+				     !b43_tx_rates_ok(hw,
+					IEEE80211_SKB_CB(skb)))) {
+				ieee80211_free_txskb(hw, skb);
+				continue;
+			}
+			err = b43_dma_tx(dev, skb);
+			if (err == -ENOSPC) {
+				skb_queue_head(&wl->tx_queue[ac], skb);
+				wl->tx_queue_stopped[ac] = true;
+				break;
+			}
+			if (unlikely(err))
+				ieee80211_free_txskb(hw, skb);
+		}
+		ieee80211_return_txq(hw, txq, false);
+		if (wl->tx_queue_stopped[ac])
+			break;
+	}
+	ieee80211_txq_schedule_end(hw, ac);
+	return taken;
 }
 
 static void b43_tx_pull(struct b43_wldev *dev)
 {
 	struct b43_wl *wl = dev->wl;
-	struct ieee80211_hw *hw = wl->hw;
-	struct ieee80211_txq *txq;
-	struct sk_buff *skb;
-	int ac, err;
+	int ac, taken;
 
 	if (!b43_tx_pulls(dev))
 		return;
@@ -5148,34 +5263,134 @@ static void b43_tx_pull(struct b43_wldev *dev)
 	/* ieee80211_tx_dequeue() wants the bottom halves off. */
 	local_bh_disable();
 	for (ac = 0; ac < IEEE80211_NUM_ACS; ac++) {
-		if (wl->tx_queue_stopped[ac] || skb_queue_len(&wl->tx_queue[ac]))
-			continue;
-		ieee80211_txq_schedule_start(hw, ac);
-		while (b43_dma_tx_room(dev, ac) &&
-		       (txq = ieee80211_next_txq(hw, ac))) {
-			while (b43_dma_tx_room(dev, ac) &&
-			       (skb = ieee80211_tx_dequeue(hw, txq))) {
-				if (unlikely(skb->len < 2 + 2 + 6 ||
-					     !b43_tx_rates_ok(hw,
-						IEEE80211_SKB_CB(skb)))) {
-					ieee80211_free_txskb(hw, skb);
-					continue;
-				}
-				err = b43_dma_tx(dev, skb);
-				if (err == -ENOSPC) {
-					skb_queue_head(&wl->tx_queue[ac], skb);
-					wl->tx_queue_stopped[ac] = true;
-					break;
-				}
-				if (unlikely(err))
-					ieee80211_free_txskb(hw, skb);
-			}
-			ieee80211_return_txq(hw, txq, false);
-			if (wl->tx_queue_stopped[ac])
+		do {
+			if (wl->tx_queue_stopped[ac] ||
+			    skb_queue_len(&wl->tx_queue[ac]))
 				break;
-		}
-		ieee80211_txq_schedule_end(hw, ac);
+			taken = b43_tx_pull_round(dev, ac);
+		} while (dev->ht && taken);
 	}
+	local_bh_enable();
+}
+
+/*
+ * A frame release for a dozing station, packed into b43_sta::ps_release:
+ * the TIDs, the number of frames, U-APSD rather than PS-Poll, and whether
+ * mac80211 holds more frames.
+ */
+#define B43_PS_RELEASE_TIDS		GENMASK(15, 0)
+#define B43_PS_RELEASE_FRAMES		GENMASK(23, 16)
+#define B43_PS_RELEASE_UAPSD		BIT(24)
+#define B43_PS_RELEASE_MORE_DATA	BIT(25)
+#define B43_PS_RELEASE_VALID		BIT(31)
+
+/*
+ * Release the frames that wait for a dozing station in mac80211's TX
+ * queues and in t->queue for a PS-Poll or a U-APSD service period. They
+ * go out singly and in order from the VO queue. mac80211 asks from its RX
+ * path, which b43 runs outside wl->mutex (b43_rx_deliver()), so the TX work
+ * does it, under wl->mutex like the rest of the TX A-MPDU state. mac80211
+ * asks for no other release before this one's service period ends.
+ */
+static void
+b43_op_release_buffered_frames(struct ieee80211_hw *hw,
+			       struct ieee80211_sta *sta, u16 tids, int nframes,
+			       enum ieee80211_frame_release_type reason,
+			       bool more_data)
+{
+	struct b43_wl *wl = hw_to_b43_wl(hw);
+	struct b43_sta *bsta = (struct b43_sta *)sta->drv_priv;
+	struct b43_wldev *dev = READ_ONCE(wl->current_dev);
+	u32 req = B43_PS_RELEASE_VALID;
+
+	if (!dev || !dev->ht)
+		return;
+	req |= FIELD_PREP(B43_PS_RELEASE_TIDS, tids);
+	req |= FIELD_PREP(B43_PS_RELEASE_FRAMES, min(nframes, 255));
+	if (reason == IEEE80211_FRAME_RELEASE_UAPSD)
+		req |= B43_PS_RELEASE_UAPSD;
+	if (more_data)
+		req |= B43_PS_RELEASE_MORE_DATA;
+	WRITE_ONCE(bsta->ps_release, req);
+	atomic_set(&wl->ps_release, 1);
+	ieee80211_queue_work(hw, &wl->tx_work);
+}
+
+static void b43_ps_release_sta(void *data, struct ieee80211_sta *sta)
+{
+	struct b43_wl *wl = data;
+	struct ieee80211_hw *hw = wl->hw;
+	struct b43_sta *bsta = (struct b43_sta *)sta->drv_priv;
+	u32 req = xchg(&bsta->ps_release, 0);
+	u16 tids = FIELD_GET(B43_PS_RELEASE_TIDS, req);
+	int nframes = FIELD_GET(B43_PS_RELEASE_FRAMES, req);
+	bool more_data = req & B43_PS_RELEASE_MORE_DATA;
+	struct sk_buff_head frames;
+	struct ieee80211_tx_info *info;
+	struct ieee80211_hdr *hdr;
+	struct sk_buff *skb;
+	unsigned long count;
+	int tid;
+
+	if (!req)
+		return;
+	__skb_queue_head_init(&frames);
+	for (tid = 0; tid < IEEE80211_NUM_TIDS; tid++) {
+		struct b43_ampdu_tx_tid *t = &bsta->ampdu_tx[tid];
+
+		if (!(tids & BIT(tid)))
+			continue;
+		while (nframes) {
+			skb = b43_dma_ampdu_tx_dequeue(t);
+			if (!skb)
+				skb = ieee80211_tx_dequeue(hw, sta->txq[tid]);
+			if (!skb)
+				break;
+			__skb_queue_tail(&frames, skb);
+			nframes--;
+		}
+		if (t->operational && skb_queue_empty(&t->queue))
+			ieee80211_sta_set_buffered(sta, tid, false);
+		ieee80211_txq_get_depth(sta->txq[tid], &count, NULL);
+		if (count || (t->operational && !skb_queue_empty(&t->queue)))
+			more_data = true;
+	}
+	if (skb_queue_empty(&frames)) {
+		ieee80211_sta_eosp(sta);
+		return;
+	}
+
+	skb_queue_walk(&frames, skb) {
+		info = IEEE80211_SKB_CB(skb);
+		hdr = (struct ieee80211_hdr *)skb->data;
+		info->control.flags |= IEEE80211_TX_CTRL_PS_RESPONSE;
+		skb_set_queue_mapping(skb, IEEE80211_AC_VO);
+		if (!skb_queue_is_last(&frames, skb) || more_data)
+			hdr->frame_control |=
+				cpu_to_le16(IEEE80211_FCTL_MOREDATA);
+		else
+			hdr->frame_control &=
+				cpu_to_le16(~IEEE80211_FCTL_MOREDATA);
+	}
+	skb = skb_peek_tail(&frames);
+	info = IEEE80211_SKB_CB(skb);
+	hdr = (struct ieee80211_hdr *)skb->data;
+	info->flags |= IEEE80211_TX_STATUS_EOSP |
+		       IEEE80211_TX_CTL_REQ_TX_STATUS;
+	if ((req & B43_PS_RELEASE_UAPSD) &&
+	    ieee80211_is_data_qos(hdr->frame_control))
+		*ieee80211_get_qos_ctl(hdr) |= IEEE80211_QOS_CTL_EOSP;
+	while ((skb = __skb_dequeue(&frames)))
+		skb_queue_tail(&wl->tx_queue[IEEE80211_AC_VO], skb);
+}
+
+/* The releases b43_op_release_buffered_frames() asked for. Called under
+ * wl->mutex. */
+static void b43_ps_release(struct b43_wl *wl)
+{
+	/* ieee80211_tx_dequeue() wants the bottom halves off. */
+	local_bh_disable();
+	ieee80211_iterate_stations_atomic(wl->hw, b43_ps_release_sta, wl);
 	local_bh_enable();
 }
 
@@ -6270,6 +6485,7 @@ redo:
 		}
 		wl->tx_queue_stopped[queue_num] = false;
 	}
+	b43_dma_ampdu_tx_purge(wl);
 	skb_queue_purge(&wl->rx_queue);
 	ieee80211_purge_tx_queue(wl->hw, &wl->txstatus_queue);
 
@@ -6843,6 +7059,24 @@ static int b43_txfifo_init_ht(struct b43_wldev *dev)
 }
 
 
+/* Frames of earlier rings are gone; restart a station's TX A-MPDU
+ * windows. Only DMA aggregates, so PIO ends its sessions' aggregation. */
+static void b43_ampdu_tx_restart_sta(void *data, struct ieee80211_sta *sta)
+{
+	struct b43_wldev *dev = data;
+	struct b43_sta *bsta = (struct b43_sta *)sta->drv_priv;
+	int i;
+
+	for (i = 0; i < IEEE80211_NUM_TIDS; i++) {
+		struct b43_ampdu_tx_tid *t = &bsta->ampdu_tx[i];
+
+		if (dev->__using_pio_transfers)
+			t->operational = false;
+		t->outstanding = 0;
+		memset(t->retries, 0, sizeof(t->retries));
+	}
+}
+
 /* Initialize a wireless core */
 static int b43_wireless_core_init(struct b43_wldev *dev)
 {
@@ -7063,6 +7297,8 @@ static int b43_wireless_core_init(struct b43_wldev *dev)
 	}
 	if (err)
 		goto err_chip_exit;
+	ieee80211_iterate_stations_atomic(dev->wl->hw,
+					  b43_ampdu_tx_restart_sta, dev);
 	b43_qos_init(dev);
 	/* Both stock drivers captured at the bus write it once, here. */
 	if (phy->type == B43_PHYTYPE_AC)
@@ -7333,8 +7569,19 @@ static void b43_op_sta_notify(struct ieee80211_hw *hw,
 			      struct ieee80211_sta *sta)
 {
 	struct b43_wl *wl = hw_to_b43_wl(hw);
+	struct b43_wldev *dev = READ_ONCE(wl->current_dev);
 
 	B43_WARN_ON(!vif || (wl->vif != vif && b43_mbss_slot(wl, vif) < 0));
+	if (dev && dev->ht)
+		b43_dma_ampdu_tx_sta_ps(wl, sta,
+					notify_cmd == STA_NOTIFY_SLEEP);
+}
+
+static void b43_op_sta_pre_rcu_remove(struct ieee80211_hw *hw,
+				      struct ieee80211_vif *vif,
+				      struct ieee80211_sta *sta)
+{
+	b43_dma_ampdu_tx_sta_drop(hw_to_b43_wl(hw), sta);
 }
 
 /*
@@ -7416,7 +7663,8 @@ static bool b43_tx_flushed(struct b43_wl *wl)
 		if (b43_using_pio_transfers(dev))
 			flushed &= b43_pio_tx_empty(dev);
 		else
-			flushed &= b43_dma_tx_empty(dev);
+			flushed &= b43_dma_tx_empty(dev) &&
+				   !b43_dma_ampdu_tx_queued(wl);
 	}
 	mutex_unlock(&wl->mutex);
 
@@ -7465,7 +7713,9 @@ static int b43_op_get_survey(struct ieee80211_hw *hw, int idx,
  * its own making (frame code 0x25, at 0x076C on 784), from no table a
  * driver fills; mac80211 reorders. The BCM43227's microcode (dev->ht) does
  * the same on RX, with DMA or PIO, from the transmitter address in its
- * template RAM (b43_write_mac_bssid_templates()).
+ * template RAM (b43_write_mac_bssid_templates()). On TX b43 builds the
+ * BCM43227's A-MPDUs itself, with DMA (b43_dma_tx_ampdu()), on BE (TIDs 0
+ * and 3) and VI (TIDs 4 and 5), whose TX FIFOs b43_txfifo_init_ht() sizes.
  */
 static int b43_op_ampdu_action(struct ieee80211_hw *hw,
 			       struct ieee80211_vif *vif,
@@ -7473,6 +7723,8 @@ static int b43_op_ampdu_action(struct ieee80211_hw *hw,
 {
 	struct b43_wl *wl = hw_to_b43_wl(hw);
 	struct b43_sta *bsta = (struct b43_sta *)params->sta->drv_priv;
+	struct b43_ampdu_tx_tid *t = &bsta->ampdu_tx[params->tid];
+	struct ieee80211_sta_ht_cap *ht_cap = &params->sta->deflink.ht_cap;
 	struct b43_wldev *dev;
 	bool ok;
 
@@ -7483,13 +7735,20 @@ static int b43_op_ampdu_action(struct ieee80211_hw *hw,
 		dev = wl->current_dev;
 		ok = dev && dev->fw.hdr_format == B43_FW_HDR_AC &&
 		     !b43_using_pio_transfers(dev);
-		if (params->action == IEEE80211_AMPDU_RX_START &&
-		    dev && dev->ht)
+		if (dev && dev->ht)
 			ok = b43_status(dev) >= B43_STAT_STARTED &&
 			     vif == wl->vif &&
 			     (vif->type == NL80211_IFTYPE_STATION ||
 			      vif->type == NL80211_IFTYPE_AP ||
 			      vif->type == NL80211_IFTYPE_ADHOC);
+		if (params->action == IEEE80211_AMPDU_TX_START &&
+		    dev && dev->ht) {
+			ok = ok && !b43_using_pio_transfers(dev) &&
+			     (params->tid == 0 || params->tid == 3 ||
+			      params->tid == 4 || params->tid == 5);
+			if (ok)
+				memset(t, 0, sizeof(*t));
+		}
 		mutex_unlock(&wl->mutex);
 		if (!ok)
 			return -EOPNOTSUPP;
@@ -7498,15 +7757,37 @@ static int b43_op_ampdu_action(struct ieee80211_hw *hw,
 		return IEEE80211_AMPDU_TX_START_IMMEDIATE;
 	case IEEE80211_AMPDU_TX_OPERATIONAL:
 		WRITE_ONCE(bsta->ampdu_win[params->tid], params->buf_size);
+		mutex_lock(&wl->mutex);
+		dev = wl->current_dev;
+		if (dev && dev->ht) {
+			memset(t, 0, sizeof(*t));
+			skb_queue_head_init(&t->queue);
+			t->buf_size = min_t(u16, params->buf_size,
+					    B43_AMPDU_TX_WINDOW);
+			t->operational = t->buf_size;
+			bsta->ampdu_tx_max_len =
+				(1 << (IEEE80211_HT_MAX_AMPDU_FACTOR +
+				       ht_cap->ampdu_factor)) - 1;
+			bsta->ampdu_tx_density = ht_cap->ampdu_density;
+		}
+		mutex_unlock(&wl->mutex);
 		return 0;
 	case IEEE80211_AMPDU_TX_STOP_CONT:
 		WRITE_ONCE(bsta->ampdu_win[params->tid], 0);
+		/* Queued and retried members continue as ordinary MPDUs. */
+		mutex_lock(&wl->mutex);
+		b43_dma_ampdu_tx_stop(wl, t, false);
+		mutex_unlock(&wl->mutex);
 		ieee80211_stop_tx_ba_cb_irqsafe(vif, params->sta->addr,
 						params->tid);
 		return 0;
 	case IEEE80211_AMPDU_TX_STOP_FLUSH:
 	case IEEE80211_AMPDU_TX_STOP_FLUSH_CONT:
 		WRITE_ONCE(bsta->ampdu_win[params->tid], 0);
+		mutex_lock(&wl->mutex);
+		b43_dma_ampdu_tx_stop(wl, t, params->action ==
+				      IEEE80211_AMPDU_TX_STOP_FLUSH);
+		mutex_unlock(&wl->mutex);
 		return 0;
 	case IEEE80211_AMPDU_RX_STOP:
 		return 0;
@@ -7538,6 +7819,8 @@ static const struct ieee80211_ops b43_hw_ops = {
 	.stop			= b43_op_stop,
 	.set_tim		= b43_op_beacon_set_tim,
 	.sta_notify		= b43_op_sta_notify,
+	.release_buffered_frames = b43_op_release_buffered_frames,
+	.sta_pre_rcu_remove	= b43_op_sta_pre_rcu_remove,
 	.sta_state		= b43_op_sta_state,
 	.sw_scan_start		= b43_op_sw_scan_start_notifier,
 	.sw_scan_complete	= b43_op_sw_scan_complete_notifier,
@@ -7822,6 +8105,7 @@ static int b43_setup_bands(struct b43_wldev *dev,
 		ht->mcs.tx_params = IEEE80211_HT_MCS_TX_DEFINED;
 		ieee80211_hw_set(hw, AMPDU_AGGREGATION);
 		hw->max_rx_aggregation_subframes = IEEE80211_MAX_AMPDU_BUF_HT;
+		hw->max_tx_aggregation_subframes = B43_AMPDU_TX_WINDOW;
 		hw->wiphy->bands[NL80211_BAND_2GHZ] = band;
 	}
 

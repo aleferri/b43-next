@@ -291,10 +291,28 @@ bool b43_txhdr_ac_rate_ok(const struct ieee80211_supported_band *band,
 			  const struct ieee80211_tx_rate *r);
 bool b43_txstatus_mpdu_acked(const struct b43_txstatus *status,
 			     const struct sk_buff *skb);
+/* A-MPDU membership of one generated TX header. */
+struct b43_txhdr_ampdu {
+	bool first;
+	bool last;
+	/* Aggregate PSDU length, including delimiters and padding. */
+	unsigned int len;
+	/* Null delimiters the firmware inserts after this member. */
+	u8 ndelim;
+	/* TX FIFO bytes loaded before the A-MPDU is sent. */
+	u16 preload;
+};
+
 int b43_generate_txhdr(struct b43_wldev *dev,
 		       u8 * txhdr,
 		       struct sk_buff *skb_frag,
-		       struct ieee80211_tx_info *txctl, u16 cookie);
+		       struct ieee80211_tx_info *txctl, u16 cookie,
+		       const struct b43_txhdr_ampdu *ampdu);
+unsigned int b43_tx_psdu_len(struct sk_buff *skb);
+bool b43_ampdu_tx_fits(struct b43_wldev *dev, struct ieee80211_tx_info *info,
+		       unsigned int ampdu_len);
+unsigned int b43_ampdu_tx_spacing(struct b43_wldev *dev,
+				  struct ieee80211_tx_info *info, u8 density);
 
 /* Transmit Status */
 struct b43_txstatus {
@@ -313,8 +331,8 @@ struct b43_txstatus {
 	u8 mpdus;		/* AC: MPDUs the status covers */
 	u8 mpdus_acked;		/* AC: of them acknowledged */
 	u8 mpdu_index;		/* AC: the MPDU being reported, from 0 */
-	u16 ba_ssn;		/* AC: sequence number of the first MPDU */
-	u64 ba_bitmap;		/* AC: block ack bitmap from ba_ssn */
+	u16 ba_ssn;		/* A-MPDU: sequence number of the first MPDU */
+	u64 ba_bitmap;		/* A-MPDU: block ack bitmap from ba_ssn */
 	u32 raw[8];		/* AC: the two packages, as read */
 };
 
