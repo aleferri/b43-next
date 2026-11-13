@@ -4627,6 +4627,25 @@ err_gpio_clean:
 	return err;
 }
 
+/*
+ * The core's part of wl's 1 s watchdog, which comes before its PHY's and
+ * which a PHY that follows wl's turn calls first in its pwork_1sec: the
+ * PSM's first PC register, whose use is not known, the hardware radio
+ * switch (brcmsmac's brcms_b_radio_read_hwdisabled()), the DMA channels'
+ * status (brcms_b_fifoerrors()), whose errors b43 takes from the
+ * interrupt, and the RX ring's index posted again (dma_rxfill()).
+ */
+void b43_watchdog_poll(struct b43_wldev *dev)
+{
+	int i;
+
+	b43_read16(dev, B43_MMIO_PSM_PC_REG1);
+	b43_is_hw_radio_enabled(dev);
+	for (i = 0; i < 6; i++)
+		b43_read32(dev, B43_MMIO_DMA0_REASON + i * 8);
+	b43_dma_rx_repost(dev);
+}
+
 static void b43_periodic_every60sec(struct b43_wldev *dev)
 {
 	const struct b43_phy_operations *ops = dev->phy.ops;

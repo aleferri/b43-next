@@ -2295,6 +2295,18 @@ void b43_dma_rx(struct b43_dmaring *ring)
 	ring->current_slot = slot;
 }
 
+/*
+ * The RX ring's index written again, the value b43_dma_rx() left, as wl's
+ * watchdog refills its ring every second.
+ */
+void b43_dma_rx_repost(struct b43_wldev *dev)
+{
+	struct b43_dmaring *ring = dev->dma.rx_ring;
+
+	if (!b43_using_pio_transfers(dev) && ring)
+		b43_dma_rx_give(ring, ring->current_slot);
+}
+
 static void b43_dma_tx_suspend_ring(struct b43_dmaring *ring)
 {
 	B43_WARN_ON(!ring->tx);
