@@ -69,6 +69,9 @@ KFLAGS += $(shell sed -nE 's/^CONFIG_B43_([A-Z0-9_]+)=y$$/-DCONFIG_B43_NEXT_\1=1
 		s/^CONFIG_BCMA_([A-Z0-9_]+)=y$$/-DCONFIG_BCMN_\1=1/p; \
 		s/^CONFIG_SSB_([A-Z0-9_]+)=y$$/-DCONFIG_SSBN_\1=1/p' $(AUTOCONF) | sort -u)
 
+# As in Kbuild: the headers' own kzalloc_obj(), if they have it.
+KFLAGS += $(if $(shell grep -sw 'define kzalloc_obj' $(K)/include/linux/slab.h),-DB43_NEXT_HAVE_KZALLOC_OBJ)
+
 # CONFIG_BCM63XX: il bersaglio e le board della collezione sono router BCM63xx
 # con la radio su PCIe, e su quegli host b43 rilegge gli indirizzi dei
 # registri come il driver stock (flush_writes in b43/bus.c). Gli header non
