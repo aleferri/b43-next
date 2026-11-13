@@ -143,6 +143,9 @@ firmware names and watchdog marker. What differs from the AC boards:
   is wl's, from the same capture (`fw_from_capture.py --rev 29`);
 - the RX ring's status the capture reads is wl's ring's address, moved onto
   b43's ring;
+- the PHY's table reads are served by the table address they start from,
+  0x0072 on the HT-PHY, as on the AC; the 16-bit radio interface (0x03f6,
+  0x03fa) goes out raw, as the decoder leaves it;
 - the score anchors on the values first (`cmp_skip.py --anchor-values`):
   both sides have them, and on identity alone a run of table writes is
   paired one off when an operation before it is missing.
@@ -151,8 +154,8 @@ The second score has the PHY's and the radio's operations and the MAC's
 around them, MACCTL and the core's I/O control with its forced gated clock.
 wl's power saving while no BSS is up is not scored
 (`drop_power_save()` in `../unit/compare.py`). On `cold-2g6-20`,
-2026-11-13: `grezzo` 37142/57924 = 64.12%, PHY+radio+MAC 25386/27042 =
-93.88%.
+2026-11-13: `grezzo` 37443/57623 = 64.98%, PHY+radio+MAC 25689/26733 =
+96.09%.
 
 ### bcma's PMU against the stock attach
 
