@@ -554,13 +554,18 @@ static void b43_phy_ht_poll_rssi(struct b43_wldev *dev, enum ht_rssi_type type,
  * Tx/Rx
  **************************************************/
 
-static void b43_phy_ht_tx_power_fix(struct b43_wldev *dev)
+static void b43_phy_ht_tx_gain_fix(struct b43_wldev *dev, u8 idx)
 {
 	int i;
 
+	/*
+	 * wl keeps the last index it fixed and takes it again at the next
+	 * fix: 40 until the RX calibration fixes its own, then that one.
+	 */
+	dev->phy.ht->tx_gain_idx = idx;
 	for (i = 0; i < 3; i++) {
 		u16 mask;
-		u32 tmp = b43_httab_read(dev, B43_HTTAB32(26, 0xE8));
+		u32 tmp = b43_httab_read(dev, B43_HTTAB32(26, 0xc0 + idx));
 
 		if (0) /* FIXME */
 			mask = 0x2 << (i * 4);
@@ -574,6 +579,11 @@ static void b43_phy_ht_tx_power_fix(struct b43_wldev *dev)
 		b43_httab_write(dev, B43_HTTAB8(13, 0x73 + (i * 4)),
 				tmp & 0xFF);
 	}
+}
+
+static void b43_phy_ht_tx_power_fix(struct b43_wldev *dev)
+{
+	b43_phy_ht_tx_gain_fix(dev, dev->phy.ht->tx_gain_idx);
 }
 
 static void b43_phy_ht_tx_power_ctl(struct b43_wldev *dev, bool enable)
@@ -1138,6 +1148,7 @@ static void b43_phy_ht_op_prepare_structs(struct b43_wldev *dev)
 	phy_ht->tx_pwr_ctl = true;
 	for (i = 0; i < 3; i++)
 		phy_ht->tx_pwr_idx[i] = B43_PHY_HT_TXPCTL_CMD_C1_INIT + 1;
+	phy_ht->tx_gain_idx = 40;
 
 	for (i = 0; i < 3; i++)
 		phy_ht->bb_mult_save[i] = -1;
@@ -1943,21 +1954,6 @@ static void b43_phy_ht_rxcal_gain_set(struct b43_wldev *dev, int core,
 	b43_phy_set(dev, rf, 0x2000);
 }
 
-/* The TX gain of every core from table 0x1a, as for the calibrations */
-static void b43_phy_ht_cal_tx_gain(struct b43_wldev *dev, u16 idx)
-{
-	int c;
-
-	for (c = 0; c < 3; c++) {
-		u32 gain = b43_httab_read(dev, B43_HTTAB32(26, 0xc0 + idx));
-
-		b43_phy_mask(dev, B43_PHY_EXTG(0x108), 0);
-		b43_httab_write(dev, B43_HTTAB16(7, 0x110 + c), gain >> 16);
-		b43_httab_write(dev, B43_HTTAB16(13, 0x63 + c * 4), gain & 0xff);
-		b43_httab_write(dev, B43_HTTAB16(13, 0x73 + c * 4), gain & 0xff);
-	}
-}
-
 struct b43_phy_ht_rxcal_save {
 	u16 bbcfg, bbmult[3], gain[3], afe, afe_over, r801, r297;
 	u16 rfctl[7];
@@ -2112,7 +2108,7 @@ static void b43_phy_ht_cal_rx_iq(struct b43_wldev *dev)
 
 		b43_phy_ht_rxcal_setup(dev, core, &sv);
 		b43_phy_ht_rxcal_gain_set(dev, core, idx, 0);
-		b43_phy_ht_cal_tx_gain(dev, b43_phy_ht_rxcal_gain[idx][2]);
+		b43_phy_ht_tx_gain_fix(dev, b43_phy_ht_rxcal_gain[idx][2]);
 
 		while (!done) {
 			n = b43_phy_ht_load_tone(dev, rx_tone, 181);
@@ -2145,7 +2141,7 @@ static void b43_phy_ht_cal_rx_iq(struct b43_wldev *dev)
 			b43_phy_ht_reset_cca(dev);
 			if (!done) {
 				b43_phy_ht_rxcal_gain_set(dev, core, idx, 0);
-				b43_phy_ht_cal_tx_gain(dev,
+				b43_phy_ht_tx_gain_fix(dev,
 					b43_phy_ht_rxcal_gain[idx][2]);
 			}
 		}
@@ -2153,7 +2149,7 @@ static void b43_phy_ht_cal_rx_iq(struct b43_wldev *dev)
 		if (fine + b43_phy_ht_rxcal_gain[optim][0] > 10)
 			fine = 10 - b43_phy_ht_rxcal_gain[optim][0];
 		b43_phy_ht_rxcal_gain_set(dev, core, optim, max(fine, 0));
-		b43_phy_ht_cal_tx_gain(dev, b43_phy_ht_rxcal_gain[optim][2]);
+		b43_phy_ht_tx_gain_fix(dev, b43_phy_ht_rxcal_gain[optim][2]);
 
 		n = b43_phy_ht_load_tone(dev, rx_tone, 181);
 		b43_phy_ht_run_samples(dev, n, 0xffff, 0, false);

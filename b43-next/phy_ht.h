@@ -140,6 +140,7 @@ struct b43_phy_ht {
 	bool tx_pwr_ctl;
 	u8 tx_pwr_idx[3];
 	u8 tx_pwr_target[3];
+	u8 tx_gain_idx;
 	struct b43_ppr tx_pwr_ppr;
 
 	s32 bb_mult_save[3];

@@ -49,12 +49,13 @@ the window (each turn reads MMIO 0x4d0 once; `ap_start` too). What is left is ma
 first table 0x1a read of `b43_phy_ht_tx_power_fix()` that is followed by the
 control turned off, to the write that turns it on: the tail of
 `b43_phy_ht_op_init()`, flow `pctl_init`. The cold captures have one in `up`
-and one in `ssid`, the hot ones only on their first channel.
+and one in `ssid`, the hot ones one in every `ssid-N`: every 2.4 GHz channel
+at 20 MHz, 1l-7l and 5u-11u at 40.
 
 A flow passes only if both streams are equal, no read goes past the capture
 and none of the capture's is left over, and b43 printed nothing.
 
-All 14 windows pass.
+All 37 windows pass.
 
 ## The start of the BSS
 
@@ -85,7 +86,9 @@ None: every value is compared. The TX power target is brcmsmac's chain
 (`b43_phy_ht_op_recalc_txpower()`) with wl's locale caps on ch 1 and 11; a
 later init starts from the target the configuration before left
 (`HT_PREV_CHANNEL`, which `check.sh` takes from the capture's sequence),
-as wl does before it computes the new one.
+as wl does before it computes the new one, and fixes the TX gain at the
+index the RX calibration of the BSS before left (`HT_TX_GAIN_IDX`, 10
+after a BSS start, 40 before any).
 
 ## Flows
 
