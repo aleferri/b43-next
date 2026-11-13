@@ -43,7 +43,14 @@ makes the PHY calls of b43's core in its order: the analog switch of
 `b43_wireless_core_reset()` and of `b43_phy_bringup()`, `b43_phy_init()`,
 the TX power check of mac80211's first config and the adjustment it
 queues, then the HT-PHY's 1 s work once per turn of wl's 1 s watchdog in
-the window (each turn reads MMIO 0x4d0 once; `ap_start` too). What is left is mapped in `../../docs/ht-retrace-todo.md`.
+the window (each turn reads MMIO 0x4d0 once; `ap_start` too).
+
+The 16 of wl's PHY and radio operations left are its power saving while no
+BSS is up, which b43 does not have: at the watchdog's third turn after
+`wl up` a read of table 13 entry 0x5f (#8520 on `cold-2g6-20`) and, after
+a core reset, the analog switch on, the radio off (0x810) and the analog
+switch off (#8590-#8613), before the core goes into reset. The core's
+operations are in `../../docs/ht-retrace-todo.md`.
 
 `check.sh` takes `$TRACES/bcm4331-rev2/r6400v1`: the board values from its
 `nvram.txt`, the windows from its `traces/mmio-*`. A window runs from the
