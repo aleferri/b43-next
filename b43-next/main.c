@@ -8119,12 +8119,12 @@ static int b43_setup_bands(struct b43_wldev *dev,
 		*band = *hw->wiphy->bands[NL80211_BAND_2GHZ];
 		ht->ht_supported = true;
 		/* Both RX chains stay awake. */
-		ht->cap = IEEE80211_HT_CAP_SM_PS;
+		ht->cap = IEEE80211_HT_CAP_SM_PS | IEEE80211_HT_CAP_SGI_20;
 		ht->ampdu_factor = IEEE80211_HT_MAX_AMPDU_64K;
 		ht->ampdu_density = IEEE80211_HT_MPDU_DENSITY_4;
 		ht->mcs.rx_mask[0] = 0xff;
 		ht->mcs.rx_mask[1] = 0xff;
-		ht->mcs.rx_highest = cpu_to_le16(130);
+		ht->mcs.rx_highest = cpu_to_le16(144);
 		ht->mcs.tx_params = IEEE80211_HT_MCS_TX_DEFINED;
 		ieee80211_hw_set(hw, AMPDU_AGGREGATION);
 		hw->max_rx_aggregation_subframes = IEEE80211_MAX_AMPDU_BUF_HT;
