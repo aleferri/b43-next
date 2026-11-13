@@ -79,6 +79,7 @@ void b43_time_lock(struct b43_wldev *dev);
 void b43_time_unlock(struct b43_wldev *dev);
 
 void b43_tsf_read(struct b43_wldev *dev, u64 * tsf);
+void b43_watchdog_poll(struct b43_wldev *dev);
 void b43_tsf_write(struct b43_wldev *dev, u64 tsf);
 
 u32 b43_shm_read32(struct b43_wldev *dev, u16 routing, u16 offset);
