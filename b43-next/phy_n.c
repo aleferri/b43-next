@@ -5103,6 +5103,26 @@ static void b43_nphy_pa_set_tx_dig_filter(struct b43_wldev *dev, u16 offset,
 /* https://bcm-v4.sipsolutions.net/802.11/PHY/N/ExtPaSetTxDigiFilts */
 static void b43_nphy_ext_pa_set_tx_dig_filters(struct b43_wldev *dev)
 {
+	int i;
+
+	/*
+	 * wl 7.14.164.18 on the BCM43217 (RT-AC56U, cold-2g6-20 #3201-#3245,
+	 * the same on ch 1, at 40 MHz and at attach) sets the 20 and 40 MHz
+	 * filters too, to the coefficient sets 3 and 4, one coefficient of
+	 * each filter in turn.
+	 */
+	if (dev->phy.rev == 17 && dev->phy.radio_rev == 14) {
+		for (i = 0; i < 15; i++) {
+			b43_phy_write(dev, B43_PHY_N(0x2C5 + i),
+				      tbl_tx_filter_coef_rev4[2][i]);
+			b43_phy_write(dev, B43_PHY_N(0x186 + i),
+				      tbl_tx_filter_coef_rev4[3][i]);
+			b43_phy_write(dev, B43_PHY_N(0x195 + i),
+				      tbl_tx_filter_coef_rev4[4][i]);
+		}
+		return;
+	}
+
 	b43_nphy_pa_set_tx_dig_filter(dev, 0x2C5,
 				      tbl_tx_filter_coef_rev4[2]);
 }
