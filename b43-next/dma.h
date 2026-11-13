@@ -262,6 +262,15 @@ struct b43_dmaring {
 	 * This is NULL for an RX ring.
 	 */
 	u8 *txhdr_cache;
+	/*
+	 * On a device that is not DMA coherent, the TX headers and the RX
+	 * buffers in uncached memory (dma_alloc_coherent()): 0 and NULL
+	 * otherwise. See b43_dma_noncoherent() in dma.c.
+	 */
+	dma_addr_t txhdr_dma;
+	u8 **rx_coh;			/* chunks of rx_per_chunk slots */
+	dma_addr_t *rx_coh_dma;
+	unsigned int rx_stride, rx_per_chunk, rx_chunks;
 	/* (Unadjusted) DMA base bus-address of the ring memory. */
 	dma_addr_t dmabase;
 	/* What the DMA64 index registers count from: the low word of the ring
