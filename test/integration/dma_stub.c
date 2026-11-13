@@ -91,6 +91,9 @@ void __dma_sync_single_for_cpu(struct device *dev, dma_addr_t addr, size_t size,
 void __dma_sync_single_for_device(struct device *dev, dma_addr_t addr,
 				  size_t size, enum dma_data_direction dir) { }
 
+/* No syncs needed: dma.c keeps its streaming TX headers and RX buffers */
+bool __dma_need_sync(struct device *dev, dma_addr_t dma_addr) { return false; }
+
 /* --- skb: solo cio' che dma.c tocca --------------------------------------- */
 
 struct sk_buff *__netdev_alloc_skb(struct net_device *dev, unsigned int len,
