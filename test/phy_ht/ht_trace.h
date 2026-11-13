@@ -10,9 +10,14 @@ unsigned short ht_mmio_read16(unsigned short offset);
 void ht_mmio_write16(unsigned short offset, unsigned short value);
 unsigned int ht_mmio_read32(unsigned short offset);
 void ht_mmio_write32(unsigned short offset, unsigned int value);
+unsigned short ht_shm_read16(unsigned short routing, unsigned short offset);
+void ht_shm_write16(unsigned short routing, unsigned short offset,
+		    unsigned short value);
 unsigned int ht_wrap_read32(unsigned short offset);
 void ht_wrap_write32(unsigned short offset, unsigned int value);
 void ht_log(const char *what);
+/* Watchdog turn k of the window starts. */
+void ht_turn(int k);
 /* An nvram variable of the board as a number, or dflt if it has none. */
 long ht_nvram(const char *name, long dflt);
 /* An environment variable as a number, or dflt. */
