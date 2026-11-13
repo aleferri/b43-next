@@ -1328,6 +1328,24 @@ static inline void b43_maskset32(struct b43_wldev *dev, u16 offset, u32 mask,
 	b43_write32(dev, offset, (b43_read32(dev, offset) & mask) | set);
 }
 
+/*
+ * MACCTL as written. On the HT-PHY's core G mode is the I/O control's
+ * (B43_BCMA_IOCTL_GMODE) and MACCTL only reads it back: the stock driver
+ * never writes it, as brcmsmac never writes MCTL_GMODE.
+ */
+static inline void b43_macctl_write(struct b43_wldev *dev, u32 value)
+{
+	if (dev->phy.type == B43_PHYTYPE_HT)
+		value &= ~B43_MACCTL_GMODE;
+	b43_write32(dev, B43_MMIO_MACCTL, value);
+}
+
+static inline void b43_macctl_maskset(struct b43_wldev *dev, u32 mask,
+				      u32 set)
+{
+	b43_macctl_write(dev, (b43_read32(dev, B43_MMIO_MACCTL) & mask) | set);
+}
+
 static inline void b43_block_read(struct b43_wldev *dev, void *buffer,
 				 size_t count, u16 offset, u8 reg_width)
 {

@@ -333,7 +333,7 @@ void b43_power_saving_ctl_bits(struct b43_wldev *dev, unsigned int ps_flags)
 
 	if (macctl == old)
 		return;
-	b43_write32(dev, B43_MMIO_MACCTL, macctl);
+	b43_macctl_write(dev, macctl);
 	b43_read32(dev, B43_MMIO_MACCTL);
 	for (i = 0; i < 100; i++)
 		if (b43_shm_read16(dev, B43_SHM_SHARED, B43_SHM_SH_UCODESTAT) !=
@@ -348,7 +348,7 @@ void b43_mac_suspend(struct b43_wldev *dev)
 	if (dev->mac_suspended++)
 		return;
 	b43_power_saving_ctl_bits(dev, B43_PS_AWAKE);
-	b43_maskset32(dev, B43_MMIO_MACCTL, ~B43_MACCTL_ENABLED, 0);
+	b43_macctl_maskset(dev, ~B43_MACCTL_ENABLED, 0);
 	b43_read32(dev, B43_MMIO_MACCTL);
 	for (i = 0; i < 75; i++)
 		if (b43_read32(dev, B43_MMIO_GEN_IRQ_REASON) &
@@ -361,7 +361,7 @@ void b43_mac_enable(struct b43_wldev *dev)
 {
 	if (--dev->mac_suspended)
 		return;
-	b43_maskset32(dev, B43_MMIO_MACCTL, ~0, B43_MACCTL_ENABLED);
+	b43_macctl_maskset(dev, ~0, B43_MACCTL_ENABLED);
 	b43_write32(dev, B43_MMIO_GEN_IRQ_REASON, B43_IRQ_MAC_SUSPENDED);
 	b43_read32(dev, B43_MMIO_MACCTL);
 	b43_read32(dev, B43_MMIO_GEN_IRQ_REASON);
