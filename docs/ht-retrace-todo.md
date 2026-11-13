@@ -14,14 +14,16 @@ core but the watchdog turn's calls into it. From `up` to `beaconing`,
 
 | capture | grezzo | PHY+radio+MAC |
 |---|---|---|
-| cold-2g1-20 | 46.64% | 93.71% |
-| cold-2g6-20 | 63.89% | 93.67% |
-| cold-2g11-20 | 52.97% | 93.71% |
+| cold-2g1-20 | 46.76% | 93.92% |
+| cold-2g6-20 | 64.12% | 93.88% |
+| cold-2g11-20 | 53.13% | 93.92% |
 
 The second score has the PHY's and the radio's operations, MACCTL and the
-core's I/O control with its forced gated clock. `grezzo` follows the
-traffic, 991 interrupts on ch 1 against 217 on ch 6: the rest is the core's
-attach, init, interrupts and RX, not divided by phase yet.
+core's I/O control with its forced gated clock. wl's power saving while no
+BSS is up is not scored (`drop_power_save()` in `test/unit/compare.py`).
+`grezzo` follows the traffic, 991 interrupts on ch 1 against 217 on ch 6:
+the rest is the core's attach, init, interrupts and RX, not divided by phase
+yet.
 
 Of the MAC's operations b43's are wl's but for:
 
@@ -29,9 +31,8 @@ Of the MAC's operations b43's are wl's but for:
   memory's channel, 0x00a0, is 6 at every write), wl's I/O control goes
   through a reset (0x07, 0x05, 0x4d, 0x43, 0x45) four times in the first
   17 ms of `up` (#7-#219) and three in the first 9 ms of `ssid`
-  (#20300-#20451). Between them, after the power saving has put the core
-  into reset (#8590-#8613), wl takes it out and back every 2 s while no BSS
-  is up, four times (#20131-#20278), which b43 does not have. b43 resets
+  (#20300-#20451). The four between them, every 2 s while no BSS is up,
+  are its power saving, not scored. b43 resets
   three times in the whole run, all before its PHY work: twice at the probe,
   once at the core's init, and not at the BSS's start;
 - MACCTL's bit 31 (`B43_MACCTL_GMODE`): wl reads it set and never writes
