@@ -1171,7 +1171,9 @@ static void b43_set_slot_time(struct b43_wldev *dev, u16 slot_time)
 	 * captures of the agcombo (7.14) and of the MacBookAir6,1 (6.30) write
 	 * 0x0207 and then 9 on 5 GHz.
 	 */
-	if (dev->dev->core_rev >= 42) {
+	/* The BCM43227 takes both too: without it the shared-memory slot time
+	 * stays 20 us in a short-slot BSS. */
+	if (dev->dev->core_rev >= 42 || dev->ht) {
 		b43_write16(dev, B43_MMIO_IFSSLOT, 510 + slot_time);
 		b43_shm_write16(dev, B43_SHM_SHARED, B43_SHM_SH_SLOTT,
 				slot_time);
