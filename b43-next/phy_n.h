@@ -955,6 +955,8 @@ struct b43_phy_n {
 	/* The init calibration runs in the first recalc_txpower (radio 2057
 	 * rev 14, external PA), where wl runs it */
 	bool init_cal_pending;
+	/* The channel the init calibration last ran on, in MHz; 0 before it */
+	u16 init_cal_freq;
 	/* The pre-calibration set the TSSI path up: leave its radio routing */
 	bool tssi_route_kept;
 	/* The TX gain pre-calibration of radio 2057 rev 14, for the report */

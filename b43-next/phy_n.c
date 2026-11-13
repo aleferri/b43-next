@@ -7690,6 +7690,7 @@ static enum b43_txpwr_result b43_nphy_op_recalc_txpower(struct b43_wldev *dev,
 	if (nphy->init_cal_pending) {
 		b43_nphy_init_cal_2057_rev14_epa(dev, cal_gain);
 		nphy->init_cal_pending = false;
+		nphy->init_cal_freq = channel->center_freq;
 	}
 	b43_mac_enable(dev);
 
@@ -8565,7 +8566,9 @@ static void b43_nphy_op_switch_analog(struct b43_wldev *dev, bool on)
 static int b43_nphy_op_switch_channel(struct b43_wldev *dev,
 				      unsigned int new_channel)
 {
+	struct b43_phy_n *nphy = dev->phy.n;
 	struct ieee80211_channel *channel = dev->wl->hw->conf.chandef.chan;
+	int err;
 	enum nl80211_channel_type channel_type =
 		cfg80211_get_chandef_type(&dev->wl->hw->conf.chandef);
 
@@ -8577,7 +8580,23 @@ static int b43_nphy_op_switch_channel(struct b43_wldev *dev,
 			return -EINVAL;
 	}
 
-	return b43_nphy_set_channel(dev, channel, channel_type);
+	err = b43_nphy_set_channel(dev, channel, channel_type);
+	if (err)
+		return err;
+
+	/*
+	 * wl 7.14.164.18 calibrates the BCM43217 each time it comes up on a
+	 * channel. b43's first one runs on the channel mac80211 starts on,
+	 * before hostapd sets the operating one: calibrate again on the new
+	 * channel, at once, from the power update.
+	 */
+	if (b43_nphy_precal_2057_rev14_epa(dev) && nphy->init_cal_freq &&
+	    nphy->init_cal_freq != channel->center_freq) {
+		nphy->init_cal_pending = true;
+		b43_phy_txpower_check(dev, B43_TXPWR_IGNORE_TIME |
+					   B43_TXPWR_IGNORE_TSSI);
+	}
+	return 0;
 }
 
 static unsigned int b43_nphy_op_get_default_chan(struct b43_wldev *dev)
