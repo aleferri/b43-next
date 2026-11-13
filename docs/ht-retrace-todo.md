@@ -14,9 +14,9 @@ core but the watchdog turn's calls into it. From `up` to `beaconing`,
 
 | capture | grezzo | PHY+radio+MAC |
 |---|---|---|
-| cold-2g1-20 | 46.76% | 93.92% |
-| cold-2g6-20 | 64.12% | 93.88% |
-| cold-2g11-20 | 53.13% | 93.92% |
+| cold-2g1-20 | 47.32% | 96.12% |
+| cold-2g6-20 | 64.98% | 96.09% |
+| cold-2g11-20 | 53.79% | 96.14% |
 
 The second score has the PHY's and the radio's operations, MACCTL and the
 core's I/O control with its forced gated clock. wl's power saving while no
@@ -24,6 +24,19 @@ BSS is up is not scored (`drop_power_save()` in `test/unit/compare.py`).
 `grezzo` follows the traffic, 991 interrupts on ch 1 against 217 on ch 6:
 the rest is the core's attach, init, interrupts and RX, not divided by phase
 yet.
+
+What is left of the PHY's, the radio's and the MAC's operations on
+`cold-2g6-20`, in operations of the larger side:
+
+| ops | what | needs |
+|---|---|---|
+| 565 | the temperature turns: wl measures at its timer's ticks, b43 at its own, which the harness does not place | the harness |
+| 91 | the MAC enabled and suspended four times around the idle TSSI measurement (0x1e7 = 0xe019), twice per BSS start, AWAKE dropped once, which b43 does not do | the driver |
+| 88 | the BSS start: wl's core down and up, its resets and the radio's power | the driver |
+| 71 | the probe and the core's init: b43's attach, which the capture has not, and its first reset with G mode in the I/O control, where wl's has it after | an attach capture |
+| 22 | MACCTL's bit 31 and `DISCPMQ`, below | the driver |
+| 19 | the I/O control's `MACPHYCLKEN` (0x10), set by wl at the core's init and by b43 after the PHY's | the driver |
+| 4 | 0x280 and 0x283 read back in another order | the hot cycle |
 
 Of the MAC's operations b43's are wl's but for:
 
