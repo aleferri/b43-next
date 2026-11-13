@@ -21,7 +21,7 @@ windows() {
 	awk '
 	/ MARK / { mark = $NF; next }
 	start && ++k == 33 && !/PHY\.RD addr=0x01e7 / { start = 0 }
-	/PHY\.WR addr=0x0072 val=0x68e8$/ && !start {
+	/PHY\.WR addr=0x0072 val=0x68[0-9a-f][0-9a-f]$/ && !start {
 		start = substr($2, 2); m = mark; k = 0; next
 	}
 	start && /PHY\.WR addr=0x01e7 val=0x[89a-f]/ {
@@ -32,20 +32,21 @@ windows() {
 for f in "$BOARD"/traces/mmio-*/*-ops.txt.gz; do
 	ops=$T/$(basename "$f" .gz)
 	zcat "$f" > "$ops"
+	# What the window before left: its channel (ch 6 before the first of
+	# the hot cycle, its untraced warm-up) and, after a BSS start, the TX
+	# gain index of its RX calibration
+	before=6 gain=40
 	windows "$ops" | while read -r first last mark; do
 		printf '%-18s %-14s ' "$(basename "$ops" -ops.txt)" "$mark"
 		# A later init starts from the target the configuration before left;
 		later=1; [ "$mark" = "'up'" ] && later=0
 		ch=$(echo "$(basename "$ops")$mark" |
 			sed -n "s/^cold-2g\([0-9]*\).*/\1/p; s/^hot.*ssid-\([0-9]*\).*/\1/p")
-		# the hot cycle comes from the channel before, ch 6 before the first
-		prev=$ch
-		case $(echo "$mark" | tr -d "'") in
-		ssid-1|ssid-1[lu]) prev=6 ;;
-		ssid-*) prev=$((ch - 1)) ;;
-		esac
-		HT_LATER=$later HT_CHANNEL=$ch HT_PREV_CHANNEL=$prev \
+		HT_LATER=$later HT_CHANNEL=$ch HT_PREV_CHANNEL=$before \
+			HT_TX_GAIN_IDX=$gain \
 			./ht-trace pctl_init "$ops" "$first" "$last" "$@" || echo FAIL > "$T/failed"
+		before=$ch
+		case $mark in *ssid*) gain=10 ;; esac
 	done
 	rm -f "$ops"
 done
