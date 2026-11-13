@@ -444,6 +444,8 @@ int b43_switch_channel(struct b43_wldev *dev, unsigned int new_channel)
 	if (phy->type == B43_PHYTYPE_AC)
 		return b43_switch_channel_ac(dev, new_channel);
 
+	dev->rx_ht_valid = false;
+
 	/* First we set the channel radio code to prevent the
 	 * firmware from sending ghost packets.
 	 */

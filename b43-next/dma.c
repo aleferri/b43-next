@@ -2200,8 +2200,10 @@ static void dma_rx_multi(struct b43_dmaring *ring, int *slot, u16 len)
 			break;
 		*slot = next_slot(ring, *slot);
 	}
-	if (unlikely(!skb))
+	if (unlikely(!skb)) {
+		ring->dev->rx_ht_valid = false;
 		return;
+	}
 	rxhdr = (struct b43_rxhdr_fw4 *)skb->data;
 	skb_pull(skb, ring->frameoffset);
 	b43_rx(ring->dev, skb, rxhdr);
@@ -2287,6 +2289,7 @@ static void dma_rx(struct b43_dmaring *ring, int *slot)
 	return;
 
 drop_recycle_buffer:
+	ring->dev->rx_ht_valid = false;
 	/* Poison and recycle the RX buffer. */
 	b43_poison_rx_buffer(ring, skb);
 	sync_descbuffer_for_device(ring, dmaaddr, ring->rx_buffersize);

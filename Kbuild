@@ -17,6 +17,9 @@ endif
 ifeq ($(CONFIG_CORDIC),)
 $(error b43-next: the kernel has no CORDIC library (CONFIG_CORDIC))
 endif
+ifeq ($(CONFIG_CRC8),)
+$(error b43-next: the kernel has no CRC8 library (CONFIG_CRC8))
+endif
 endif
 
 ssbn-opts := SPROM BLOCKIO PCIHOST B43_PCI_BRIDGE DRIVER_PCICORE
