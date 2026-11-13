@@ -301,7 +301,10 @@ enum {
 #define B43_SHM_SH_JSSIAUX		0x008C	/* Measure JSSI AUX */
 #define B43_SHM_SH_NOISEPWR		0x0308	/* N-PHY noise power per core */
 /* SHM_SHARED microcode statistics */
+#define B43_SHM_SH_TXRTSFRM		0x00E2	/* RTS frames transmitted */
 #define B43_SHM_SH_TXFUNFL		0x00EC	/* Underflows of each TX FIFO */
+#define B43_SHM_SH_RXBADFCS		0x010A	/* RX frames with a bad FCS */
+#define B43_SHM_SH_RXCTSUCAST		0x011A	/* CTS frames received for us */
 /* SHM_SHARED crypto engine */
 #define B43_SHM_SH_DEFAULTIV		0x003C	/* Default IV location */
 #define B43_SHM_SH_NRRXTRANS		0x003E	/* # of soft RX transmitter addresses (max 8) */
@@ -1089,6 +1092,12 @@ struct b43_wldev {
 	/* Acked A-MPDU TX status awaiting its Block Ack bitmap package. */
 	u32 ampdu_txstat[2];
 	bool ampdu_txstat_pending;
+	/* Microcode statistics counters at their last read, protected by
+	 * wl->mutex. */
+	u16 macstat_txrts;
+	u16 macstat_rxcts;
+	u16 macstat_badfcs;
+	u16 macstat_txstatus;	/* TX statuses since then */
 	/* Station power save, protected by wl->mutex: whether the station
 	 * dozes, from the AP's acknowledgement of a null frame with PM=1
 	 * until it wakes up, the HWPS bit, which the microcode copies into
