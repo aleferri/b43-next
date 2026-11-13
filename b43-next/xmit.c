@@ -895,6 +895,8 @@ int b43_generate_txhdr(struct b43_wldev *dev,
 	struct ieee80211_rate *fbrate;
 	u8 rate, rate_fb;
 	int rate_ofdm, rate_fb_ofdm;
+	const struct ieee80211_tx_rate *rc_fb;
+	bool short_preamble_fb;
 	unsigned int plcp_fragment_len;
 	u32 mac_ctl = 0;
 	u16 phy_ctl = 0;
@@ -916,6 +918,9 @@ int b43_generate_txhdr(struct b43_wldev *dev,
 	fbrate = c.fbrate;
 	rate_fb = c.rate_fb;
 	rate_fb_ofdm = b43_is_ofdm_rate(rate_fb);
+	rc_fb = &info->control.rates[info->control.rates[1].idx < 0 ? 0 : 1];
+	short_preamble_fb = !rate_fb_ofdm && rate_fb != B43_CCK_RATE_1MB &&
+			    (rc_fb->flags & IEEE80211_TX_RC_USE_SHORT_PREAMBLE);
 
 	if (rate_ofdm)
 		txhdr->phy_rate = b43_plcp_get_ratecode_ofdm(rate);
@@ -1056,6 +1061,8 @@ int b43_generate_txhdr(struct b43_wldev *dev,
 		mac_ctl |= B43_TXH_MAC_5GHZ;
 	if (c.long_frame)
 		mac_ctl |= B43_TXH_MAC_LONGFRAME;
+	if (short_preamble_fb)
+		mac_ctl |= B43_TXH_MAC_FB_SHORTPRMBL;
 
 	/* Generate the RTS or CTS-to-self frame */
 	if (c.rts || c.cts) {
