@@ -206,13 +206,23 @@ static unsigned int b43_ht20_symbols(u8 mcs, unsigned int octets)
 			    b43_ht20_ndbps[mcs & 7] * (1 + (mcs >> 3)));
 }
 
-/* Airtime includes the FCS/trailer in octets, but not SIFS. */
+/* Data duration in 4 us periods: 802.11n rounds short-GI (3.6 us)
+ * symbols up to a 4 us boundary for TXTIME and the L-SIG length. */
+static unsigned int b43_ht20_periods(u8 mcs, unsigned int octets, bool sgi)
+{
+	unsigned int symbols = b43_ht20_symbols(mcs, octets);
+
+	return sgi ? DIV_ROUND_UP(9 * symbols, 10) : symbols;
+}
+
+/* Airtime includes the FCS/trailer in octets, but not SIFS. For HT rates
+ * short_preamble selects the short guard interval. */
 static unsigned int b43_tx_airtime(u8 rate, bool ht, bool short_preamble,
 				   unsigned int octets, bool gmode)
 {
 	if (ht)
 		return 36 + 4 * (rate >> 3) +
-		       4 * b43_ht20_symbols(rate, octets) +
+		       4 * b43_ht20_periods(rate, octets, short_preamble) +
 		       (gmode ? 6 : 0);
 	if (b43_is_ofdm_rate(rate))
 		return 20 + 4 * DIV_ROUND_UP(16 + 8 * octets + 6,
@@ -1057,7 +1067,7 @@ int b43_generate_txhdr(struct b43_wldev *dev,
 	int rate_ofdm, rate_fb_ofdm;
 	const struct ieee80211_tx_rate *rc_fb;
 	bool rate_ht, rate_fb_ht = false;
-	bool ht, short_preamble, short_preamble_fb;
+	bool ht, short_preamble, short_preamble_fb, sgi, sgi_fb;
 	unsigned int fes = 0, fes_fb = 0, next_len = 0;
 	struct ieee80211_vif *vif = info->control.vif;
 	unsigned int plcp_fragment_len, ppdu_len;
@@ -1104,6 +1114,10 @@ int b43_generate_txhdr(struct b43_wldev *dev,
 	short_preamble_fb = !rate_fb_ht && !rate_fb_ofdm &&
 			    rate_fb != B43_CCK_RATE_1MB &&
 			    (rc_fb->flags & IEEE80211_TX_RC_USE_SHORT_PREAMBLE);
+	/* Neither applies to legacy rates, as short preambles do not to HT. */
+	sgi = rate_ht &&
+	      (info->control.rates[0].flags & IEEE80211_TX_RC_SHORT_GI);
+	sgi_fb = rate_fb_ht && (rc_fb->flags & IEEE80211_TX_RC_SHORT_GI);
 
 	if (rate_ht)
 		txhdr->phy_rate = rate;
@@ -1183,11 +1197,12 @@ int b43_generate_txhdr(struct b43_wldev *dev,
 		if (ieee80211_has_morefrags(fctl))
 			next_len = plcp_fragment_len;
 		wlhdr->duration_id = cpu_to_le16(c.ack ?
-			b43_tx_nav(dev, info, rate, rate_ht, short_preamble,
-				   next_len, ampdu) : 0);
+			b43_tx_nav(dev, info, rate, rate_ht,
+				   short_preamble || sgi, next_len, ampdu) : 0);
 		txhdr->dur_fb = cpu_to_le16(c.ack ?
 			b43_tx_nav(dev, info, rate_fb, rate_fb_ht,
-				   short_preamble_fb, next_len, ampdu) : 0);
+				   short_preamble_fb || sgi_fb, next_len,
+				   ampdu) : 0);
 	}
 	/* The first header describes the whole A-MPDU PPDU. Continuation
 	 * PLCP and mixed-mode lengths stay individual. */
@@ -1197,6 +1212,8 @@ int b43_generate_txhdr(struct b43_wldev *dev,
 	case B43_FW_HDR_598:
 		b43_generate_plcp_hdr((struct b43_plcp_hdr4 *)(&txhdr->format_598.plcp),
 				      ppdu_len, rate, rate_ht);
+		if (sgi)
+			txhdr->format_598.plcp.raw[3] |= 0x80; /* Short GI */
 		if (ampdu && ampdu->first) {
 			txhdr->format_598.plcp.raw[3] |= 0x08; /* Aggregation */
 			txhdr->format_598.preload_size =
@@ -1214,23 +1231,28 @@ int b43_generate_txhdr(struct b43_wldev *dev,
 	}
 	b43_generate_plcp_hdr((struct b43_plcp_hdr4 *)(&txhdr->plcp_fb),
 			      plcp_fragment_len, rate_fb, rate_fb_ht);
+	if (sgi_fb)
+		txhdr->plcp_fb.raw[3] |= 0x80; /* Short GI */
 	if (rate_ht)
 		txhdr->mimo_modelen = cpu_to_le16(3 *
-			(b43_ht20_symbols(rate, ppdu_len) +
+			(b43_ht20_periods(rate, ppdu_len, sgi) +
 			 (rate >> 3) + 4) - 3);
 	if (rate_fb_ht)
 		txhdr->mimo_ratelen_fb = cpu_to_le16(3 *
-			(b43_ht20_symbols(rate_fb, ppdu_len) +
+			(b43_ht20_periods(rate_fb, ppdu_len, sgi_fb) +
 			 (rate_fb >> 3) + 4) - 3);
 	if (ht) {
-		fes = b43_tx_airtime(rate, rate_ht, short_preamble,
+		fes = b43_tx_airtime(rate, rate_ht, short_preamble || sgi,
 				     ppdu_len, phy->gmode) +
 		      (c.ack ? b43_tx_nav(dev, info, rate, rate_ht,
-					  short_preamble, 0, ampdu) : 0);
-		fes_fb = b43_tx_airtime(rate_fb, rate_fb_ht, short_preamble_fb,
+					  short_preamble || sgi, 0,
+					  ampdu) : 0);
+		fes_fb = b43_tx_airtime(rate_fb, rate_fb_ht,
+					short_preamble_fb || sgi_fb,
 					ppdu_len, phy->gmode) +
 			 (c.ack ? b43_tx_nav(dev, info, rate_fb, rate_fb_ht,
-					     short_preamble_fb, 0, ampdu) : 0);
+					     short_preamble_fb || sgi_fb, 0,
+					     ampdu) : 0);
 	}
 
 	/* Extra Frame Types */
@@ -1533,9 +1555,10 @@ bool b43_ampdu_tx_fits(struct b43_wldev *dev, struct ieee80211_tx_info *info,
 		       unsigned int ampdu_len)
 {
 	u8 mcs = info->control.rates[0].idx;
+	bool sgi = info->control.rates[0].flags & IEEE80211_TX_RC_SHORT_GI;
 
-	return 3 * (b43_ht20_symbols(mcs, ampdu_len) + (mcs >> 3) + 4) - 3 <=
-	       4095;
+	return 3 * (b43_ht20_periods(mcs, ampdu_len, sgi) + (mcs >> 3) + 4) -
+	       3 <= 4095;
 }
 
 /* Minimum bytes from one MPDU start to the next for the peer's density
@@ -1544,11 +1567,14 @@ unsigned int b43_ampdu_tx_spacing(struct b43_wldev *dev,
 				  struct ieee80211_tx_info *info, u8 density)
 {
 	u8 mcs = info->control.rates[0].idx;
+	/* Bits per 0.1 us: short GI symbols last 3.6 us instead of 4 us. */
+	unsigned int period = info->control.rates[0].flags &
+			      IEEE80211_TX_RC_SHORT_GI ? 36 : 40;
 
 	if (!density)
 		return 0;
 	return DIV_ROUND_UP((1 << density) * b43_ht20_ndbps[mcs & 7] *
-			    (1 + (mcs >> 3)), 8 * 8 * 4);
+			    (1 + (mcs >> 3)) * 10, 8 * 8 * period);
 }
 
 static s8 b43_rssi_postprocess(struct b43_wldev *dev,
