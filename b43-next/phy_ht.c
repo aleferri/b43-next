@@ -1458,10 +1458,6 @@ b43_phy_ht_op_recalc_txpower(struct b43_wldev *dev, bool ignore_tssi)
 }
 
 /*
- * As wl does when its target changes: it reads each core's estimate at
- * index 2 three times, sets the control up again and turns it on.
- */
-/*
  * wl's temperature measurement: the 2059's 0x00c through 1, 3, 5 and 7,
  * eight RSSI readings of the first core at each, with the AFE of every
  * core overridden as for the TX calibration. What wl does with the
@@ -1545,6 +1541,10 @@ static void b43_phy_ht_op_pwork_1sec(struct b43_wldev *dev)
 	b43_mac_enable(dev);
 }
 
+/*
+ * As wl does when its target changes: it reads each core's estimate at
+ * index 2 three times, sets the control up again and turns it on.
+ */
 static void b43_phy_ht_op_adjust_txpower(struct b43_wldev *dev)
 {
 	int i, c;
