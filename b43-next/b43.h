@@ -1204,6 +1204,8 @@ struct b43_wl {
 	 */
 	struct ieee80211_supported_band band_5ghz_ac;
 	struct ieee80211_supported_band band_2ghz_ac;
+	/* The 2.4 GHz band of the BCM43227 (dev->ht), with HT. */
+	struct ieee80211_supported_band band_2ghz_ht;
 
 	/*
 	 * The radar types the AC PHY matches (enum b43_radar_region), from

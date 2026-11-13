@@ -5023,13 +5023,21 @@ static bool b43_tx_rate_is_mcs(const struct ieee80211_tx_rate *rate)
 	       (rate->flags & (IEEE80211_TX_RC_MCS | IEEE80211_TX_RC_VHT_MCS));
 }
 
+static bool b43_tx_rate_ht_ok(const struct ieee80211_tx_rate *rate)
+{
+	return !b43_tx_rate_is_mcs(rate) ||
+	       ((rate->flags & IEEE80211_TX_RC_MCS) && rate->idx < 16);
+}
+
 /*
  * Whether the TX header can carry the frame's rates. On the AC the first
  * rate block must (b43_txhdr_ac_rate_ok()); a fallback it cannot carry ends
  * the blocks, in b43_generate_txhdr(). On the other PHYs a legacy rate and
- * its fallback. Rate control picks nothing else, see b43_ac_set_ht_vht_cap(),
- * but an injected frame can ask for any rate, and the header would read an
- * MCS as an index into the legacy rate table.
+ * its fallback, on the BCM43227 (dev->ht) each of them a legacy rate or an
+ * HT MCS of one or two streams. Rate control picks nothing else, see
+ * b43_ac_set_ht_vht_cap() and b43_setup_bands(), but an injected frame can
+ * ask for any rate, and the header would read an MCS as an index into the
+ * legacy rate table.
  */
 static bool b43_tx_rates_ok(struct ieee80211_hw *hw,
 			    const struct ieee80211_tx_info *info)
@@ -5048,6 +5056,8 @@ static bool b43_tx_rates_ok(struct ieee80211_hw *hw,
 	if (band->vht_cap.vht_supported ||
 	    (dev && dev->fw.hdr_format == B43_FW_HDR_AC))
 		return b43_txhdr_ac_rate_ok(band, &r[0]);
+	if (dev && dev->ht)
+		return b43_tx_rate_ht_ok(&r[0]) && b43_tx_rate_ht_ok(&r[1]);
 	return !b43_tx_rate_is_mcs(&r[0]) && !b43_tx_rate_is_mcs(&r[1]);
 }
 
@@ -6511,6 +6521,10 @@ static int b43_phy_versioning(struct b43_wldev *dev)
 	phy->type = phy_type;
 	phy->rev = phy_rev;
 
+	/* The BCM43227's core, N-PHY and radio revisions */
+	dev->ht = core_rev == 30 && phy_type == B43_PHYTYPE_N &&
+		  phy_rev == 16 && radio_rev == 9;
+
 	return 0;
 }
 
@@ -7651,6 +7665,24 @@ static int b43_setup_bands(struct b43_wldev *dev,
 	} else {
 		if (have_5ghz_phy)
 			hw->wiphy->bands[NL80211_BAND_5GHZ] = &b43_band_5GHz_aphy;
+	}
+
+	/* Keep the shared legacy band templates unchanged. */
+	dev->ht = dev->ht && modparam_qos && have_2ghz_phy;
+	if (dev->ht) {
+		struct ieee80211_supported_band *band = &dev->wl->band_2ghz_ht;
+		struct ieee80211_sta_ht_cap *ht = &band->ht_cap;
+
+		*band = *hw->wiphy->bands[NL80211_BAND_2GHZ];
+		ht->ht_supported = true;
+		/* Both RX chains stay awake. */
+		ht->cap = IEEE80211_HT_CAP_SM_PS;
+		ht->mcs.rx_mask[0] = 0xff;
+		ht->mcs.rx_mask[1] = 0xff;
+		ht->mcs.rx_highest = cpu_to_le16(130);
+		ht->mcs.tx_params = IEEE80211_HT_MCS_TX_DEFINED;
+		/* No AMPDU_AGGREGATION flag or BA-session callback. */
+		hw->wiphy->bands[NL80211_BAND_2GHZ] = band;
 	}
 
 	dev->phy.supports_2ghz = have_2ghz_phy;
