@@ -5495,6 +5495,30 @@ static void b43_set_beacon_listen_interval(struct b43_wldev *dev, u16 interval)
 	b43_shm_write16(dev, B43_SHM_SHARED, B43_SHM_SH_BCN_LI, interval);
 }
 
+/* Expects wl->mutex locked. Change the N-PHY bandwidth with a PHY reset and
+ * initialise the PHY again.
+ */
+static int b43_switch_bandwidth(struct b43_wldev *dev)
+{
+#ifdef CONFIG_B43_NEXT_BCMA
+	u32 bits = b43_is_40mhz(dev) ? B43_BCMA_IOCTL_PHY_BW_40MHZ :
+				       B43_BCMA_IOCTL_PHY_BW_20MHZ;
+
+	if (dev->dev->bus_type != B43_BUS_BCMA ||
+	    dev->phy.type != B43_PHYTYPE_N)
+		return 0;
+	if ((dev->phy.bw_clkbits ?: B43_BCMA_IOCTL_PHY_BW_20MHZ) == bits)
+		return 0;
+
+	b43dbg(dev->wl, "Switching to %u MHz\n", b43_is_40mhz(dev) ? 40 : 20);
+	b43_phy_bw_clk_set(dev, bits);
+	b43_bcma_phy_reset(dev);
+	return b43_phy_init(dev);
+#else
+	return 0;
+#endif
+}
+
 /* Write the short and long frame retry limit values. */
 static void b43_set_retry_limits(struct b43_wldev *dev,
 				 unsigned int short_retry,
@@ -5711,6 +5735,9 @@ static int b43_op_config(struct ieee80211_hw *hw, int radio_idx, u32 changed)
 
 		/* Switch the band (if necessary). */
 		err = b43_switch_band(dev, conf->chandef.chan);
+		if (err)
+			goto out_mac_enable;
+		err = b43_switch_bandwidth(dev);
 		if (err)
 			goto out_mac_enable;
 
