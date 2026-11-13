@@ -76,57 +76,36 @@ channel.
 
 0x280 and 0x283 are, at the N-PHY's addresses, `CRSMINPOWERL0` and
 `CRSMINPOWERU0` (b43's `phy_n.h`, brcmsmac's `phy_n.c`): the CRS minimum
-power of the lower and the upper sideband. The low bytes the watchdog
-writes are not a constant: on the cold ch 6 and 11 they stay 0x3a, on 1l
-wl writes 0x45, 0x44, 0x4f and 0x4e, in the hot captures up to 0x5b (ch 3
-and 5 at 20 MHz). b43 writes 0x3a on every second turn; the cold 1l start
-of the BSS shows the difference (99.88%), and so do the hot windows where
-wl raises them.
+power of the lower and the upper sideband. b43 keeps them as wl's watchdog
+does in the captures (`b43_phy_ht_crsmin_update()`), by a rule inferred
+from them:
 
-In every turn wl reads four shared memory counters and the 0x06c0-0x06e2
-block. By brcmsmac's `struct macstat` (`d11.h`, from `M_UCODE_MACSTAT`,
-0xe0) the four are:
+- a turn's count is the OFDM glitches and bad PLCPs of the four macstat
+  counters wl reads, d(0x010e) - d(0x0158) + d(0x010c) - d(0x015e), since
+  the turn before or, after the counters were reset, since then;
+- two turns in a row with a count of 376 or more raise an index by 16,
+  every further one again;
+- otherwise, two turns after the last write the index goes down by 1, not
+  below 0: the 0x3a every second turn of a quiet channel;
+- an init writes 0x3a and sets the index to 0, starts the two turns again
+  and keeps the turns over the threshold, across a down too;
+- the value written is floor(58 + 11 i / 16).
 
-| shm | counter |
+| shm | counter (brcmsmac's `struct macstat`) |
 |---|---|
 | 0x010c | `rxbadplcp` |
 | 0x010e | `rxcrsglitch` |
 | 0x0158 | `bphy_rxcrsglitch` |
 | 0x015e | `bphy_badplcp` |
 
-A turn writes 0x280 and 0x283 before it reads them, so the value follows
-from the counts of the turns before. A rule that gives every turn wl
-writes on and every value in the six cold captures (76 turns) and in 52
-of the 55 turns of `hot-2g-20`:
+On the captures the threshold lies between 336 and 376; b43 takes 376, the
+lowest count they show over it. The index stops at 56, the N-PHY's
+`NPHY_NOISE_CRSMINPWR_ARRAY_MAX_INDEX_REV_7` in brcmsmac, which no capture
+reaches. Turn by turn, `test/phy_ht` writes wl's values on all 76 turns of
+the cold windows and on 99 of the 125 of the hot ones; `hot.sh` hands each
+window the last two turns before it.
 
-- a turn's count is the OFDM glitches and bad PLCPs, d(0x010e) -
-  d(0x0158) + d(0x010c) - d(0x015e), the counts since the reset after a
-  core reset;
-- two turns in a row over a threshold raise an index by 16, every further
-  one again;
-- otherwise, two turns after the last write the index goes down by 1, not
-  below 0: the 0x3a every second turn of a quiet channel;
-- an init writes 0x3a and sets the index to 0, starts the two turns again
-  and keeps the turns over the threshold;
-- the value written is floor(58 + 11 i / 16): 0x3a at 0, 0x43-0x45 at
-  14-16, 0x4e-0x50 at 30-32, 0x5b at 48, the values the captures have.
-
-The threshold lies between 336 and 376: every count of 376 or more is over
-it, every count of 336 or less is not. It is an inference from these
-captures, not wl's code. brcmsmac keeps the N-PHY's names but not their
-code: `crsminpwr_index` in `struct interference_info` (`phy_int.h`),
-`NPHY_NOISE_NOASSOC_CRSIDX_INCR` 16 (8 with a station associated), up to
-`NPHY_NOISE_CRSMINPWR_ARRAY_MAX_INDEX_REV_7` 56, and 400 to enter on
-glitches and bad PLCPs (`phy_n.c`), which does not fit 1l, where 0x45
-follows a turn of 391. The structure also keeps a moving average of the
-bad PLCPs over 8 turns, which the rule does not need. Counting every read
-of the four counters, the init's and the BSS start's too, instead of the
-turns' fits worse: 129 of 201 turns against 174.
-
-`hot-2g-20` misses the last three turns of ch 6. On `hot-2g-40` the rule
-gives 46 of 70 turns: on 6l, 9u and 11u wl writes 0x45 at the second turn
-and 0x44 two later, at the start of the turn as always, after turns with a
-handful of counts, and 2l, 4l, 5l, 7u and 8u depart from it too. Something
-else raises the value at 40 MHz, or the rule is another. b43 reads the four
-counters on every turn and the harness serves them; the rule needs a capture
-with an interferer switched on and off on purpose.
+Open: on `hot-2g-20` the last three turns of ch 6 (wl goes down to 0x4f
+where the rule raises to 0x5b), and at 40 MHz, in standby, 6l, 9u and 11u, where wl writes
+0x45 at the second turn and 0x44 two later after turns with a handful of
+counts, and 2l, 4l, 5l, 7u and 8u.
