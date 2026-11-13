@@ -1,4 +1,4 @@
-# test/integration — the whole of b43 on AC
+# test/integration — the whole of b43 on AC and HT
 
 Compiles the tree's b43 (`b43-next/main.c`, `phy_common.c`, `leds.c`,
 `rfkill.c` and the rest) and bcma's core management (`bcma-next/`) as they are,
@@ -120,6 +120,32 @@ B43_FW_DIR=/tmp/fw-agcombo B43_BOARD=agcombo ... ./b43-trace
 None of the three holds the attach, which ran before the capture. `ch36` is
 the first `up` after the module load; `ch100` and `ch149-wep` are later ups
 and read no `UCODEREV`, so their probe takes its reads from `ch36`.
+
+### The HT-PHY: the R6400 v1
+
+```sh
+./r6400.sh [cold-2g6-20]
+```
+
+runs b43 on the R6400 v1's BCM4331 (corerev 29, HT-PHY rev 1, radio 2059)
+against one of its cold captures, from the probe to the BSS's start and the
+capture's events, and scores the window from `up` to `beaconing`. It needs
+`$TRACES/bcm4331-rev2/r6400v1` and b43-next-trace-tools with the HT-PHY's
+firmware names and watchdog marker. What differs from the AC boards:
+
+- the build has `BCM63XX=0`: the R6400's host is a BCM4708, where neither b43
+  nor wl reads the register addresses back;
+- the profile `r6400v1` gives the core revision, the PHY's type and the
+  first generation's PCIe core; the SROM comes from the router's NVRAM
+  (`B43_NVRAM`, prefix `pci/1/1/`) through `nvram/bcm47xx_sprom.c`;
+- the capture is decoded with wl's flush reads, for the PHY's version, and
+  without folding its bulk writes, which b43 makes one by one; the firmware
+  is wl's, from the same capture (`fw_from_capture.py --rev 29`);
+- the RX ring's status the capture reads is wl's ring's address, moved onto
+  b43's ring.
+
+On `cold-2g6-20`, 2026-11-13: `grezzo` 26762/69501 = 38.51%, PHY+radio
+24121/27977 = 86.22%.
 
 ### bcma's PMU against the stock attach
 
