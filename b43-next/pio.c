@@ -459,7 +459,7 @@ static int pio_tx_frame(struct b43_pio_txqueue *q,
 	BUILD_BUG_ON(sizeof(wl->pio_scratchspace) < sizeof(struct b43_txhdr_ac));
 	B43_WARN_ON(sizeof(wl->pio_scratchspace) < hdrlen);
 	err = b43_generate_txhdr(dev, (u8 *)txhdr, skb,
-				 info, cookie);
+				 info, cookie, NULL);
 	if (err)
 		return err;
 

@@ -295,6 +295,8 @@ enum {
 #define B43_SHM_SH_JSSI0		0x0088	/* Measure JSSI 0 */
 #define B43_SHM_SH_JSSI1		0x008A	/* Measure JSSI 1 */
 #define B43_SHM_SH_JSSIAUX		0x008C	/* Measure JSSI AUX */
+/* SHM_SHARED microcode statistics */
+#define B43_SHM_SH_TXFUNFL		0x00EC	/* Underflows of each TX FIFO */
 /* SHM_SHARED crypto engine */
 #define B43_SHM_SH_DEFAULTIV		0x003C	/* Default IV location */
 #define B43_SHM_SH_NRRXTRANS		0x003E	/* # of soft RX transmitter addresses (max 8) */
@@ -803,6 +805,22 @@ struct b43_stats {
 	u8 link_noise;
 };
 
+/* TX A-MPDU state of one TID of a station, protected by wl->mutex. */
+#define B43_AMPDU_TX_WINDOW	64
+struct b43_ampdu_tx_tid {
+	bool operational;
+	/* Negotiated reorder window, at most B43_AMPDU_TX_WINDOW. */
+	u8 buf_size;
+	/* Oldest unresolved sequence and the unresolved set relative to it. */
+	u16 win_start;
+	u64 outstanding;
+	/* Driver retransmissions, indexed by sequence modulo the window. */
+	u8 retries[B43_AMPDU_TX_WINDOW];
+	/* Retransmissions and frames taken from mac80211 that wait for the
+	 * next A-MPDU, in sequence order. Empty unless operational. */
+	struct sk_buff_head queue;
+};
+
 /*
  * Per station, in ieee80211_sta::drv_priv: the window of each TID's block
  * ack session on TX, 0 without one.
@@ -811,6 +829,15 @@ struct b43_sta {
 	u8 ampdu_win[IEEE80211_NUM_TIDS];
 	/* Beamforming slot of the station plus one, 0 for none. */
 	u8 txbf_slot;
+	/* The BCM43227's (dev->ht) TX A-MPDU sessions, b43_dma_tx_ampdu(). */
+	struct b43_ampdu_tx_tid ampdu_tx[IEEE80211_NUM_TIDS];
+	u32 ampdu_tx_max_len;
+	u8 ampdu_tx_density;
+	/* Whether the station of an AP dozes. */
+	bool asleep;
+	/* A frame release for the dozing station that waits for the TX work
+	 * (b43_op_release_buffered_frames()), 0 for none. */
+	u32 ps_release;
 };
 
 /*
@@ -1049,6 +1076,9 @@ struct b43_wldev {
 	u16 rx_ht_channel;
 	u8 rx_ht_plcp[6];
 	bool rx_ht_valid;
+	/* Acked A-MPDU TX status awaiting its Block Ack bitmap package. */
+	u32 ampdu_txstat[2];
+	bool ampdu_txstat_pending;
 
 	/* PHY/Radio device. */
 	struct b43_phy phy;
@@ -1202,6 +1232,8 @@ struct b43_wl {
 
 	/* Flag that implement the queues stopping. */
 	bool tx_queue_stopped[B43_QOS_QUEUE_NUM];
+	/* Whether a station has a ps_release waiting, see struct b43_sta. */
+	atomic_t ps_release;
 
 	/* firmware loading work */
 	struct work_struct firmware_load;
