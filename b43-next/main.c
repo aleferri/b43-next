@@ -6801,8 +6801,10 @@ static int b43_wireless_core_init(struct b43_wldev *dev)
 
 	b43_set_retry_limits(dev, B43_DEFAULT_SHORT_RETRY_LIMIT,
 			     B43_DEFAULT_LONG_RETRY_LIMIT);
-	b43_shm_write16(dev, B43_SHM_SHARED, B43_SHM_SH_SFFBLIM, 3);
-	b43_shm_write16(dev, B43_SHM_SHARED, B43_SHM_SH_LFFBLIM, 2);
+	b43_shm_write16(dev, B43_SHM_SHARED, B43_SHM_SH_SFFBLIM,
+			B43_SHORT_FALLBACK_LIMIT);
+	b43_shm_write16(dev, B43_SHM_SHARED, B43_SHM_SH_LFFBLIM,
+			B43_LONG_FALLBACK_LIMIT);
 
 	/*
 	 * The initvals leave IFSCTL at 0x0f0b and the four entries of the

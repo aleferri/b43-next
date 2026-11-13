@@ -323,9 +323,9 @@ static void b43_txhdr_ctl_get(struct b43_wldev *dev,
 			(rates[0].count <=
 			 dev->wl->hw->conf.long_frame_max_tx_count);
 	if (c->long_frame)
-		rates[0].count = dev->wl->hw->conf.long_frame_max_tx_count;
+		rates[0].count = B43_LONG_FALLBACK_LIMIT;
 	else
-		rates[0].count = dev->wl->hw->conf.short_frame_max_tx_count;
+		rates[0].count = B43_SHORT_FALLBACK_LIMIT;
 
 	c->cts = rates[0].flags & IEEE80211_TX_RC_USE_CTS_PROTECT;
 	c->rts = !c->cts && (rates[0].flags & IEEE80211_TX_RC_USE_RTS_CTS);
@@ -1794,7 +1794,8 @@ bool b43_fill_txstatus_report(struct b43_wldev *dev,
 		report->status.rates[0].count = 0;
 		report->status.rates[1].count = status->frame_count;
 	} else {
-		if (status->frame_count > retry_limit) {
+		if (status->frame_count > retry_limit &&
+		    report->status.rates[1].idx >= 0) {
 			report->status.rates[0].count = retry_limit;
 			report->status.rates[1].count = status->frame_count -
 					retry_limit;
