@@ -8733,6 +8733,23 @@ static void b43_nphy_pmu_spur_avoid(struct b43_wldev *dev, bool avoid)
 	}
 }
 
+/* Radio 2057 rev 9 settings for every 2.4 GHz channel set */
+static void b43_nphy_channel_setup_2057_rev9_2g(struct b43_wldev *dev)
+{
+	/* Noise variances */
+	static const u32 nvar20[] = {
+		0x14, 0x14, 0x14, 0x14, 0x15, 0x0d, 0x05, 0x05,
+		0x14, 0x14, 0x10, 0x10, 0x05, 0x05, 0x05, 0x05,
+	};
+	static const u32 nvar40[] = {
+		0x14, 0x20, 0x1d, 0x19, 0x15, 0x0d, 0x05, 0x05,
+		0x14, 0x14, 0x10, 0x10, 0x05, 0x05, 0x05, 0x01,
+	};
+
+	b43_ntab_write_bulk(dev, B43_NTAB32(16, 0x100), ARRAY_SIZE(nvar20),
+			    b43_is_40mhz(dev) ? nvar40 : nvar20);
+}
+
 /* https://bcm-v4.sipsolutions.net/802.11/PHY/N/ChanspecSetup */
 static void b43_nphy_channel_setup(struct b43_wldev *dev,
 				const struct b43_phy_n_sfo_cfg *e,
@@ -8848,6 +8865,9 @@ static void b43_nphy_channel_setup(struct b43_wldev *dev,
 	if (phy->rev == 16)
 		b43_phy_maskset(dev, 0x324, ~0x100,
 				b43_is_40mhz(dev) ? 0x100 : 0);
+
+	if (b43_nphy_2057_rev9_2g(dev))
+		b43_nphy_channel_setup_2057_rev9_2g(dev);
 
 	if (phy->rev >= 3)
 		b43_nphy_spur_workaround(dev);
