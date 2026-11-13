@@ -1227,6 +1227,15 @@ static inline struct b43_wldev *dev_to_b43_wldev(struct device *dev)
 	return ssbn_get_drvdata(ssbn_dev);
 }
 
+/* HT on an N-PHY core, as b43_setup_bands() declared it to mac80211. */
+static inline bool b43_nphy_ht_enabled(struct b43_wldev *dev)
+{
+	const struct ieee80211_supported_band *band =
+		dev->wl->hw->wiphy->bands[NL80211_BAND_2GHZ];
+
+	return dev->phy.nphy_ht && band && band->ht_cap.ht_supported;
+}
+
 /* Is the device operating in a specified mode (NL80211_IFTYPE_XXX). */
 static inline int b43_is_mode(struct b43_wl *wl, int type)
 {

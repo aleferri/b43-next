@@ -252,6 +252,8 @@ struct b43_phy {
 	/* Band support flags. */
 	bool supports_2ghz;
 	bool supports_5ghz;
+	/* An N-PHY core b43 runs with HT, one of b43_nphy_ht_cores[]. */
+	bool nphy_ht;
 
 	/* Is GMODE (2 GHz mode) bit enabled? */
 	bool gmode;
