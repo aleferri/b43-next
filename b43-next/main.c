@@ -759,6 +759,7 @@ static void b43_tsf_write_locked(struct b43_wldev *dev, u64 tsf)
 
 void b43_tsf_write(struct b43_wldev *dev, u64 tsf)
 {
+	dev->rx_ht_valid = false;
 	b43_time_lock(dev);
 	b43_tsf_write_locked(dev, tsf);
 	b43_time_unlock(dev);
@@ -924,6 +925,11 @@ static void b43_write_mac_bssid_templates(struct b43_wldev *dev)
 		tmp |= (u32) (mac_bssid[i + 2]) << 16;
 		tmp |= (u32) (mac_bssid[i + 3]) << 24;
 		b43_ram_write(dev, 0x20 + i, tmp);
+	}
+	if (dev->ht) {
+		b43_ram_write(dev, B43_RAM_BA_TA, get_unaligned_le32(mac));
+		b43_ram_write(dev, B43_RAM_BA_TA + 4,
+			      get_unaligned_le16(mac + 4));
 	}
 }
 
@@ -2947,8 +2953,11 @@ static void b43_do_interrupt_thread(struct b43_wldev *dev)
 	 * Check the DMA reason registers for received data. An underrun is a
 	 * full ring, and reading it gives the buffers back.
 	 */
-	if (dma_reason[0] & B43_DMAIRQ_RDESC_UFLOW)
+	if (dma_reason[0] & B43_DMAIRQ_RDESC_UFLOW) {
 		b43warn(dev->wl, "RX descriptor underrun\n");
+		/* Frames were lost: an A-MPDU's HT-SIG may not apply. */
+		dev->rx_ht_valid = false;
+	}
 	if (dma_reason[0] & (B43_DMAIRQ_RX_DONE | B43_DMAIRQ_RDESC_UFLOW)) {
 		if (b43_using_pio_transfers(dev))
 			b43_pio_rx(dev->pio.rx_queue);
@@ -4136,7 +4145,7 @@ static void b43_adjust_opmode(struct b43_wldev *dev)
 
 	if (wl->filter_flags & FIF_CONTROL)
 		ctl |= B43_MACCTL_KEEP_CTL;
-	if (wl->filter_flags & FIF_FCSFAIL)
+	if ((wl->filter_flags & FIF_FCSFAIL) || dev->ht)
 		ctl |= B43_MACCTL_KEEP_BAD;
 	if (wl->filter_flags & FIF_PLCPFAIL)
 		ctl |= B43_MACCTL_KEEP_BADPLCP;
@@ -4489,6 +4498,12 @@ static void b43_chip_init_mac(struct b43_wldev *dev)
 	/* Probe Response Timeout value */
 	/* FIXME: Default to 0, has to be set by ioctl probably... :-/ */
 	b43_shm_write16(dev, B43_SHM_SHARED, B43_SHM_SH_PRMAXTIME, 0);
+	if (dev->ht) {
+		b43_shm_write16(dev, B43_SHM_SHARED,
+				B43_SHM_SH_MIMO_MAXSYM, 0xFFFF);
+		b43_shm_write16(dev, B43_SHM_SHARED,
+				B43_SHM_SH_WATCHDOG_8TU, 10);
+	}
 
 	/* Initially set the wireless operation mode. */
 	b43_adjust_opmode(dev);
@@ -6184,6 +6199,7 @@ redo:
 	}
 	mask = b43_read32(dev, B43_MMIO_GEN_IRQ_MASK);
 	B43_WARN_ON(mask != 0xFFFFFFFF && mask);
+	dev->rx_ht_valid = false;
 
 	/* Drain all TX queues. */
 	for (queue_num = 0; queue_num < B43_QOS_QUEUE_NUM; queue_num++) {
@@ -6486,6 +6502,7 @@ static void setup_struct_phy_for_init(struct b43_wldev *dev,
 static void setup_struct_wldev_for_init(struct b43_wldev *dev)
 {
 	dev->dfq_valid = false;
+	dev->rx_ht_valid = false;
 
 	/* Assume the radio is enabled. If it's not enabled, the state will
 	 * immediately get fixed on the first periodic work run. */
@@ -7276,7 +7293,9 @@ static int b43_op_get_survey(struct ieee80211_hw *hw, int idx,
  * it for a session, so a session is the window kept here. On RX the
  * microcode answers an A-MPDU or a block ack request with a block ack of
  * its own making (frame code 0x25, at 0x076C on 784), from no table a
- * driver fills; mac80211 reorders.
+ * driver fills; mac80211 reorders. The BCM43227's microcode (dev->ht) does
+ * the same on RX, with DMA or PIO, from the transmitter address in its
+ * template RAM (b43_write_mac_bssid_templates()).
  */
 static int b43_op_ampdu_action(struct ieee80211_hw *hw,
 			       struct ieee80211_vif *vif,
@@ -7294,6 +7313,13 @@ static int b43_op_ampdu_action(struct ieee80211_hw *hw,
 		dev = wl->current_dev;
 		ok = dev && dev->fw.hdr_format == B43_FW_HDR_AC &&
 		     !b43_using_pio_transfers(dev);
+		if (params->action == IEEE80211_AMPDU_RX_START &&
+		    dev && dev->ht)
+			ok = b43_status(dev) >= B43_STAT_STARTED &&
+			     vif == wl->vif &&
+			     (vif->type == NL80211_IFTYPE_STATION ||
+			      vif->type == NL80211_IFTYPE_AP ||
+			      vif->type == NL80211_IFTYPE_ADHOC);
 		mutex_unlock(&wl->mutex);
 		if (!ok)
 			return -EOPNOTSUPP;
@@ -7617,11 +7643,14 @@ static int b43_setup_bands(struct b43_wldev *dev,
 		ht->ht_supported = true;
 		/* Both RX chains stay awake. */
 		ht->cap = IEEE80211_HT_CAP_SM_PS;
+		ht->ampdu_factor = IEEE80211_HT_MAX_AMPDU_64K;
+		ht->ampdu_density = IEEE80211_HT_MPDU_DENSITY_4;
 		ht->mcs.rx_mask[0] = 0xff;
 		ht->mcs.rx_mask[1] = 0xff;
 		ht->mcs.rx_highest = cpu_to_le16(130);
 		ht->mcs.tx_params = IEEE80211_HT_MCS_TX_DEFINED;
-		/* No AMPDU_AGGREGATION flag or BA-session callback. */
+		ieee80211_hw_set(hw, AMPDU_AGGREGATION);
+		hw->max_rx_aggregation_subframes = IEEE80211_MAX_AMPDU_BUF_HT;
 		hw->wiphy->bands[NL80211_BAND_2GHZ] = band;
 	}
 
@@ -8236,6 +8265,7 @@ static int __init b43_init(void)
 	if (err)
 		goto err_ssb_bus_exit;
 #endif
+	b43_ht_sig_crc_init();
 	b43_debugfs_init();
 	err = b43_sdio_init();
 	if (err)
