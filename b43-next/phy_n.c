@@ -9252,6 +9252,15 @@ static int b43_nphy_op_switch_channel(struct b43_wldev *dev,
 	return 0;
 }
 
+static void b43_nphy_op_channel_calibrate(struct b43_wldev *dev)
+{
+	if (!(dev->wl->hw->conf.flags & IEEE80211_CONF_OFFCHANNEL) &&
+	    !b43_nphy_txiqlocal_on_channel(dev))
+		b43_nphy_perical(dev, B43_NPHY_PERICAL_PHYINIT);
+
+	b43_mac_enable(dev);
+}
+
 static void b43_nphy_op_pwork_15sec(struct b43_wldev *dev)
 {
 	if (time_after_eq(jiffies, dev->phy.n->perical_last + 120 * HZ))
@@ -9280,5 +9289,6 @@ const struct b43_phy_operations b43_phyops_n = {
 	.get_default_chan	= b43_nphy_op_get_default_chan,
 	.recalc_txpower		= b43_nphy_op_recalc_txpower,
 	.pwork_15sec		= b43_nphy_op_pwork_15sec,
+	.channel_calibrate	= b43_nphy_op_channel_calibrate,
 	.ofdm_tx		= b43_nphy_op_ofdm_tx,
 };
