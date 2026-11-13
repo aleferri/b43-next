@@ -1640,7 +1640,7 @@ static void b43_dump_keymemory(struct b43_wldev *dev)
 
 void b43_power_saving_ctl_bits(struct b43_wldev *dev, unsigned int ps_flags)
 {
-	u32 macctl;
+	u32 macctl, old;
 	u16 ucstat;
 	bool hwps;
 	bool awake;
@@ -1670,7 +1670,8 @@ void b43_power_saving_ctl_bits(struct b43_wldev *dev, unsigned int ps_flags)
 			dev->mac_suspended;
 	}
 
-	macctl = b43_read32(dev, B43_MMIO_MACCTL);
+	old = b43_read32(dev, B43_MMIO_MACCTL);
+	macctl = old;
 	if (hwps)
 		macctl |= B43_MACCTL_HWPS;
 	else
@@ -1679,6 +1680,9 @@ void b43_power_saving_ctl_bits(struct b43_wldev *dev, unsigned int ps_flags)
 		macctl |= B43_MACCTL_AWAKE;
 	else
 		macctl &= ~B43_MACCTL_AWAKE;
+	/* Already so: the microcode is in the state asked, nothing to wait for */
+	if (macctl == old)
+		return;
 	b43_write32(dev, B43_MMIO_MACCTL, macctl);
 	/* Commit write */
 	b43_read32(dev, B43_MMIO_MACCTL);
