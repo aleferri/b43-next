@@ -385,7 +385,7 @@ def _pair_gap(kv, kt, V, a, b, c, d):
     return jolly, wrong, (b - a) - paired, (d - c) - paired
 
 
-def segments(V, T, C, bus):
+def segments(V, T, C, bus, anchor=False):
     """L'allineamento come sequenza di tratti, nell'ordine dei due flussi.
 
     ('run', n): n coppie di op corrispondenti, consecutive su entrambi i lati.
@@ -399,6 +399,13 @@ def segments(V, T, C, bus):
     e registro -- e dentro i blocchi allineati il valore si giudica con
     ops_equal() di compare.py; un valore sbagliato spezza il tratto. Senza
     profilo bus si allinea sulle stringhe.
+
+    Con anchor, due flussi coi valori pieni su entrambi i lati (una cattura
+    al bus contro test/integration): si allinea prima sulle stringhe, e
+    sull'identita' solo fra un blocco e l'altro. Su una lunga serie di
+    scritture alla stessa porta l'identita' da sola non sa dove la serie
+    comincia, e un'op in piu' o in meno prima di essa appaia tutta la serie
+    sfasata di uno.
     """
     def same(v, t):
         # canon() ha reso 'val=*' la lettura senza valore; ops_equal() la
@@ -420,7 +427,19 @@ def segments(V, T, C, bus):
         else:
             segs.append(('run', n))
 
-    for k, a, b, c, d in tracelib.align_opcodes(av, at):
+    def opcodes():
+        if not anchor:
+            yield from tracelib.align_opcodes(av, at)
+            return
+        for k, a, b, c, d in tracelib.align_opcodes(V, T):
+            if k == 'equal':
+                yield k, a, b, c, d
+                continue
+            for k2, a2, b2, c2, d2 in tracelib.align_opcodes(av[a:b],
+                                                              at[c:d]):
+                yield k2, a + a2, a + b2, c + c2, c + d2
+
+    for k, a, b, c, d in opcodes():
         if k != 'equal':
             # Col profilo bus le identita' fuori dai blocchi allineati
             # differiscono per costruzione: tutto mancante o di troppo.
@@ -502,6 +521,9 @@ def main():
     ap.add_argument('range')
     ap.add_argument('--bus', action='store_true',
                     help='profilo bus di compare.py: MOD svolti, TBL.* scartati')
+    ap.add_argument('--anchor-values', action='store_true',
+                    help='allinea prima sui valori: due flussi al bus coi '
+                         'valori pieni, vedi segments()')
     ap.add_argument('--board', default='agcombo')
     ap.add_argument('--led-pins', type=lambda v: int(v, 0), default=0,
                     help='pin GPIO dei LED, da ./ac_trace led_pins BOARD')
@@ -550,7 +572,7 @@ def main():
     T, sp = C.drop_solo_port(T, V0)
 
     def stats(V, T):
-        segs, diff = segments(V, T, C, args.bus)
+        segs, diff = segments(V, T, C, args.bus, args.anchor_values)
         eq, nblk, lost, tol = score(segs, args.min_block, args.gap_tol)
         cls = [sum(sg[i] for sg in segs if sg[0] == 'gap') for i in (4, 5, 6)]
         return eq, nblk, diff, (lost, tol), cls
