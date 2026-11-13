@@ -7,6 +7,7 @@ BCM4331 on a bus that turns their MMIO and agent accesses into the ops
 two streams op by op.
 
 ```sh
+./run.sh                 # all of it, on the linked repositories (../linked.sh)
 make K=... KG=...        # the kernel headers, see ../integration/README.md
 ./gates.sh --min-block 8 --gap-tol 2   # PHY init to BSS up, scored
 ./check.sh               # the TX power control init, op for op
