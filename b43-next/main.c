@@ -1996,9 +1996,8 @@ static void handle_irq_noise(struct b43_wldev *dev)
 	u8 i, j;
 	s32 average;
 
-	if (dev->phy.type == B43_PHYTYPE_AC) {
-		if (dev->phy.ops->noise_sample_done)
-			dev->phy.ops->noise_sample_done(dev);
+	if (dev->phy.ops->noise_sample_done) {
+		dev->phy.ops->noise_sample_done(dev);
 		return;
 	}
 
