@@ -51,6 +51,17 @@ static void agent_write32(struct bcmn_device *c, u16 offset, u32 value)
 	ht_wrap_write32(offset, value);
 }
 
+/* The core's 16-bit shared memory accessors, one op each on the bus */
+u16 b43_shm_read16(struct b43_wldev *dev, u16 routing, u16 offset)
+{
+	return ht_shm_read16(routing, offset);
+}
+
+void b43_shm_write16(struct b43_wldev *dev, u16 routing, u16 offset, u16 value)
+{
+	ht_shm_write16(routing, offset, value);
+}
+
 static struct b43_wldev *setup(void)
 {
 	int c;
@@ -125,13 +136,19 @@ static void prev_target(struct b43_wldev *dev)
 	chan.hw_value = ht_env("HT_CHANNEL", 6);
 }
 
-/* The 1 s periodic work, once per watchdog turn of the window */
+/*
+ * The 1 s periodic work, once per watchdog turn of the window, and the
+ * noise sample's interrupt, which comes before wl's turn ends.
+ */
 static void run_turns(struct b43_wldev *dev)
 {
-	long n = ht_env("HT_WD_TURNS", 0);
+	long k, n = ht_env("HT_WD_TURNS", 0);
 
-	while (n-- > 0)
+	for (k = 0; k < n; k++) {
+		ht_turn(k);
 		b43_phy_ht_op_pwork_1sec(dev);
+		b43_phy_ht_op_noise_sample_done(dev);
+	}
 }
 
 int ht_run_flow(const char *name)
@@ -284,19 +301,10 @@ void b43_power_saving_ctl_bits(struct b43_wldev *dev, unsigned int ps_flags)
 {
 	ht_core("b43_power_saving_ctl_bits");
 }
-u16 b43_shm_read16(struct b43_wldev *dev, u16 routing, u16 offset)
-{
-	ht_core("b43_shm_read16");
-	return 0;
-}
 u32 b43_shm_read32(struct b43_wldev *dev, u16 routing, u16 offset)
 {
 	ht_core("b43_shm_read32");
 	return 0;
-}
-void b43_shm_write16(struct b43_wldev *dev, u16 routing, u16 offset, u16 value)
-{
-	ht_core("b43_shm_write16");
 }
 void b43_shm_write32(struct b43_wldev *dev, u16 routing, u16 offset, u32 value)
 {

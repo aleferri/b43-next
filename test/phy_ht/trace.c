@@ -38,6 +38,7 @@ static int nref, nout, nlog;
 struct queue {
 	char key[24];
 	unsigned int vals[MAX_OPS / 16];
+	int at[MAX_OPS / 16];	/* the read's index in ref[] */
 	int n, pos;
 };
 static struct queue queues[512];
@@ -50,6 +51,9 @@ struct cell {
 };
 static struct cell cells[4096];
 static int ncells;
+
+/* Where wl's watchdog turns start in ref[]: their read of MMIO 0x4d0 */
+static int turn_at[MAX_OPS / 64], nturns;
 
 static unsigned int phy_addr, radio_addr;
 static char phy_last;
@@ -189,11 +193,44 @@ void ht_mmio_write32(unsigned short offset, unsigned int value)
 {
 	char key[24];
 
-	if (offset == 0x120 && nout < MAX_OPS)
-		snprintf(out[nout++].text, LINE, "MAC.MCTRL val=0x%08x", value);
-	else if (offset != 0x120)
+	/* MACCTL and MACCMD, which mmio2ops names */
+	if ((offset == 0x120 || offset == 0x124) && nout < MAX_OPS)
+		snprintf(out[nout++].text, LINE, "%s val=0x%08x",
+			 offset == 0x120 ? "MAC.MCTRL" : "MAC.MCMD", value);
+	else if (offset != 0x120 && offset != 0x124)
 		emit("%s off=0x%04x val=0x%08x", "REG.WR", offset, value);
 	snprintf(key, sizeof(key), "REG %04x", offset);
+	store(key, value);
+}
+
+/*
+ * The shared memory as mmio2ops prints wl's accesses, the routing in the
+ * select: one op for the control word and the data.
+ */
+unsigned short ht_shm_read16(unsigned short routing, unsigned short offset)
+{
+	char key[24];
+	unsigned int v;
+
+	snprintf(key, sizeof(key), "OBJ %04x", offset);
+	v = serve(key);
+	if (nout < MAX_OPS)
+		snprintf(out[nout++].text, LINE,
+			 "OBJ.RD addr=0x%04x val=0x%04x sel=0x%x", offset, v,
+			 routing << 16);
+	return v;
+}
+
+void ht_shm_write16(unsigned short routing, unsigned short offset,
+		    unsigned short value)
+{
+	char key[24];
+
+	if (nout < MAX_OPS)
+		snprintf(out[nout++].text, LINE,
+			 "OBJ.WR addr=0x%04x val=0x%04x sel=0x%x", offset, value,
+			 routing << 16);
+	snprintf(key, sizeof(key), "OBJ %04x", offset);
 	store(key, value);
 }
 
@@ -215,6 +252,27 @@ void ht_wrap_write32(unsigned short offset, unsigned int value)
 	emit("%s off=0x%04x val=0x%08x", "WRAP.WR", offset, value);
 	snprintf(key, sizeof(key), "WRAP %04x", offset);
 	store(key, value);
+}
+
+/*
+ * Turn k of the window starts. wl reads the shared memory outside its
+ * turns too, at the inits, and b43 does not: its reads of a turn take the
+ * values wl read from the same turn on, not the ones before it.
+ */
+void ht_turn(int k)
+{
+	int i;
+
+	if (k >= nturns)
+		return;
+	for (i = 0; i < nqueues; i++) {
+		struct queue *q = &queues[i];
+
+		if (strncmp(q->key, "OBJ ", 4))
+			continue;
+		while (q->pos < q->n && q->at[q->pos] < turn_at[k])
+			q->pos++;
+	}
 }
 
 void ht_log(const char *what)
@@ -306,8 +364,12 @@ static int load(const char *path, long first, long last)
 		r = strstr(args, " reg=");
 		if (r)
 			*r = 0;
-		if (nref < MAX_OPS)
-			snprintf(ref[nref++].text, LINE, "%s %s", cls, args);
+		if (nref >= MAX_OPS)
+			continue;
+		snprintf(ref[nref++].text, LINE, "%s %s", cls, args);
+		if (!strncmp(ref[nref - 1].text, "REG.RD off=0x04d0 ", 18) &&
+		    nturns < (int)(sizeof(turn_at) / sizeof(turn_at[0])))
+			turn_at[nturns++] = nref - 1;
 
 		if (strcmp(cls + strlen(cls) - 3, ".RD"))
 			continue;
@@ -321,8 +383,10 @@ static int load(const char *path, long first, long last)
 		{
 			struct queue *q = queue(key, 1);
 
-			if (q->n < (int)(sizeof(q->vals) / sizeof(q->vals[0])))
+			if (q->n < (int)(sizeof(q->vals) / sizeof(q->vals[0]))) {
+				q->at[q->n] = nref - 1;
 				q->vals[q->n++] = v;
+			}
 		}
 	}
 	fclose(f);
