@@ -12,6 +12,7 @@
 
 #include <linux/cordic.h>
 #include <linux/delay.h>
+#include <linux/iopoll.h>
 #include <linux/slab.h>
 #include <linux/types.h>
 
@@ -7626,6 +7627,286 @@ static int b43_nphy_cal_rx_iq(struct b43_wldev *dev,
 		return b43_nphy_rev2_cal_rx_iq(dev, target, type, debug);
 }
 
+static const u32 b43_nphy_papd_scalar[] = {
+	0x0ae2002f, 0x0a3b0032, 0x09a70035, 0x09220038,
+	0x0887003c, 0x081f003f, 0x07a20043, 0x07340047,
+	0x06d2004b, 0x067a004f, 0x06170054, 0x05bf0059,
+	0x0571005e, 0x051e0064, 0x04d3006a, 0x04910070,
+	0x044c0077, 0x040f007e, 0x03d90085, 0x03a1008d,
+	0x036f0095, 0x033d009e, 0x030b00a8, 0x02e000b2,
+	0x02b900bc, 0x029200c7, 0x026d00d3, 0x024900e0,
+	0x022900ed, 0x020a00fb, 0x01ec010a, 0x01d0011a,
+	0x01b7012a, 0x019e013c, 0x0187014f, 0x01720162,
+	0x015d0177, 0x0149018e, 0x013701a5, 0x012601be,
+	0x011501d9, 0x010501f5, 0x00f70212, 0x00e90232,
+	0x00dc0253, 0x00d00276, 0x00c4029c, 0x00b902c3,
+	0x00af02ed, 0x00a5031a, 0x009c0349, 0x0093037a,
+	0x008b03af, 0x008303e7, 0x007c0422, 0x00750461,
+	0x006e04a3, 0x006804ea, 0x00620534, 0x005d0583,
+	0x005805d7, 0x0053062f, 0x004e068d, 0x004a06f1,
+};
+
+struct nphy_papd_restore_state {
+	u16 afectl[2];
+	u16 afe_override[2];
+	u16 atten[2];
+	u16 bbmult;
+};
+
+static void b43_nphy_papd_set_bbmult(struct b43_wldev *dev, u16 bbmult)
+{
+	b43_ntab_write(dev, B43_NTAB16(15, 87), bbmult);
+	b43_ntab_write(dev, B43_NTAB16(15, 95), bbmult);
+}
+
+static void b43_nphy_papd_select_core(struct b43_wldev *dev, u8 core)
+{
+	static const u16 papd_en[] = { B43_NPHY_PAPD_EN0, B43_NPHY_PAPD_EN1 };
+	static const u16 shifts[] = {
+		B43_NPHY_PAPD_CAL_SHIFTS0, B43_NPHY_PAPD_CAL_SHIFTS1
+	};
+	int i;
+
+	for (i = 0; i < 2; i++) {
+		b43_phy_maskset(dev, papd_en[i], ~0x1, i == core);
+		b43_phy_maskset(dev, shifts[i], ~0x2000,
+				i == core ? 0x2000 : 0);
+	}
+}
+
+static void b43_nphy_papd_cal_setup(struct b43_wldev *dev,
+				    struct nphy_papd_restore_state *state,
+				    u8 core)
+{
+	static const u16 afectl[] = { B43_NPHY_AFECTL_C1, B43_NPHY_AFECTL_C2 };
+	static const u16 afe_override[] = {
+		B43_NPHY_AFECTL_OVER1, B43_NPHY_AFECTL_OVER
+	};
+	static const u16 atten[] = {
+		R2057_TX0_TXRXCOUPLE_2G_ATTEN, R2057_TX1_TXRXCOUPLE_2G_ATTEN
+	};
+	static const u16 pwrup[] = {
+		R2057_TX0_TXRXCOUPLE_2G_PWRUP, R2057_TX1_TXRXCOUPLE_2G_PWRUP
+	};
+	u8 off_core = core ^ 1;
+	int i;
+
+	b43_nphy_rf_ctl_override_rev7(dev, 0x80, b43_nphy_read_lpf_ctl(dev, 0),
+				      0, false, 1);
+	b43_nphy_rf_ctl_override_rev7(dev, 0x800, 0, 1 << core, false, 0);
+	b43_nphy_rf_ctl_override_one_to_many(dev, N_RF_CTL_OVER_CMD_TX_PU, 1,
+					     1 << core, false);
+	b43_nphy_rf_ctl_override_one_to_many(dev, N_RF_CTL_OVER_CMD_TX_PU, 0,
+					     1 << off_core, false);
+	b43_nphy_rf_ctl_override_rev7(dev, 0x8, 0, 3, false, 0);
+	b43_nphy_rf_ctl_override_rev7(dev, 0x4, 1, 1 << core, false, 1);
+	b43_nphy_rf_ctl_override_rev7(dev, 0x1, 0, 1 << core, false, 1);
+	b43_nphy_rf_ctl_override_rev7(dev, 0x2, 1, 1 << core, false, 2);
+	b43_nphy_rf_ctl_override_rev7(dev, 0x100, 0, 1 << core, false, 1);
+	b43_nphy_rf_ctl_override_rev7(dev, 0x200, 1, 1 << core, false, 1);
+	b43_nphy_rf_ctl_override_rev7(dev, 0x400, 0, 1 << core, false, 1);
+	b43_nphy_rf_ctl_override_rev7(dev, 0x8, 1, 1 << core, false, 1);
+	b43_nphy_rf_ctl_override_rev7(dev, 0x20, 0, 1 << core, false, 1);
+	b43_nphy_rf_ctl_override_rev7(dev, 0x10, 0, 1 << core, false, 1);
+
+	for (i = 0; i < 2; i++) {
+		state->afectl[i] = b43_phy_read(dev, afectl[i]);
+		state->afe_override[i] = b43_phy_read(dev, afe_override[i]);
+		state->atten[i] = b43_radio_read(dev, atten[i]);
+	}
+	b43_phy_mask(dev, afectl[core], ~0x4);
+	b43_phy_set(dev, afe_override[core], 0x4);
+	b43_phy_set(dev, afectl[off_core], 0x4);
+	b43_phy_set(dev, afe_override[off_core], 0x4);
+
+	b43_radio_write(dev, pwrup[core], 0xC);
+	b43_radio_write(dev, pwrup[off_core], 0);
+	b43_radio_write(dev, atten[off_core], 0xFF);
+
+	b43_nphy_tx_tone(dev, 4000, 181, false, false, false);
+	b43_nphy_papd_select_core(dev, core);
+}
+
+static void b43_nphy_papd_cal_cleanup(struct b43_wldev *dev,
+				      struct nphy_papd_restore_state *state)
+{
+	b43_nphy_stop_playback(dev);
+
+	b43_radio_write(dev, R2057_TX0_TXRXCOUPLE_2G_PWRUP, 0);
+	b43_radio_write(dev, R2057_TX0_TXRXCOUPLE_2G_ATTEN, state->atten[0]);
+	b43_radio_write(dev, R2057_TX1_TXRXCOUPLE_2G_PWRUP, 0);
+	b43_radio_write(dev, R2057_TX1_TXRXCOUPLE_2G_ATTEN, state->atten[1]);
+
+	b43_nphy_rf_ctl_override_one_to_many(dev, N_RF_CTL_OVER_CMD_TX_PU, 0,
+					     3, true);
+	b43_nphy_rf_ctl_override_rev7(dev, 0x8, 0, 3, true, 0);
+	b43_nphy_rf_ctl_override_rev7(dev, 0x800, 0, 3, true, 0);
+	b43_nphy_rf_ctl_override_rev7(dev, 0x1000, 0, 3, true, 0);
+	b43_nphy_rf_ctl_override_rev7(dev, 0x4, 0, 3, true, 1);
+	b43_nphy_rf_ctl_override_rev7(dev, 0x1, 0, 3, true, 1);
+	b43_nphy_rf_ctl_override_rev7(dev, 0x2, 0, 3, true, 2);
+	b43_nphy_rf_ctl_override_rev7(dev, 0x100, 0, 3, true, 1);
+	b43_nphy_rf_ctl_override_rev7(dev, 0x200, 0, 3, true, 1);
+	b43_nphy_rf_ctl_override_rev7(dev, 0x400, 0, 3, true, 1);
+	b43_nphy_rf_ctl_override_rev7(dev, 0x8, 0, 3, true, 1);
+	b43_nphy_rf_ctl_override_rev7(dev, 0x20, 0, 3, true, 1);
+	b43_nphy_rf_ctl_override_rev7(dev, 0x10, 0, 3, true, 1);
+
+	b43_phy_write(dev, B43_NPHY_AFECTL_C1, state->afectl[0]);
+	b43_phy_write(dev, B43_NPHY_AFECTL_OVER1, state->afe_override[0]);
+	b43_phy_write(dev, B43_NPHY_AFECTL_C2, state->afectl[1]);
+	b43_phy_write(dev, B43_NPHY_AFECTL_OVER, state->afe_override[1]);
+
+	b43_nphy_papd_set_bbmult(dev, state->bbmult);
+	b43_nphy_rf_ctl_override_rev7(dev, 0x80, 0, 0, true, 1);
+}
+
+/* Returns whether the last epsilon of the calibration saturated */
+static bool b43_nphy_papd_cal_core(struct b43_wldev *dev, u8 core, u8 pad,
+				   bool gain_search)
+{
+	struct nphy_txgains gains = b43_nphy_get_tx_gains(dev);
+	u8 off_core = core ^ 1;
+	u16 bbmult = b43_is_40mhz(dev) ? 45 : 64;
+	u16 txgain, cmd;
+	s32 eps_i, eps_q;
+	u32 eps;
+
+	txgain = (gains.tx_lpf[core] << 15) | (gains.txgm[core] << 12) |
+		 (gains.pga[core] << 8) | (pad << 3) | gains.ipa[core];
+	b43_nphy_rf_ctl_override_one_to_many(dev, N_RF_CTL_OVER_CMD_TX_GAIN,
+					     txgain, 1 << core, false);
+
+	b43_nphy_papd_set_bbmult(dev, core ? bbmult : bbmult << 8);
+	b43_nphy_papd_select_core(dev, core);
+
+	b43_phy_write(dev, B43_NPHY_PAPD_CAL_SETTLE, 0x80);
+	b43_phy_write(dev, B43_NPHY_PAPD_CAL_CORRELATE, 0x100);
+	b43_phy_maskset(dev, core ? B43_NPHY_PAPD_CAL_SHIFTS1 :
+				    B43_NPHY_PAPD_CAL_SHIFTS0,
+			0xF000, 0x0BB3);
+	b43_phy_write(dev, 0x2E5, 0x20);
+	b43_phy_maskset(dev, B43_NPHY_PAPD_CAL_YREFEPSILON, ~0x003F, 25);
+	b43_phy_maskset(dev, B43_NPHY_PAPD_CAL_ADDRESS, ~0x3F3F,
+			(63 << 8) | (gain_search ? 55 : 25));
+
+	b43_nphy_rf_ctl_override_rev7(dev, 0x8, 1, 1 << core, false, 0);
+	b43_nphy_rf_ctl_override_rev7(dev, 0x8, 0, 1 << off_core, false, 0);
+
+	b43_phy_write(dev, 0x2BE, 1);
+	if (read_poll_timeout(b43_phy_read, cmd, !cmd, 100, 10 * USEC_PER_SEC,
+			      false, dev, 0x2BE))
+		b43err(dev->wl, "PAPD calibration timeout\n");
+
+	b43_nphy_rf_ctl_override_rev7(dev, 0x8, 0, 3, false, 0);
+
+	b43_ntab_write(dev, B43_NTAB32(31 + 2 * core, 25), 0);
+	eps = b43_ntab_read(dev, B43_NTAB32(31 + 2 * core, 63));
+
+	b43_nphy_rf_ctl_override_one_to_many(dev, N_RF_CTL_OVER_CMD_TX_GAIN,
+					     txgain, 1 << core, true);
+
+	eps_i = sign_extend32(eps, 12);
+	eps_q = sign_extend32(eps >> 13, 12);
+	return eps_i == 4095 || eps_i == -4096 ||
+	       eps_q == 4095 || eps_q == -4096;
+}
+
+/* Step the PAD gain down from 15 to the lowest one at which the PA saturates */
+static u8 b43_nphy_papd_find_pad(struct b43_wldev *dev, u8 core)
+{
+	bool saturated, prev = false;
+	int i, step = 0;
+
+	for (i = 0; i < 20; i++) {
+		saturated = b43_nphy_papd_cal_core(dev, core, 15 - step, true);
+		if (i && saturated != prev) {
+			if (!saturated)
+				step--;
+			break;
+		}
+		step += saturated ? 1 : -1;
+		if (step < 0 || step > 14) {
+			step = clamp(step, 0, 14);
+			break;
+		}
+		prev = saturated;
+	}
+
+	return 15 - step;
+}
+
+static void b43_nphy_papd_cal(struct b43_wldev *dev)
+{
+	struct b43_phy_n *nphy = dev->phy.n;
+	struct nphy_papd_restore_state state;
+	const s16 *pad_gain_delta = b43_ntab_get_rf_pwr_offset_table(dev);
+	bool txpwrctrl = nphy->txpwrctrl;
+	u16 bbcfg;
+	u8 core, pad[2];
+	int i;
+
+	b43_nphy_stay_in_carrier_search(dev, true);
+	b43_nphy_tx_power_ctrl(dev, false);
+
+	b43_ntab_write_bulk(dev, B43_NTAB32(32, 0),
+			    ARRAY_SIZE(b43_nphy_papd_scalar),
+			    b43_nphy_papd_scalar);
+	b43_ntab_write_bulk(dev, B43_NTAB32(34, 0),
+			    ARRAY_SIZE(b43_nphy_papd_scalar),
+			    b43_nphy_papd_scalar);
+
+	bbcfg = b43_phy_read(dev, B43_NPHY_BBCFG);
+	b43_phy_mask(dev, B43_NPHY_BBCFG, ~B43_NPHY_BBCFG_RSTRX & 0xFFFF);
+
+	for (core = 0; core < 2; core++)
+		for (i = 0; i < 64; i++)
+			b43_ntab_write(dev, B43_NTAB32(31 + 2 * core, i), 0);
+
+	if (b43_is_40mhz(dev))
+		b43_nphy_pa_set_tx_dig_filter(dev, 0x195,
+					      tbl_tx_filter_coef_rev4[4]);
+	else
+		b43_nphy_pa_set_tx_dig_filter(dev, 0x186,
+					      tbl_tx_filter_coef_rev4[3]);
+
+	state.bbmult = b43_ntab_read(dev, B43_NTAB16(15, 87));
+	for (core = 0; core < 2; core++) {
+		b43_nphy_papd_cal_setup(dev, &state, core);
+		pad[core] = b43_nphy_papd_find_pad(dev, core);
+		b43_nphy_papd_cal_core(dev, core, pad[core], false);
+		b43_nphy_papd_cal_cleanup(dev, &state);
+	}
+
+	for (core = 0; core < 2; core++) {
+		nphy->papd_epsilon_offset[core] =
+			-60 + 27 - 1 - (pad_gain_delta[pad[core]] + 1) / 2;
+		b43_phy_maskset(dev, core ? B43_NPHY_EPS_TABLE_ADJ1 :
+					    B43_NPHY_EPS_TABLE_ADJ0,
+				0x007F, nphy->papd_epsilon_offset[core] << 7);
+	}
+
+	b43_phy_set(dev, B43_NPHY_PAPD_EN0, 0x1);
+	b43_phy_set(dev, B43_NPHY_PAPD_EN1, 0x1);
+	b43_phy_mask(dev, B43_NPHY_PAPD_CAL_SHIFTS0, ~0x2000);
+	b43_phy_mask(dev, B43_NPHY_PAPD_CAL_SHIFTS1, ~0x2000);
+
+	b43_phy_write(dev, B43_NPHY_BBCFG, bbcfg);
+	b43_nphy_int_pa_set_tx_dig_filters(dev);
+
+	b43_nphy_tx_power_ctrl(dev, txpwrctrl);
+	if (!txpwrctrl) {
+		b43_nphy_tx_pwr_index(dev, 1,
+				      nphy->txpwrindex[0].index_internal,
+				      false);
+		b43_nphy_tx_pwr_index(dev, 2,
+				      nphy->txpwrindex[1].index_internal,
+				      false);
+	}
+
+	b43_nphy_stay_in_carrier_search(dev, false);
+}
+
 /* https://bcm-v4.sipsolutions.net/802.11/PHY/N/RxCoreSetState */
 static void b43_nphy_set_rx_core_state(struct b43_wldev *dev, u8 mask)
 {
@@ -8014,7 +8295,8 @@ static void b43_nphy_perical_run(struct b43_wldev *dev)
 			nphy->mphase_cal_phase_id++;
 		break;
 	case 8:
-		/* TODO: PAPD calibration */
+		if (b43_nphy_ipa(dev))
+			b43_nphy_papd_cal(dev);
 		nphy->mphase_cal_phase_id++;
 		break;
 	case 9:
