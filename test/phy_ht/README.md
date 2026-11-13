@@ -29,12 +29,12 @@ On 2026-11-13, `--min-block 8 --gap-tol 2`:
 
 | capture | grezzo | PHY+radio+MAC |
 |---|---|---|
-| cold-2g1-20 | 5473/7511 = 72.87% | 5337/5547 = 96.21% |
-| cold-2g6-20 | 5469/7636 = 71.62% | 5337/5547 = 96.21% |
-| cold-2g11-20 | 5469/7515 = 72.77% | 5337/5547 = 96.21% |
-| cold-2g1l-40 | 5473/7561 = 72.38% | 5347/5582 = 95.79% |
-| cold-2g6l-40 | 5481/7758 = 70.65% | 5346/5581 = 95.79% |
-| cold-2g11u-40 | 5476/7558 = 72.45% | 5347/5582 = 95.79% |
+| cold-2g1-20 | 5473/7301 = 74.96% | 5337/5488 = 97.25% |
+| cold-2g6-20 | 5469/7426 = 73.65% | 5337/5488 = 97.25% |
+| cold-2g11-20 | 5469/7305 = 74.87% | 5337/5488 = 97.25% |
+| cold-2g1l-40 | 5473/7351 = 74.45% | 5347/5523 = 96.81% |
+| cold-2g6l-40 | 5481/7525 = 72.84% | 5346/5522 = 96.81% |
+| cold-2g11u-40 | 5476/7348 = 74.52% | 5347/5523 = 96.81% |
 
 The second row compares the PHY's and the radio's operations, and the MAC's
 around them: MACCTL, which the PHY's work suspends, and the core's I/O
@@ -63,16 +63,17 @@ interrupt (0x008c, 0x0308-0x0314). What differs is in
 `../../docs/ht-retrace-todo.md`, "The core".
 
 Of the MAC's operations, wl's core resets and the MAC control of its init
-(#17-#260 on `cold-2g6-20`) are the core's, which the harness does not make;
-without them the I/O control's reads b43 makes around its PHY work take
-values of wl's resets (0x45, 0x07), and b43's forced gated clock writes
-follow from them. `../integration/r6400.sh` runs the core and measures them.
-The 16 of wl's PHY and radio operations left are its power saving while no
-BSS is up, which b43 does not have: at the watchdog's third turn after
-`wl up` a read of table 13 entry 0x5f (#8520 on `cold-2g6-20`) and, after a
-core reset, the analog switch on, the radio off (0x810) and the analog
-switch off (#8590-#8613), before the core goes into reset. The core's
-operations are in `../../docs/ht-retrace-todo.md`.
+(#17-#260 on `cold-2g6-20`) are the core's, which the harness does not
+make; without them the I/O control's reads b43 makes around its PHY work
+take values of wl's resets (0x45, 0x07), and b43's forced gated clock
+writes follow from them. `../integration/r6400.sh` runs the core and
+measures them. wl's power saving while no BSS is up, which b43 does not
+have, is not scored (`drop_power_save()` in `../unit/compare.py`): at the
+watchdog's third turn after `wl up` a read of table 13 entry 0x5f (#8520 on
+`cold-2g6-20`), then the DMA stopped, a core reset with the analog switch
+on, the radio off (0x810) and the analog switch off (#8590-#8613), and the
+core into reset, out of it and back every 2 s until the next
+configuration.
 
 `check.sh` takes `$TRACES/bcm4331-rev2/r6400v1`: the board values from its
 `nvram.txt`, the windows from its `traces/mmio-*`. A window runs from the
@@ -168,7 +169,8 @@ in the first turns, and the turns pair one off.
 
 ## Exceptions
 
-None: every value is compared. The TX power target is brcmsmac's chain
+Every value is compared. Of wl's operations, its power saving while no BSS
+is up is not scored, as above. The TX power target is brcmsmac's chain
 (`b43_phy_ht_op_recalc_txpower()`) with wl's locale caps on ch 1 and 11; a
 later init starts from the target the configuration before left
 (`HT_PREV_CHANNEL`, which `check.sh` and `hot.sh` take from the capture's

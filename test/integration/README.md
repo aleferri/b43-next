@@ -149,8 +149,10 @@ firmware names and watchdog marker. What differs from the AC boards:
 
 The second score has the PHY's and the radio's operations and the MAC's
 around them, MACCTL and the core's I/O control with its forced gated clock.
-On `cold-2g6-20`, 2026-11-13: `grezzo` 37142/58134 = 63.89%, PHY+radio+MAC
-25386/27101 = 93.67%.
+wl's power saving while no BSS is up is not scored
+(`drop_power_save()` in `../unit/compare.py`). On `cold-2g6-20`,
+2026-11-13: `grezzo` 37142/57924 = 64.12%, PHY+radio+MAC 25386/27042 =
+93.88%.
 
 ### bcma's PMU against the stock attach
 
