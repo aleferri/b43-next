@@ -7634,6 +7634,35 @@ static void b43_nphy_set_rx_core_state(struct b43_wldev *dev, u8 mask)
 	b43_mac_enable(dev);
 }
 
+/*
+ * With calreport, the TX power after each recalculation: the calibration
+ * report above prints it once, after the init calibration, which can come
+ * before the regulatory domain is set; this follows every change of the
+ * channel or the limit.
+ */
+static void b43_nphy_pwr_report(struct b43_wldev *dev, u8 limit)
+{
+	struct b43_phy_n *nphy = dev->phy.n;
+	char buf[84 * 3 + 1];
+	unsigned int i;
+	int len = 0;
+
+	if (!b43_modparam_calreport)
+		return;
+
+	for (i = 0; i < ARRAY_SIZE(nphy->adj_pwr_tbl); i++)
+		len += scnprintf(buf + len, sizeof(buf) - len, "%x%s",
+				 nphy->adj_pwr_tbl[i] & 0xff,
+				 i + 1 < ARRAY_SIZE(nphy->adj_pwr_tbl) ? "," : "");
+	b43_calreport(dev->wl,
+		"N-PHY pwr: ch %u chan_max=%d user=%d limit=%u ppr_max=%u tpwr=%04x cmd=%04x adj_pwr_tbl=%s\n",
+		dev->phy.channel, dev->phy.chandef->chan->max_power,
+		dev->phy.desired_txpower, limit,
+		b43_ppr_get_max(&nphy->tx_pwr_max_ppr),
+		b43_phy_read(dev, B43_NPHY_TXPCTL_TPWR),
+		b43_phy_read(dev, B43_NPHY_TXPCTL_CMD), buf);
+}
+
 static enum b43_txpwr_result b43_nphy_op_recalc_txpower(struct b43_wldev *dev,
 							bool ignore_tssi)
 {
@@ -7718,6 +7747,7 @@ static enum b43_txpwr_result b43_nphy_op_recalc_txpower(struct b43_wldev *dev,
 
 	nphy->tx_pwr_last_recalc_freq = channel->center_freq;
 	nphy->tx_pwr_last_recalc_limit = phy->desired_txpower;
+	b43_nphy_pwr_report(dev, max);
 
 	return B43_TXPWR_RES_DONE;
 }
