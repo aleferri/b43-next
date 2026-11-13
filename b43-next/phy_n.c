@@ -5502,10 +5502,14 @@ static int b43_nphy_cal_tx_iq_lo_phases(struct b43_wldev *dev,
 	nphy->mphase_txcal_numcmds = B43_NPHY_TXCAL_NUMCMDS;
 	for (phase = B43_NPHY_TXCAL_PHASE0; phase <= B43_NPHY_TXCAL_PHASE5;
 	     phase++) {
-		if (phase > B43_NPHY_TXCAL_PHASE0) {
+		/*
+		 * wl turns the power control off before each phase, the
+		 * first one too, which leaves AFECTL_OVER1/AFECTL_OVER bit 8
+		 * set through the phase
+		 */
+		if (phase > B43_NPHY_TXCAL_PHASE0)
 			b43_nphy_tx_power_ctrl(dev, pctl);
-			b43_nphy_tx_power_ctrl(dev, false);
-		}
+		b43_nphy_tx_power_ctrl(dev, false);
 		nphy->mphase_cal_phase_id = phase;
 		err = b43_nphy_cal_tx_iq_lo(dev, target, true, true);
 		if (err)
