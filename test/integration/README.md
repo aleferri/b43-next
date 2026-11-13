@@ -142,10 +142,13 @@ firmware names and watchdog marker. What differs from the AC boards:
   without folding its bulk writes, which b43 makes one by one; the firmware
   is wl's, from the same capture (`fw_from_capture.py --rev 29`);
 - the RX ring's status the capture reads is wl's ring's address, moved onto
-  b43's ring.
+  b43's ring;
+- the score anchors on the values first (`cmp_skip.py --anchor-values`):
+  both sides have them, and on identity alone a run of table writes is
+  paired one off when an operation before it is missing.
 
-On `cold-2g6-20`, 2026-11-13: `grezzo` 26762/69501 = 38.51%, PHY+radio
-24121/27977 = 86.22%.
+On `cold-2g6-20`, 2026-11-13: `grezzo` 37142/58133 = 63.89%, PHY+radio
+24969/26221 = 95.23%.
 
 ### bcma's PMU against the stock attach
 
