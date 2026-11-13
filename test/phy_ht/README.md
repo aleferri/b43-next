@@ -10,6 +10,7 @@ two streams op by op.
 ./run.sh                 # all of it, on the linked repositories (../linked.sh)
 make K=... KG=...        # the kernel headers, see ../integration/README.md
 ./gates.sh --min-block 8 --gap-tol 2   # PHY init to BSS up, scored
+./hot.sh --min-block 8 --gap-tol 2     # the start of the BSS on every channel
 ./check.sh               # the TX power control init, op for op
 ./ht-trace FLOW OPS FIRST LAST [-v | -o TRACE]
 ```
@@ -80,15 +81,66 @@ calibrations match wl's to the value, coefficients included.
 | cold-2g6l-40 | 28795/28809 = 99.95% |
 | cold-2g11u-40 | 28795/28809 = 99.95% |
 
+## The start of the BSS, hot
+
+The hot captures cycle `wl down; chanspec; wl up; ssid; bss up` through the
+channels, and wl initialises the PHY only at `ssid`: the later init, on a
+channel other than the init before. b43 takes a full init after a down
+(`../../docs/ht-retrace-todo.md`, "The hot cycle"), but its `bss_start` op
+is that later init, and `hot.sh` scores it on every `ssid-N` window, to
+`down-N`, PHY and radio only: the channel setup, the calibrations and the
+temperature measurements of 25 configurations.
+
+| MHz | window | PHY+radio |
+|---|---|---|
+| 20 | ssid-1 | 19899/20023 = 99.38% |
+| 20 | ssid-2 | 20442/20566 = 99.40% |
+| 20 | ssid-3 | 19903/20009 = 99.47% |
+| 20 | ssid-4 | 20452/20562 = 99.47% |
+| 20 | ssid-5 | 19911/20017 = 99.47% |
+| 20 | ssid-6 | 20454/20564 = 99.47% |
+| 20 | ssid-7 | 19905/19999 = 99.53% |
+| 20 | ssid-8 | 20439/20533 = 99.54% |
+| 20 | ssid-9 | 19920/20014 = 99.53% |
+| 20 | ssid-10 | 20442/20536 = 99.54% |
+| 20 | ssid-11 | 19899/20023 = 99.38% |
+| 40 | ssid-1l | 28223/28353 = 99.54% |
+| 40 | ssid-2l | 28761/28901 = 99.52% |
+| 40 | ssid-3l | 28250/28352 = 99.64% |
+| 40 | ssid-4l | 28790/28884 = 99.67% |
+| 40 | ssid-5l | 28248/28342 = 99.67% |
+| 40 | ssid-6l | 28771/28877 = 99.63% |
+| 40 | ssid-7l | 28233/28327 = 99.67% |
+| 40 | ssid-5u | 28781/28875 = 99.67% |
+| 40 | ssid-6u | 28239/28333 = 99.67% |
+| 40 | ssid-7u | 28775/28881 = 99.63% |
+| 40 | ssid-8u | 28239/28341 = 99.64% |
+| 40 | ssid-9u | 28764/28870 = 99.63% |
+| 40 | ssid-10u | 28246/28340 = 99.67% |
+| 40 | ssid-11u | 28745/28881 = 99.53% |
+
+The rest falls in four kinds, on every window:
+
+- the fourteen of wl's core down and up, twenty on 1l;
+- at the later init wl restores the gain state four times, with the clip
+  thresholds between, after the table 0x1c writes (76 operations), and does
+  not write 0x280 and 0x283 in the gain control setup, where b43 writes
+  them as wl does at the cold `ssid` (4);
+- where the target differs from the window before's (on ch 1 and 11, and
+  on the channel after 1) wl's first TX power set writes the new target,
+  b43 the one before (30);
+- the values the watchdog writes to 0x280 and 0x283 where wl raises them
+  (`../../docs/ht-retrace-todo.md`, "The watchdog's 0x280 and 0x283").
+
 ## Exceptions
 
 None: every value is compared. The TX power target is brcmsmac's chain
 (`b43_phy_ht_op_recalc_txpower()`) with wl's locale caps on ch 1 and 11; a
 later init starts from the target the configuration before left
-(`HT_PREV_CHANNEL`, which `check.sh` takes from the capture's sequence),
-as wl does before it computes the new one, and fixes the TX gain at the
-index the RX calibration of the BSS before left (`HT_TX_GAIN_IDX`, 10
-after a BSS start, 40 before any).
+(`HT_PREV_CHANNEL`, which `check.sh` and `hot.sh` take from the capture's
+sequence), as wl does before it computes the new one, and fixes the TX gain
+at the index the RX calibration of the BSS before left (`HT_TX_GAIN_IDX`,
+10 after a BSS start, 40 before any).
 
 ## Flows
 
