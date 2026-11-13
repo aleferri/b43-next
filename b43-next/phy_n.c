@@ -4116,8 +4116,14 @@ static void b43_nphy_internal_tssi_setup(struct b43_wldev *dev)
 				b43_radio_write(dev, r + 0x9, 0xE);
 				if (phy->rev != 5)
 					b43_radio_write(dev, r + 0xA, 0);
+				/*
+				 * TSSI gain. With 1, the power loop of radio
+				 * 2057 rev 9 settles about 2 dB lower.
+				 */
 				if (b43_nphy_2057_rev14_epa(dev))
 					b43_radio_write(dev, r + 0xB, 0x11);
+				else if (b43_nphy_2057_rev9_2g(dev))
+					b43_radio_write(dev, r + 0xB, 2);
 				else if (phy->rev != 7)
 					b43_radio_write(dev, r + 0xB, 1);
 				else
