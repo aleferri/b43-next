@@ -474,6 +474,15 @@ PHY_ANCHE = [
 #            Non c'e' nessun registro dietro, quindi nessun codice puo'
 #            emetterlo. Entra nella finestra solo da quando i segmenti a freddo
 #            arrivano fino a 'mod GOING'.
+#   REG.RD 0x0160
+#            la rilettura di objaddr in una cattura presa al bus: il driver
+#            stock rilegge l'indirizzo dopo averlo scritto, a ogni accesso
+#            alla shared memory (brcms_b_read_objmem() e
+#            brcms_b_write_objmem() di brcmsmac), e mmio2ops.py la lascia come
+#            op sua. b43 scrive la parola di controllo con
+#            b43_shm_control_word() senza rileggerla, anche dove
+#            b43_flush_writes() e' vero, quindi non ha niente da emettere; la
+#            OBJ che segue c'e' da entrambe le parti e si confronta.
 #   IOCTL, IOVAR.SET
 #            i comandi dello userspace, dall'hook su wlc_ioctl(): `wl up`,
 #            `wl chanspec`, `wl phycal_tempdelta`. Sono ingressi del driver,
@@ -509,6 +518,7 @@ PHY_ANCHE = [
 #            confronta sotto VAL_BIT_FUORI_PERIMETRO.
 SOLO_VENDOR = (
     r"^MARK\b",
+    r'^REG\.RD off=0x160 ',
     r"^IOCTL\b",
     r"^IOVAR\.SET\b",
     r'^OBJ\.WR addr=0x(?:48|4a|18[0246])(?: |$)',
