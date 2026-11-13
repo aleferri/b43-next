@@ -203,6 +203,7 @@ int ht_run_flow(const char *name)
 			dev->phy.bw_clkbits = B43_BCMA_IOCTL_PHY_BW_40MHZ;
 		phy_ht.t25_set = true;
 		phy_ht.wd_ticks = ht_env("HT_WD_TICK0", 0);
+		phy_ht.glitch_high = ht_env("HT_GLITCH_HIGH", 0);
 		prev_target(dev);
 		/* b43_op_config() suspends the MAC, channel_calibrate enables it */
 		b43_mac_suspend(dev);

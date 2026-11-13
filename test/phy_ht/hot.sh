@@ -43,24 +43,53 @@ T=${GATE_TMP:-$(mktemp -d)}
 mkdir -p "$T"
 [ -n "${GATE_TMP:-}" ] || trap 'rm -rf "$T"' EXIT
 
-# "mark first last turns tick0 t25 t25b" for every ssid-N window. The
-# timer's ticks count by 1.0093 s on this board, from the last turn before
-# an `up` to the up's restart; the first turn with the temperature
-# measurement is tick 17 of 30 (b43_phy_ht_op_pwork_1sec()).
+# "mark first last turns tick0 t25 t25b glitch" for every ssid-N window.
+# The timer's ticks count by 1.0093 s on this board, from the last turn
+# before an `up` to the up's restart; the first turn with the temperature
+# measurement is tick 17 of 30 (b43_phy_ht_op_pwork_1sec()). glitch is
+# whether the last two turns before the window had their glitches and bad
+# PLCPs over the threshold, as b43_phy_ht_wd_stats() keeps it.
 windows() {
 	awk '
 	function tick(t) { return int(t / 1.0093 + 0.5) }
+	function hex(s,  v, i, c) {
+		v = 0; s = tolower(substr(s, 3))
+		for (i = 1; i <= length(s); i++) {
+			c = index("0123456789abcdef", substr(s, i, 1)) - 1
+			v = v * 16 + c
+		}
+		return v
+	}
+	function close_turn(  k, d, m) {
+		if (!(0 in cnt && 1 in cnt && 2 in cnt && 3 in cnt)) return
+		for (k = 0; k < 4; k++)
+			d[k] = (!havep || cnt[0] < prev[0]) ? cnt[k] : (cnt[k] - prev[k] + 65536) % 65536
+		m = d[0] - d[1] + d[2] - d[3]
+		high = (high * 2 + (m >= 376)) % 4
+		for (k = 0; k < 4; k++) prev[k] = cnt[k]
+		havep = 1; delete cnt
+	}
+	BEGIN { slot["0x010e"] = 0; slot["0x0158"] = 1; slot["0x010c"] = 2; slot["0x015e"] = 3 }
 	/ MARK / {
 		m = $NF; n = substr($2, 2) + 0
 		if (m ~ /^.up-/) { up = $1; restart = 1 }
-		if (m ~ /^.ssid-/) { a = n + 1; w = m; turns = 0; nc = 0; set = 0; t25[1] = t25[2] = 0 }
+		if (m ~ /^.ssid-/) {
+			close_turn(); a = n + 1; w = m; turns = 0; nc = 0; set = 0
+			t25[1] = t25[2] = 0; gh = high
+		}
 		if (m ~ /^.down-/ && w != "") {
 			out[++nw] = w " " a " " (n - 1) " " turns; first[nw] = f
-			pair[nw] = t25[1] " " t25[2]; w = ""
+			pair[nw] = t25[1] " " t25[2] " " gh; w = ""
 		}
 		next
 	}
+	/OBJ\.RD addr=0x0(10e|158|10c|15e) / {
+		k = slot[substr($5, 6)]
+		if (!(k in cnt)) cnt[k] = hex(substr($6, 5))
+		next
+	}
 	/REG\.RD off=0x04d0/ {
+		close_turn()
 		r = restart ? r + tick($1 - up) : (seen ? r + tick($1 - last) : 0)
 		restart = 0; seen = 1; last = $1
 		if (w != "" && !turns++) f = r
@@ -86,7 +115,7 @@ for c in $caps; do
 	grep -E "$PHYSEL" "$ops" > "$T/$c.phy.ops"
 	rc0=$(rc "$ops" 0x0cc2) rc1=$(rc "$ops" 0x0cc3) rc2=$(rc "$ops" 0x0ca1)
 	before=6 gain=40
-	windows "$ops" | while read -r mark a z turns tick0 t25 t25b; do
+	windows "$ops" | while read -r mark a z turns tick0 t25 t25b glitch; do
 		seg=$(echo "$mark" | tr -d "'")
 		ch=$(echo "$seg" | sed 's/ssid-\([0-9]*\).*/\1/')
 		if [ $# -eq 0 ] || echo " $* " | grep -q " $seg "; then
@@ -97,7 +126,7 @@ for c in $caps; do
 			esac
 			echo "== $c $seg, ops $a:$z"
 			HT_CHANNEL=$ch HT_CENTER=$center HT_PREV_CHANNEL=$before \
-				HT_TX_GAIN_IDX=$gain HT_WD_TURNS=$turns \
+				HT_TX_GAIN_IDX=$gain HT_WD_TURNS=$turns HT_GLITCH_HIGH=$glitch \
 				HT_WD_TICK0=$tick0 HT_RCCAL0=$rc0 \
 				HT_RCCAL1=$rc1 HT_RCCAL2=$rc2 HT_T25=$t25 HT_T25B=$t25b \
 				./ht-trace ap_start "$ops" "$a" "$z" -o "$T/$c.$seg.trace" 2>/dev/null
