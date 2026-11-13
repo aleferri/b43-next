@@ -33,5 +33,9 @@ the Python tools find them, from the environment or next to this repository:
 | variable | default | what |
 |---|---|---|
 | `TRACES` | `../b43-next-traces` | the captures, one directory per board |
-| `TRACE_TOOLS` | `../b43-next-trace-tools` | the capture decoders (`tracelib.py`, `mmio2ops.py`, ...) |
+| `TRACE_TOOLS` | `../b43-next-trace-tools` | the capture decoders, the `b43trace` package under `src/` |
 | `B43_TOOLS` | `../b43-tools` | b43-tools, for the virtual chip |
+
+`linked.sh` checks out, blobless and sparse, the parts of them a suite reads
+in those places, from `https://github.com/aleferri` (`LINKED_URL`);
+`phy_ht/run.sh` runs its suite that way.
