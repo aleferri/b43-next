@@ -323,6 +323,7 @@ struct b43_wldev {
  * with the wl-diag trace on stdout.
  */
 #define b43dbg(wl, fmt, ...)  fprintf(stderr, "b43dbg: "  fmt, ##__VA_ARGS__)
+#define b43_calreport(wl, fmt, ...) fprintf(stderr, "calreport: " fmt, ##__VA_ARGS__)
 #define b43info(wl, fmt, ...) fprintf(stderr, "b43info: " fmt, ##__VA_ARGS__)
 #define b43warn(wl, fmt, ...) fprintf(stderr, "b43warn: " fmt, ##__VA_ARGS__)
 #define b43err(wl, fmt, ...)  fprintf(stderr, "b43err: "  fmt, ##__VA_ARGS__)
