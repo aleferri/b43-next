@@ -2134,6 +2134,8 @@ static void dma_rx_uncached(struct b43_dmaring *ring, int *slot)
 		dma_rmb();
 		len = le16_to_cpu(READ_ONCE(rxhdr->frame_len));
 	}
+	/* The frame is read after its length, also one the retries found */
+	dma_rmb();
 	if (unlikely(len == 0))
 		goto recycle;
 	if (unlikely(b43_rx_buf_is_poisoned(ring, buf))) {
