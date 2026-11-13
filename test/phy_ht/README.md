@@ -68,9 +68,10 @@ measurement on the ticks wl's timer has reached (`HT_WD_TICK0`). `gates.sh` scor
 flow `ap_start`, on the PHY state the up left (the RC calibration's results
 and the table 0x25 pair, read off the capture's up), against the window from
 the `ssid` mark to `beaconing`, PHY and radio only. b43's operations there
-are wl's in order, but for the twelve of the analog switches of wl's core
-down and up, which b43 does not make, and the target power's values; the
-calibrations match wl's to the value, coefficients included.
+are wl's in order, but for the fourteen of wl's core down and up (the
+analog switches and the radio's power), which b43 does not make, and on 1l
+the values the watchdog writes to 0x280 and 0x283; the calibrations match
+wl's to the value, coefficients included.
 
 | capture | PHY+radio |
 |---|---|
