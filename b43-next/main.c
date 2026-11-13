@@ -6140,6 +6140,8 @@ redo:
 	mutex_unlock(&wl->mutex);
 	cancel_delayed_work_sync(&dev->periodic_work);
 	cancel_delayed_work_sync(&dev->radar_work);
+	if (IS_ENABLED(CONFIG_B43_NEXT_PHY_N) && dev->phy.type == B43_PHYTYPE_N)
+		b43_nphy_cancel_perical(dev);
 	cancel_work_sync(&wl->tx_work);
 	b43_leds_stop(dev);
 	mutex_lock(&wl->mutex);

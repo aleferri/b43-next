@@ -24,14 +24,6 @@
 #include "main.h"
 #include "ppr.h"
 
-struct nphy_txgains {
-	u16 tx_lpf[2];
-	u16 txgm[2];
-	u16 pga[2];
-	u16 pad[2];
-	u16 ipa[2];
-};
-
 struct nphy_iqcal_params {
 	u16 tx_lpf;
 	u16 txgm;
@@ -103,6 +95,15 @@ bool b43_nphy_2057_rev14_epa(struct b43_wldev *dev)
 {
 	return dev->phy.rev == 17 && dev->phy.radio_rev == 14 &&
 	       !dev->phy.n->ipa2g_on;
+}
+
+/* Radio 2057 rev 9 in the 2.4 GHz band */
+static bool b43_nphy_2057_rev9_2g(struct b43_wldev *dev)
+{
+	struct b43_phy *phy = &dev->phy;
+
+	return phy->rev >= 7 && phy->radio_rev == 9 &&
+		b43_current_band(dev->wl) == NL80211_BAND_2GHZ;
 }
 
 /* https://bcm-v4.sipsolutions.net/802.11/PHY/N/RxCoreGetState */
@@ -7889,6 +7890,216 @@ static void b43_nphy_superswitch_init(struct b43_wldev *dev, bool init)
 	}
 }
 
+static bool b43_nphy_txiqlocal_on_channel(struct b43_wldev *dev)
+{
+	struct b43_chanspec *chanspec = &dev->phy.n->txiqlocal_chanspec;
+
+	return chanspec->center_freq == dev->phy.chandef->chan->center_freq &&
+		chanspec->channel_type ==
+			cfg80211_get_chandef_type(dev->phy.chandef);
+}
+
+/* https://bcm-v4.sipsolutions.net/802.11/PHY/N/PericalMphaseReset */
+static void b43_nphy_perical_mphase_reset(struct b43_wldev *dev)
+{
+	struct b43_phy_n *nphy = dev->phy.n;
+
+	cancel_delayed_work(&nphy->perical_work);
+	nphy->mphase_cal_phase_id = 0;
+	nphy->mphase_txcal_cmdidx = 0;
+}
+
+static void b43_nphy_perical_mphase_restart(struct b43_wldev *dev)
+{
+	struct b43_phy_n *nphy = dev->phy.n;
+
+	nphy->mphase_cal_phase_id = 1;
+	nphy->mphase_txcal_cmdidx = 0;
+}
+
+/* https://bcm-v4.sipsolutions.net/802.11/PHY/N/PericalRun */
+static void b43_nphy_perical_run(struct b43_wldev *dev)
+{
+	struct b43_phy_n *nphy = dev->phy.n;
+	struct nphy_txgains target;
+	u8 rxchain = nphy->phyrxchain;
+	bool full, restore = false;
+	bool state;
+
+	full = !b43_nphy_txiqlocal_on_channel(dev);
+	if (nphy->mphase_cal_phase_id > 1 && full)
+		b43_nphy_perical_mphase_restart(dev);
+
+	if (nphy->mphase_cal_phase_id == 9 && !dev->mac_suspended &&
+	    dev->wl->operating &&
+	    !(dev->phy.chandef->chan->flags & IEEE80211_CHAN_NO_IR))
+		b43_shm_write16(dev, B43_SHM_SHARED, B43_SHM_SH_CTS_DURATION,
+				10000);
+	b43_mac_suspend(dev);
+	b43_phy_lock(dev);
+
+	if (nphy->mphase_cal_phase_id <= 1) {
+		nphy->cal_orig_pwr_idx[0] =
+			(b43_phy_read(dev, B43_NPHY_C1_TXPCTL_STAT) &
+			 B43_NPHY_TXPCTL_STAT_BIDX) >>
+			B43_NPHY_TXPCTL_STAT_BIDX_SHIFT;
+		nphy->cal_orig_pwr_idx[1] =
+			(b43_phy_read(dev, B43_NPHY_C2_TXPCTL_STAT) &
+			 B43_NPHY_TXPCTL_STAT_BIDX) >>
+			B43_NPHY_TXPCTL_STAT_BIDX_SHIFT;
+	}
+	target = b43_nphy_get_tx_gains(dev);
+	state = nphy->txpwrctrl;
+	b43_nphy_tx_power_ctrl(dev, false);
+
+	if (nphy->antsel_type == 2)
+		b43_nphy_superswitch_init(dev, true);
+
+	/* A core's TX calibrations measure through its own receiver, so turn
+	 * on both RX cores meanwhile.
+	 */
+	if (rxchain != 3)
+		b43_nphy_set_rx_core_state(dev, 3);
+
+	switch (nphy->mphase_cal_phase_id) {
+	case 1:
+		nphy->perical_last = jiffies;
+		nphy->txiqlocal_chanspec.center_freq =
+			dev->phy.chandef->chan->center_freq;
+		nphy->txiqlocal_chanspec.channel_type =
+			cfg80211_get_chandef_type(dev->phy.chandef);
+		if (dev->phy.rev >= 3)
+			b43_nphy_precal_tx_gain(dev);
+		nphy->cal_target_gain = b43_nphy_get_tx_gains(dev);
+		nphy->mphase_cal_phase_id++;
+		break;
+	case 2 ... 7:
+		if (b43_nphy_cal_tx_iq_lo(dev, nphy->cal_target_gain, full,
+					  true)) {
+			b43_nphy_perical_mphase_reset(dev);
+			break;
+		}
+		if (dev->phy.rev < 3 && nphy->mphase_cal_phase_id == 6)
+			nphy->mphase_cal_phase_id += 2;
+		else
+			nphy->mphase_cal_phase_id++;
+		break;
+	case 8:
+		/* TODO: PAPD calibration */
+		nphy->mphase_cal_phase_id++;
+		break;
+	case 9:
+		if (!b43_nphy_cal_rx_iq(dev, target, 0, false))
+			b43_nphy_save_cal(dev);
+		nphy->mphase_cal_phase_id++;
+		break;
+	case 10:
+		b43_nphy_tx_pwr_ctrl_coef_setup(dev);
+		b43_nphy_rssi_cal(dev);
+		/* TODO: the VCO calibration of radio 2056 */
+		if (dev->phy.rev >= 7)
+			b43_radio_2057_vcocal(dev);
+		restore = true;
+		b43_nphy_perical_mphase_reset(dev);
+		break;
+	default:
+		b43_nphy_perical_mphase_reset(dev);
+		break;
+	}
+
+	if (rxchain != 3)
+		b43_nphy_set_rx_core_state(dev, rxchain);
+
+	if (dev->phy.rev >= 3 && restore) {
+		if (state) {
+			b43_nphy_tx_pwr_index(dev, 1, nphy->cal_orig_pwr_idx[0],
+					      false);
+			b43_nphy_tx_pwr_index(dev, 2, nphy->cal_orig_pwr_idx[1],
+					      false);
+			nphy->txpwrindex[0].index = -1;
+			nphy->txpwrindex[1].index = -1;
+		} else {
+			b43_nphy_tx_pwr_index(dev, 1,
+					nphy->txpwrindex[0].index_internal,
+					false);
+			b43_nphy_tx_pwr_index(dev, 2,
+					nphy->txpwrindex[1].index_internal,
+					false);
+		}
+	}
+	b43_nphy_tx_power_ctrl(dev, state);
+	if (restore)
+		b43_nphy_cal_report(dev);
+
+	b43_phy_unlock(dev);
+	b43_mac_enable(dev);
+}
+
+static void b43_nphy_perical_work(struct work_struct *work)
+{
+	struct b43_phy_n *nphy = container_of(to_delayed_work(work),
+					      struct b43_phy_n, perical_work);
+	struct b43_wldev *dev = nphy->dev;
+	unsigned long delay = msecs_to_jiffies(5);
+
+	mutex_lock(&dev->wl->mutex);
+	if (!nphy->mphase_cal_phase_id)
+		goto out;
+	if (b43_status(dev) < B43_STAT_STARTED || !dev->phy.radio_on ||
+	    !b43_nphy_2057_rev9_2g(dev)) {
+		b43_nphy_perical_mphase_reset(dev);
+		goto out;
+	}
+
+	if (dev->wl->hw->conf.flags & IEEE80211_CONF_OFFCHANNEL) {
+		b43_nphy_perical_mphase_restart(dev);
+		delay = msecs_to_jiffies(1000);
+	} else {
+		b43_nphy_perical_run(dev);
+	}
+	if (nphy->mphase_cal_phase_id)
+		ieee80211_queue_delayed_work(dev->wl->hw, &nphy->perical_work,
+					     delay);
+out:
+	mutex_unlock(&dev->wl->mutex);
+}
+
+/* Called without wl->mutex, as the work takes it */
+void b43_nphy_cancel_perical(struct b43_wldev *dev)
+{
+	cancel_delayed_work_sync(&dev->phy.n->perical_work);
+}
+
+enum b43_nphy_perical_reason {
+	B43_NPHY_PERICAL_WATCHDOG,
+	B43_NPHY_PERICAL_PHYINIT,
+};
+
+/* https://bcm-v4.sipsolutions.net/802.11/PHY/N/Periodic%20Calibration */
+static void b43_nphy_perical(struct b43_wldev *dev,
+			     enum b43_nphy_perical_reason reason)
+{
+	struct b43_phy_n *nphy = dev->phy.n;
+
+	if (nphy->perical != 2 || !b43_nphy_2057_rev9_2g(dev))
+		return;
+
+	switch (reason) {
+	case B43_NPHY_PERICAL_PHYINIT:
+		if (nphy->mphase_cal_phase_id)
+			b43_nphy_perical_mphase_reset(dev);
+		break;
+	case B43_NPHY_PERICAL_WATCHDOG:
+		if (nphy->mphase_cal_phase_id)
+			return;
+		break;
+	}
+
+	nphy->mphase_cal_phase_id = 1;
+	ieee80211_queue_delayed_work(dev->wl->hw, &nphy->perical_work,
+				     msecs_to_jiffies(5));
+}
+
 /* http://bcm-v4.sipsolutions.net/802.11/PHY/Init/N */
 static int b43_phy_initn(struct b43_wldev *dev)
 {
@@ -8058,7 +8269,7 @@ static int b43_phy_initn(struct b43_wldev *dev)
 	if (nphy->phyrxchain != 3)
 		b43_nphy_set_rx_core_state(dev, nphy->phyrxchain);
 	if (nphy->mphase_cal_phase_id > 0) {
-		;/* TODO PHY Periodic Calibration Multi-Phase Restart */
+		b43_nphy_perical_mphase_restart(dev);
 	}
 
 	do_rssi_cal = false;
@@ -8112,6 +8323,9 @@ static int b43_phy_initn(struct b43_wldev *dev)
 				 * b43_nphy_op_recalc_txpower().
 				 */
 				nphy->init_cal_pending = true;
+			} else if (nphy->mphase_cal_phase_id == 0 &&
+				   b43_nphy_2057_rev9_2g(dev)) {
+				b43_nphy_perical(dev, B43_NPHY_PERICAL_PHYINIT);
 			} else if (nphy->mphase_cal_phase_id == 0) {
 				/*
 				 * TODO: N PHY Periodic Calibration with arg 3.
@@ -8472,6 +8686,7 @@ static int b43_nphy_op_allocate(struct b43_wldev *dev)
 		return -ENOMEM;
 
 	dev->phy.n = nphy;
+	INIT_DELAYED_WORK(&nphy->perical_work, b43_nphy_perical_work);
 
 	return 0;
 }
@@ -8483,6 +8698,8 @@ static void b43_nphy_op_prepare_structs(struct b43_wldev *dev)
 	struct ssbn_sprom *sprom = dev->dev->bus_sprom;
 
 	memset(nphy, 0, sizeof(*nphy));
+	nphy->dev = dev;
+	INIT_DELAYED_WORK(&nphy->perical_work, b43_nphy_perical_work);
 
 	nphy->hang_avoid = (phy->rev == 3 || phy->rev == 4);
 	nphy->spur_avoid = (phy->rev >= 3) ?
@@ -8491,6 +8708,7 @@ static void b43_nphy_op_prepare_structs(struct b43_wldev *dev)
 	nphy->txrx_chain = 2; /* sth different than 0 and 1 for now */
 	nphy->phyrxchain = 3; /* to avoid b43_nphy_set_rx_core_state like wl */
 	nphy->perical = 2; /* avoid additional rssi cal on init (like wl) */
+	nphy->mphase_txcal_numcmds = 2;
 	/* 128 can mean disabled-by-default state of TX pwr ctl. Max value is
 	 * 0x7f == 127 and we check for 128 when restoring TX pwr ctl. */
 	nphy->tx_pwr_idx[0] = 128;
@@ -8537,6 +8755,7 @@ static void b43_nphy_op_free(struct b43_wldev *dev)
 	struct b43_phy *phy = &dev->phy;
 	struct b43_phy_n *nphy = phy->n;
 
+	cancel_delayed_work_sync(&nphy->perical_work);
 	kfree(nphy);
 	phy->n = NULL;
 }
@@ -8544,6 +8763,11 @@ static void b43_nphy_op_free(struct b43_wldev *dev)
 static int b43_nphy_op_init(struct b43_wldev *dev)
 {
 	return b43_phy_initn(dev);
+}
+
+static void b43_nphy_op_exit(struct b43_wldev *dev)
+{
+	b43_nphy_perical_mphase_reset(dev);
 }
 
 static inline void check_phyreg(struct b43_wldev *dev, u16 offset)
@@ -8712,6 +8936,12 @@ static int b43_nphy_op_switch_channel(struct b43_wldev *dev,
 	return 0;
 }
 
+static void b43_nphy_op_pwork_15sec(struct b43_wldev *dev)
+{
+	if (time_after_eq(jiffies, dev->phy.n->perical_last + 120 * HZ))
+		b43_nphy_perical(dev, B43_NPHY_PERICAL_WATCHDOG);
+}
+
 static unsigned int b43_nphy_op_get_default_chan(struct b43_wldev *dev)
 {
 	if (b43_current_band(dev->wl) == NL80211_BAND_2GHZ)
@@ -8724,6 +8954,7 @@ const struct b43_phy_operations b43_phyops_n = {
 	.free			= b43_nphy_op_free,
 	.prepare_structs	= b43_nphy_op_prepare_structs,
 	.init			= b43_nphy_op_init,
+	.exit			= b43_nphy_op_exit,
 	.phy_maskset		= b43_nphy_op_maskset,
 	.radio_read		= b43_nphy_op_radio_read,
 	.radio_write		= b43_nphy_op_radio_write,
@@ -8732,5 +8963,6 @@ const struct b43_phy_operations b43_phyops_n = {
 	.switch_channel		= b43_nphy_op_switch_channel,
 	.get_default_chan	= b43_nphy_op_get_default_chan,
 	.recalc_txpower		= b43_nphy_op_recalc_txpower,
+	.pwork_15sec		= b43_nphy_op_pwork_15sec,
 	.ofdm_tx		= b43_nphy_op_ofdm_tx,
 };
