@@ -1366,7 +1366,6 @@ __printf(2, 3) void b43err(struct b43_wl *wl, const char *fmt, ...);
 __printf(2, 3) void b43err_restart(struct b43_wl *wl, const char *fmt, ...);
 __printf(2, 3) void b43warn(struct b43_wl *wl, const char *fmt, ...);
 __printf(2, 3) void b43dbg(struct b43_wl *wl, const char *fmt, ...);
-__printf(2, 3) void b43_calreport(struct b43_wl *wl, const char *fmt, ...);
 
 
 /* A WARN_ON variant that vanishes when b43 debugging is disabled.

@@ -44,6 +44,12 @@ endif
 ifeq ($(B43_NEXT_DEBUG),y)
 b43n-opts += DEBUG
 endif
+ifeq ($(B43_NEXT_CALREPORT),y)
+ifneq ($(B43_NEXT_DEBUG),y)
+$(error b43-next: B43_NEXT_CALREPORT=y needs B43_NEXT_DEBUG=y)
+endif
+b43n-opts += CALREPORT
+endif
 # Radar channels in AP mode on the AC-PHY: tested on the RT-AC66U B1 only,
 # not a certified radar detector.
 ifeq ($(B43_NEXT_DFS),y)
