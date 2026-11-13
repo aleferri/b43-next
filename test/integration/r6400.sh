@@ -7,6 +7,12 @@
 #
 #   ./r6400.sh [CAPTURE]      e.g. cold-2g6-20, the default
 #
+# UCODE=DIR runs it against a firmware directory instead, one fw-from-object
+# writes from a wl object (b43trace blob.fw_from_object --rev 29): b43
+# uploads that ucode to b43-tools' virtual chip ($B43_TOOLS), which
+# answers the MAC side, the PHY's and the radio's reads still coming from
+# the capture.
+#
 # Prints the score of the window from `up` to `beaconing`, all the operations
 # and the PHY's, radio's and MAC's (PHYSEL below). GATE_TMP keeps the working
 # files.
@@ -37,7 +43,13 @@ b43trace pipeline.timeline "$T/cap.m2o" "$T/cap.tl" >/dev/null
 
 make -s BCM63XX=0 b43-trace >/dev/null 2>&1
 ch=$(echo "$CAP" | sed 's/cold-2g\([0-9]*\).*/\1/')
-B43_BOARD=r6400v1 B43_NVRAM=$BOARD/nvram.txt B43_FW_DIR=$T/fw \
+fw=$T/fw
+if [ -n "${UCODE:-}" ]; then
+	fw=$UCODE
+	export B43_VCHIP="python3 $B43_TOOLS/interpreter/vchipd.py"
+	export B43_VCHIP_PHY=oracle
+fi
+B43_BOARD=r6400v1 B43_NVRAM=$BOARD/nvram.txt B43_FW_DIR=$fw \
 	B43_READ_ORACLE=$T/cap.m2o B43_TIMELINE=$T/cap.tl B43_CHANNEL=$ch \
 	B43_TRACE_OUT=$T/b43.trace ./b43-trace 2>"$T/b43.log"
 

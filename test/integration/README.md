@@ -157,6 +157,23 @@ wl's power saving while no BSS is up is not scored
 2026-11-13: `grezzo` 37472/57594 = 65.06%, PHY+radio+MAC 25746/26676 =
 96.51%.
 
+With `UCODE=DIR` the run goes against a real ucode on b43-tools' virtual
+chip: b43 uploads the firmware in DIR, the chip runs it and answers the MAC
+side (MACCONTROL, the interrupts, the shared memory the ucode writes), and the
+PHY's and the radio's reads still come from the capture
+(`B43_VCHIP_PHY=oracle`). DIR is what `b43trace blob.fw_from_object --rev 29`
+writes from a wl object. On `cold-2g6-20`, 2026-11-14, b43 brings each up
+and starts the BSS with no MAC suspend failed, no warning:
+
+| ucode | from | `grezzo` | PHY+radio+MAC |
+|---|---|---|---|
+| 928.10006 | DD-WRT's 7.14.164.18, the R6400's own | 68.33% | 96.51% |
+| 784.2 | the DSL-3580L's 6.30 | 40.64% | 96.51% |
+| 675.2 | DD-WRT's 5.100.138.9 | 39.97% | 96.51% |
+
+`grezzo` is against wl's run with the 928: with another ucode the upload's
+words and the initvals differ from the capture's.
+
 ### bcma's PMU against the stock attach
 
 ```sh

@@ -97,13 +97,22 @@ static void build_core(void)
 	 * 0x090b (PLL locked) 0x0100 on the D6220 and vd625 captures; the chip
 	 * models neither.
 	 */
-	snprintf(vchip_board, sizeof(vchip_board),
-		 "--corerev %u --phy-ver 0x%04x --phy 0xb=0x2bdb "
-		 "--radio-id 0x%x --radio 0=0x%x --radio 1=0x%x --radio 0x90b=0x100 "
-		 "--tx-engine 20,10,30",
-		 core_rev, (board->phy_type ?: TEST_PHY_TYPE_AC) << 8 |
-		 board->phy_rev,
-		 board->radio_ver, board->radio_rev, board->radio_ver);
+	if (board->phy_type == 0x07)
+		/* The radio's identity below corerev 40: rev, id low, id high */
+		snprintf(vchip_board, sizeof(vchip_board),
+			 "--corerev %u --phy-ver 0x%04x --radio 0=0x%x "
+			 "--radio 1=0x%x --radio 2=0x%x --tx-engine 20,10,30",
+			 core_rev, board->phy_type << 8 | board->phy_rev,
+			 board->radio_rev, board->radio_ver & 0xff,
+			 board->radio_ver >> 8);
+	else
+		snprintf(vchip_board, sizeof(vchip_board),
+			 "--corerev %u --phy-ver 0x%04x --phy 0xb=0x2bdb "
+			 "--radio-id 0x%x --radio 0=0x%x --radio 1=0x%x --radio 0x90b=0x100 "
+			 "--tx-engine 20,10,30",
+			 core_rev, (board->phy_type ?: TEST_PHY_TYPE_AC) << 8 |
+			 board->phy_rev,
+			 board->radio_ver, board->radio_rev, board->radio_ver);
 	b43_chip_board(vchip_board);
 	if (board->phy_type)
 		b43_test_chip_identity(core_rev, board->phy_type << 8 |
