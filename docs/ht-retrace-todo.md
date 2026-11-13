@@ -7,40 +7,43 @@ scores are in `test/phy_ht/README.md`. Operation numbers here are from
 
 ## The core
 
-The harness compiles no core, so the `grezzo` line of `gates.sh` stays
-near 72%. Of the core it has the watchdog's turn only, the shared memory
-accessors and copies of main.c's MAC suspend and enable, TSF read and
-watchdog poll. The larger unmatched runs of the `up` window are the core's
-init:
+`test/integration/r6400.sh` runs b43's core with the HT-PHY against the
+cold captures, from the probe to the BSS's start; `test/phy_ht` compiles no
+core but the watchdog turn's calls into it. From `up` to `beaconing`,
+2026-11-13:
 
-| ops | what |
-|---|---|
-| #173-#697 | the core before the PHY: MMIO writes, shared memory, the ucode's bulk writes |
-| #962-#992 | wrapper and chipcommon |
-| #5738-#8731 | after the TX power control: MMIO reads, shared memory |
+| capture | grezzo | PHY+radio+MAC |
+|---|---|---|
+| cold-2g1-20 | 46.64% | 93.71% |
+| cold-2g6-20 | 63.89% | 93.67% |
+| cold-2g11-20 | 52.97% | 93.71% |
 
-To compare them b43's core has to run against these captures, which is what
-`test/integration` does for the AC-PHY: corerev 42, the PCIe2 core and the
-AC boards' profiles. The 4331 is corerev 29 with an HT-PHY, and its host
-interface is not the AC chips' PCIe2.
+The second score has the PHY's and the radio's operations, MACCTL and the
+core's I/O control with its forced gated clock. `grezzo` follows the
+traffic, 991 interrupts on ch 1 against 217 on ch 6: the rest is the core's
+attach, init, interrupts and RX, not divided by phase yet.
 
-In the watchdog's turn b43's operations are wl's but for:
+Of the MAC's operations b43's are wl's but for:
 
-- MACCTL's bit 31 (`B43_MACCTL_GMODE` in `b43.h`): wl reads it set and
-  writes MACCTL with it clear, 0x04160402 against 0x84160402 read, where
-  b43's read-modify-write keeps it. brcmsmac sets G mode through the core's
-  I/O control (`SICF_GMODE`) and never writes `MCTL_GMODE`, which it only
-  reads back after a core reset; b43 writes it at the core reset, the
-  chip init and the AC-PHY's band switch, in main.c;
+- the core resets: on `cold-2g6-20`, one channel throughout (the shared
+  memory's channel, 0x00a0, is 6 at every write), wl's I/O control goes
+  through a reset (0x07, 0x05, 0x4d, 0x43, 0x45) four times in the first
+  17 ms of `up` (#7-#219) and three in the first 9 ms of `ssid`
+  (#20300-#20451). Between them, after the power saving has put the core
+  into reset (#8590-#8613), wl takes it out and back every 2 s while no BSS
+  is up, four times (#20131-#20278), which b43 does not have. b43 resets
+  three times in the whole run, all before its PHY work: twice at the probe,
+  once at the core's init, and not at the BSS's start;
+- MACCTL's bit 31 (`B43_MACCTL_GMODE`): wl reads it set and never writes
+  it, 0x04160403 against 0x84160403 read. brcmsmac sets G mode through the
+  core's I/O control (`SICF_GMODE`) and only reads `MCTL_GMODE` back after
+  a core reset; b43 writes it at the core reset and the chip init, and its
+  read-modify-writes keep it;
+- MACCTL's `DISCPMQ`: wl sets it through the init and clears it when the
+  AP starts (0x44020403, then 0x04160403); b43 keeps it, as it implements
+  no power management queue;
 - the MAC suspend: wl reads MACINTSTATUS before it writes MACCTL, b43 after;
-- the RX ring's index, whose value is b43's ring's, not wl's; the harness
-  has no ring and does not emit it.
-
-wl also reads the core's registers and the statistics at its inits and in
-its interrupt handling, where b43 reads others, and `bss-up` is mostly the
-core: 2117 MMIO reads, 976 writes, 614 shared memory accesses. The PHY's
-other calls into the core (`b43_mac_switch_freq()`, the PLL) emit nothing:
-on the AC `test/unit/main.c` mirrors them, here they are only counted.
+- the RX ring's index, whose value is b43's ring's, not wl's.
 
 ## The hot cycle
 
