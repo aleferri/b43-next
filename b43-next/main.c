@@ -8612,6 +8612,12 @@ static int b43_setup_bands(struct b43_wldev *dev,
 		hw->wiphy->available_antennas_tx = 0x3;
 		hw->wiphy->available_antennas_rx = 0x3;
 		ieee80211_hw_set(hw, AMPDU_AGGREGATION);
+		/* mac80211 builds A-MSDUs from what waits (b43_tx_pull()),
+		 * on its fast transmit path only, and linearizes them: an
+		 * A-MPDU member takes two DMA slots (b43_dma_tx_ampdu()).
+		 */
+		ieee80211_hw_set(hw, TX_AMSDU);
+		ieee80211_hw_set(hw, SUPPORT_FAST_XMIT);
 		hw->max_rx_aggregation_subframes = IEEE80211_MAX_AMPDU_BUF_HT;
 		hw->max_tx_aggregation_subframes = B43_AMPDU_TX_WINDOW;
 		hw->wiphy->bands[NL80211_BAND_2GHZ] = band;
