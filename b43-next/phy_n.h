@@ -1028,4 +1028,6 @@ struct b43_phy_n {
 struct b43_phy_operations;
 extern const struct b43_phy_operations b43_phyops_n;
 
+bool b43_nphy_2057_rev14_epa(struct b43_wldev *dev);
+
 #endif /* B43_NPHY_H_ */

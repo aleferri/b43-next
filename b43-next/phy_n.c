@@ -98,6 +98,13 @@ static inline bool b43_nphy_ipa(struct b43_wldev *dev)
 		(dev->phy.n->ipa5g_on && band == NL80211_BAND_5GHZ));
 }
 
+/* Radio 2057 rev 14, the BCM43217's, with an external 2.4 GHz PA */
+bool b43_nphy_2057_rev14_epa(struct b43_wldev *dev)
+{
+	return dev->phy.rev == 17 && dev->phy.radio_rev == 14 &&
+	       !dev->phy.n->ipa2g_on;
+}
+
 /* https://bcm-v4.sipsolutions.net/802.11/PHY/N/RxCoreGetState */
 static u8 b43_nphy_get_rx_core_state(struct b43_wldev *dev)
 {
@@ -2617,7 +2624,7 @@ static void b43_nphy_gain_ctl_workarounds_2057_rev14_2g(struct b43_wldev *dev)
 static void b43_nphy_gain_ctl_workarounds_rev7(struct b43_wldev *dev)
 {
 	/* TODO: the other radio revisions and bands */
-	if (dev->phy.radio_rev == 14 && !b43_nphy_ipa(dev) &&
+	if (b43_nphy_2057_rev14_epa(dev) &&
 	    b43_current_band(dev->wl) == NL80211_BAND_2GHZ)
 		b43_nphy_gain_ctl_workarounds_2057_rev14_2g(dev);
 }
@@ -3023,7 +3030,7 @@ static void b43_nphy_workarounds_rev7plus(struct b43_wldev *dev)
 			rccal_ovrd = true;
 			break;
 		}
-	} else if (phy->radio_rev == 14 &&
+	} else if (b43_nphy_2057_rev14_epa(dev) &&
 		   b43_current_band(dev->wl) == NL80211_BAND_2GHZ) {
 		/*
 		 * wl 7.14.164.18 on the BCM43217 with an external PA: the 11n
@@ -3101,7 +3108,7 @@ static void b43_nphy_workarounds_rev7plus(struct b43_wldev *dev)
 				       rx2tx_lut_40_11n[core]);
 			b43_ntab_write(dev, B43_NTAB16(7, 0x159 + core * 16),
 				       rx2tx_lut_40_11n[core]);
-			if (phy->radio_rev == 14 && !b43_nphy_ipa(dev))
+			if (b43_nphy_2057_rev14_epa(dev))
 				b43_ntab_write(dev,
 					       B43_NTAB16(7, 0x158 + core * 16),
 					       rx2tx_lut_20_11b[core]);
@@ -3223,7 +3230,7 @@ static void b43_nphy_workarounds_rev7plus(struct b43_wldev *dev)
 		 * wl 7.14.164.18 writes neither on radio rev 14 (the BCM43217
 		 * on the RT-AC56U): TXGM_IDAC_BLEED keeps its reset value
 		 */
-		if (phy->radio_rev != 5 && phy->radio_rev != 14) {
+		if (phy->radio_rev != 5 && !b43_nphy_2057_rev14_epa(dev)) {
 			for (core = 0; core < 2; core++) {
 				if (core == 0) {
 					b43_radio_write(dev, 0x5c, 0x61);
@@ -5118,7 +5125,7 @@ static void b43_nphy_ext_pa_set_tx_dig_filters(struct b43_wldev *dev)
 	 * to the coefficient sets 3 and 4, one coefficient of each filter in
 	 * turn.
 	 */
-	if (dev->phy.rev == 17 && dev->phy.radio_rev == 14) {
+	if (b43_nphy_2057_rev14_epa(dev)) {
 		for (i = 0; i < 15; i++) {
 			b43_phy_write(dev, B43_PHY_N(0x2C5 + i),
 				      tbl_tx_filter_coef_rev4[2][i]);
@@ -5192,9 +5199,8 @@ static void b43_nphy_int_pa_set_tx_dig_filters(struct b43_wldev *dev)
 
 static bool b43_nphy_precal_2057_rev14_epa(struct b43_wldev *dev)
 {
-	return dev->phy.rev == 17 && dev->phy.radio_rev == 14 &&
-	       b43_current_band(dev->wl) == NL80211_BAND_2GHZ &&
-	       !dev->phy.n->ipa2g_on;
+	return b43_nphy_2057_rev14_epa(dev) &&
+	       b43_current_band(dev->wl) == NL80211_BAND_2GHZ;
 }
 
 #define B43_NPHY_PRECAL_GAIN(pad)	(0x1000 | ((pad) << 3) | 0x2)
@@ -8294,7 +8300,7 @@ static void b43_nphy_channel_setup(struct b43_wldev *dev,
 	 * wl 7.14.164.18 on the BCM43217 with an external PA (RT-AC56U, every
 	 * capture, 20 and 40 MHz)
 	 */
-	if (phy->rev == 17 && phy->radio_rev == 14 && !phy->n->ipa2g_on) {
+	if (b43_nphy_2057_rev14_epa(dev)) {
 		b43_phy_write(dev, B43_NPHY_STRA_2U, 0x1591);
 		b43_phy_write(dev, B43_NPHY_STRA_2L, 0x1591);
 	}

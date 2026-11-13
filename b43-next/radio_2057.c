@@ -850,7 +850,7 @@ void r2057_upload_inittabs(struct b43_wldev *dev)
 		}
 		break;
 	case 17:
-		if (phy->radio_rev == 14 && !phy->n->ipa2g_on) {
+		if (b43_nphy_2057_rev14_epa(dev)) {
 			table = r2057_rev14_epa_init[0];
 			size = ARRAY_SIZE(r2057_rev14_epa_init);
 		} else if (phy->radio_rev == 14) {
@@ -897,7 +897,7 @@ void r2057_get_chantabent_rev7(struct b43_wldev *dev, u16 freq,
 		}
 		break;
 	case 17:
-		if (phy->radio_rev == 14 && !phy->n->ipa2g_on) {
+		if (b43_nphy_2057_rev14_epa(dev)) {
 			e_r7_2g = b43_nphy_chantab_phy_rev17_radio_rev14_epa;
 			len = ARRAY_SIZE(b43_nphy_chantab_phy_rev17_radio_rev14_epa);
 		} else if (phy->radio_rev == 14) {
