@@ -5157,7 +5157,7 @@ static int b43_rng_init(struct b43_wl *wl)
 	return err;
 }
 
-static void b43_tx_pull(struct b43_wldev *dev);
+static bool b43_tx_pull(struct b43_wldev *dev, bool ofdm_op);
 static void b43_ps_release(struct b43_wl *wl);
 
 /* Whether every queued frame has got its TX status. */
@@ -5256,6 +5256,7 @@ static void b43_tx_work(struct work_struct *work)
 
 	if (atomic_xchg(&wl->ps_release, 0))
 		b43_ps_release(wl);
+again:
 	for (queue_num = 0; queue_num < B43_QOS_QUEUE_NUM; queue_num++) {
 		while (skb_queue_len(&wl->tx_queue[queue_num])) {
 			skb = skb_dequeue(&wl->tx_queue[queue_num]);
@@ -5283,7 +5284,12 @@ static void b43_tx_work(struct work_struct *work)
 		if (!err)
 			wl->tx_queue_stopped[queue_num] = false;
 	}
-	b43_tx_pull(dev);
+	if (b43_tx_pull(dev, !ofdm_seen && dev->phy.ops->ofdm_tx)) {
+		/* The pull stopped before its first OFDM or HT frame. */
+		dev->phy.ops->ofdm_tx(dev);
+		ofdm_seen = true;
+		goto again;
+	}
 
 #if B43_DEBUG
 	dev->tx_count++;
@@ -5415,8 +5421,14 @@ static bool b43_tx_pull_asleep(struct ieee80211_txq *txq)
 	return true;
 }
 
-/* One round over the TX queues of @ac. Returns the number of frames taken. */
-static int b43_tx_pull_round(struct b43_wldev *dev, int ac)
+/*
+ * One round over the TX queues of @ac. Returns the number of frames taken,
+ * or -EAGAIN if @ofdm_op and the round stopped before it queued an OFDM or
+ * HT frame: the ofdm_tx PHY op, which may sleep, wants to run first. A
+ * single frame then waits at the head of wl->tx_queue, an A-MPDU in its TX
+ * queue.
+ */
+static int b43_tx_pull_round(struct b43_wldev *dev, int ac, bool ofdm_op)
 {
 	struct b43_wl *wl = dev->wl;
 	struct ieee80211_hw *hw = wl->hw;
@@ -5424,6 +5436,7 @@ static int b43_tx_pull_round(struct b43_wldev *dev, int ac)
 	struct ieee80211_txq *txq;
 	struct sk_buff *skb;
 	int err, taken = 0;
+	bool ofdm = false;
 
 	ieee80211_txq_schedule_start(hw, ac);
 	while (b43_dma_tx_room(dev, ac) &&
@@ -5431,6 +5444,12 @@ static int b43_tx_pull_round(struct b43_wldev *dev, int ac)
 		if (dev->ht && b43_tx_pull_asleep(txq))
 			continue;
 		t = dev->ht ? b43_dma_ampdu_txq(txq) : NULL;
+		if (t && ofdm_op) {
+			ieee80211_return_txq(hw, txq,
+					     !skb_queue_empty(&t->queue));
+			ofdm = true;
+			break;
+		}
 		if (t) {
 			taken += b43_dma_tx_ampdu(dev, txq, t);
 			ieee80211_return_txq(hw, txq,
@@ -5446,6 +5465,11 @@ static int b43_tx_pull_round(struct b43_wldev *dev, int ac)
 				ieee80211_free_txskb(hw, skb);
 				continue;
 			}
+			if (ofdm_op && b43_tx_is_ofdm(dev, skb)) {
+				skb_queue_head(&wl->tx_queue[ac], skb);
+				ofdm = true;
+				break;
+			}
 			b43_tx_update_hwps(dev, skb);
 			err = b43_dma_tx(dev, skb);
 			if (err == -ENOSPC) {
@@ -5457,20 +5481,24 @@ static int b43_tx_pull_round(struct b43_wldev *dev, int ac)
 				ieee80211_free_txskb(hw, skb);
 		}
 		ieee80211_return_txq(hw, txq, false);
-		if (wl->tx_queue_stopped[ac])
+		if (wl->tx_queue_stopped[ac] || ofdm)
 			break;
 	}
 	ieee80211_txq_schedule_end(hw, ac);
-	return taken;
+	return ofdm ? -EAGAIN : taken;
 }
 
-static void b43_tx_pull(struct b43_wldev *dev)
+/*
+ * Pull the frames that fit. With @ofdm_op, returns true if it stopped
+ * before the first OFDM or HT frame (b43_tx_pull_round()).
+ */
+static bool b43_tx_pull(struct b43_wldev *dev, bool ofdm_op)
 {
 	struct b43_wl *wl = dev->wl;
-	int ac, taken;
+	int ac, taken = 0;
 
 	if (!b43_tx_pulls(dev))
-		return;
+		return false;
 
 	/* ieee80211_tx_dequeue() wants the bottom halves off. */
 	local_bh_disable();
@@ -5479,10 +5507,13 @@ static void b43_tx_pull(struct b43_wldev *dev)
 			if (wl->tx_queue_stopped[ac] ||
 			    skb_queue_len(&wl->tx_queue[ac]))
 				break;
-			taken = b43_tx_pull_round(dev, ac);
-		} while (dev->ht && taken);
+			taken = b43_tx_pull_round(dev, ac, ofdm_op);
+		} while (dev->ht && taken > 0);
+		if (taken == -EAGAIN)
+			break;
 	}
 	local_bh_enable();
+	return taken == -EAGAIN;
 }
 
 /*
