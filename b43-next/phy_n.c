@@ -8023,6 +8023,42 @@ static void b43_nphy_band_edge_caps(struct b43_wldev *dev,
 }
 
 /*
+ * TX power limits of radio 2057 rev 9 before the 1.5 dB backoff: CCK 15.5
+ * dBm, OFDM 16 dBm and every 40 MHz rate 11.5 dBm; on channels 12 and 13,
+ * CCK 11.5 dBm, OFDM 11 dBm and two-chain rates 9.5 dBm.
+ */
+static void b43_nphy_2057_rev9_limit_txpower(struct b43_wldev *dev,
+					     struct b43_ppr *ppr)
+{
+	bool edge = dev->phy.channel == 12 || dev->phy.channel == 13;
+	u8 cck = edge ? 46 : 62;
+	u8 ofdm = edge ? 44 : 64;
+	u8 mimo = edge ? 38 : 52;
+	u8 ht40 = min_t(u8, mimo, 46);
+	unsigned int i, m;
+
+	for (i = 0; i < B43_PPR_CCK_RATES; i++)
+		ppr->cck[i] = min(ppr->cck[i], cck);
+	for (m = B43_PPR_SISO; m < B43_PPR_OFDM_MODES; m++) {
+		for (i = 0; i < B43_PPR_OFDM_RATES; i++) {
+			ppr->ofdm[B43_PPR_BW_20][m][i] =
+				min(ppr->ofdm[B43_PPR_BW_20][m][i], ofdm);
+			ppr->ofdm[B43_PPR_BW_40][m][i] =
+				min(ppr->ofdm[B43_PPR_BW_40][m][i], ht40);
+		}
+	}
+	for (m = B43_PPR_SISO; m < B43_PPR_MODE_NUM; m++) {
+		for (i = 0; i < B43_PPR_MCS_RATES; i++) {
+			ppr->mcs[B43_PPR_BW_20][m][i] =
+				min(ppr->mcs[B43_PPR_BW_20][m][i],
+				    m == B43_PPR_SISO ? ofdm : mimo);
+			ppr->mcs[B43_PPR_BW_40][m][i] =
+				min(ppr->mcs[B43_PPR_BW_40][m][i], ht40);
+		}
+	}
+}
+
+/*
  * The calibration report's TX power after each recalculation: the report
  * above has it once, after the init calibration, which can come before
  * the regulatory domain is set; this follows every change of the channel
@@ -8079,6 +8115,14 @@ static enum b43_txpwr_result b43_nphy_op_recalc_txpower(struct b43_wldev *dev,
 					     phy->rev >= 3);
 		b43_ppr_load_sprom_r8_40(ppr, sprom, band, maxp,
 					 phy->rev >= 5, phy->rev >= 3);
+	}
+	/*
+	 * Radio 2057 rev 9: lower limits, then the N-PHY's 6 quarter-dB, both
+	 * before the regulatory and user limits, which stay the power sent.
+	 */
+	if (b43_nphy_2057_rev9_2g(dev)) {
+		b43_nphy_2057_rev9_limit_txpower(dev, ppr);
+		b43_ppr_add(ppr, -6);
 	}
 
 	/* Regulatory & user settings */
@@ -9333,6 +9377,10 @@ static void b43_nphy_op_channel_calibrate(struct b43_wldev *dev)
 	if (!(dev->wl->hw->conf.flags & IEEE80211_CONF_OFFCHANNEL) &&
 	    !b43_nphy_txiqlocal_on_channel(dev))
 		b43_nphy_perical(dev, B43_NPHY_PERICAL_PHYINIT);
+
+	/* The TX power limits depend on the channel. */
+	b43_phy_txpower_check(dev, B43_TXPWR_IGNORE_TIME |
+				   B43_TXPWR_IGNORE_TSSI);
 
 	b43_mac_enable(dev);
 }
