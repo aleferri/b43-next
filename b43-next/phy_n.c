@@ -2513,6 +2513,8 @@ static void b43_nphy_workarounds_2057_rev14_epa_tail(struct b43_wldev *dev)
 	static const u16 t8_18[] = { 0x8f, 0x9f, 0x9f, 0x89 };
 	static const u16 t8_0c[] = { 0x2, 0x2, 0x2, 0x0 };
 	static const u16 t16[] = { 0x14, 0x14, 0x10, 0x10 };
+	u8 tx2rx_events[] = { 4, 3, 5, 2, 1, 8, 31 };
+	u8 tx2rx_delays[] = { 0x46, 4, 4, 4, 4, 6, 1 };
 	unsigned int i;
 
 	b43_ntab_write_bulk(dev, B43_NTAB16(7, 0x050), 3, t7_50);
@@ -2544,6 +2546,10 @@ static void b43_nphy_workarounds_2057_rev14_epa_tail(struct b43_wldev *dev)
 	for (i = 0; i < ARRAY_SIZE(t16); i++)
 		b43_ntab_write(dev, B43_NTAB16(16, 0x108 + i), t16[i]);
 	b43_phy_mask(dev, B43_PHY_N(0x21e), ~0x0001);
+
+	/* Then the TX to RX sequence again, its first delay 0x46, not 8 */
+	b43_nphy_set_rf_sequence(dev, 1, tx2rx_events, tx2rx_delays,
+				 ARRAY_SIZE(tx2rx_events));
 }
 
 /* Radio 2057 rev 14 with an external PA at 2.4 GHz (BCM43217 on the ASUS
