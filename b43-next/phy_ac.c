@@ -1861,6 +1861,10 @@ static void b43_phy_ac_idle_tssi_meas(struct b43_wldev *dev)
 		       "phy-ac: idle-tssi c%u meas: 0x013=0x%04x 0x012=0x%04x 0x464=0x%04x radio 0x4e=0x%04x 0x166=0x%04x prog=0x%04x\n",
 		       core, r013, r012, r464,
 		       st[core].r4e, st[core].r166, base_index);
+		if (b43_modparam_calreport)
+			b43_calreport(dev->wl,
+				"AC-PHY cal: idle tssi core%u 013=%04x 012=%04x 464=%04x idx=%03x\n",
+				core, r013, r012, r464, base_index);
 	}
 
 	/* Closing ops of iteration 1, emitted once. */
@@ -6134,6 +6138,144 @@ static bool b43_phy_ac_may_calibrate_tx(struct b43_wldev *dev)
 }
 
 /*
+ * The calibration report (calreport=1): the calibration results once the
+ * block below has run, and the TX power values after each power adjust, as
+ * key=value lines. The values are b43's own state and PHY registers read back
+ * from the hardware, so that a run on a board can be put next to the stock
+ * driver's values for the same board and channel.
+ */
+static void b43_phy_ac_cal_report(struct b43_wldev *dev)
+{
+	struct b43_phy_ac *ac = dev->phy.ac;
+	unsigned int c, i;
+	char buf[96];
+	int len;
+
+	if (!b43_modparam_calreport)
+		return;
+
+	b43_calreport(dev->wl,
+		"AC-PHY cal: ch %u width %u cores %u mask 0x%lx temp=%d (valid %u) rccal lpf=%u,%u dacbuf=%u\n",
+		ac->cal_channel, ac->cal_width, ac->num_cores, ac->coremask,
+		ac->temp_cal, ac->temp_cal_valid, ac->lpf_cap0, ac->lpf_cap1,
+		ac->dacbuf_cap);
+
+	for_each_set_bit(c, &ac->coremask, ac->num_cores) {
+		u16 s = (u16)(c * 0x200);
+
+		b43_calreport(dev->wl,
+			"AC-PHY cal: core%u txiqlo=%04x,%04x,%04x lo_dac=%04x,%04x,%04x,%04x\n",
+			c, ac->txiqlo_coef[c][0], ac->txiqlo_coef[c][1],
+			ac->txiqlo_coef[c][2], ac->lo_dac[c][0], ac->lo_dac[c][1],
+			ac->lo_dac[c][2], ac->lo_dac[c][3]);
+		b43_calreport(dev->wl,
+			"AC-PHY cal: core%u rxiq a=%04x b=%04x bbmult_cal=%04x gaincurve=%04x,%04x,%04x idle_tssi_idx=%03x\n",
+			c, b43_phy_read(dev, 0x06a0 + s),
+			b43_phy_read(dev, 0x06a1 + s), ac->bbmult_cal[c],
+			ac->gaincurve_coeff[c][0], ac->gaincurve_coeff[c][1],
+			ac->gaincurve_coeff[c][2],
+			b43_phy_read(dev, 0x0645 + s) & 0x03ff);
+	}
+
+	len = 0;
+	for (i = 0; i < ARRAY_SIZE(ac->afe_res_cal); i++)
+		if (ac->afe_res_cal[i].n)
+			len += scnprintf(buf + len, sizeof(buf) - len,
+					 " %03x=%04x,%04x",
+					 ac->afe_res_cal[i].off,
+					 ac->afe_res_cal[i].v[0],
+					 ac->afe_res_cal[i].v[1]);
+	b43_calreport(dev->wl, "AC-PHY cal: afe%s\n", len ? buf : " none");
+}
+
+static void b43_phy_ac_pwr_report(struct b43_wldev *dev)
+{
+	const struct ssbn_sprom *sprom = dev->dev->bus_sprom;
+	struct b43_phy_ac *ac = dev->phy.ac;
+	const struct b43_ppr *ppr = &ac->txpwr_ppr;
+	bool g = b43_current_band(dev->wl) == NL80211_BAND_2GHZ;
+	unsigned int bw, sb, c, i;
+	char buf[128];
+	int len;
+
+	if (!b43_modparam_calreport)
+		return;
+
+	bw = ac->cal_width == NL80211_CHAN_WIDTH_80 ? B43_PPR_BW_80 :
+	     ac->cal_width == NL80211_CHAN_WIDTH_40 ? B43_PPR_BW_40 :
+	     B43_PPR_BW_20;
+	sb = b43_ppr_sprom_r11_subband(ac->cal_channel, ac->cal_width);
+
+	b43_calreport(dev->wl,
+		"AC-PHY pwr: ch %u ceiling=%u maxp=%u ppr_max=%u pa_grp=%u txpctl 070=%04x 071=%04x 072=%04x throttled=%u\n",
+		ac->cal_channel, ac->txpwr_calc_ceiling, ac->txpwr_maxp,
+		b43_ppr_get_max(ppr), ac->pa5g_grp,
+		b43_phy_read(dev, 0x0070), b43_phy_read(dev, 0x0071),
+		b43_phy_read(dev, 0x0072), ac->thermal_throttled);
+
+	for_each_set_bit(c, &ac->coremask, ac->num_cores) {
+		const struct ssbn_sprom_core_pwr_info *pi =
+			&sprom->core_pwr_info[c];
+		const u16 *pa = g ? pi->pa2ga : &pi->pa5ga[ac->pa5g_grp * 3];
+		u16 s = (u16)(c * 0x200);
+		u16 lut[128];
+
+		b43_phy_ac_est_pwr_lut(dev, c, ac->pa5g_grp, lut);
+		len = 0;
+		for (i = 0; i < 128; i += 16)
+			len += scnprintf(buf + len, sizeof(buf) - len, "%s%02x",
+					 i ? "," : "", lut[i]);
+		len += scnprintf(buf + len, sizeof(buf) - len, ",%02x", lut[127]);
+		b43_calreport(dev->wl,
+			"AC-PHY pwr: core%u target=%u sprom_maxp=%u pa=%04x,%04x,%04x 644=%04x 645=%04x 646=%04x est_pwr_lut[0:16:127]=%s\n",
+			c, ac->txpwr_max[c], g ? pi->maxp2ga : pi->maxp5ga[sb],
+			pa[0], pa[1], pa[2],
+			b43_phy_read(dev, 0x0644 + s),
+			b43_phy_read(dev, 0x0645 + s),
+			b43_phy_read(dev, 0x0646 + s), buf);
+	}
+
+	len = 0;
+	for (i = 0; i < B43_PPR_CCK_RATES; i++)
+		len += scnprintf(buf + len, sizeof(buf) - len, "%s%u",
+				 i ? "," : "", ppr->cck[i]);
+	len += scnprintf(buf + len, sizeof(buf) - len, " ofdm=");
+	for (i = 0; i < B43_PPR_OFDM_RATES; i++)
+		len += scnprintf(buf + len, sizeof(buf) - len, "%s%u",
+				 i ? "," : "", ppr->ofdm[bw][B43_PPR_SISO][i]);
+	/* The SROM rev 11 loader fills the SISO rows only: the target is their maximum */
+	len += scnprintf(buf + len, sizeof(buf) - len, " mcs=");
+	for (i = 0; i < B43_PPR_MCS_RATES; i++)
+		len += scnprintf(buf + len, sizeof(buf) - len, "%s%u",
+				 i ? "," : "", ppr->mcs[bw][B43_PPR_SISO][i]);
+	b43_calreport(dev->wl, "AC-PHY pwr: ppr bw%u cck=%s\n", bw, buf);
+
+	/* The per-rate offsets below the target, as the TX path writes them */
+	len = 0;
+	for (i = 0; i < ARRAY_SIZE(ac->rate_po_ofdm); i++)
+		len += scnprintf(buf + len, sizeof(buf) - len, "%s%u",
+				 i ? "," : "", ac->rate_po_ofdm[i]);
+	len += scnprintf(buf + len, sizeof(buf) - len, " vht=");
+	for (i = 0; i < B43_PPR_MCS_RATES; i++)
+		len += scnprintf(buf + len, sizeof(buf) - len, "%s%u",
+				 i ? "," : "", ac->rate_po_vht[bw][i]);
+	b43_calreport(dev->wl, "AC-PHY pwr: rate_po cck=%u ofdm=%s\n",
+		      ac->rate_po_cck, buf);
+
+	b43_calreport(dev->wl,
+		"AC-PHY pwr: bf=%08x bf2=%08x bf3=%08x femctrl=%u txchain=%x rxchain=%x antgain=%d,%d pdoff40=%04x,%04x pdoff80=%04x,%04x pdoff2g40=%x,%x valid %u chipctl_set=%08x\n",
+		(u32)sprom->boardflags_hi << 16 | sprom->boardflags_lo,
+		(u32)sprom->boardflags2_hi << 16 | sprom->boardflags2_lo,
+		sprom->boardflags3,
+		sprom->femctrl, sprom->txchain, sprom->rxchain,
+		sprom->antenna_gain_qdb[0], sprom->antenna_gain_qdb[1],
+		sprom->pdoffset40ma[0], sprom->pdoffset40ma[1],
+		sprom->pdoffset80ma[0], sprom->pdoffset80ma[1],
+		sprom->pdoffset2g40ma[0], sprom->pdoffset2g40ma[1],
+		sprom->pdoffset2g40mvalid, ac->chipctl_set);
+}
+
+/*
  * The calibrations proper, without the gate and the probe-phase tail. Two
  * callers: below, when the channel is available on entry, and
  * b43_phy_ac_bss_up(), where the capture puts them on a radar channel.
@@ -6207,6 +6349,7 @@ static void b43_phy_ac_calibration_block(struct b43_wldev *dev)
 	gate = b43_phy_ac_tbl_write_lock(dev);
 	b43_phy_ac_rxiqcal_teardown_apply_defaults(dev);
 	b43_phy_ac_rxiqcal_finalize(dev, gate);
+	b43_phy_ac_cal_report(dev);
 }
 
 /*
@@ -6364,6 +6507,7 @@ static void b43_phy_ac_txpwr_adjust(struct b43_wldev *dev)
 		ac->txpwr_pass2 = false;
 		b43_phy_ac_txpwr_recalc(dev);
 	}
+	b43_phy_ac_pwr_report(dev);
 }
 
 /*
