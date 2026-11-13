@@ -403,82 +403,6 @@ static int restart_write_file(struct b43_wldev *dev,
 	return err;
 }
 
-#ifdef CONFIG_B43_NEXT_CALREPORT
-/* The report's size, which the read buffer of a debugfs file must hold */
-#define B43_CALREPORT_SIZE	(16 * 1024 - 1)
-
-bool b43_calreport_on(struct b43_wldev *dev)
-{
-	return dev->dfsentry && dev->dfsentry->calreport;
-}
-
-/* Append a line, dropping the oldest half of the report when it is full */
-void b43_calreport(struct b43_wldev *dev, const char *fmt, ...)
-{
-	struct b43_dfsentry *e = dev->dfsentry;
-	size_t keep;
-	va_list args;
-	char *cut;
-	int n;
-
-	if (!e || !e->calreport)
-		return;
-	va_start(args, fmt);
-	n = vsnprintf(NULL, 0, fmt, args);
-	va_end(args);
-	if (n >= B43_CALREPORT_SIZE / 2)
-		return;
-	if (e->calreport_len + n >= B43_CALREPORT_SIZE) {
-		cut = memchr(e->calreport + B43_CALREPORT_SIZE / 2, '\n',
-			     e->calreport_len - B43_CALREPORT_SIZE / 2);
-		keep = cut ? e->calreport + e->calreport_len - cut - 1 : 0;
-		memmove(e->calreport, e->calreport + e->calreport_len - keep,
-			keep);
-		e->calreport_len = keep;
-	}
-	va_start(args, fmt);
-	e->calreport_len += vscnprintf(e->calreport + e->calreport_len,
-				       B43_CALREPORT_SIZE - e->calreport_len + 1,
-				       fmt, args);
-	va_end(args);
-}
-
-static ssize_t calreport_read_file(struct b43_wldev *dev,
-				   char *buf, size_t bufsize)
-{
-	struct b43_dfsentry *e = dev->dfsentry;
-	size_t count;
-
-	if (!e->calreport)
-		return 0;
-	count = min(e->calreport_len, bufsize);
-	memcpy(buf, e->calreport, count);
-	return count;
-}
-
-/* 1 starts a new report, 0 stops it */
-static int calreport_write_file(struct b43_wldev *dev,
-				const char *buf, size_t count)
-{
-	struct b43_dfsentry *e = dev->dfsentry;
-
-	if (count > 0 && buf[0] == '1') {
-		if (!e->calreport)
-			e->calreport = kzalloc(B43_CALREPORT_SIZE + 1, GFP_KERNEL);
-		if (!e->calreport)
-			return -ENOMEM;
-		e->calreport_len = 0;
-	} else if (count > 0 && buf[0] == '0') {
-		kfree(e->calreport);
-		e->calreport = NULL;
-		e->calreport_len = 0;
-	} else {
-		return -EINVAL;
-	}
-	return 0;
-}
-#endif
-
 static unsigned long calc_expire_secs(unsigned long now,
 				      unsigned long time,
 				      unsigned long expire)
@@ -698,9 +622,6 @@ B43_DEBUGFS_FOPS(mmio32write, NULL, mmio32write__write_file);
 B43_DEBUGFS_FOPS(txstat, txstat_read_file, NULL);
 B43_DEBUGFS_FOPS(restart, NULL, restart_write_file);
 B43_DEBUGFS_FOPS(loctls, loctls_read_file, NULL);
-#ifdef CONFIG_B43_NEXT_CALREPORT
-B43_DEBUGFS_FOPS(calreport, calreport_read_file, calreport_write_file);
-#endif
 
 
 bool b43_debug(struct b43_wldev *dev, enum b43_dyndbg feature)
@@ -793,9 +714,6 @@ void b43_debugfs_add_device(struct b43_wldev *dev)
 	ADD_FILE(txstat, 0400);
 	ADD_FILE(restart, 0200);
 	ADD_FILE(loctls, 0400);
-#ifdef CONFIG_B43_NEXT_CALREPORT
-	ADD_FILE(calreport, 0600);
-#endif
 
 #undef ADD_FILE
 
@@ -813,9 +731,6 @@ void b43_debugfs_remove_device(struct b43_wldev *dev)
 		return;
 
 	debugfs_remove(e->subdir);
-#ifdef CONFIG_B43_NEXT_CALREPORT
-	kfree(e->calreport);
-#endif
 	kfree(e->txstatlog.log);
 	kfree(e);
 }

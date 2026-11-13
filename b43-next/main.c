@@ -117,6 +117,9 @@ MODULE_PARM_DESC(btcoex, "Enable Bluetooth coexistence (default on)");
 
 int b43_modparam_verbose = B43_VERBOSITY_DEFAULT;
 
+int b43_modparam_calreport;
+module_param_named(calreport, b43_modparam_calreport, int, 0644);
+MODULE_PARM_DESC(calreport, "Print the PHY calibration results and TX power values after each calibration (N-PHY)");
 module_param_named(verbose, b43_modparam_verbose, int, 0644);
 MODULE_PARM_DESC(verbose, "Log message verbosity: 0=error, 1=warn, 2=info(default), 3=debug");
 
@@ -436,6 +439,24 @@ void b43info(struct b43_wl *wl, const char *fmt, ...)
 	printk(KERN_INFO "b43-%s: %pV",
 	       (wl && wl->hw) ? wiphy_name(wl->hw->wiphy) : "wlan", &vaf);
 
+	va_end(args);
+}
+
+/*
+ * The calibration report (calreport): not rate limited, as b43info() is,
+ * since a calibration prints a few dozen lines at once and every one is
+ * needed.
+ */
+void b43_calreport(struct b43_wl *wl, const char *fmt, ...)
+{
+	struct va_format vaf;
+	va_list args;
+
+	va_start(args, fmt);
+	vaf.fmt = fmt;
+	vaf.va = &args;
+	printk(KERN_INFO "b43-%s: %pV",
+	       (wl && wl->hw) ? wiphy_name(wl->hw->wiphy) : "wlan", &vaf);
 	va_end(args);
 }
 

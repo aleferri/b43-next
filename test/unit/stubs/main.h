@@ -7,7 +7,6 @@
 #define _STUB_MAIN_H
 #include "b43.h"
 
-/* The calibration report, on with AC_CALREPORT in main.c */
-extern int unit_calreport;
-#define b43_calreport_on(dev) (unit_calreport)
+/* calreport=1, from AC_CALREPORT in main.c */
+extern int b43_modparam_calreport;
 #endif

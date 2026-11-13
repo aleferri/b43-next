@@ -4653,8 +4653,8 @@ static void b43_nphy_calc_rx_iq_comp(struct b43_wldev *dev, u8 mask)
 	 */
 again:
 	b43_nphy_rx_iq_est(dev, &est, 0x4000, 32, false);
-	if (b43_calreport_on(dev))
-		b43_calreport(dev,
+	if (b43_modparam_calreport)
+		b43_calreport(dev->wl,
 			"N-PHY cal: rxiq est mask %u try %u: core0 ii=%u qq=%u iq=%d core1 ii=%u qq=%u iq=%d\n",
 			mask, retry, est.i0_pwr, est.q0_pwr, est.iq0_prod,
 			est.i1_pwr, est.q1_pwr, est.iq1_prod);
@@ -5228,7 +5228,7 @@ static u16 b43_nphy_precal_txgain_2057_rev14_epa(struct b43_wldev *dev)
 	u8 pad[2], tried, core, step, pick = 24;
 	u32 tmp;
 
-	if (b43_calreport_on(dev)) {
+	if (b43_modparam_calreport) {
 		static const u16 rad_regs[] = { 0x0b4, 0x139, 0x175, 0x176, 0x177,
 			0x178, 0x179, 0x17a, 0x17b, 0x17c, 0x195, 0x196, 0x197,
 			0x198, 0x199, 0x19a, 0x19b, 0x19c };
@@ -5243,12 +5243,12 @@ static u16 b43_nphy_precal_txgain_2057_rev14_epa(struct b43_wldev *dev)
 			len += scnprintf(buf + len, sizeof(buf) - len, " %03x=%02x",
 					 rad_regs[k],
 					 b43_radio_read(dev, rad_regs[k]));
-		b43_calreport(dev, "N-PHY cal: precal state radio%s\n", buf);
+		b43_calreport(dev->wl, "N-PHY cal: precal state radio%s\n", buf);
 		len = 0;
 		for (k = 0; k < ARRAY_SIZE(phyr); k++)
 			len += scnprintf(buf + len, sizeof(buf) - len, " %03x=%04x",
 					 phyr[k], b43_phy_read(dev, phyr[k]));
-		b43_calreport(dev, "N-PHY cal: precal state phy%s\n", buf);
+		b43_calreport(dev->wl, "N-PHY cal: precal state phy%s\n", buf);
 		B43_NPHY_REPORT_END(dev);
 	}
 
@@ -5318,8 +5318,8 @@ static u16 b43_nphy_precal_txgain_2057_rev14_epa(struct b43_wldev *dev)
 	udelay(20);
 	tmp = b43_nphy_poll_rssi(dev, N_RSSI_TSSI_2G, rssi, 1);
 	b43_nphy_stop_playback(dev);
-	if (b43_calreport_on(dev))
-		b43_calreport(dev, "N-PHY cal: precal idle tssi %d %d %d %d\n",
+	if (b43_modparam_calreport)
+		b43_calreport(dev->wl, "N-PHY cal: precal idle tssi %d %d %d %d\n",
 			rssi[0], rssi[1], rssi[2], rssi[3]);
 	idle[0] = (s8)(tmp >> 24);
 	idle[1] = (s8)(tmp >> 8);
@@ -5342,8 +5342,8 @@ static u16 b43_nphy_precal_txgain_2057_rev14_epa(struct b43_wldev *dev)
 			udelay(50);
 			b43_nphy_poll_rssi(dev, N_RSSI_TSSI_2G, rssi,
 					   B43_NPHY_PRECAL_SAMPS);
-			if (b43_calreport_on(dev))
-				b43_calreport(dev,
+			if (b43_modparam_calreport)
+				b43_calreport(dev->wl,
 					"N-PHY cal: precal core%u pad%u tssi sums %d %d %d %d (%u reads)\n",
 					core, tried, rssi[0], rssi[1], rssi[2],
 					rssi[3], B43_NPHY_PRECAL_SAMPS);
@@ -5413,10 +5413,10 @@ static void b43_nphy_tx_pwr_index(struct b43_wldev *dev, u8 core_mask,
 				  s8 txpwrindex, bool restore);
 
 /*
- * The calibration report: the calibration results and the TX power values
- * once the calibration is done, as key=value lines, so that a run on
- * hardware can be put next to the stock driver's values for the same
- * board and channel.
+ * With the calreport module parameter, the calibration results and the TX
+ * power values once the calibration is done, as key=value lines, so that a
+ * run on hardware can be put next to the stock driver's values for the
+ * same board and channel.
  */
 static void b43_nphy_cal_report(struct b43_wldev *dev)
 {
@@ -5428,14 +5428,14 @@ static void b43_nphy_cal_report(struct b43_wldev *dev)
 	unsigned int i, c;
 	int len;
 
-	if (!b43_calreport_on(dev))
+	if (!b43_modparam_calreport)
 		return;
 	B43_NPHY_REPORT_BEGIN(dev);
 
-	b43_calreport(dev, "N-PHY cal: ch %u rev %u radio rev %u\n",
+	b43_calreport(dev->wl, "N-PHY cal: ch %u rev %u radio rev %u\n",
 		dev->phy.channel, dev->phy.rev, dev->phy.radio_rev);
 	if (b43_nphy_precal_2057_rev14_epa(dev))
-		b43_calreport(dev,
+		b43_calreport(dev->wl,
 			"N-PHY cal: precal idle=%d,%d core0 pad%u=%d pad%u=%d core1 pad%u=%d pad%u=%d gain=0x%04x\n",
 			nphy->precal_idle[0], nphy->precal_idle[1],
 			nphy->precal_pad[0][0], nphy->precal_delta[0][0],
@@ -5443,7 +5443,7 @@ static void b43_nphy_cal_report(struct b43_wldev *dev)
 			nphy->precal_pad[1][0], nphy->precal_delta[1][0],
 			nphy->precal_pad[1][1], nphy->precal_delta[1][1],
 			nphy->precal_gain);
-	b43_calreport(dev, "N-PHY cal: orig_pwr_idx=%u,%u txcal_bbmult=0x%04x\n",
+	b43_calreport(dev->wl, "N-PHY cal: orig_pwr_idx=%u,%u txcal_bbmult=0x%04x\n",
 		nphy->cal_orig_pwr_idx[0], nphy->cal_orig_pwr_idx[1],
 		nphy->txcal_bbmult);
 
@@ -5451,22 +5451,22 @@ static void b43_nphy_cal_report(struct b43_wldev *dev)
 	len = 0;
 	for (i = 0; i < 11; i++)
 		len += scnprintf(buf + len, sizeof(buf) - len, " %04x", t15[i]);
-	b43_calreport(dev, "N-PHY cal: txiqlo tbl15[80..90]=%s\n", buf);
+	b43_calreport(dev->wl, "N-PHY cal: txiqlo tbl15[80..90]=%s\n", buf);
 
 	for (i = 0; i < 4; i++)
 		r[i] = b43_phy_read(dev, B43_NPHY_C1_RXIQ_COMPA0 + i);
-	b43_calreport(dev, "N-PHY cal: rxiq a0=%04x b0=%04x a1=%04x b1=%04x\n",
+	b43_calreport(dev->wl, "N-PHY cal: rxiq a0=%04x b0=%04x a1=%04x b1=%04x\n",
 		r[0], r[1], r[2], r[3]);
 
 	len = 0;
 	for (i = 0; i < ARRAY_SIZE(nphy->rssical_cache.rssical_phy_regs_2G); i++)
 		len += scnprintf(buf + len, sizeof(buf) - len, " %04x",
 				 nphy->rssical_cache.rssical_phy_regs_2G[i]);
-	b43_calreport(dev, "N-PHY cal: rssi radio=%04x,%04x phy=%s\n",
+	b43_calreport(dev->wl, "N-PHY cal: rssi radio=%04x,%04x phy=%s\n",
 		nphy->rssical_cache.rssical_radio_regs_2G[0],
 		nphy->rssical_cache.rssical_radio_regs_2G[1], buf);
 
-	b43_calreport(dev,
+	b43_calreport(dev->wl,
 		"N-PHY cal: txpctl cmd=%04x n=%04x itssi=%04x tpwr=%04x bidx=%04x stat=%04x,%04x idle_tssi=%u,%u\n",
 		b43_phy_read(dev, B43_NPHY_TXPCTL_CMD),
 		b43_phy_read(dev, B43_NPHY_TXPCTL_N),
@@ -5478,7 +5478,7 @@ static void b43_nphy_cal_report(struct b43_wldev *dev)
 		nphy->pwr_ctl_info[0].idle_tssi_2g,
 		nphy->pwr_ctl_info[1].idle_tssi_2g);
 	for (c = 0; c < 2; c++)
-		b43_calreport(dev, "N-PHY cal: core%u maxp=0x%02x pa=%04x,%04x,%04x\n",
+		b43_calreport(dev->wl, "N-PHY cal: core%u maxp=0x%02x pa=%04x,%04x,%04x\n",
 			c, sprom->core_pwr_info[c].maxpwr_2g,
 			sprom->core_pwr_info[c].pa_2g[0],
 			sprom->core_pwr_info[c].pa_2g[1],
@@ -5489,7 +5489,7 @@ static void b43_nphy_cal_report(struct b43_wldev *dev)
 		len += scnprintf(buf + len, sizeof(buf) - len, "%x%s",
 				 nphy->adj_pwr_tbl[i] & 0xff,
 				 i + 1 < ARRAY_SIZE(nphy->adj_pwr_tbl) ? "," : "");
-	b43_calreport(dev, "N-PHY cal: ppr_max=%u adj_pwr_tbl=%s\n",
+	b43_calreport(dev->wl, "N-PHY cal: ppr_max=%u adj_pwr_tbl=%s\n",
 		b43_ppr_get_max(&nphy->tx_pwr_max_ppr), buf);
 
 #ifdef CONFIG_B43_NEXT_BCMA
@@ -5501,7 +5501,7 @@ static void b43_nphy_cal_report(struct b43_wldev *dev)
 		pmu1 = bcmn_cc_read32(cc, BCMN_CC_PMU_CHIPCTL_DATA);
 	}
 #endif
-	b43_calreport(dev,
+	b43_calreport(dev->wl,
 		"N-PHY cal: chipctl=%08x (bit6 %u) pmu_chipctl1=%08x (extpa c0 %u c1 %u)\n",
 		chipctl, !!(chipctl & 0x40), pmu1, !!(pmu1 & BIT(13)),
 		!!(pmu1 & BIT(8)));
@@ -6185,8 +6185,8 @@ static int b43_nphy_cal_tx_iq_lo(struct b43_wldev *dev,
 
 			b43_ntab_read_bulk(dev, B43_NTAB16(15, 96), length,
 						buffer);
-			if (b43_calreport_on(dev))
-				b43_calreport(dev,
+			if (b43_modparam_calreport)
+				b43_calreport(dev->wl,
 					"N-PHY cal: txiqlo phase %u cmd %04x: %04x %04x %04x %04x %04x %04x %04x\n",
 					nphy->mphase_cal_phase_id, cmd,
 					buffer[0], buffer[1], buffer[2],
@@ -7686,10 +7686,10 @@ static void b43_nphy_band_edge_caps(struct b43_wldev *dev,
 }
 
 /*
- * The calibration report's TX power after each recalculation: the report
- * above has it once, after the init calibration, which can come before
- * the regulatory domain is set; this follows every change of the channel
- * or the limit.
+ * With calreport, the TX power after each recalculation: the calibration
+ * report above prints it once, after the init calibration, which can come
+ * before the regulatory domain is set; this follows every change of the
+ * channel or the limit.
  */
 static void b43_nphy_pwr_report(struct b43_wldev *dev, u8 limit)
 {
@@ -7698,7 +7698,7 @@ static void b43_nphy_pwr_report(struct b43_wldev *dev, u8 limit)
 	unsigned int i;
 	int len = 0;
 
-	if (!b43_calreport_on(dev))
+	if (!b43_modparam_calreport)
 		return;
 
 	for (i = 0; i < ARRAY_SIZE(nphy->adj_pwr_tbl); i++)
@@ -7706,7 +7706,7 @@ static void b43_nphy_pwr_report(struct b43_wldev *dev, u8 limit)
 				 nphy->adj_pwr_tbl[i] & 0xff,
 				 i + 1 < ARRAY_SIZE(nphy->adj_pwr_tbl) ? "," : "");
 	B43_NPHY_REPORT_BEGIN(dev);
-	b43_calreport(dev,
+	b43_calreport(dev->wl,
 		"N-PHY pwr: ch %u chan_max=%d user=%d limit=%u ppr_max=%u tpwr=%04x cmd=%04x adj_pwr_tbl=%s\n",
 		dev->phy.channel, dev->phy.chandef->chan->max_power,
 		dev->phy.desired_txpower, limit,

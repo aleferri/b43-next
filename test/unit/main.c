@@ -36,7 +36,7 @@ extern enum nl80211_band b43_test_band;
 #include "../board_profile.h"
 #include "leds.h"
 
-int unit_calreport;
+int b43_modparam_calreport;
 
 static struct b43_phy_ac       g_ac;
 /* Le ricariche del template beacon: quante fatte, e quante allo start_ap. */
@@ -196,7 +196,7 @@ static void mount_board(const struct board_profile *p)
 	{
 		const char *e = getenv("AC_CALREPORT");
 
-		unit_calreport = e && *e ? atoi(e) : 0;
+		b43_modparam_calreport = e && *e ? atoi(e) : 0;
 	}
 	/*
 	 * phycal_tempdelta as the instance ran with, when it is not the NVRAM's:

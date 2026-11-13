@@ -5,13 +5,12 @@
     wlref.py OPS FIRST:LAST
 
 OPS is a capture's mmio2ops output and FIRST:LAST a window of it, e.g. the
-`up` window gates.sh uses. For each key of b43's calibration report (the
-calreport debugfs file, `N_CALREPORT=1` in the harness) it prints the value
-wl left in the window: the last value written (or read back, for the
-read-only power control status), so the two can be diffed line by line.
-The values wl only computes in its software state (the pre-calibration
-deltas, the idle TSSI it keeps) are taken from the operations that carry
-them.
+`up` window gates.sh uses. For each key of b43's calibration report
+(`calreport=1`, `N_CALREPORT=1` in the harness) it prints the value wl left
+in the window: the last value written (or read back, for the read-only
+power control status), so the two can be diffed line by line. The values
+wl only computes in its software state (the pre-calibration deltas, the
+idle TSSI it keeps) are taken from the operations that carry them.
 """
 import re
 import sys

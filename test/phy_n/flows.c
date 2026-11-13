@@ -115,15 +115,9 @@ static void core_write32(struct bcmn_device *c, u16 offset, u32 value)
 		n_log("unreached: bcma write32 of the 802.11 core");
 }
 
-/* The calibration report of a build with CONFIG_B43_NEXT_CALREPORT */
-static int calreport;
+int b43_modparam_calreport;
 
-bool b43_calreport_on(struct b43_wldev *dev)
-{
-	return calreport;
-}
-
-void b43_calreport(struct b43_wldev *dev, const char *fmt, ...)
+void b43_calreport(struct b43_wl *w, const char *fmt, ...)
 {
 	char line[512];
 	va_list ap;
@@ -147,7 +141,7 @@ void b43info(struct b43_wl *w, const char *fmt, ...)
 
 static struct b43_wldev *setup(void)
 {
-	calreport = n_env("N_CALREPORT", 0);
+	b43_modparam_calreport = n_env("N_CALREPORT", 0);
 	chan.hw_value = n_env("N_CHANNEL", 6);
 	chan.center_freq = 2407 + 5 * chan.hw_value;
 	/* The regulatory limit: the US one at 2.4 GHz, 30 dBm, by default */
