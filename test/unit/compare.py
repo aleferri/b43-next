@@ -30,7 +30,7 @@ import os
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)),
                                 os.pardir))
 import paths  # noqa: E402,F401  (puts the decoders on sys.path)
-import tracelib  # noqa: E402
+from b43trace import tracelib  # noqa: E402
 
 VENDOR_LINE = re.compile(
     r'^\s*[0-9.]+\s+#\d+\s+cpu\d+\s+(.+?)\s*(?:;.*)?$'
