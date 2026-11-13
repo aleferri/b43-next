@@ -8601,7 +8601,8 @@ static int b43_setup_bands(struct b43_wldev *dev,
 		ht->ht_supported = true;
 		/* Both RX chains stay awake. */
 		ht->cap = IEEE80211_HT_CAP_SM_PS | IEEE80211_HT_CAP_SGI_20 |
-			  IEEE80211_HT_CAP_MAX_AMSDU;
+			  IEEE80211_HT_CAP_MAX_AMSDU |
+			  1 << IEEE80211_HT_CAP_RX_STBC_SHIFT;
 		ht->ampdu_factor = IEEE80211_HT_MAX_AMPDU_64K;
 		ht->ampdu_density = IEEE80211_HT_MPDU_DENSITY_4;
 		ht->mcs.rx_mask[0] = 0xff;
