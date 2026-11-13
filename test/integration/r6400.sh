@@ -8,11 +8,17 @@
 #   ./r6400.sh [CAPTURE]      e.g. cold-2g6-20, the default
 #
 # Prints the score of the window from `up` to `beaconing`, all the operations
-# and the PHY's and radio's only. GATE_TMP keeps the working files.
+# and the PHY's, radio's and MAC's (PHYSEL below). GATE_TMP keeps the working
+# files.
 set -eu
 HERE=$(cd "$(dirname "$0")" && pwd)
 REPO=$(cd "$HERE/../.." && pwd)
 . "$REPO/test/paths.sh"
+
+# The second score's operations: the PHY's and the radio's, and the MAC's
+# around them, MACCTL and the core's I/O control with its forced gated clock
+PHYSEL=' (PHY|RAD)\.| MAC\.MCTRL | WRAP\.(RD|WR) +off=0x0408 '
+
 cd "$HERE"
 
 CAP=${1:-cold-2g6-20}
@@ -39,8 +45,8 @@ z=$(awk "/MARK 'beaconing'/ { print substr(\$2, 2) - 1; exit }" "$T/cap.m2o")
 echo "== $CAP, ops $a:$z"
 python3 ../unit/cmp_skip.py "$T/cap.m2o" "$T/b43.trace" "$a:$z" \
 	--board r6400v1 --bus --anchor-values --min-block 8 --gap-tol 2 | grep -A2 '^grezzo'
-grep -E ' (PHY|RAD)\.' "$T/cap.m2o" > "$T/cap.phy"
-grep -E ' (PHY|RAD)\.' "$T/b43.trace" > "$T/b43.phy"
+grep -E "$PHYSEL" "$T/cap.m2o" > "$T/cap.phy"
+grep -E "$PHYSEL" "$T/b43.trace" > "$T/b43.phy"
 python3 ../unit/cmp_skip.py "$T/cap.phy" "$T/b43.phy" "$a:$z" \
 	--board r6400v1 --bus --anchor-values --min-block 8 --gap-tol 2 | grep -A2 '^grezzo' |
-	sed '1s/^grezzo   /PHY+radio/'
+	sed '1s/^grezzo       /PHY+radio+MAC/'
