@@ -57,6 +57,11 @@ ccflags-y += $(foreach o,$(ssbn-opts),-DCONFIG_SSBN_$(o)=1)
 ccflags-y += $(foreach o,$(bcmn-opts),-DCONFIG_BCMN_$(o)=1)
 ccflags-y += $(foreach o,$(b43n-opts),-DCONFIG_B43_NEXT_$(o)=1)
 
+# compat.h comes before slab.h: the kernel's kzalloc_obj() is looked for here.
+ifneq ($(shell grep -sw 'define kzalloc_obj' $(srctree)/include/linux/slab.h),)
+ccflags-y += -DB43_NEXT_HAVE_KZALLOC_OBJ
+endif
+
 obj-m += b43-next.o
 
 b43-next-y := $(addprefix ssb-next/, \
