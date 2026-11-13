@@ -237,6 +237,49 @@ def apply_moves(ops, rules):
     return out, used, moved_ops
 
 
+# ---------------------------------------------------------------------------
+# Read-modify-write sul bus (--rmw). Le catture MMIO dell'N-PHY non hanno le
+# op degli accessori (i MOD delle catture wl-diag dell'AC): un RMW vi compare
+# come la lettura di un registro PHY o radio seguita subito dalla scrittura
+# dello stesso registro. La coppia diventa un'op sola, X.RMW, col valore
+# letto e quello scritto, da entrambi i lati; anche un RMW che riscrive il
+# valore letto resta un'op da emettere. Fuori la porta delle tabelle, dove
+# lettura e scrittura dei dati non sono un RMW dello stesso registro.
+# ---------------------------------------------------------------------------
+RMW_FUORI = {
+    ('PHY', 0x072),     # TABLE_ADDR
+    ('PHY', 0x073),     # TABLE_DATALO
+    ('PHY', 0x074),     # TABLE_DATAHI
+}
+_RMW_OP = re.compile(r'^(PHY|RAD)\.(RD|WR) addr=(0x[0-9a-f]+) val=(\S+)$')
+
+
+def _rmw_op(o):
+    m = _RMW_OP.match(o)
+    if not m:
+        return None
+    sp, kind, addr, val = m.groups()
+    addr = int(addr, 16)
+    return None if (sp, addr) in RMW_FUORI else (sp, kind, addr, val)
+
+
+def fold_rmw(ops):
+    """Le coppie lettura+scrittura dello stesso registro come X.RMW."""
+    out = []
+    i = 0
+    while i < len(ops):
+        r = _rmw_op(ops[i])
+        w = _rmw_op(ops[i + 1]) if i + 1 < len(ops) else None
+        if r and w and r[1] == 'RD' and w[1] == 'WR' and \
+                (r[0], r[2]) == (w[0], w[2]):
+            out.append(f'{r[0]}.RMW addr={r[2]:#x} rd={r[3]} val={w[3]}')
+            i += 2
+            continue
+        out.append(ops[i])
+        i += 1
+    return out
+
+
 def load_compare(path=None):
     if path is None:
         path = os.path.join(os.path.dirname(os.path.abspath(__file__)),
@@ -512,6 +555,9 @@ def main():
     ap.add_argument('--gap-tol', type=int, required=True,
                     help='op non corrispondenti tollerate fra un tratto e il '
                          'successivo dello stesso blocco')
+    ap.add_argument('--rmw', action='store_true',
+                    help='lettura+scrittura dello stesso registro PHY o '
+                         'radio come un RMW')
     ap.add_argument('--verbose', action='store_true')
     args = ap.parse_args()
     if args.min_block < tracelib.MIN_BLOCK:
@@ -548,6 +594,8 @@ def main():
     V0, sv = C.drop_solo_vendor(V0)
     V0, mv_used, mv_ops = apply_moves(V0, moves)
     T, sp = C.drop_solo_port(T, V0)
+    if args.rmw:
+        V0, T = fold_rmw(V0), fold_rmw(T)
 
     def stats(V, T):
         segs, diff = segments(V, T, C, args.bus)
