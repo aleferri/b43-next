@@ -4039,7 +4039,11 @@ static void b43_nphy_tx_power_fix(struct b43_wldev *dev)
 		b43_nphy_stay_in_carrier_search(dev, 0);
 }
 
-static void b43_nphy_ipa_internal_tssi_setup(struct b43_wldev *dev)
+/*
+ * The internal TSSI path. Also used on the BCM43217 with an external PA,
+ * for the TX gain pre-calibration, with TSSIG at 0x11 as wl 7.14.164.18.
+ */
+static void b43_nphy_internal_tssi_setup(struct b43_wldev *dev)
 {
 	struct b43_phy *phy = &dev->phy;
 
@@ -4056,7 +4060,9 @@ static void b43_nphy_ipa_internal_tssi_setup(struct b43_wldev *dev)
 				b43_radio_write(dev, r + 0x9, 0xE);
 				if (phy->rev != 5)
 					b43_radio_write(dev, r + 0xA, 0);
-				if (phy->rev != 7)
+				if (b43_nphy_2057_rev14_epa(dev))
+					b43_radio_write(dev, r + 0xB, 0x11);
+				else if (phy->rev != 7)
 					b43_radio_write(dev, r + 0xB, 1);
 				else
 					b43_radio_write(dev, r + 0xB, 0x31);
@@ -4135,7 +4141,7 @@ static void b43_nphy_tx_power_ctl_idle_tssi(struct b43_wldev *dev)
 		return;
 
 	if (b43_nphy_ipa(dev))
-		b43_nphy_ipa_internal_tssi_setup(dev);
+		b43_nphy_internal_tssi_setup(dev);
 
 	if (phy->rev >= 19)
 		b43_nphy_rf_ctl_override_rev19(dev, 0x1000, 0, 3, false, 0);
@@ -5262,8 +5268,8 @@ static u16 b43_nphy_precal_txgain_2057_rev14_epa(struct b43_wldev *dev)
 	/*
 	 * wl's setup of the TSSI path for the pre-calibration, restored at
 	 * its end: table 8 at 0x0b/0x1b (0x019e) and 0x0f/0x1f (0x0005),
-	 * BBCFG cleared, and per core the radio's TSSI registers, with
-	 * TSSI_VCM, TX_SSI_MUX, TSSIG and TSSIA saved first.
+	 * BBCFG cleared, and the internal TSSI path, with TSSI_VCM,
+	 * TX_SSI_MUX, TSSIG and TSSIA saved first.
 	 */
 	afe_over[0] = b43_phy_read(dev, B43_NPHY_AFECTL_OVER1);
 	afe_over[1] = b43_phy_read(dev, B43_NPHY_AFECTL_OVER);
@@ -5282,15 +5288,8 @@ static u16 b43_nphy_precal_txgain_2057_rev14_epa(struct b43_wldev *dev)
 		rad[core][1] = b43_radio_read(dev, r + R2057_TX0_TX_SSI_MUX);
 		rad[core][2] = b43_radio_read(dev, r + R2057_TX0_TSSIG);
 		rad[core][3] = b43_radio_read(dev, r + R2057_TX0_TSSIA);
-		b43_radio_write(dev, r + R2057_TX0_TX_SSI_MASTER, 0x05);
-		b43_radio_write(dev, r + R2057_TX0_TX_SSI_MUX, 0x0e);
-		b43_radio_write(dev, r + R2057_TX0_TSSIA, 0x00);
-		b43_radio_write(dev, r + R2057_TX0_TSSIG, 0x11);
-		b43_radio_write(dev, r + R2057_TX0_IQCAL_VCM_HG, 0x00);
-		b43_radio_write(dev, r + R2057_TX0_IQCAL_IDAC, 0x00);
-		b43_radio_write(dev, r + R2057_TX0_TSSI_VCM, 0x03);
-		b43_radio_write(dev, r + R2057_TX0_TSSI_MISC1, 0x00);
 	}
+	b43_nphy_internal_tssi_setup(dev);
 	b43_ntab_write(dev, B43_NTAB16(8, 0x0b), 0x019e);
 	b43_ntab_write(dev, B43_NTAB16(8, 0x1b), 0x019e);
 	b43_ntab_write(dev, B43_NTAB16(8, 0x0f), 0x0005);
