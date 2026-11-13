@@ -9167,7 +9167,8 @@ static void b43_nphy_op_prepare_structs(struct b43_wldev *dev)
 				B43_SPUR_AVOID_AUTO : B43_SPUR_AVOID_DISABLE;
 	nphy->gain_boost = true; /* this way we follow wl, assume it is true */
 	nphy->txrx_chain = 2; /* sth different than 0 and 1 for now */
-	nphy->phyrxchain = 3; /* to avoid b43_nphy_set_rx_core_state like wl */
+	/* Both RX cores, unless set_antenna chose one */
+	nphy->phyrxchain = dev->ht ? dev->rxchain : 3;
 	nphy->perical = 2; /* avoid additional rssi cal on init (like wl) */
 	nphy->mphase_txcal_numcmds = 2;
 	/* 128 can mean disabled-by-default state of TX pwr ctl. Max value is
