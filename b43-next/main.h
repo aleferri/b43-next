@@ -27,7 +27,6 @@
 
 
 extern int b43_modparam_verbose;
-extern int b43_modparam_calreport;
 
 /* Logmessage verbosity levels. Update the b43_modparam_verbose helptext, if
  * you add or remove levels. */

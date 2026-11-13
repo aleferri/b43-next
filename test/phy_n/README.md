@@ -94,8 +94,8 @@ Every run prints, on stderr:
 
 ## The calibration report
 
-`N_CALREPORT=1` runs the driver's calibration report (module parameter
-`calreport`) and prints it on stderr; the report reads in peek mode, from
+`N_CALREPORT=1` runs the driver's calibration report (the `calreport`
+debugfs file of a `B43_NEXT_CALREPORT=y` build) and prints it on stderr; the report reads in peek mode, from
 the mirror of the driver's writes, and changes neither the stream nor the
 reads served. `wlref.py OPS FIRST:LAST` prints the same keys from wl's
 operations in the window, so the two diff line by line:
