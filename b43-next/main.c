@@ -5665,6 +5665,7 @@ static int b43_op_config(struct ieee80211_hw *hw, int radio_idx, u32 changed)
 	bool cac_was = dev->cac_pending;
 	bool retune = true;
 	bool switched = false;
+	bool txpower = false;
 	int antenna;
 	int err = 0;
 
@@ -5741,14 +5742,18 @@ static int b43_op_config(struct ieee80211_hw *hw, int radio_idx, u32 changed)
 
 	dev->wl->radiotap_enabled = !!(conf->flags & IEEE80211_CONF_MONITOR);
 
-	/* Adjust the desired TX power level. */
-	if (conf->power_level != 0) {
-		if (conf->power_level != phy->desired_txpower) {
-			phy->desired_txpower = conf->power_level;
-			b43_phy_txpower_check(dev, B43_TXPWR_IGNORE_TIME |
-						   B43_TXPWR_IGNORE_TSSI);
-		}
+	/*
+	 * The TX power target, on a new power level or a new channel, whose
+	 * caps may differ. The AC-PHY's channel setup computes its own.
+	 */
+	if (conf->power_level != 0 &&
+	    conf->power_level != phy->desired_txpower) {
+		phy->desired_txpower = conf->power_level;
+		txpower = true;
 	}
+	if (txpower || (switched && !ac))
+		b43_phy_txpower_check(dev, B43_TXPWR_IGNORE_TIME |
+					   B43_TXPWR_IGNORE_TSSI);
 
 	/* Antennas for RX and management frame TX. */
 	antenna = B43_ANTENNA_DEFAULT;

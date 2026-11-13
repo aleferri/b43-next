@@ -29,18 +29,13 @@ followed by the calibrations. As for the AC ([`ac-phy.md`](ac-phy.md),
 [`retrace-todo.md`](retrace-todo.md), "`do_full_init` after a down"), b43
 defers this: `b43_phy_exit()` sets `do_full_init` on every down, so a down
 and up takes the first init, and only `bss_start` runs the later one.
-`test/phy_ht/hot.sh` scores that later init on every hot window. Open:
-
-- The gain state. At the later init of the hot captures wl restores it
-  (`b43_phy_ht_gain_state_write()`) twice, writes the clip thresholds,
-  restores it twice more, after the table 0x1c writes, and does not write
-  0x280 and 0x283 in the gain control setup; at the cold `ssid` it does
-  the opposite, and b43 does as there. In these captures the channel
-  changes whenever wl was down before, so which of the two decides is open.
-- The target on a channel switch of a running BSS. With no BSS start b43
-  keeps the target of the channel before until its next TX power check (a
-  new power level, a TX status at most every 2 s, the 60 s work): on ch 1
-  and 11, 0x5a over wl's 0x56.
+`test/phy_ht/hot.sh` scores that later init on every hot window. Open is
+the gain state: at the later init of the hot captures wl restores it
+(`b43_phy_ht_gain_state_write()`) twice, writes the clip thresholds,
+restores it twice more, after the table 0x1c writes, and does not write
+0x280 and 0x283 in the gain control setup; at the cold `ssid` it does the
+opposite, and b43 does as there. In these captures the channel changes
+whenever wl was down before, so which of the two decides is open.
 
 ## The watchdog's 0x280 and 0x283
 
