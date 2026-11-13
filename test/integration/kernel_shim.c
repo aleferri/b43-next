@@ -731,3 +731,112 @@ void *__hwasan_memmove(void *d, const void *s, size_t n)
 	return __builtin_memmove(d, s, n);
 }
 #endif
+
+/* --- the NVRAM, for nvram/bcm47xx_sprom.c ---------------------------- */
+
+/*
+ * A board without a SROM takes it from the router's NVRAM: B43_NVRAM is a
+ * dump of it, one `name=value` per line, as the boards' nvram.txt.
+ */
+int bcm47xx_nvram_getenv(const char *name, char *val, size_t val_len)
+{
+	const char *path = getenv("B43_NVRAM");
+	size_t n = strlen(name);
+	char line[512];
+	FILE *f;
+
+	if (!path || !(f = fopen(path, "r")))
+		return -2;		/* -ENOENT */
+	while (fgets(line, sizeof(line), f)) {
+		if (strncmp(line, name, n) || line[n] != '=')
+			continue;
+		line[strcspn(line, "\r\n")] = 0;
+		snprintf(val, val_len, "%s", line + n + 1);
+		fclose(f);
+		return 0;
+	}
+	fclose(f);
+	return -2;
+}
+
+/* The kernel's string helpers bcm47xx_sprom.c uses, with their semantics */
+static int kstrto(const char *s, unsigned int base, long long min,
+		  unsigned long long max, int sign, void *res, int size)
+{
+	char *end;
+	unsigned long long u = 0;
+	long long v = 0;
+
+	if (!*s)
+		return -22;		/* -EINVAL */
+	if (sign)
+		v = strtoll(s, &end, base);
+	else if (*s == '-')
+		return -22;
+	else
+		u = strtoull(s, &end, base);
+	if (*end == '\n')
+		end++;
+	if (*end)
+		return -22;
+	if (sign ? v < min || v > (long long)max : u > max)
+		return -34;		/* -ERANGE */
+	if (sign)
+		u = (unsigned long long)v;
+	memcpy(res, &u, size);	/* little endian */
+	return 0;
+}
+
+int kstrtou8(const char *s, unsigned int base, unsigned char *res)
+{
+	return kstrto(s, base, 0, 0xff, 0, res, 1);
+}
+
+int kstrtos8(const char *s, unsigned int base, signed char *res)
+{
+	return kstrto(s, base, -128, 127, 1, res, 1);
+}
+
+int kstrtou16(const char *s, unsigned int base, unsigned short *res)
+{
+	return kstrto(s, base, 0, 0xffff, 0, res, 2);
+}
+
+int kstrtouint(const char *s, unsigned int base, unsigned int *res)
+{
+	return kstrto(s, base, 0, 0xffffffffu, 0, res, 4);
+}
+
+char *strim(char *s)
+{
+	char *end = s + strlen(s);
+
+	while (end > s && (end[-1] == ' ' || end[-1] == '\t' ||
+			   end[-1] == '\n' || end[-1] == '\r'))
+		*--end = 0;
+	while (*s == ' ' || *s == '\t' || *s == '\n' || *s == '\r')
+		s++;
+	return s;
+}
+
+char *strreplace(char *s, char old, char new)
+{
+	for (; *s; s++)
+		if (*s == old)
+			*s = new;
+	return s;
+}
+
+int mac_pton(const char *s, unsigned char *mac)
+{
+	unsigned int b[6];
+	int i;
+
+	if (strlen(s) < 17 || sscanf(s, "%2x:%2x:%2x:%2x:%2x:%2x",
+				     &b[0], &b[1], &b[2], &b[3], &b[4],
+				     &b[5]) != 6)
+		return 0;
+	for (i = 0; i < 6; i++)
+		mac[i] = b[i];
+	return 1;
+}
