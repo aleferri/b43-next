@@ -8743,7 +8743,7 @@ static void b43_nphy_pmu_spur_avoid(struct b43_wldev *dev, bool avoid)
 }
 
 /* Radio 2057 rev 9 settings for every 2.4 GHz channel set */
-static void b43_nphy_channel_setup_2057_rev9_2g(struct b43_wldev *dev)
+static void b43_nphy_channel_setup_2057_rev9_2g(struct b43_wldev *dev, int ch)
 {
 	/* Noise variances */
 	static const u32 nvar20[] = {
@@ -8754,6 +8754,24 @@ static void b43_nphy_channel_setup_2057_rev9_2g(struct b43_wldev *dev)
 		0x14, 0x20, 0x1d, 0x19, 0x15, 0x0d, 0x05, 0x05,
 		0x14, 0x14, 0x10, 0x10, 0x05, 0x05, 0x05, 0x01,
 	};
+
+	/* One set of values for channel 13 and another for the rest */
+	static const u16 strnfilt[2][10] = {
+		{ 0xcc, 0x29, 0xcc, 0xfe58, 0x1a2,
+		  0x66, 0x93, 0x66, 0xfdc6, 0xe1 },
+		{ 0xe5, 0x68, 0xe5, 0xfebe, 0x19e,
+		  0x73, 0xb2, 0x73, 0xfdfe, 0xcc },
+	};
+	bool ch13 = ch == 13;
+	int i;
+
+	for (i = 0; i < ARRAY_SIZE(strnfilt[0]); i++)
+		b43_phy_write(dev, B43_NPHY_RXSTRNFILT40NUM00 + i,
+			      strnfilt[ch13][i]);
+	b43_phy_write(dev, B43_NPHY_CRSACIDETECTTHRESHL, ch13 ? 0x55 : 0x3c);
+	b43_phy_write(dev, B43_NPHY_CRSACIDETECTTHRESHU, ch13 ? 0x55 : 0x3c);
+	b43_ntab_write(dev, B43_NTAB32(16, 0x33), ch13 ? 0x18d : 0x14d);
+	b43_ntab_write(dev, B43_NTAB32(16, 0x35), ch13 ? 0x18d : 0x14d);
 
 	b43_ntab_write_bulk(dev, B43_NTAB32(16, 0x100), ARRAY_SIZE(nvar20),
 			    b43_is_40mhz(dev) ? nvar40 : nvar20);
@@ -8876,7 +8894,7 @@ static void b43_nphy_channel_setup(struct b43_wldev *dev,
 				b43_is_40mhz(dev) ? 0x100 : 0);
 
 	if (b43_nphy_2057_rev9_2g(dev))
-		b43_nphy_channel_setup_2057_rev9_2g(dev);
+		b43_nphy_channel_setup_2057_rev9_2g(dev, ch);
 
 	if (phy->rev >= 3)
 		b43_nphy_spur_workaround(dev);
