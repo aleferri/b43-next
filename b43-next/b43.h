@@ -299,6 +299,7 @@ enum {
 #define B43_SHM_SH_JSSI0		0x0088	/* Measure JSSI 0 */
 #define B43_SHM_SH_JSSI1		0x008A	/* Measure JSSI 1 */
 #define B43_SHM_SH_JSSIAUX		0x008C	/* Measure JSSI AUX */
+#define B43_SHM_SH_NOISEPWR		0x0308	/* N-PHY noise power per core */
 /* SHM_SHARED microcode statistics */
 #define B43_SHM_SH_TXFUNFL		0x00EC	/* Underflows of each TX FIFO */
 /* SHM_SHARED crypto engine */
@@ -1074,6 +1075,8 @@ struct b43_wldev {
 	bool use_pio;			/* TRUE if next init should use PIO */
 	/* HT support */
 	bool ht;
+	/* Channel of the N-PHY noise round in progress. */
+	unsigned int noise_channel;
 	/* HT receive rate context, protected by wl->mutex. */
 	u64 rx_ht_deadline;
 	u32 rx_ht_tsf;
