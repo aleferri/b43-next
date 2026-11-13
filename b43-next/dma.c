@@ -2173,6 +2173,40 @@ recycle:
 	b43_poison_rx_buf(ring, buf);
 }
 
+/* A frame longer than one buffer continues in the following ones, which
+ * hold only frame data. Copy it into a new skb and recycle the buffers,
+ * leaving *slot at the last one. */
+static void dma_rx_multi(struct b43_dmaring *ring, int *slot, u16 len)
+{
+	const struct b43_dma_ops *ops = ring->ops;
+	struct b43_dmadesc_meta *meta;
+	struct b43_rxhdr_fw4 *rxhdr;
+	struct sk_buff *skb;
+	size_t left = ring->frameoffset + len;
+	size_t n;
+
+	skb = __dev_alloc_skb(left, GFP_ATOMIC);
+	for (;;) {
+		ops->idx2desc(ring, *slot, &meta);
+		n = min_t(size_t, left, ring->rx_buffersize);
+		sync_descbuffer_for_cpu(ring, meta->dmaaddr, n);
+		if (skb)
+			skb_put_data(skb, meta->skb->data, n);
+		b43_poison_rx_buffer(ring, meta->skb);
+		sync_descbuffer_for_device(ring, meta->dmaaddr,
+					   ring->rx_buffersize);
+		left -= n;
+		if (!left)
+			break;
+		*slot = next_slot(ring, *slot);
+	}
+	if (unlikely(!skb))
+		return;
+	rxhdr = (struct b43_rxhdr_fw4 *)skb->data;
+	skb_pull(skb, ring->frameoffset);
+	b43_rx(ring->dev, skb, rxhdr);
+}
+
 static void dma_rx(struct b43_dmaring *ring, int *slot)
 {
 	const struct b43_dma_ops *ops = ring->ops;
@@ -2226,30 +2260,14 @@ static void dma_rx(struct b43_dmaring *ring, int *slot)
 		goto drop_recycle_buffer;
 	}
 	if (unlikely(len + ring->frameoffset > ring->rx_buffersize)) {
-		/* The data did not fit into one descriptor buffer
-		 * and is split over multiple buffers.
-		 * This should never happen, as we try to allocate buffers
-		 * big enough. So simply ignore this packet.
-		 */
-		int cnt = 0;
-		s32 tmp = len;
-
-		while (1) {
-			desc = ops->idx2desc(ring, *slot, &meta);
-			/* recycle the descriptor buffer. */
-			b43_poison_rx_buffer(ring, meta->skb);
-			sync_descbuffer_for_device(ring, meta->dmaaddr,
-						   ring->rx_buffersize);
-			*slot = next_slot(ring, *slot);
-			cnt++;
-			tmp -= ring->rx_buffersize;
-			if (tmp <= 0)
-				break;
+		/* Up to 2 bytes of padding precede the PLCP header. */
+		if (likely(len <= 2 + B43_DMA_RX_MAX_FRAME_LEN)) {
+			dma_rx_multi(ring, slot, len);
+			return;
 		}
-		b43err(ring->dev->wl, "DMA RX buffer too small "
-		       "(len: %u, buffer: %u, nr-dropped: %d)\n",
-		       len, ring->rx_buffersize, cnt);
-		goto drop;
+		b43dbg(ring->dev->wl, "DMA RX: Dropping %u-byte frame\n", len);
+		dmaaddr = meta->dmaaddr;
+		goto drop_recycle_buffer;
 	}
 
 	dmaaddr = meta->dmaaddr;
@@ -2266,7 +2284,6 @@ static void dma_rx(struct b43_dmaring *ring, int *slot)
 	skb_pull(skb, ring->frameoffset);
 
 	b43_rx(ring->dev, skb, rxhdr);
-drop:
 	return;
 
 drop_recycle_buffer:
