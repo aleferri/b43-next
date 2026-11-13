@@ -4844,6 +4844,35 @@ static void b43_periodic_every30sec(struct b43_wldev *dev)
 	b43_calculate_link_quality(dev);
 }
 
+/* Add the changes of the microcode's statistics counters since their last
+ * read to the low-level statistics: CTS frames received are successful RTS
+ * frames, the other RTS frames failed. Read the 16-bit counters before they
+ * wrap: every 15 s and every 1024 TX statuses, each of which covers at most
+ * 16 RTS frames.
+ */
+void b43_macstat_update(struct b43_wldev *dev, bool count)
+{
+	struct ieee80211_low_level_stats *stats = &dev->wl->ieee_stats;
+	u16 rts, cts, badfcs, rts_new, cts_new;
+
+	rts = b43_shm_read16(dev, B43_SHM_SHARED, B43_SHM_SH_TXRTSFRM);
+	cts = b43_shm_read16(dev, B43_SHM_SHARED, B43_SHM_SH_RXCTSUCAST);
+	badfcs = b43_shm_read16(dev, B43_SHM_SHARED, B43_SHM_SH_RXBADFCS);
+	if (count) {
+		rts_new = rts - dev->macstat_txrts;
+		cts_new = cts - dev->macstat_rxcts;
+		stats->dot11RTSSuccessCount += cts_new;
+		if (rts_new > cts_new)
+			stats->dot11RTSFailureCount += rts_new - cts_new;
+		stats->dot11FCSErrorCount +=
+			(u16)(badfcs - dev->macstat_badfcs);
+	}
+	dev->macstat_txrts = rts;
+	dev->macstat_rxcts = cts;
+	dev->macstat_badfcs = badfcs;
+	dev->macstat_txstatus = 0;
+}
+
 static void b43_periodic_every15sec(struct b43_wldev *dev)
 {
 	struct b43_phy *phy = &dev->phy;
@@ -4866,6 +4895,8 @@ static void b43_periodic_every15sec(struct b43_wldev *dev)
 
 	if (phy->ops->pwork_15sec)
 		phy->ops->pwork_15sec(dev);
+	if (dev->ht)
+		b43_macstat_update(dev, true);
 
 	atomic_set(&phy->txerr_cnt, B43_PHY_TX_BADNESS_LIMIT);
 	wmb();
@@ -5948,8 +5979,12 @@ static int b43_op_get_stats(struct ieee80211_hw *hw,
 			    struct ieee80211_low_level_stats *stats)
 {
 	struct b43_wl *wl = hw_to_b43_wl(hw);
+	struct b43_wldev *dev;
 
 	mutex_lock(&wl->mutex);
+	dev = wl->current_dev;
+	if (dev && dev->ht && b43_status(dev) >= B43_STAT_INITIALIZED)
+		b43_macstat_update(dev, true);
 	memcpy(stats, &wl->ieee_stats, sizeof(*stats));
 	mutex_unlock(&wl->mutex);
 
@@ -6819,6 +6854,8 @@ redo:
 		/* Whoops, aliens ate up the device while we were unlocked. */
 		return dev;
 	}
+	if (dev->ht)
+		b43_macstat_update(dev, true);
 
 	/* Disable interrupts on the device. */
 	b43_set_status(dev, B43_STAT_INITIALIZED);
@@ -7692,6 +7729,8 @@ static int b43_wireless_core_init(struct b43_wldev *dev)
 	if (dev->ht && !b43_using_pio_transfers(dev))
 		b43_shm_write16(dev, B43_SHM_SHARED, B43_SHM_SH_MAXRXFRMLEN,
 				B43_DMA_RX_MAX_FRAME_LEN);
+	if (dev->ht)
+		b43_macstat_update(dev, false);
 	ieee80211_iterate_stations_atomic(dev->wl->hw,
 					  b43_ampdu_tx_restart_sta, dev);
 	b43_qos_init(dev);
