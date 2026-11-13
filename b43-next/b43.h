@@ -1199,11 +1199,12 @@ struct b43_wl {
 	struct b43_leds leds;
 
 	/*
-	 * The bands of an AC PHY. Their HT and VHT capabilities depend on
-	 * the board's receive chains, so each device has its own copies.
+	 * The bands with HT, of an AC PHY or of an N-PHY core with HT. Their
+	 * capabilities depend on the board's chains, so each device has its
+	 * own copies.
 	 */
 	struct ieee80211_supported_band band_5ghz_ac;
-	struct ieee80211_supported_band band_2ghz_ac;
+	struct ieee80211_supported_band band_2ghz_ht;
 
 	/*
 	 * The radar types the AC PHY matches (enum b43_radar_region), from
