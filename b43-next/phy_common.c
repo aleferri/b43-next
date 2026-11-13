@@ -623,9 +623,10 @@ void b43_mac_bw_set(struct b43_wldev *dev, u32 bw)
 	b43_read32(dev, B43_MMIO_MACCTL);
 }
 
-void b43_phy_force_clock(struct b43_wldev *dev, bool force)
+bool b43_phy_force_clock(struct b43_wldev *dev, bool force)
 {
 	u32 tmp;
+	bool was_forced = false;
 
 	WARN_ON(dev->phy.type != B43_PHYTYPE_N &&
 		dev->phy.type != B43_PHYTYPE_HT &&
@@ -635,6 +636,7 @@ void b43_phy_force_clock(struct b43_wldev *dev, bool force)
 #ifdef CONFIG_B43_NEXT_BCMA
 	case B43_BUS_BCMA:
 		tmp = bcmn_aread32(dev->dev->bdev, BCMN_IOCTL);
+		was_forced = !!(tmp & BCMN_IOCTL_FGC);
 		if (force)
 			tmp |= BCMN_IOCTL_FGC;
 		else
@@ -648,6 +650,7 @@ void b43_phy_force_clock(struct b43_wldev *dev, bool force)
 #ifdef CONFIG_B43_NEXT_SSB
 	case B43_BUS_SSB:
 		tmp = ssbn_read32(dev->dev->sdev, SSBN_TMSLOW);
+		was_forced = !!(tmp & SSBN_TMSLOW_FGC);
 		if (force)
 			tmp |= SSBN_TMSLOW_FGC;
 		else
@@ -656,4 +659,6 @@ void b43_phy_force_clock(struct b43_wldev *dev, bool force)
 		break;
 #endif
 	}
+
+	return was_forced;
 }
