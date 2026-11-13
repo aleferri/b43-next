@@ -4602,11 +4602,15 @@ static int b43_chip_init(struct b43_wldev *dev)
 	 * and the PHY init last. Its calibration during the PHY init also
 	 * needs the MAC-PHY clock on. So the PHY is brought up at the end of
 	 * b43_wireless_core_init() on the AC, and here on the other PHYs.
+	 * The HT-PHY's 7.14 on the R6400 v1 sets the MAC up and the MAC-PHY
+	 * clock on before the PHY too, but writes the shared memory after it.
 	 */
 	if (phy->type == B43_PHYTYPE_AC) {
 		b43dbg(dev->wl, "init: MAC\n");
 		b43_chip_init_mac(dev);
 	} else {
+		if (phy->type == B43_PHYTYPE_HT)
+			b43_chip_init_mac(dev);
 		err = b43_phy_bringup(dev);
 		if (err)
 			goto err_gpio_clean;
@@ -4617,7 +4621,7 @@ static int b43_chip_init(struct b43_wldev *dev)
 		value16 |= 0x0004;
 		b43_write16(dev, 0x005E, value16);
 	}
-	if (phy->type != B43_PHYTYPE_AC)
+	if (phy->type != B43_PHYTYPE_AC && phy->type != B43_PHYTYPE_HT)
 		b43_chip_init_mac(dev);
 
 	err = 0;
