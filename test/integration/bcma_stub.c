@@ -100,6 +100,8 @@ static u32 dma0_pending;
 
 /* Il registro di controllo dell'anello di ricezione, per il suo stato. */
 static u32 rxctl;
+/* L'indirizzo che b43 ha dato all'anello di ricezione, per i suoi slot. */
+static u32 rx_ringlo;
 
 void b43_test_raise_dma0(u32 reason)
 {
@@ -311,7 +313,7 @@ static u32 clkctlst_read(void)
 }
 
 /*
- * ChipCommon and the PCIe2 core, for bcma's own init. They are registers
+ * ChipCommon and the PCIe core, either generation, for bcma's own init. They are registers
  * with no side effect the suite needs, so a write is kept and a read returns
  * the capture's value when the oracle has one, the last write or the reset
  * value the harness seeded otherwise. The trace uses the bus classes of
@@ -319,7 +321,7 @@ static u32 clkctlst_read(void)
  */
 #define OTHER_REGS	(0x1000 / 4)
 
-static u32 cc_regs[OTHER_REGS], pcie2_regs[OTHER_REGS];
+static u32 cc_regs[OTHER_REGS], pcie_regs[OTHER_REGS];
 
 void b43_test_cc_seed(u16 off, u32 val)
 {
@@ -332,9 +334,10 @@ static u32 *other_core_regs(struct bcmn_device *core, const char **cls)
 	case BCMN_CORE_CHIPCOMMON:
 		*cls = "CC";
 		return cc_regs;
+	case BCMN_CORE_PCIE:
 	case BCMN_CORE_PCIE2:
 		*cls = "PCIE";
-		return pcie2_regs;
+		return pcie_regs;
 	default:
 		return NULL;
 	}
@@ -425,6 +428,10 @@ static void note_write(struct bcmn_device *core, u16 off, u32 val, int width)
 		rxctl = val;
 		b43_trace_raw("REG.WR", off, val, width);
 		return;
+	case B43_MMIO_DMA64_BASE0 + B43_DMA64_RXRINGLO:
+		rx_ringlo = val;
+		b43_trace_raw("REG.WR", off, val, width);
+		return;
 	case BCMN_CLKCTLST:
 		clkctlst_init = true;
 		clkctlst_req = val & 0xffff;
@@ -437,7 +444,8 @@ static void note_write(struct bcmn_device *core, u16 off, u32 val, int width)
 }
 
 /*
- * La versione del PHY, che b43 legge a `b43_phy_versioning` (main.c:4484) e
+ * La versione del PHY, che b43 legge a `b43_phy_versioning` (main.c:4484), e
+ * dalla cattura quando la ha (una presa al bus con le letture di flush), e
  * decodifica in analog_type, phy_type e phy_rev secondo i campi di
  * phy_common.h:30. Da phy_type dipende TUTTO il resto: la scelta della
  * vtable, e la selezione del firmware, che per corerev 42 prende `ucode42`
@@ -446,21 +454,43 @@ static void note_write(struct bcmn_device *core, u16 off, u32 val, int width)
  * emettere una sola op.
  *
  * Non e' una costante inventata: `wl1_revinfo.txt` del d6220 da phytype 0xb
- * e phyrev 0x1, cioe' AC rev1.
+ * e phyrev 0x1, cioe' AC rev1, e radiorev 0x42069. Un'altra board la da'
+ * con b43_test_chip_identity(), dal suo profilo.
  */
-#define D6220_PHY_ANALOG	0x0		/* campo analog, dai dump */
-#define D6220_PHY_TYPE		0x0b		/* B43_PHYTYPE_AC */
-#define D6220_PHY_REV		0x01
+static u16 id_phy_ver = 0x0b01, id_radio = 0x2069, id_radio_rev = 0x4;
+static unsigned int id_core_rev = 42;
 
-/* Da wl1_revinfo.txt: radiorev 0x42069. */
-#define D6220_RADIO_ID		0x2069
-#define D6220_RADIO_REV		0x4
-
-static u32 phy_version_word(void)
+void b43_test_chip_identity(unsigned int core_rev, u16 phy_ver, u16 radio,
+			    u16 radio_rev)
 {
-	return ((D6220_PHY_ANALOG << 12) & 0xf000) |
-	       ((D6220_PHY_TYPE << 8) & 0x0f00) |
-	       (D6220_PHY_REV & 0x00ff);
+	id_core_rev = core_rev;
+	id_phy_ver = phy_ver;
+	id_radio = radio;
+	id_radio_rev = radio_rev;
+}
+
+/*
+ * The radio's identity at RADIO24_CONTROL 0-2, as b43_radio_versioning()
+ * reads it: for corerev 40 on the revision at 0 and the id at 1, below it
+ * the revision at 0 and the id's two bytes at 1 and 2. Below corerev 40 the
+ * three are radio registers too, so only their first read is the identity.
+ */
+static bool radio_identity(u16 addr, u16 *v)
+{
+	static bool taken[3];
+
+	if (id_core_rev >= 40) {
+		if (addr > 1)
+			return false;
+		*v = addr ? id_radio : id_radio_rev;
+		return true;
+	}
+	if (addr > 2 || taken[addr])
+		return false;
+	taken[addr] = true;
+	*v = addr == 0 ? id_radio_rev : addr == 1 ? id_radio & 0xff
+						   : id_radio >> 8;
+	return true;
 }
 
 /* A read served by the virtual chip, traced with note_read()'s classes. */
@@ -500,7 +530,8 @@ static u32 chip_note_read(u16 off, int width)
 
 static u32 note_read(struct bcmn_device *core, u16 off, int width)
 {
-	u32 v;
+	u32 v, vendor_lo;
+	u16 v16;
 
 	if (other_core_read(core, off, width, &v))
 		return v;
@@ -508,7 +539,9 @@ static u32 note_read(struct bcmn_device *core, u16 off, int width)
 		return chip_note_read(off, width);
 	switch (off) {
 	case B43_MMIO_PHY_VER:
-		v = phy_version_word();
+		v = b43_trace_has("REG.RD", B43_MMIO_PHY_VER) ?
+		    b43_trace_read("REG.RD", B43_MMIO_PHY_VER, width) :
+		    id_phy_ver;
 		break;
 	/*
 	 * L'identita' della radio, che b43 legge a `b43_radio_versioning`
@@ -522,10 +555,8 @@ static u32 note_read(struct bcmn_device *core, u16 off, int width)
 	 * reverse-tools/extract_chan_tuning_2069rev4.py.
 	 */
 	case B43_MMIO_RADIO24_DATA:
-		if (radio_addr == 1)
-			return D6220_RADIO_ID;
-		if (radio_addr == 0)
-			return D6220_RADIO_REV;
+		if (radio_identity(radio_addr, &v16))
+			return v16;
 		fallthrough;
 	case B43_MMIO_RADIO_DATA_LOW:
 		v = b43_trace_read("RAD.RD", radio_addr, width);
@@ -594,11 +625,20 @@ static u32 note_read(struct bcmn_device *core, u16 off, int width)
 		 * Lo stato dell'anello di ricezione: lo slot corrente e' del
 		 * vendor, dall'oracolo, ma il campo di stato segue il registro
 		 * di controllo che b43 ha scritto, o il reset dell'anello che
-		 * il vendor non fa mai non finirebbe.
+		 * il vendor non fa mai non finirebbe. Il vendor da' lo slot
+		 * come indirizzo del suo anello: dove la cattura ha quello
+		 * dell'anello, uno slot che vi cade dentro si riporta su
+		 * quello di b43.
 		 */
 		v = b43_trace_read_raw(off, width);
 		if (!(rxctl & B43_DMA64_RXENABLE))
 			v &= ~B43_DMA64_RXSTAT;
+		if (b43_trace_vendor_rx_ringlo(&vendor_lo) &&
+		    ((v - vendor_lo) & B43_DMA64_RXSTATDPTR) <
+		    B43_RXRING_SLOTS * sizeof(struct b43_dmadesc64))
+			v = (v & ~B43_DMA64_RXSTATDPTR) |
+			    ((rx_ringlo + (v - vendor_lo)) &
+			     B43_DMA64_RXSTATDPTR);
 		break;
 	case B43_MMIO_DMA0_REASON:
 		v = dma0_pending;
