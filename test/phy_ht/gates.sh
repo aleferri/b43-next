@@ -11,11 +11,15 @@
 # CAPTURE is a name under traces/mmio-cold, e.g. cold-2g6-20; without, the
 # six cold ones, 20 and 40 MHz. GATE_TMP keeps the
 # window's trace and b43's. Each window gets two rows: all the operations,
-# and the PHY's and radio's only, the perimeter of this harness, which
-# compiles no core but its shared memory accessors.
+# and the PHY's, the radio's and the MAC's around them (PHYSEL below).
 set -u
 REPO=$(cd "$(dirname "$0")/../.." && pwd)
 . "$REPO/test/paths.sh"
+
+# The second score's operations: the PHY's and the radio's, and the MAC's
+# around them, MACCTL and the core's I/O control with its forced gated clock
+PHYSEL=' (PHY|RAD)\.| MAC\.MCTRL | WRAP\.(RD|WR) +off=0x0408 '
+
 cd "$(dirname "$0")"
 
 B=
@@ -59,11 +63,11 @@ for c in "$@"; do
 		./ht-trace full "$ops" "$first" "$last" -o "$T/$c.trace"
 	python3 ../unit/cmp_skip.py "$ops" "$T/$c.trace" "$first:$last" \
 		--board r6400v1 --bus $B | grep -A2 '^grezzo'
-	grep -E ' (PHY|RAD)\.' "$ops" > "$T/$c.phy.ops"
-	grep -E ' (PHY|RAD)\.' "$T/$c.trace" > "$T/$c.phy.trace"
+	grep -E "$PHYSEL" "$ops" > "$T/$c.phy.ops"
+	grep -E "$PHYSEL" "$T/$c.trace" > "$T/$c.phy.trace"
 	python3 ../unit/cmp_skip.py "$T/$c.phy.ops" "$T/$c.phy.trace" \
 		"$first:$last" --board r6400v1 --bus $B | grep -A2 '^grezzo' |
-		sed '1s/^grezzo   /PHY+radio/'
+		sed '1s/^grezzo       /PHY+radio+MAC/'
 
 	# The start of the BSS: wl's init at `ssid`, b43's b43_ht_phy_recycle(),
 	# with what the up left read off the up.
@@ -86,8 +90,8 @@ for c in "$@"; do
 		./ht-trace ap_start "$ops" "$a" "$z" -o "$T/$c.ap.trace" 2>/dev/null
 	python3 ../unit/cmp_skip.py "$ops" "$T/$c.ap.trace" "$a:$z" \
 		--board r6400v1 --bus $B | grep -A2 '^grezzo'
-	grep -E ' (PHY|RAD)\.' "$T/$c.ap.trace" > "$T/$c.ap.phy.trace"
+	grep -E "$PHYSEL" "$T/$c.ap.trace" > "$T/$c.ap.phy.trace"
 	python3 ../unit/cmp_skip.py "$T/$c.phy.ops" "$T/$c.ap.phy.trace" \
 		"$a:$z" --board r6400v1 --bus $B | grep -A2 '^grezzo' |
-		sed '1s/^grezzo   /PHY+radio/'
+		sed '1s/^grezzo       /PHY+radio+MAC/'
 done

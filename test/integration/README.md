@@ -147,8 +147,10 @@ firmware names and watchdog marker. What differs from the AC boards:
   both sides have them, and on identity alone a run of table writes is
   paired one off when an operation before it is missing.
 
-On `cold-2g6-20`, 2026-11-13: `grezzo` 37142/58133 = 63.89%, PHY+radio
-24969/26221 = 95.23%.
+The second score has the PHY's and the radio's operations and the MAC's
+around them, MACCTL and the core's I/O control with its forced gated clock.
+On `cold-2g6-20`, 2026-11-13: `grezzo` 37142/58134 = 63.89%, PHY+radio+MAC
+25386/27101 = 93.67%.
 
 ### bcma's PMU against the stock attach
 

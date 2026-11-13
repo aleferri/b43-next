@@ -1,7 +1,7 @@
 #!/bin/sh
 # Scores b43's start of the BSS against the R6400 v1's hot captures, one
 # window per channel, from the `ssid-N` mark to `down-N`, all the operations
-# and the PHY's and radio's only: flow `ap_start`, as gates.sh does for the
+# and the PHY's, radio's and MAC's: flow `ap_start`, as gates.sh does for the
 # cold `ssid`, on every 2.4 GHz channel at 20 MHz and on 1l-7l and 5u-11u
 # at 40.
 #
@@ -20,6 +20,11 @@
 set -u
 REPO=$(cd "$(dirname "$0")/../.." && pwd)
 . "$REPO/test/paths.sh"
+
+# The second score's operations: the PHY's and the radio's, and the MAC's
+# around them, MACCTL and the core's I/O control with its forced gated clock
+PHYSEL=' (PHY|RAD)\.| MAC\.MCTRL | WRAP\.(RD|WR) +off=0x0408 '
+
 cd "$(dirname "$0")"
 
 B=
@@ -77,7 +82,7 @@ case ${1:-} in hot-2g-*) caps=$1; shift ;; esac
 for c in $caps; do
 	ops=$T/$c.ops
 	zcat "$BOARD"/traces/mmio-*/"$c-ops.txt.gz" > "$ops"
-	grep -E ' (PHY|RAD)\.' "$ops" > "$T/$c.phy.ops"
+	grep -E "$PHYSEL" "$ops" > "$T/$c.phy.ops"
 	rc0=$(rc "$ops" 0x0cc2) rc1=$(rc "$ops" 0x0cc3) rc2=$(rc "$ops" 0x0ca1)
 	before=6 gain=40
 	windows "$ops" | while read -r mark a z turns tick0 t25 t25b; do
@@ -97,10 +102,10 @@ for c in $caps; do
 				./ht-trace ap_start "$ops" "$a" "$z" -o "$T/$c.$seg.trace" 2>/dev/null
 			python3 ../unit/cmp_skip.py "$ops" "$T/$c.$seg.trace" "$a:$z" \
 				--board r6400v1 --bus $B | grep -A2 '^grezzo'
-			grep -E ' (PHY|RAD)\.' "$T/$c.$seg.trace" > "$T/$c.$seg.phy.trace"
+			grep -E "$PHYSEL" "$T/$c.$seg.trace" > "$T/$c.$seg.phy.trace"
 			python3 ../unit/cmp_skip.py "$T/$c.phy.ops" "$T/$c.$seg.phy.trace" \
 				"$a:$z" --board r6400v1 --bus $B | grep -A2 '^grezzo' |
-				sed '1s/^grezzo   /PHY+radio/'
+				sed '1s/^grezzo       /PHY+radio+MAC/'
 		fi
 		before=$ch gain=10
 	done
