@@ -8579,6 +8579,10 @@ static int b43_setup_bands(struct b43_wldev *dev,
 		ieee80211_hw_set(hw, SUPPORTS_PS);
 		ieee80211_hw_set(hw, SUPPORTS_DYNAMIC_PS);
 		hw->wiphy->flags &= ~WIPHY_FLAG_PS_ON_BY_DEFAULT;
+		/* Every frame's TX status says whether it was acknowledged,
+		 * also for each A-MPDU member.
+		 */
+		ieee80211_hw_set(hw, REPORTS_TX_ACK_STATUS);
 	}
 
 	dev->phy.supports_2ghz = have_2ghz_phy;
