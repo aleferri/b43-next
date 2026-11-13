@@ -7,8 +7,9 @@ scores are in `test/phy_ht/README.md`. Operation numbers here are from
 
 ## The core
 
-The harness compiles no core, so the `grezzo` line of `gates.sh` stays
-near 62%. The larger unmatched runs of the `up` window are the core's:
+The harness compiles no core but its 16-bit shared memory accessors, so the
+`grezzo` line of `gates.sh` stays near 72%. The larger unmatched runs of
+the `up` window are the core's:
 
 | ops | what |
 |---|---|
@@ -16,10 +17,21 @@ near 62%. The larger unmatched runs of the `up` window are the core's:
 | #962-#992 | wrapper and chipcommon |
 | #5738-#8731 | after the TX power control: MMIO reads, shared memory |
 
-`bss-up` is mostly the core too: 2117 MMIO reads, 976 writes, 614 shared
-memory accesses. The PHY's calls into the core (`b43_mac_suspend()`, the
-shared memory, `b43_mac_switch_freq()`, the PLL) emit nothing: on the AC
-`test/unit/main.c` mirrors them, here they are only counted.
+In every turn of its watchdog wl does around the PHY's noise sample and
+statistics, which b43 does as wl (`b43_phy_ht_op_pwork_1sec()`):
+
+- MMIO reads of 0x4d0 and 0x158 and of the DMA channels' status, 0x20-0x48,
+  and a write of 0x224;
+- a MAC suspend and enable on every turn, the 0x280 and 0x283 rewrite
+  inside it on every second one, where b43 suspends only for the rewrite
+  and the temperature;
+- the TSF, 0x180 and 0x184, before it reads the sample back.
+
+wl also reads the statistics at its inits, which b43 does not, and
+`bss-up` is mostly the core: 2117 MMIO reads, 976 writes, 614 shared memory
+accesses. The PHY's other calls into the core (`b43_mac_suspend()`,
+`b43_mac_switch_freq()`, the PLL) emit nothing: on the AC `test/unit/main.c`
+mirrors them, here they are only counted.
 
 ## The hot cycle
 
@@ -102,6 +114,6 @@ turns' fits worse: 129 of 201 turns against 174.
 gives 46 of 70 turns: on 6l, 9u and 11u wl writes 0x45 at the second turn
 and 0x44 two later, at the start of the turn as always, after turns with a
 handful of counts, and 2l, 4l, 5l, 7u and 8u depart from it too. Something
-else raises the value at 40 MHz, or the rule is another. A port needs the
-harness to serve the counters, and the rule a capture with an interferer
-switched on and off on purpose.
+else raises the value at 40 MHz, or the rule is another. b43 reads the four
+counters on every turn and the harness serves them; the rule needs a capture
+with an interferer switched on and off on purpose.
