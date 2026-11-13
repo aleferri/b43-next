@@ -1342,8 +1342,7 @@ int b43_generate_txhdr(struct b43_wldev *dev,
 	txhdr->chan_radio_code = phy->channel;
 	/* On a 40 MHz channel, the centre channel. */
 	if (b43_is_40mhz(dev))
-		txhdr->chan_radio_code = ieee80211_frequency_to_channel(
-			phy->chandef->center_freq1);
+		txhdr->chan_radio_code = b43_phy_center_channel(dev);
 
 	/* PHY TX Control word */
 	if (rate_ht)
