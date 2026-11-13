@@ -52,6 +52,15 @@ static u16 radio_addr;
 static u32 shm_routing_off;
 
 /*
+ * The 16-bit radio interface, RADIO_CONTROL and RADIO_DATA_LOW: the HT-PHY
+ * writes radio register 0x39 of each core through it. The decoder of the
+ * bus captures folds only the 24-bit one into RAD ops and leaves these two
+ * registers raw, so they go out raw here too; the address register reads
+ * back what was written.
+ */
+static u16 radio16_addr;
+
+/*
  * Il registro di controllo porta, sopra l'indice, la routing negli 8 bit
  * bassi della meta' alta e i due bit di auto-incremento sopra quella
  * (B43_SHM_AUTOINC_W/_R): un accesso a 32 bit alla porta dati con il bit
@@ -394,14 +403,15 @@ static void note_write(struct bcmn_device *core, u16 off, u32 val, int width)
 	case B43_MMIO_PHY_DATA:
 		b43_trace_op("PHY.WR", phy_addr, val, 0, -1);
 		return;
-	case B43_MMIO_RADIO_CONTROL:
 	case B43_MMIO_RADIO24_CONTROL:
 		radio_addr = (u16)val;
 		return;
-	case B43_MMIO_RADIO_DATA_LOW:
 	case B43_MMIO_RADIO24_DATA:
 		b43_trace_op("RAD.WR", radio_addr, val, 0, -1);
 		return;
+	case B43_MMIO_RADIO_CONTROL:
+		radio16_addr = (u16)val;
+		break;
 	case B43_MMIO_SHM_CONTROL:
 		shm_routing_off = val;
 		return;
@@ -505,7 +515,6 @@ static u32 chip_note_read(u16 off, int width)
 		b43_trace_op("PHY.RD", phy_addr, v, 0, -1);
 		return v;
 	case B43_MMIO_RADIO24_DATA:
-	case B43_MMIO_RADIO_DATA_LOW:
 		b43_trace_op("RAD.RD", radio_addr, v, 0, -1);
 		return v;
 	case B43_MMIO_SHM_DATA:
@@ -557,8 +566,6 @@ static u32 note_read(struct bcmn_device *core, u16 off, int width)
 	case B43_MMIO_RADIO24_DATA:
 		if (radio_identity(radio_addr, &v16))
 			return v16;
-		fallthrough;
-	case B43_MMIO_RADIO_DATA_LOW:
 		v = b43_trace_read("RAD.RD", radio_addr, width);
 		b43_trace_op("RAD.RD", radio_addr, v, 0, -1);
 		return v;
@@ -583,9 +590,11 @@ static u32 note_read(struct bcmn_device *core, u16 off, int width)
 	case B43_MMIO_PHY_CONTROL:
 		v = phy_addr;
 		break;
-	case B43_MMIO_RADIO_CONTROL:
 	case B43_MMIO_RADIO24_CONTROL:
 		v = radio_addr;
+		break;
+	case B43_MMIO_RADIO_CONTROL:
+		v = radio16_addr;
 		break;
 	case B43_MMIO_SHM_CONTROL:
 		v = shm_routing_off;
