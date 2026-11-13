@@ -720,6 +720,16 @@ static void b43_radio_2057_chantab_upload(struct b43_wldev *dev,
 	}
 }
 
+/* brcmsmac's wlc_phy_radio205x_vcocal_nphy() on radio 2057 */
+static void b43_radio_2057_vcocal(struct b43_wldev *dev)
+{
+	b43_radio_mask(dev, R2057_RFPLL_MISC_EN, ~0x01);
+	b43_radio_mask(dev, R2057_RFPLL_MISC_CAL_RESETN, ~0x04);
+	b43_radio_set(dev, R2057_RFPLL_MISC_CAL_RESETN, 0x4);
+	b43_radio_set(dev, R2057_RFPLL_MISC_EN, 0x01);
+	usleep_range(300, 600);
+}
+
 static void b43_radio_2057_setup(struct b43_wldev *dev,
 				 const struct b43_nphy_chantabent_rev7 *tabent_r7,
 				 const struct b43_nphy_chantabent_rev7_2g *tabent_r7_2g)
@@ -803,12 +813,7 @@ static void b43_radio_2057_setup(struct b43_wldev *dev,
 
 	usleep_range(50, 100);
 
-	/* VCO calibration */
-	b43_radio_mask(dev, R2057_RFPLL_MISC_EN, ~0x01);
-	b43_radio_mask(dev, R2057_RFPLL_MISC_CAL_RESETN, ~0x04);
-	b43_radio_set(dev, R2057_RFPLL_MISC_CAL_RESETN, 0x4);
-	b43_radio_set(dev, R2057_RFPLL_MISC_EN, 0x01);
-	usleep_range(300, 600);
+	b43_radio_2057_vcocal(dev);
 }
 
 /* Calibrate resistors in LPF of PLL?
@@ -5407,17 +5412,6 @@ static void b43_nphy_save_cal(struct b43_wldev *dev);
 static void b43_nphy_tx_pwr_ctrl_coef_setup(struct b43_wldev *dev);
 static void b43_nphy_tx_pwr_index(struct b43_wldev *dev, u8 core_mask,
 				  s8 txpwrindex, bool restore);
-
-/* brcmsmac's wlc_phy_radio205x_vcocal_nphy() on radio 2057 */
-static void b43_radio_2057_vcocal(struct b43_wldev *dev)
-{
-	b43_radio_maskset(dev, R2057_RFPLL_MISC_EN, ~0x01, 0);
-	b43_radio_maskset(dev, R2057_RFPLL_MISC_CAL_RESETN, ~0x04, 0);
-	b43_radio_maskset(dev, R2057_RFPLL_MISC_CAL_RESETN, ~0x04, 0x04);
-	b43_radio_maskset(dev, R2057_RFPLL_MISC_EN, ~0x01, 0x01);
-	udelay(300);
-}
-
 
 /*
  * With the calreport module parameter, the calibration results and the TX
