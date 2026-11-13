@@ -3213,7 +3213,11 @@ static void b43_nphy_workarounds_rev7plus(struct b43_wldev *dev)
 			}
 		}
 	} else {
-		if (phy->radio_rev != 5) {
+		/*
+		 * wl 7.14.164.18 writes neither on radio rev 14 (the BCM43217
+		 * on the RT-AC56U): TXGM_IDAC_BLEED keeps its reset value
+		 */
+		if (phy->radio_rev != 5 && phy->radio_rev != 14) {
 			for (core = 0; core < 2; core++) {
 				if (core == 0) {
 					b43_radio_write(dev, 0x5c, 0x61);
