@@ -8053,7 +8053,7 @@ static enum b43_txpwr_result b43_nphy_op_recalc_txpower(struct b43_wldev *dev,
 	const struct ssbn_sprom *sprom = dev->dev->bus_sprom;
 	struct b43_ppr *ppr = &nphy->tx_pwr_max_ppr;
 	enum b43_band band;
-	u8 max; /* qdBm */
+	u8 max, maxp; /* qdBm */
 	u16 cal_gain = 0;
 
 	if (nphy->tx_pwr_last_recalc_freq == channel->center_freq &&
@@ -8063,11 +8063,14 @@ static enum b43_txpwr_result b43_nphy_op_recalc_txpower(struct b43_wldev *dev,
 	/* HW limitations, from the SPROM entries of the current band */
 	if (!b43_ppr_band(channel, &band))
 		band = B43_BAND_2G;
-	if (sprom->revision >= 9)
+	if (sprom->revision >= 9) {
 		b43_ppr_load_sprom_r9(ppr, sprom, band, 0x3);
-	else
-		b43_ppr_load_sprom_r8(ppr, sprom, band, 0x3,
-				      phy->rev >= 3);
+	} else {
+		maxp = b43_ppr_load_sprom_r8(ppr, sprom, band, 0x3,
+					     phy->rev >= 3);
+		b43_ppr_load_sprom_r8_40(ppr, sprom, band, maxp,
+					 phy->rev >= 5, phy->rev >= 3);
+	}
 
 	/* Regulatory & user settings */
 	max = INT_TO_Q52(phy->chandef->chan->max_power);
