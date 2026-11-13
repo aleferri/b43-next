@@ -32,6 +32,8 @@ struct b43_debugfs_fops {
 	int (*write)(struct b43_wldev *dev, const char *buf, size_t count);
 	/* Offset of struct b43_dfs_file in struct b43_dfsentry */
 	size_t file_struct_offset;
+	/* Open before the core is initialized: the file touches no hardware */
+	bool any_status;
 };
 
 static inline
@@ -580,12 +582,12 @@ static ssize_t b43_debugfs_read(struct file *file, char __user *userbuf,
 		return -ENODEV;
 
 	mutex_lock(&dev->wl->mutex);
-	if (b43_status(dev) < B43_STAT_INITIALIZED) {
+	dfops = debugfs_get_aux(file);
+	if (!dfops->any_status && b43_status(dev) < B43_STAT_INITIALIZED) {
 		err = -ENODEV;
 		goto out_unlock;
 	}
 
-	dfops = debugfs_get_aux(file);
 	if (!dfops->read) {
 		err = -ENOSYS;
 		goto out_unlock;
@@ -640,12 +642,12 @@ static ssize_t b43_debugfs_write(struct file *file,
 		return -ENODEV;
 
 	mutex_lock(&dev->wl->mutex);
-	if (b43_status(dev) < B43_STAT_INITIALIZED) {
+	dfops = debugfs_get_aux(file);
+	if (!dfops->any_status && b43_status(dev) < B43_STAT_INITIALIZED) {
 		err = -ENODEV;
 		goto out_unlock;
 	}
 
-	dfops = debugfs_get_aux(file);
 	if (!dfops->write) {
 		err = -ENOSYS;
 		goto out_unlock;
@@ -699,7 +701,17 @@ B43_DEBUGFS_FOPS(txstat, txstat_read_file, NULL);
 B43_DEBUGFS_FOPS(restart, NULL, restart_write_file);
 B43_DEBUGFS_FOPS(loctls, loctls_read_file, NULL);
 #ifdef CONFIG_B43_NEXT_CALREPORT
-B43_DEBUGFS_FOPS(calreport, calreport_read_file, calreport_write_file);
+/*
+ * Not B43_DEBUGFS_FOPS(): the report is started before the first interface
+ * comes up, so that it records the calibration of the core's initialization,
+ * and read after the last one went down.
+ */
+static struct b43_debugfs_fops fops_calreport = {
+	.read	= calreport_read_file,
+	.write	= calreport_write_file,
+	.file_struct_offset = offsetof(struct b43_dfsentry, file_calreport),
+	.any_status = true,
+};
 #endif
 
 
