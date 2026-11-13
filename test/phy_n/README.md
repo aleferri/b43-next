@@ -27,18 +27,20 @@ The window runs from wl's first PHY operation after the `up` mark to the
 PHY calls of its core in its order: the analog switch of
 `b43_wireless_core_reset()` and of `b43_phy_bringup()`, `b43_phy_init()`,
 and the TX power check of mac80211's first config. `../unit/cmp_skip.py
---bus` scores the two streams; the line to quote is `grezzo`, with its two
-parameters. The second row compares the PHY's and radio's operations only:
+--bus --rmw` scores the two streams; the line to quote is `grezzo`, with its
+two parameters. The captures are MMIO, without the read-modify-writes of the
+accessors: `--rmw` takes a read followed by a write of the same PHY or radio
+register as one, on both sides, as the AC captures carry them. The second row compares the PHY's and radio's operations only:
 the core's MMIO, shared memory and wrapper accesses are outside a harness
 that compiles no core, and its calls into the core are counted on stderr.
 
-On 2026-11-12, `--min-block 8 --gap-tol 2`:
+On 2026-11-13, `--min-block 8 --gap-tol 2`:
 
 | capture | PHY+radio, 30 dBm | PHY+radio, `N_MAXPWR=20` |
 |---|---|---|
-| cold-2g1-20 | 21995/30820 = 71.37% | 22165/30650 = 72.32% |
-| cold-2g6-20 | 23497/29321 = 80.14% | 22167/30651 = 72.32% |
-| cold-2g11-20 | 21995/30829 = 71.35% | 22165/30659 = 72.30% |
+| cold-2g1-20 | 22806/27646 = 82.49% | 21485/28967 = 74.17% |
+| cold-2g6-20 | 22808/27646 = 82.50% | 21487/28967 = 74.18% |
+| cold-2g11-20 | 22811/27651 = 82.50% | 21490/28972 = 74.18% |
 
 At 30 dBm the adjusted power table b43 writes (tables 26/27 at 64-147)
 is wl's, and wl rewrites the same table many times, in steps b43 does not

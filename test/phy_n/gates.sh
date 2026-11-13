@@ -3,7 +3,8 @@
 # PHY init through `wl up`, as ../phy_ht/gates.sh does for the HT-PHY. The
 # window runs from wl's first PHY operation after the `up` mark to the `ssid`
 # mark. b43 runs b43_phy_init() on the capture's channel, its reads served
-# from the window, and ../unit/cmp_skip.py --bus scores the two streams.
+# from the window, and ../unit/cmp_skip.py --bus --rmw scores the two
+# streams.
 #
 #   ./gates.sh --min-block 8 --gap-tol 2 [CAPTURE...]
 #
@@ -42,10 +43,10 @@ for c in "$@"; do
 	echo "== $c, ops $first:$last, channel $ch"
 	N_CHANNEL=$ch ./n-trace full "$ops" "$first" "$last" -o "$T/$c.trace"
 	python3 ../unit/cmp_skip.py "$ops" "$T/$c.trace" "$first:$last" \
-		--board rt-ac56u --bus $B | grep -A2 '^grezzo'
+		--board rt-ac56u --bus --rmw $B | grep -A2 '^grezzo'
 	grep -E ' (PHY|RAD)\.' "$ops" > "$T/$c.phy.ops"
 	grep -E ' (PHY|RAD)\.' "$T/$c.trace" > "$T/$c.phy.trace"
 	python3 ../unit/cmp_skip.py "$T/$c.phy.ops" "$T/$c.phy.trace" \
-		"$first:$last" --board rt-ac56u --bus $B | grep -A2 '^grezzo' |
+		"$first:$last" --board rt-ac56u --bus --rmw $B | grep -A2 '^grezzo' |
 		sed '1s/^grezzo   /PHY+radio/'
 done
