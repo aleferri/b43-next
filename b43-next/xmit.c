@@ -298,6 +298,7 @@ static void b43_tx_ht_protect(struct ieee80211_tx_info *info)
 	struct ieee80211_tx_rate *rates = info->control.rates;
 	struct ieee80211_vif *vif = info->control.vif;
 	u16 ht_prot;
+	int i;
 
 	if (!(rates[0].flags & IEEE80211_TX_RC_MCS) &&
 	    !(rates[1].idx >= 0 && (rates[1].flags & IEEE80211_TX_RC_MCS)))
@@ -310,6 +311,12 @@ static void b43_tx_ht_protect(struct ieee80211_tx_info *info)
 	    ht_prot == IEEE80211_HT_OP_MODE_PROTECTION_NONMEMBER ||
 	    ht_prot == IEEE80211_HT_OP_MODE_PROTECTION_NONHT_MIXED)
 		rates[0].flags |= IEEE80211_TX_RC_USE_RTS_CTS;
+	/* So is an HT PPDU when any retry stage asks for RTS/CTS. minstrel_ht
+	 * asks on its fallback stages, so every A-MPDU starts with an RTS;
+	 * unprotected A-MPDUs raise the PSM watchdog more often. */
+	for (i = 1; i < IEEE80211_TX_MAX_RATES && rates[i].idx >= 0; i++)
+		if (rates[i].flags & IEEE80211_TX_RC_USE_RTS_CTS)
+			rates[0].flags |= IEEE80211_TX_RC_USE_RTS_CTS;
 }
 
 /* TODO: verify if needed for SSLPN or LCN  */
