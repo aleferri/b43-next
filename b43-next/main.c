@@ -8524,6 +8524,14 @@ static int b43_setup_bands(struct b43_wldev *dev,
 		dev->txchain = sprom->txchain & 0x3 ? : dev->rxchain;
 		hw->wiphy->available_antennas_tx = dev->txchain;
 		hw->wiphy->available_antennas_rx = dev->rxchain;
+		/* Station power save, off by default (b43_ps_update()). */
+		ieee80211_hw_set(hw, SUPPORTS_PS);
+		ieee80211_hw_set(hw, SUPPORTS_DYNAMIC_PS);
+		hw->wiphy->flags &= ~WIPHY_FLAG_PS_ON_BY_DEFAULT;
+		/* Every frame's TX status says whether it was acknowledged,
+		 * also for each A-MPDU member.
+		 */
+		ieee80211_hw_set(hw, REPORTS_TX_ACK_STATUS);
 	}
 	/* An HT STA is a QoS STA. The shared legacy band templates stay
 	 * unchanged.
@@ -8545,10 +8553,6 @@ static int b43_setup_bands(struct b43_wldev *dev,
 		hw->max_rx_aggregation_subframes = IEEE80211_MAX_AMPDU_BUF_HT;
 		hw->max_tx_aggregation_subframes = B43_AMPDU_TX_WINDOW;
 		hw->wiphy->bands[NL80211_BAND_2GHZ] = band;
-		/* Station power save, off by default (b43_ps_update()). */
-		ieee80211_hw_set(hw, SUPPORTS_PS);
-		ieee80211_hw_set(hw, SUPPORTS_DYNAMIC_PS);
-		hw->wiphy->flags &= ~WIPHY_FLAG_PS_ON_BY_DEFAULT;
 	}
 
 	dev->phy.supports_2ghz = have_2ghz_phy;
