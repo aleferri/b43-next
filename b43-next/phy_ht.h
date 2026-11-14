@@ -164,6 +164,10 @@ struct b43_phy_ht {
 	bool glitch_prev_valid;
 	u8 glitch_high;
 
+	/* The channel and type of the last init, 0 before the first */
+	unsigned int home_channel;
+	enum nl80211_channel_type home_type;
+
 	/* The channel the radio is tuned to since it came on */
 	bool tuned;
 	unsigned int tuned_channel;
