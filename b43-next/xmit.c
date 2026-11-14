@@ -42,7 +42,6 @@
 #include "phy_ac.h"
 #include "dma.h"
 #include "pio.h"
-#include <linux/crc8.h>
 #include <linux/ktime.h>
 #include <linux/unaligned.h>
 
@@ -1747,22 +1746,21 @@ static s8 b43_rssi_postprocess(struct b43_wldev *dev,
 /* x^8 + x^2 + x + 1, bit-reversed */
 #define B43_HT_SIG_CRC_POLY	0xe0
 
-DECLARE_CRC8_TABLE(b43_ht_sig_crc_table);
-
-void b43_ht_sig_crc_init(void)
-{
-	crc8_populate_lsb(b43_ht_sig_crc_table, B43_HT_SIG_CRC_POLY);
-}
-
-/* HT-SIG: 34 data bits, complemented CRC-8, then six zero tail bits */
+/*
+ * HT-SIG: 34 data bits, complemented CRC-8, then six zero tail bits. The
+ * CRC runs over the data bits LSB first from 0xff, a bit at a time: 34
+ * steps per frame, so no table, and no dependency on the kernel's CRC8.
+ */
 static bool b43_ht_sig_crc_valid(const u8 *plcp)
 {
-	u8 crc = crc8(b43_ht_sig_crc_table, plcp, 4, CRC8_INIT_VALUE);
+	u8 crc = 0xff;
 	int i;
 
-	crc ^= plcp[4] & 3;
-	for (i = 0; i < 2; i++)
-		crc = (crc >> 1) ^ ((crc & 1) ? B43_HT_SIG_CRC_POLY : 0);
+	for (i = 0; i < 34; i++) {
+		u8 bit = (plcp[i / 8] >> (i % 8)) & 1;
+
+		crc = (crc >> 1) ^ (((crc ^ bit) & 1) ? B43_HT_SIG_CRC_POLY : 0);
+	}
 	return (u8)~crc == ((plcp[4] >> 2) | (plcp[5] << 6));
 }
 
