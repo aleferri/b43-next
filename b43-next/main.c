@@ -7033,6 +7033,7 @@ static const struct {
 	u8 radio_rev;
 } b43_nphy_ht_cores[] = {
 	{ 16, 9 },	/* BCM43227 */
+	{ 17, 14 },	/* BCM43217 */
 };
 
 static bool b43_nphy_ht_core(u8 phy_rev, u8 radio_rev)
