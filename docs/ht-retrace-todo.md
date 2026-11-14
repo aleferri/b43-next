@@ -109,3 +109,13 @@ threshold of the four counters gives either (wl goes down to 0x4f where the
 rule raises to 0x5b), and at 40 MHz, in standby, 6l, 9u and 11u, where wl
 writes 0x45 at the second turn and 0x44 two later after turns with a handful
 of counts, and 2l, 4l, 5l, 7u and 8u.
+
+## 802.11n
+
+The HT-PHY's 2.4 GHz band announces HT at 20 MHz, receives every MCS the
+chains take and sends MCS 0-7 on one stream, with the long guard interval
+and BCC. The header is the pre-AC one, as the 928's two-word TX status on
+the R6400 v1 shows (Erik's traffic capture, 0x170 and 0x174 only): an MCS
+goes in it as brcmsmac writes it for its N-PHY. Not tried on hardware. Not
+there yet: A-MPDU, more than one stream sent, the short guard interval, 40
+MHz.
