@@ -152,6 +152,7 @@ struct b43_tx_legacy_rate_phy_ctl_entry {
 #define  B43_TXH_PHY_ENC_VHT		0x0003 /* VHT */
 #define B43_TXH_PHY_SHORTPRMBL		0x0010 /* Use short preamble */
 #define B43_TXH_PHY_ANT			0x03C0 /* Antenna selection */
+#define B43_TXH_PHY_ANT_SHIFT		6
 #define  B43_TXH_PHY_ANT0		0x0000 /* Use antenna 0 */
 #define  B43_TXH_PHY_ANT1		0x0040 /* Use antenna 1 */
 #define  B43_TXH_PHY_ANT01AUTO		0x00C0 /* Use antenna 0/1 auto */
@@ -186,6 +187,7 @@ struct b43_tx_legacy_rate_phy_ctl_entry {
 #define  B43_TXH_PHY1_MODUL_QAM16	0x1000 /* QAM16 */
 #define  B43_TXH_PHY1_MODUL_QAM64	0x1800 /* QAM64 */
 #define  B43_TXH_PHY1_MODUL_QAM256	0x2000 /* QAM256 */
+#define B43_TXH_PHY1_NSS_SHIFT		14
 
 /*
  * TX descriptor of the AC microcode, d11 core revisions 40-63, long format:
@@ -290,10 +292,28 @@ bool b43_txhdr_ac_rate_ok(const struct ieee80211_supported_band *band,
 			  const struct ieee80211_tx_rate *r);
 bool b43_txstatus_mpdu_acked(const struct b43_txstatus *status,
 			     const struct sk_buff *skb);
+/* A-MPDU membership of one generated TX header. */
+struct b43_txhdr_ampdu {
+	bool first;
+	bool last;
+	/* Aggregate PSDU length, including delimiters and padding. */
+	unsigned int len;
+	/* Null delimiters the firmware inserts after this member. */
+	u8 ndelim;
+	/* TX FIFO bytes loaded before the A-MPDU is sent. */
+	u16 preload;
+};
+
 int b43_generate_txhdr(struct b43_wldev *dev,
 		       u8 * txhdr,
 		       struct sk_buff *skb_frag,
-		       struct ieee80211_tx_info *txctl, u16 cookie);
+		       struct ieee80211_tx_info *txctl, u16 cookie,
+		       const struct b43_txhdr_ampdu *ampdu);
+unsigned int b43_tx_psdu_len(struct sk_buff *skb);
+bool b43_ampdu_tx_fits(struct b43_wldev *dev, struct ieee80211_tx_info *info,
+		       unsigned int ampdu_len);
+unsigned int b43_ampdu_tx_spacing(struct b43_wldev *dev,
+				  struct ieee80211_tx_info *info, u8 density);
 
 /* Transmit Status */
 struct b43_txstatus {
@@ -312,8 +332,8 @@ struct b43_txstatus {
 	u8 mpdus;		/* AC: MPDUs the status covers */
 	u8 mpdus_acked;		/* AC: of them acknowledged */
 	u8 mpdu_index;		/* AC: the MPDU being reported, from 0 */
-	u16 ba_ssn;		/* AC: sequence number of the first MPDU */
-	u64 ba_bitmap;		/* AC: block ack bitmap from ba_ssn */
+	u16 ba_ssn;		/* A-MPDU: sequence number of the first MPDU */
+	u64 ba_bitmap;		/* A-MPDU: block ack bitmap from ba_ssn */
 	u32 raw[8];		/* AC: the two packages, as read */
 };
 
@@ -452,7 +472,7 @@ u8 b43_plcp_get_ratecode_cck(const u8 bitrate);
 u8 b43_plcp_get_ratecode_ofdm(const u8 bitrate);
 
 void b43_generate_plcp_hdr(struct b43_plcp_hdr4 *plcp,
-			   const u16 octets, const u8 bitrate);
+			   const u16 octets, const u8 bitrate, bool ht);
 
 void b43_rx(struct b43_wldev *dev, struct sk_buff *skb, const void *_rxhdr);
 void b43_rx_amsdu_free(struct b43_wldev *dev);

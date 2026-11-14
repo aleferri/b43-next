@@ -172,6 +172,8 @@
 #define B43_MMIO_IFSMEDBUSYCTL		0x692
 #define B43_MMIO_IFTXDUR		0x694
 #define  B43_MMIO_IFSCTL_USE_EDCF	0x0004
+#define B43_MMIO_IFSCTL1		0x69E	/* Interframe space control 1 */
+#define  B43_MMIO_IFSCTL1_EDCRS		0x0008	/* Energy-detect CRS */
 #define B43_MMIO_POWERUP_DELAY		0x6A8
 #define B43_MMIO_BTCOEX_CTL		0x6B4 /* Bluetooth Coexistence Control */
 #define B43_MMIO_BTCOEX_STAT		0x6B6 /* Bluetooth Coexistence Status */
@@ -257,11 +259,14 @@ enum {
 
 /* Misc SHM_SHARED offsets */
 #define B43_SHM_SH_WLCOREREV		0x0016	/* 802.11 core revision */
+#define B43_SHM_SH_MAXRXFRMLEN		0x0020	/* Longest RX frame */
 #define B43_SHM_SH_PCTLWDPOS		0x0008
 #define B43_SHM_SH_RXPADOFF		0x0034	/* RX Padding data offset (PIO only) */
+#define B43_SHM_SH_WATCHDOG_8TU		0x003C	/* MIMO receive watchdog */
 #define B43_SHM_SH_FWCAPA		0x0042	/* Firmware capabilities (Opensource firmware only) */
 #define B43_SHM_SH_PHYVER		0x0050	/* PHY version */
 #define B43_SHM_SH_PHYTYPE		0x0052	/* PHY type */
+#define B43_SHM_SH_IFSCTL1		0x005A	/* IFSCTL1 copy */
 #define B43_SHM_SH_ANTSWAP		0x005C	/* Antenna swap threshold */
 #define B43_SHM_SH_HOSTF1		0x005E	/* Hostflags 1 for ucode options */
 #define B43_SHM_SH_HOSTF2		0x0060	/* Hostflags 2 for ucode options */
@@ -274,6 +279,7 @@ enum {
 #define B43_SHM_SH_CHAN			0x00A0	/* Current channel (low 8bit only); the chanspec on the AC-PHY */
 #define  B43_SHM_SH_CHAN_5GHZ		0x0100	/* Bit set, if 5 Ghz channel */
 #define  B43_SHM_SH_CHAN_40MHZ		0x0200	/* Bit set, if 40 Mhz channel width */
+#define B43_SHM_SH_MIMO_MAXSYM		0x00BA	/* MIMO receive limit */
 #define B43_SHM_SH_CTS_DURATION		0x00B8	/* Duration (us) of the CTS-to-self sent on MAC suspend */
 #define B43_SHM_SH_MACHW_L		0x00C0	/* Location where the ucode expects the MAC capabilities */
 #define B43_SHM_SH_MACHW_H		0x00C2	/* Location where the ucode expects the MAC capabilities */
@@ -293,6 +299,12 @@ enum {
 #define B43_SHM_SH_JSSI0		0x0088	/* Measure JSSI 0 */
 #define B43_SHM_SH_JSSI1		0x008A	/* Measure JSSI 1 */
 #define B43_SHM_SH_JSSIAUX		0x008C	/* Measure JSSI AUX */
+#define B43_SHM_SH_NOISEPWR		0x0308	/* N-PHY noise power per core */
+/* SHM_SHARED microcode statistics */
+#define B43_SHM_SH_TXRTSFRM		0x00E2	/* RTS frames transmitted */
+#define B43_SHM_SH_TXFUNFL		0x00EC	/* Underflows of each TX FIFO */
+#define B43_SHM_SH_RXBADFCS		0x010A	/* RX frames with a bad FCS */
+#define B43_SHM_SH_RXCTSUCAST		0x011A	/* CTS frames received for us */
 /* SHM_SHARED crypto engine */
 #define B43_SHM_SH_DEFAULTIV		0x003C	/* Default IV location */
 #define B43_SHM_SH_NRRXTRANS		0x003E	/* # of soft RX transmitter addresses (max 8) */
@@ -308,6 +320,9 @@ enum {
 #define B43_SHM_SH_SLOTT		0x0010	/* Slot time */
 #define B43_SHM_SH_DTIMPER		0x0012	/* DTIM period */
 #define B43_SHM_SH_NOSLPZNATDTIM	0x004C	/* NOSLPZNAT DTIM */
+/* Template RAM */
+#define B43_RAM_BA_TA			0x0048	/* Block Ack TX address */
+
 /* SHM_SHARED beacon/AP variables */
 #define B43_SHM_SH_BT_BASE0		0x0068	/* Beacon template base 0 */
 #define B43_SHM_SH_BTL0			0x0018	/* Beacon template length 0 */
@@ -706,6 +721,8 @@ enum {
 
 #define B43_DEFAULT_SHORT_RETRY_LIMIT	7
 #define B43_DEFAULT_LONG_RETRY_LIMIT	4
+#define B43_SHORT_FALLBACK_LIMIT		3
+#define B43_LONG_FALLBACK_LIMIT		2
 
 #define B43_PHY_TX_BADNESS_LIMIT	1000
 
@@ -796,6 +813,22 @@ struct b43_stats {
 	u8 link_noise;
 };
 
+/* TX A-MPDU state of one TID of a station, protected by wl->mutex. */
+#define B43_AMPDU_TX_WINDOW	64
+struct b43_ampdu_tx_tid {
+	bool operational;
+	/* Negotiated reorder window, at most B43_AMPDU_TX_WINDOW. */
+	u8 buf_size;
+	/* Oldest unresolved sequence and the unresolved set relative to it. */
+	u16 win_start;
+	u64 outstanding;
+	/* Driver retransmissions, indexed by sequence modulo the window. */
+	u8 retries[B43_AMPDU_TX_WINDOW];
+	/* Retransmissions and frames taken from mac80211 that wait for the
+	 * next A-MPDU, in sequence order. Empty unless operational. */
+	struct sk_buff_head queue;
+};
+
 /*
  * Per station, in ieee80211_sta::drv_priv: the window of each TID's block
  * ack session on TX, 0 without one.
@@ -804,6 +837,15 @@ struct b43_sta {
 	u8 ampdu_win[IEEE80211_NUM_TIDS];
 	/* Beamforming slot of the station plus one, 0 for none. */
 	u8 txbf_slot;
+	/* The BCM43227's (dev->ht) TX A-MPDU sessions, b43_dma_tx_ampdu(). */
+	struct b43_ampdu_tx_tid ampdu_tx[IEEE80211_NUM_TIDS];
+	u32 ampdu_tx_max_len;
+	u8 ampdu_tx_density;
+	/* Whether the station of an AP dozes. */
+	bool asleep;
+	/* A frame release for the dozing station that waits for the TX work
+	 * (b43_op_release_buffered_frames()), 0 for none. */
+	u32 ps_release;
 };
 
 /*
@@ -1034,6 +1076,39 @@ struct b43_wldev {
 	bool qos_enabled;		/* TRUE, if QoS is used. */
 	bool hwcrypto_enabled;		/* TRUE, if HW crypto acceleration is enabled. */
 	bool use_pio;			/* TRUE if next init should use PIO */
+	/* HT support */
+	bool ht;
+	/* HT TX and RX core masks; core init applies them. */
+	u8 txchain;
+	u8 rxchain;
+	/* Channel of the N-PHY noise round in progress. */
+	unsigned int noise_channel;
+	/* HT receive rate context, protected by wl->mutex. */
+	u64 rx_ht_deadline;
+	u32 rx_ht_tsf;
+	u16 rx_ht_channel;
+	u8 rx_ht_plcp[6];
+	bool rx_ht_valid;
+	/* Acked A-MPDU TX status awaiting its Block Ack bitmap package. */
+	u32 ampdu_txstat[2];
+	bool ampdu_txstat_pending;
+	/* Microcode statistics counters at their last read, protected by
+	 * wl->mutex. */
+	u16 macstat_txrts;
+	u16 macstat_rxcts;
+	u16 macstat_badfcs;
+	u16 macstat_txstatus;	/* TX statuses since then */
+	/* Station power save, protected by wl->mutex: whether the station
+	 * dozes, from the AP's acknowledgement of a null frame with PM=1
+	 * until it wakes up, the HWPS bit, which the microcode copies into
+	 * the PM bit of every frame it transmits, whether a beacon has
+	 * checked the TBTT timer since the station started dozing, and
+	 * whether a PS-Poll awaits its response.
+	 */
+	bool ps;
+	bool hwps;
+	bool ps_tbtt;
+	bool ps_poll;
 
 	/* PHY/Radio device. */
 	struct b43_phy phy;
@@ -1174,6 +1249,17 @@ struct b43_wl {
 	/* Packet transmit work */
 	struct work_struct tx_work;
 
+	/* Station power save, protected by wl->mutex: whether mac80211
+	 * allows it, whether a scan holds the station awake, whether the AP
+	 * has acknowledged the last null frame with PM=1, the last frame to
+	 * or from the AP, and the work that enters power save.
+	 */
+	bool ps_enabled;
+	bool ps_scanning;
+	bool ps_null_acked;
+	unsigned long ps_last;
+	struct delayed_work ps_work;
+
 	/* Queue of packets to be transmitted. */
 	struct sk_buff_head tx_queue[B43_QOS_QUEUE_NUM];
 
@@ -1187,6 +1273,8 @@ struct b43_wl {
 
 	/* Flag that implement the queues stopping. */
 	bool tx_queue_stopped[B43_QOS_QUEUE_NUM];
+	/* Whether a station has a ps_release waiting, see struct b43_sta. */
+	atomic_t ps_release;
 
 	/* firmware loading work */
 	struct work_struct firmware_load;
@@ -1200,6 +1288,8 @@ struct b43_wl {
 	 */
 	struct ieee80211_supported_band band_5ghz_ac;
 	struct ieee80211_supported_band band_2ghz_ac;
+	/* The 2.4 GHz band of the BCM43227 (dev->ht), with HT. */
+	struct ieee80211_supported_band band_2ghz_ht;
 
 	/*
 	 * The radar types the AC PHY matches (enum b43_radar_region), from

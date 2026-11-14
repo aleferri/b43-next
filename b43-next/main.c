@@ -31,9 +31,11 @@
 #include <linux/workqueue.h>
 #include <linux/skbuff.h>
 #include <linux/io.h>
+#include <linux/iopoll.h>
 #include <linux/dma-mapping.h>
 #include <linux/slab.h>
 #include <linux/unaligned.h>
+#include <linux/bitfield.h>
 
 #include "b43.h"
 #include "main.h"
@@ -406,6 +408,23 @@ static void b43_op_bss_info_changed(struct ieee80211_hw *hw,
 				    struct ieee80211_bss_conf *conf,
 				    u64 changed);
 
+/* mac80211 reports the channel and global limit in conf.power_level, and
+ * the interface's user and AP (power constraint) limit in bss_conf.txpower. */
+static void b43_update_txpower(struct b43_wldev *dev)
+{
+	struct b43_wl *wl = dev->wl;
+	int power = wl->hw->conf.power_level;
+
+	if (wl->vif && wl->vif->bss_conf.txpower > 0)
+		power = power ? min(power, wl->vif->bss_conf.txpower) :
+				wl->vif->bss_conf.txpower;
+	if (power && power != dev->phy.desired_txpower) {
+		dev->phy.desired_txpower = power;
+		b43_phy_txpower_check(dev, B43_TXPWR_IGNORE_TIME |
+					   B43_TXPWR_IGNORE_TSSI);
+	}
+}
+
 static int b43_ratelimit(struct b43_wl *wl)
 {
 	if (!wl || !wl->current_dev)
@@ -741,6 +760,7 @@ static void b43_tsf_write_locked(struct b43_wldev *dev, u64 tsf)
 
 void b43_tsf_write(struct b43_wldev *dev, u64 tsf)
 {
+	dev->rx_ht_valid = false;
 	b43_time_lock(dev);
 	b43_tsf_write_locked(dev, tsf);
 	b43_time_unlock(dev);
@@ -906,6 +926,11 @@ static void b43_write_mac_bssid_templates(struct b43_wldev *dev)
 		tmp |= (u32) (mac_bssid[i + 2]) << 16;
 		tmp |= (u32) (mac_bssid[i + 3]) << 24;
 		b43_ram_write(dev, 0x20 + i, tmp);
+	}
+	if (dev->ht) {
+		b43_ram_write(dev, B43_RAM_BA_TA, get_unaligned_le32(mac));
+		b43_ram_write(dev, B43_RAM_BA_TA + 4,
+			      get_unaligned_le16(mac + 4));
 	}
 }
 
@@ -1135,7 +1160,9 @@ static void b43_set_slot_time(struct b43_wldev *dev, u16 slot_time)
 	 * captures of the agcombo (7.14) and of the MacBookAir6,1 (6.30) write
 	 * 0x0207 and then 9 on 5 GHz.
 	 */
-	if (dev->dev->core_rev >= 42) {
+	/* The BCM43227 takes both too: without it the shared-memory slot time
+	 * stays 20 us in a short-slot BSS. */
+	if (dev->dev->core_rev >= 42 || dev->ht) {
 		b43_write16(dev, B43_MMIO_IFSSLOT, 510 + slot_time);
 		b43_shm_write16(dev, B43_SHM_SHARED, B43_SHM_SH_SLOTT,
 				slot_time);
@@ -1629,22 +1656,20 @@ void b43_power_saving_ctl_bits(struct b43_wldev *dev, unsigned int ps_flags)
 	} else if (ps_flags & B43_PS_DISABLED) {
 		hwps = false;
 	} else {
-		//TODO: If powersave is not off and FIXME is not set and we are not in adhoc
-		//      and thus is not an AP and we are associated, set bit 25
+		hwps = dev->hwps;
 	}
 	if (ps_flags & B43_PS_AWAKE) {
 		awake = true;
 	} else if (ps_flags & B43_PS_ASLEEP) {
 		awake = false;
 	} else {
-		//TODO: If the device is awake or this is an AP, or we are scanning, or FIXME,
-		//      or we are associated, or FIXME, or the latest PS-Poll packet sent was
-		//      successful, set bit26
+		/* The microcode sleeps between beacons unless held awake:
+		 * until a beacon has checked the TBTT timer after power save
+		 * started, and from a PS-Poll until its response.
+		 */
+		awake = !(dev->ps && hwps) || !dev->ps_tbtt || dev->ps_poll ||
+			dev->mac_suspended;
 	}
-
-/* FIXME: For now we force awake-on and hwps-off */
-	hwps = false;
-	awake = true;
 
 	macctl = b43_read32(dev, B43_MMIO_MACCTL);
 	if (hwps)
@@ -1891,10 +1916,29 @@ static bool b43_txstatus_read_ac(struct b43_wldev *dev,
 	return true;
 }
 
+/* An A-MPDU's block ack bitmap starts at its status's sequence number. */
+static void b43_decode_txstatus(u32 v0, u32 v1, struct b43_txstatus *stat)
+{
+	u16 tmp;
+
+	stat->cookie = (v0 >> 16);
+	stat->seq = (v1 & 0x0000FFFF);
+	stat->phy_stat = ((v1 & 0x00FF0000) >> 16);
+	tmp = (v0 & 0x0000FFFF);
+	stat->frame_count = ((tmp & 0xF000) >> 12);
+	stat->rts_count = ((tmp & 0x0F00) >> 8);
+	stat->supp_reason = ((tmp & 0x001C) >> 2);
+	stat->pm_indicated = !!(tmp & 0x0080);
+	stat->intermediate = !!(tmp & 0x0040);
+	stat->for_ampdu = !!(tmp & 0x0020);
+	stat->acked = !!(tmp & 0x0002);
+	stat->ba_ssn = IEEE80211_SEQ_TO_SN(stat->seq);
+	stat->ba_bitmap = 0;
+}
+
 static void handle_irq_transmit_status(struct b43_wldev *dev)
 {
 	u32 v0, v1;
-	u16 tmp;
 	struct b43_txstatus stat = {};
 
 	if (dev->fw.hdr_format == B43_FW_HDR_AC) {
@@ -1905,22 +1949,46 @@ static void handle_irq_transmit_status(struct b43_wldev *dev)
 
 	while (1) {
 		v0 = b43_read32(dev, B43_MMIO_XMITSTAT_0);
-		if (!(v0 & 0x00000001))
-			break;
-		v1 = b43_read32(dev, B43_MMIO_XMITSTAT_1);
+		if (dev->ampdu_txstat_pending) {
+			/* The Block Ack bitmap follows an acked A-MPDU status
+			 * as a second package. */
+			if (!(v0 & 0x00000001) &&
+			    read_poll_timeout_atomic(b43_read32, v0,
+						     v0 & 0x00000001, 1, 10,
+						     true, dev,
+						     B43_MMIO_XMITSTAT_0))
+				break;
+			v1 = b43_read32(dev, B43_MMIO_XMITSTAT_1);
+			b43_decode_txstatus(dev->ampdu_txstat[0],
+					    dev->ampdu_txstat[1], &stat);
+			dev->ampdu_txstat_pending = false;
+			if ((v0 & 0x0060) == 0x0020) {
+				stat.ba_bitmap = stat.frame_count |
+					((u64)((v0 >> 1) & 0xF) << 4) |
+					((u64)(v0 >> 8) << 8) |
+					((u64)v1 << 32);
+				b43_handle_txstatus(dev, &stat);
+				continue;
+			}
+			/* Not a bitmap package: complete without Block Ack and
+			 * decode this word pair as a new status. */
+			b43dbg(dev->wl,
+			       "Missing A-MPDU Block Ack status 0x%08X\n", v0);
+			b43_handle_txstatus(dev, &stat);
+		} else {
+			if (!(v0 & 0x00000001))
+				break;
+			v1 = b43_read32(dev, B43_MMIO_XMITSTAT_1);
+		}
 
-		stat.cookie = (v0 >> 16);
-		stat.seq = (v1 & 0x0000FFFF);
-		stat.phy_stat = ((v1 & 0x00FF0000) >> 16);
-		tmp = (v0 & 0x0000FFFF);
-		stat.frame_count = ((tmp & 0xF000) >> 12);
-		stat.rts_count = ((tmp & 0x0F00) >> 8);
-		stat.supp_reason = ((tmp & 0x001C) >> 2);
-		stat.pm_indicated = !!(tmp & 0x0080);
-		stat.intermediate = !!(tmp & 0x0040);
-		stat.for_ampdu = !!(tmp & 0x0020);
-		stat.acked = !!(tmp & 0x0002);
-
+		b43_decode_txstatus(v0, v1, &stat);
+		if (stat.for_ampdu && stat.acked) {
+			/* Bitmap bits 0-3 replace the frame count. */
+			dev->ampdu_txstat[0] = v0;
+			dev->ampdu_txstat[1] = v1;
+			dev->ampdu_txstat_pending = true;
+			continue;
+		}
 		b43_handle_txstatus(dev, &stat);
 	}
 }
@@ -1930,6 +1998,7 @@ static void drain_txstatus_queue(struct b43_wldev *dev)
 	struct b43_txstatus stat;
 	u32 dummy;
 
+	dev->ampdu_txstat_pending = false;
 	if (dev->dev->core_rev < 5)
 		return;
 	if (dev->fw.hdr_format == B43_FW_HDR_AC) {
@@ -1969,7 +2038,15 @@ static void b43_jssi_write(struct b43_wldev *dev, u32 jssi)
 
 static void b43_generate_noise_sample(struct b43_wldev *dev)
 {
-	b43_jssi_write(dev, 0x7F7F7F7F);
+	int i;
+
+	if (dev->ht) {
+		for (i = 0; i < 2; i++)
+			b43_shm_write32(dev, B43_SHM_SHARED,
+					B43_SHM_SH_NOISEPWR + 4 * i, 0);
+	} else {
+		b43_jssi_write(dev, 0x7F7F7F7F);
+	}
 	b43_write32(dev, B43_MMIO_MACCMD,
 		    b43_read32(dev, B43_MMIO_MACCMD) | B43_MACCMD_BGNOISE);
 }
@@ -1978,13 +2055,69 @@ static void b43_calculate_link_quality(struct b43_wldev *dev)
 {
 	/* Top half of Link Quality calculation. */
 
-	if (dev->phy.type != B43_PHYTYPE_G)
+	if (dev->phy.type != B43_PHYTYPE_G && !dev->ht)
 		return;
 	if (dev->noisecalc.calculation_running)
 		return;
 	dev->noisecalc.calculation_running = true;
 	dev->noisecalc.nr_samples = 0;
 
+	b43_generate_noise_sample(dev);
+}
+
+/* The microcode leaves each core's power summed over 512 samples. Returns
+ * the noisier core in dBm, or 0 if the sample is missing. */
+static int b43_nphy_noise_dbm(struct b43_wldev *dev)
+{
+	int core, noise = INT_MIN;
+	u32 pwr[2];
+
+	for (core = 0; core < 2; core++)
+		pwr[core] = b43_shm_read32(dev, B43_SHM_SHARED,
+					   B43_SHM_SH_NOISEPWR + 4 * core);
+	if (!pwr[0] && !pwr[1])
+		return 0;
+
+	for (core = 0; core < 2; core++) {
+		u32 p = pwr[core] >> 9;
+		int db = 0;
+
+		/* 3 dB per bit, 2 for the next bit */
+		if (p >= 2)
+			db = 3 * ilog2(p) + 2 * ((p >> (ilog2(p) - 1)) & 1);
+		noise = max(noise, db - 103);
+	}
+	return noise;
+}
+
+static void b43_nphy_handle_irq_noise(struct b43_wldev *dev)
+{
+	struct b43_noise_calculation *nc = &dev->noisecalc;
+	int i, noise, sum = 0;
+
+	if (!nc->calculation_running)
+		return;
+	/* Drop a round that a scan took off the operating channel; the next
+	 * one starts 30 s later. */
+	if ((dev->wl->hw->conf.flags & IEEE80211_CONF_OFFCHANNEL) ||
+	    (nc->nr_samples && dev->noise_channel != dev->phy.channel)) {
+		nc->calculation_running = false;
+		return;
+	}
+
+	noise = b43_nphy_noise_dbm(dev);
+	if (noise) {
+		if (!nc->nr_samples)
+			dev->noise_channel = dev->phy.channel;
+		nc->samples[nc->nr_samples++][0] = noise;
+		if (nc->nr_samples == ARRAY_SIZE(nc->samples)) {
+			for (i = 0; i < nc->nr_samples; i++)
+				sum += nc->samples[i][0];
+			dev->stats.link_noise = sum / nc->nr_samples;
+			nc->calculation_running = false;
+			return;
+		}
+	}
 	b43_generate_noise_sample(dev);
 }
 
@@ -2004,6 +2137,10 @@ static void handle_irq_noise(struct b43_wldev *dev)
 
 	/* Bottom half of Link Quality calculation. */
 
+	if (dev->ht) {
+		b43_nphy_handle_irq_noise(dev);
+		return;
+	}
 	if (dev->phy.type != B43_PHYTYPE_G)
 		return;
 
@@ -2103,6 +2240,9 @@ static void handle_irq_tbtt_indication(struct b43_wldev *dev)
 {
 	if (b43_is_mode(dev->wl, NL80211_IFTYPE_AP)) {
 		b43_mbss_beacons(dev);
+	} else if (dev->ht && b43_is_mode(dev->wl, NL80211_IFTYPE_STATION)) {
+		/* Stations only start the TBTT timer for power save. */
+		dev->irq_mask &= ~B43_IRQ_TBTT_INDI;
 	} else {
 		if (1 /*FIXME: the last PSpoll frame was sent successfully */ )
 			b43_power_saving_ctl_bits(dev, 0);
@@ -2257,7 +2397,7 @@ static void b43_write_template_common(struct b43_wldev *dev,
 	}
 
 	plcp.data = 0;
-	b43_generate_plcp_hdr(&plcp, size + FCS_LEN, rate);
+	b43_generate_plcp_hdr(&plcp, size + FCS_LEN, rate, false);
 
 	for (i = 0; i < total; i += sizeof(u32)) {
 		u32 tmp = 0;
@@ -2299,8 +2439,12 @@ u8 b43_ieee80211_antenna_sanitize(struct b43_wldev *dev,
 }
 
 /* Convert a b43 antenna number value to the PHY TX control value. */
-static u16 b43_antenna_to_phyctl(int antenna)
+static u16 b43_antenna_to_phyctl(struct b43_wldev *dev, int antenna)
 {
+	/* On the BCM43227 the field holds the mask of TX cores. */
+	if (dev->ht)
+		return dev->txchain << B43_TXH_PHY_ANT_SHIFT;
+
 	switch (antenna) {
 	case B43_ANTENNA0:
 		return B43_TXH_PHY_ANT0;
@@ -2337,7 +2481,7 @@ static void b43_write_beacon_phytxctl(struct b43_wldev *dev, u16 rate)
 	ctl &= ~B43_TXH_PHY_SHORTPRMBL;
 	ctl &= ~B43_TXH_PHY_ANT;
 	ctl &= ~B43_TXH_PHY_ENC;
-	ctl |= b43_antenna_to_phyctl(B43_ANTENNA_DEFAULT);
+	ctl |= b43_antenna_to_phyctl(dev, B43_ANTENNA_DEFAULT);
 	if (b43_is_cck_rate(rate))
 		ctl |= B43_TXH_PHY_ENC_CCK;
 	else
@@ -2615,6 +2759,33 @@ static void b43_set_beacon_int(struct b43_wldev *dev, u16 beacon_int)
 	}
 	b43_time_unlock(dev);
 	b43dbg(dev->wl, "Set beacon interval to %u\n", beacon_int);
+}
+
+/* The TBTT after the current TSF: where the 64-bit TSF is a multiple of the
+ * beacon interval.
+ */
+static u32 b43_sta_next_tbtt(struct b43_wldev *dev, u16 beacon_int)
+{
+	u32 interval = ieee80211_tu_to_usec(beacon_int);
+	u32 rem;
+	u64 tsf;
+
+	b43_tsf_read(dev, &tsf);
+	div_u64_rem(tsf, interval, &rem);
+	return tsf + interval - rem;
+}
+
+/* In power save the microcode wakes up for beacons at the TBTT timer. Its
+ * start is compared with the low 32 bits of the TSF and advances by the
+ * interval, so start it at the next TBTT.
+ */
+static void b43_set_sta_tbtt(struct b43_wldev *dev, u16 beacon_int)
+{
+	b43_time_lock(dev);
+	b43_write32(dev, B43_MMIO_TSF_CFP_REP, beacon_int << 16);
+	b43_write32(dev, B43_MMIO_TSF_CFP_START,
+		    b43_sta_next_tbtt(dev, beacon_int));
+	b43_time_unlock(dev);
 }
 
 static void b43_handle_firmware_panic(struct b43_wldev *dev)
@@ -2900,7 +3071,7 @@ static void b43_do_interrupt_thread(struct b43_wldev *dev)
 
 	if (unlikely(reason & B43_IRQ_UCODE_DEBUG))
 		handle_irq_ucode_debug(dev);
-	if (dev->phy.type == B43_PHYTYPE_AC) {
+	if (dev->phy.type == B43_PHYTYPE_AC || dev->ht) {
 		/* As brcmsmac: the PSM watchdog resets, the timer is stopped. */
 		if (unlikely(reason & B43_IRQ_TIMER0)) {
 			b43err_restart(dev->wl,
@@ -2929,8 +3100,11 @@ static void b43_do_interrupt_thread(struct b43_wldev *dev)
 	 * Check the DMA reason registers for received data. An underrun is a
 	 * full ring, and reading it gives the buffers back.
 	 */
-	if (dma_reason[0] & B43_DMAIRQ_RDESC_UFLOW)
+	if (dma_reason[0] & B43_DMAIRQ_RDESC_UFLOW) {
 		b43warn(dev->wl, "RX descriptor underrun\n");
+		/* Frames were lost: an A-MPDU's HT-SIG may not apply. */
+		dev->rx_ht_valid = false;
+	}
 	if (dma_reason[0] & (B43_DMAIRQ_RX_DONE | B43_DMAIRQ_RDESC_UFLOW)) {
 		if (b43_using_pio_transfers(dev))
 			b43_pio_rx(dev->pio.rx_queue);
@@ -4118,7 +4292,7 @@ static void b43_adjust_opmode(struct b43_wldev *dev)
 
 	if (wl->filter_flags & FIF_CONTROL)
 		ctl |= B43_MACCTL_KEEP_CTL;
-	if (wl->filter_flags & FIF_FCSFAIL)
+	if ((wl->filter_flags & FIF_FCSFAIL) || dev->ht)
 		ctl |= B43_MACCTL_KEEP_BAD;
 	if (wl->filter_flags & FIF_PLCPFAIL)
 		ctl |= B43_MACCTL_KEEP_BADPLCP;
@@ -4238,7 +4412,7 @@ static void b43_set_phytxctl_defaults(struct b43_wldev *dev)
 		return;
 
 	ctl |= B43_TXH_PHY_ENC_CCK;
-	ctl |= B43_TXH_PHY_ANT01AUTO;
+	ctl |= b43_antenna_to_phyctl(dev, B43_ANTENNA_DEFAULT);
 	ctl |= B43_TXH_PHY_TXPWR;
 
 	b43_shm_write16(dev, B43_SHM_SHARED, B43_SHM_SH_BEACPHYCTL, ctl);
@@ -4254,7 +4428,7 @@ static void b43_mgmtframe_txantenna(struct b43_wldev *dev, int antenna)
 
 	if (!b43_phytxctl_in_shm(dev))
 		return;
-	ant = b43_antenna_to_phyctl(antenna);
+	ant = b43_antenna_to_phyctl(dev, antenna);
 
 	/* For ACK/CTS */
 	tmp = b43_shm_read16(dev, B43_SHM_SHARED, B43_SHM_SH_ACKCTSPHYCTL);
@@ -4471,6 +4645,24 @@ static void b43_chip_init_mac(struct b43_wldev *dev)
 	/* Probe Response Timeout value */
 	/* FIXME: Default to 0, has to be set by ioctl probably... :-/ */
 	b43_shm_write16(dev, B43_SHM_SHARED, B43_SHM_SH_PRMAXTIME, 0);
+	if (dev->ht) {
+		b43_shm_write16(dev, B43_SHM_SHARED,
+				B43_SHM_SH_MIMO_MAXSYM, 0xFFFF);
+		b43_shm_write16(dev, B43_SHM_SHARED,
+				B43_SHM_SH_WATCHDOG_8TU, 10);
+	}
+	/* Enable energy-detect carrier sense in IFSCTL1 and in the copy that
+	 * the firmware restores it from. Firmware 784.2 uploads slower with it.
+	 */
+	if (dev->dev->core_rev == 30 && dev->fw.rev >= 832) {
+		u16 ifsctl1 = b43_shm_read16(dev, B43_SHM_SHARED,
+					     B43_SHM_SH_IFSCTL1);
+
+		b43_shm_write16(dev, B43_SHM_SHARED, B43_SHM_SH_IFSCTL1,
+				ifsctl1 | B43_MMIO_IFSCTL1_EDCRS);
+		b43_maskset16(dev, B43_MMIO_IFSCTL1, ~0,
+			      B43_MMIO_IFSCTL1_EDCRS);
+	}
 
 	/* Initially set the wireless operation mode. */
 	b43_adjust_opmode(dev);
@@ -4641,6 +4833,35 @@ static void b43_periodic_every30sec(struct b43_wldev *dev)
 	b43_calculate_link_quality(dev);
 }
 
+/* Add the changes of the microcode's statistics counters since their last
+ * read to the low-level statistics: CTS frames received are successful RTS
+ * frames, the other RTS frames failed. Read the 16-bit counters before they
+ * wrap: every 15 s and every 1024 TX statuses, each of which covers at most
+ * 16 RTS frames.
+ */
+void b43_macstat_update(struct b43_wldev *dev, bool count)
+{
+	struct ieee80211_low_level_stats *stats = &dev->wl->ieee_stats;
+	u16 rts, cts, badfcs, rts_new, cts_new;
+
+	rts = b43_shm_read16(dev, B43_SHM_SHARED, B43_SHM_SH_TXRTSFRM);
+	cts = b43_shm_read16(dev, B43_SHM_SHARED, B43_SHM_SH_RXCTSUCAST);
+	badfcs = b43_shm_read16(dev, B43_SHM_SHARED, B43_SHM_SH_RXBADFCS);
+	if (count) {
+		rts_new = rts - dev->macstat_txrts;
+		cts_new = cts - dev->macstat_rxcts;
+		stats->dot11RTSSuccessCount += cts_new;
+		if (rts_new > cts_new)
+			stats->dot11RTSFailureCount += rts_new - cts_new;
+		stats->dot11FCSErrorCount +=
+			(u16)(badfcs - dev->macstat_badfcs);
+	}
+	dev->macstat_txrts = rts;
+	dev->macstat_rxcts = cts;
+	dev->macstat_badfcs = badfcs;
+	dev->macstat_txstatus = 0;
+}
+
 static void b43_periodic_every15sec(struct b43_wldev *dev)
 {
 	struct b43_phy *phy = &dev->phy;
@@ -4663,6 +4884,8 @@ static void b43_periodic_every15sec(struct b43_wldev *dev)
 
 	if (phy->ops->pwork_15sec)
 		phy->ops->pwork_15sec(dev);
+	if (dev->ht)
+		b43_macstat_update(dev, true);
 
 	atomic_set(&phy->txerr_cnt, B43_PHY_TX_BADNESS_LIMIT);
 	wmb();
@@ -4924,6 +5147,72 @@ static int b43_rng_init(struct b43_wl *wl)
 }
 
 static void b43_tx_pull(struct b43_wldev *dev);
+static void b43_ps_release(struct b43_wl *wl);
+
+/* Whether every queued frame has got its TX status. */
+static bool b43_tx_empty(struct b43_wldev *dev)
+{
+	int queue_num;
+
+	for (queue_num = 0; queue_num < B43_QOS_QUEUE_NUM; queue_num++) {
+		if (!skb_queue_empty_lockless(&dev->wl->tx_queue[queue_num]))
+			return false;
+	}
+	if (b43_using_pio_transfers(dev))
+		return b43_pio_tx_empty(dev);
+	return b43_dma_tx_empty(dev) && !b43_dma_ampdu_tx_queued(dev->wl);
+}
+
+/* The user's dynamic power save timeout in ms, mac80211's default of 100 ms
+ * if unset, or 0 for static power save.
+ */
+static int b43_ps_timeout(struct b43_wl *wl)
+{
+	int timeout = ieee80211_vif_to_wdev(wl->vif)->ps_timeout;
+
+	return timeout < 0 ? 100 : timeout;
+}
+
+/* The microcode sets the PM bit of each frame from HWPS when it transmits
+ * the frame, so take HWPS from the PM bit of frames to the AP: a null frame
+ * with PM announces power save, and in dynamic power save any other frame
+ * wakes the station up and restarts the timeout. In static power save,
+ * frames keep PM and the AP sends a buffered frame after a PS-Poll. Only
+ * the BCM43227 (dev->ht) runs power save.
+ */
+void b43_tx_update_hwps(struct b43_wldev *dev, struct sk_buff *skb)
+{
+	struct b43_wl *wl = dev->wl;
+	struct ieee80211_tx_info *info = IEEE80211_SKB_CB(skb);
+	struct ieee80211_hdr *hdr = (struct ieee80211_hdr *)skb->data;
+	bool hwps, ps_poll;
+
+	/* TODO: opensource firmware */
+	if (!dev->ht || !b43_is_mode(wl, NL80211_IFTYPE_STATION) ||
+	    info->flags & IEEE80211_TX_CTL_INJECTED ||
+	    !ether_addr_equal(hdr->addr1, wl->bssid))
+		return;
+	if (ieee80211_has_pm(hdr->frame_control))
+		hwps = true;
+	else if (wl->ps_enabled && !b43_ps_timeout(wl))
+		hwps = dev->hwps;
+	else
+		hwps = false;
+	if (!hwps) {
+		dev->ps = false;
+		wl->ps_null_acked = false;
+		wl->ps_last = jiffies;
+		if (wl->ps_enabled)
+			schedule_delayed_work(&wl->ps_work,
+				msecs_to_jiffies(b43_ps_timeout(wl)));
+	}
+	ps_poll = dev->ps_poll || ieee80211_is_pspoll(hdr->frame_control);
+	if (hwps == dev->hwps && ps_poll == dev->ps_poll)
+		return;
+	dev->hwps = hwps;
+	dev->ps_poll = ps_poll;
+	b43_power_saving_ctl_bits(dev, 0);
+}
 
 static void b43_tx_work(struct work_struct *work)
 {
@@ -4940,9 +5229,12 @@ static void b43_tx_work(struct work_struct *work)
 		return;
 	}
 
+	if (atomic_xchg(&wl->ps_release, 0))
+		b43_ps_release(wl);
 	for (queue_num = 0; queue_num < B43_QOS_QUEUE_NUM; queue_num++) {
 		while (skb_queue_len(&wl->tx_queue[queue_num])) {
 			skb = skb_dequeue(&wl->tx_queue[queue_num]);
+			b43_tx_update_hwps(dev, skb);
 			if (b43_using_pio_transfers(dev))
 				err = b43_pio_tx(dev, skb);
 			else
@@ -4975,13 +5267,21 @@ static bool b43_tx_rate_is_mcs(const struct ieee80211_tx_rate *rate)
 	       (rate->flags & (IEEE80211_TX_RC_MCS | IEEE80211_TX_RC_VHT_MCS));
 }
 
+static bool b43_tx_rate_ht_ok(const struct ieee80211_tx_rate *rate)
+{
+	return !b43_tx_rate_is_mcs(rate) ||
+	       ((rate->flags & IEEE80211_TX_RC_MCS) && rate->idx < 16);
+}
+
 /*
  * Whether the TX header can carry the frame's rates. On the AC the first
  * rate block must (b43_txhdr_ac_rate_ok()); a fallback it cannot carry ends
  * the blocks, in b43_generate_txhdr(). On the other PHYs a legacy rate and
- * its fallback. Rate control picks nothing else, see b43_ac_set_ht_vht_cap(),
- * but an injected frame can ask for any rate, and the header would read an
- * MCS as an index into the legacy rate table.
+ * its fallback, on the BCM43227 (dev->ht) each of them a legacy rate or an
+ * HT MCS of one or two streams. Rate control picks nothing else, see
+ * b43_ac_set_ht_vht_cap() and b43_setup_bands(), but an injected frame can
+ * ask for any rate, and the header would read an MCS as an index into the
+ * legacy rate table.
  */
 static bool b43_tx_rates_ok(struct ieee80211_hw *hw,
 			    const struct ieee80211_tx_info *info)
@@ -5000,6 +5300,8 @@ static bool b43_tx_rates_ok(struct ieee80211_hw *hw,
 	if (band->vht_cap.vht_supported ||
 	    (dev && dev->fw.hdr_format == B43_FW_HDR_AC))
 		return b43_txhdr_ac_rate_ok(band, &r[0]);
+	if (dev && dev->ht)
+		return b43_tx_rate_ht_ok(&r[0]) && b43_tx_rate_ht_ok(&r[1]);
 	return !b43_tx_rate_is_mcs(&r[0]) && !b43_tx_rate_is_mcs(&r[1]);
 }
 
@@ -5057,17 +5359,85 @@ static bool b43_op_can_aggregate_in_amsdu(struct ieee80211_hw *hw,
 
 static bool b43_tx_pulls(struct b43_wldev *dev)
 {
-	return dev && dev->phy.type == B43_PHYTYPE_AC &&
+	return dev && (dev->phy.type == B43_PHYTYPE_AC || dev->ht) &&
 	       !b43_using_pio_transfers(dev);
+}
+
+/*
+ * The BCM43227 (dev->ht) with DMA pulls as well, as an A-MPDU takes the
+ * frames of one station and TID: a TX queue with a block ack session gives
+ * one A-MPDU per round (b43_dma_tx_ampdu()) and keeps its place while
+ * frames of the session wait in the driver, and the rounds go on while
+ * they give frames and the ring has room. A dozing station's queues wait
+ * until it wakes up (b43_dma_ampdu_tx_sta_ps()).
+ */
+static bool b43_tx_pull_asleep(struct ieee80211_txq *txq)
+{
+	struct b43_ampdu_tx_tid *t;
+
+	if (!txq->sta ||
+	    !READ_ONCE(((struct b43_sta *)txq->sta->drv_priv)->asleep))
+		return false;
+	/* Its TIM bit announces the frames the driver holds for it. */
+	t = b43_dma_ampdu_txq(txq);
+	if (t && !skb_queue_empty(&t->queue))
+		ieee80211_sta_set_buffered(txq->sta, txq->tid, true);
+	return true;
+}
+
+/* One round over the TX queues of @ac. Returns the number of frames taken. */
+static int b43_tx_pull_round(struct b43_wldev *dev, int ac)
+{
+	struct b43_wl *wl = dev->wl;
+	struct ieee80211_hw *hw = wl->hw;
+	struct b43_ampdu_tx_tid *t;
+	struct ieee80211_txq *txq;
+	struct sk_buff *skb;
+	int err, taken = 0;
+
+	ieee80211_txq_schedule_start(hw, ac);
+	while (b43_dma_tx_room(dev, ac) &&
+	       (txq = ieee80211_next_txq(hw, ac))) {
+		if (dev->ht && b43_tx_pull_asleep(txq))
+			continue;
+		t = dev->ht ? b43_dma_ampdu_txq(txq) : NULL;
+		if (t) {
+			taken += b43_dma_tx_ampdu(dev, txq, t);
+			ieee80211_return_txq(hw, txq,
+					     !skb_queue_empty(&t->queue));
+			continue;
+		}
+		while (b43_dma_tx_room(dev, ac) &&
+		       (skb = ieee80211_tx_dequeue(hw, txq))) {
+			taken++;
+			if (unlikely(skb->len < 2 + 2 + 6 ||
+				     !b43_tx_rates_ok(hw,
+					IEEE80211_SKB_CB(skb)))) {
+				ieee80211_free_txskb(hw, skb);
+				continue;
+			}
+			b43_tx_update_hwps(dev, skb);
+			err = b43_dma_tx(dev, skb);
+			if (err == -ENOSPC) {
+				skb_queue_head(&wl->tx_queue[ac], skb);
+				wl->tx_queue_stopped[ac] = true;
+				break;
+			}
+			if (unlikely(err))
+				ieee80211_free_txskb(hw, skb);
+		}
+		ieee80211_return_txq(hw, txq, false);
+		if (wl->tx_queue_stopped[ac])
+			break;
+	}
+	ieee80211_txq_schedule_end(hw, ac);
+	return taken;
 }
 
 static void b43_tx_pull(struct b43_wldev *dev)
 {
 	struct b43_wl *wl = dev->wl;
-	struct ieee80211_hw *hw = wl->hw;
-	struct ieee80211_txq *txq;
-	struct sk_buff *skb;
-	int ac, err;
+	int ac, taken;
 
 	if (!b43_tx_pulls(dev))
 		return;
@@ -5075,35 +5445,317 @@ static void b43_tx_pull(struct b43_wldev *dev)
 	/* ieee80211_tx_dequeue() wants the bottom halves off. */
 	local_bh_disable();
 	for (ac = 0; ac < IEEE80211_NUM_ACS; ac++) {
-		if (wl->tx_queue_stopped[ac] || skb_queue_len(&wl->tx_queue[ac]))
-			continue;
-		ieee80211_txq_schedule_start(hw, ac);
-		while (b43_dma_tx_room(dev, ac) &&
-		       (txq = ieee80211_next_txq(hw, ac))) {
-			while (b43_dma_tx_room(dev, ac) &&
-			       (skb = ieee80211_tx_dequeue(hw, txq))) {
-				if (unlikely(skb->len < 2 + 2 + 6 ||
-					     !b43_tx_rates_ok(hw,
-						IEEE80211_SKB_CB(skb)))) {
-					ieee80211_free_txskb(hw, skb);
-					continue;
-				}
-				err = b43_dma_tx(dev, skb);
-				if (err == -ENOSPC) {
-					skb_queue_head(&wl->tx_queue[ac], skb);
-					wl->tx_queue_stopped[ac] = true;
-					break;
-				}
-				if (unlikely(err))
-					ieee80211_free_txskb(hw, skb);
-			}
-			ieee80211_return_txq(hw, txq, false);
-			if (wl->tx_queue_stopped[ac])
+		do {
+			if (wl->tx_queue_stopped[ac] ||
+			    skb_queue_len(&wl->tx_queue[ac]))
 				break;
-		}
-		ieee80211_txq_schedule_end(hw, ac);
+			taken = b43_tx_pull_round(dev, ac);
+		} while (dev->ht && taken);
 	}
 	local_bh_enable();
+}
+
+/*
+ * A frame release for a dozing station, packed into b43_sta::ps_release:
+ * the TIDs, the number of frames, U-APSD rather than PS-Poll, and whether
+ * mac80211 holds more frames.
+ */
+#define B43_PS_RELEASE_TIDS		GENMASK(15, 0)
+#define B43_PS_RELEASE_FRAMES		GENMASK(23, 16)
+#define B43_PS_RELEASE_UAPSD		BIT(24)
+#define B43_PS_RELEASE_MORE_DATA	BIT(25)
+#define B43_PS_RELEASE_VALID		BIT(31)
+
+/*
+ * Release the frames that wait for a dozing station in mac80211's TX
+ * queues and in t->queue for a PS-Poll or a U-APSD service period. They
+ * go out singly and in order from the VO queue. mac80211 asks from its RX
+ * path, which b43 runs outside wl->mutex (b43_rx_deliver()), so the TX work
+ * does it, under wl->mutex like the rest of the TX A-MPDU state. mac80211
+ * asks for no other release before this one's service period ends.
+ */
+static void
+b43_op_release_buffered_frames(struct ieee80211_hw *hw,
+			       struct ieee80211_sta *sta, u16 tids, int nframes,
+			       enum ieee80211_frame_release_type reason,
+			       bool more_data)
+{
+	struct b43_wl *wl = hw_to_b43_wl(hw);
+	struct b43_sta *bsta = (struct b43_sta *)sta->drv_priv;
+	struct b43_wldev *dev = READ_ONCE(wl->current_dev);
+	u32 req = B43_PS_RELEASE_VALID;
+
+	if (!dev || !dev->ht)
+		return;
+	req |= FIELD_PREP(B43_PS_RELEASE_TIDS, tids);
+	req |= FIELD_PREP(B43_PS_RELEASE_FRAMES, min(nframes, 255));
+	if (reason == IEEE80211_FRAME_RELEASE_UAPSD)
+		req |= B43_PS_RELEASE_UAPSD;
+	if (more_data)
+		req |= B43_PS_RELEASE_MORE_DATA;
+	WRITE_ONCE(bsta->ps_release, req);
+	atomic_set(&wl->ps_release, 1);
+	ieee80211_queue_work(hw, &wl->tx_work);
+}
+
+static void b43_ps_release_sta(void *data, struct ieee80211_sta *sta)
+{
+	struct b43_wl *wl = data;
+	struct ieee80211_hw *hw = wl->hw;
+	struct b43_sta *bsta = (struct b43_sta *)sta->drv_priv;
+	u32 req = xchg(&bsta->ps_release, 0);
+	u16 tids = FIELD_GET(B43_PS_RELEASE_TIDS, req);
+	int nframes = FIELD_GET(B43_PS_RELEASE_FRAMES, req);
+	bool more_data = req & B43_PS_RELEASE_MORE_DATA;
+	struct sk_buff_head frames;
+	struct ieee80211_tx_info *info;
+	struct ieee80211_hdr *hdr;
+	struct sk_buff *skb;
+	unsigned long count;
+	int tid;
+
+	if (!req)
+		return;
+	__skb_queue_head_init(&frames);
+	for (tid = 0; tid < IEEE80211_NUM_TIDS; tid++) {
+		struct b43_ampdu_tx_tid *t = &bsta->ampdu_tx[tid];
+
+		if (!(tids & BIT(tid)))
+			continue;
+		while (nframes) {
+			skb = b43_dma_ampdu_tx_dequeue(t);
+			if (!skb)
+				skb = ieee80211_tx_dequeue(hw, sta->txq[tid]);
+			if (!skb)
+				break;
+			__skb_queue_tail(&frames, skb);
+			nframes--;
+		}
+		if (t->operational && skb_queue_empty(&t->queue))
+			ieee80211_sta_set_buffered(sta, tid, false);
+		ieee80211_txq_get_depth(sta->txq[tid], &count, NULL);
+		if (count || (t->operational && !skb_queue_empty(&t->queue)))
+			more_data = true;
+	}
+	if (skb_queue_empty(&frames)) {
+		ieee80211_sta_eosp(sta);
+		return;
+	}
+
+	skb_queue_walk(&frames, skb) {
+		info = IEEE80211_SKB_CB(skb);
+		hdr = (struct ieee80211_hdr *)skb->data;
+		info->control.flags |= IEEE80211_TX_CTRL_PS_RESPONSE;
+		skb_set_queue_mapping(skb, IEEE80211_AC_VO);
+		if (!skb_queue_is_last(&frames, skb) || more_data)
+			hdr->frame_control |=
+				cpu_to_le16(IEEE80211_FCTL_MOREDATA);
+		else
+			hdr->frame_control &=
+				cpu_to_le16(~IEEE80211_FCTL_MOREDATA);
+	}
+	skb = skb_peek_tail(&frames);
+	info = IEEE80211_SKB_CB(skb);
+	hdr = (struct ieee80211_hdr *)skb->data;
+	info->flags |= IEEE80211_TX_STATUS_EOSP |
+		       IEEE80211_TX_CTL_REQ_TX_STATUS;
+	if ((req & B43_PS_RELEASE_UAPSD) &&
+	    ieee80211_is_data_qos(hdr->frame_control))
+		*ieee80211_get_qos_ctl(hdr) |= IEEE80211_QOS_CTL_EOSP;
+	while ((skb = __skb_dequeue(&frames)))
+		skb_queue_tail(&wl->tx_queue[IEEE80211_AC_VO], skb);
+}
+
+/* The releases b43_op_release_buffered_frames() asked for. Called under
+ * wl->mutex. */
+static void b43_ps_release(struct b43_wl *wl)
+{
+	/* ieee80211_tx_dequeue() wants the bottom halves off. */
+	local_bh_disable();
+	ieee80211_iterate_stations_atomic(wl->hw, b43_ps_release_sta, wl);
+	local_bh_enable();
+}
+
+/* Send a null frame or a PS-Poll to the AP at the lowest rate. */
+static void b43_ps_send(struct b43_wl *wl, struct sk_buff *skb, bool pm)
+{
+	if (!skb)
+		return;
+	if (pm)
+		((struct ieee80211_hdr *)skb->data)->frame_control |=
+			cpu_to_le16(IEEE80211_FCTL_PM);
+	skb_set_queue_mapping(skb, IEEE80211_AC_VO);
+	IEEE80211_SKB_CB(skb)->flags |= IEEE80211_TX_CTL_USE_MINRATE;
+	rcu_read_lock();
+	if (ieee80211_tx_prepare_skb(wl->hw, wl->vif, skb,
+				     b43_current_band(wl), NULL))
+		b43_op_tx(wl->hw, NULL, skb);
+	rcu_read_unlock();
+}
+
+static void b43_ps_send_null(struct b43_wl *wl, bool pm)
+{
+	b43_ps_send(wl, ieee80211_nullfunc_get(wl->hw, wl->vif, -1, true), pm);
+}
+
+/* The AP has acknowledged the null frame with PM=1: doze. */
+static void b43_ps_doze(struct b43_wldev *dev)
+{
+	struct ieee80211_vif *vif = dev->wl->vif;
+
+	dev->wl->ps_null_acked = false;
+	dev->ps = true;
+	dev->ps_tbtt = false;
+	dev->ps_poll = false;
+	if (vif->bss_conf.beacon_int)
+		b43_set_sta_tbtt(dev, vif->bss_conf.beacon_int);
+	b43_power_saving_ctl_bits(dev, 0);
+}
+
+/* mac80211 leaves power save to b43 (SUPPORTS_DYNAMIC_PS), which runs it
+ * like mac80211's software power save: after the dynamic timeout without
+ * frames to or from the AP, or at once in static power save, a null frame
+ * with PM=1 announces power save, and the microcode dozes once the AP has
+ * acknowledged it.
+ */
+static void b43_ps_work(struct work_struct *work)
+{
+	struct b43_wl *wl = container_of(work, struct b43_wl, ps_work.work);
+	struct b43_wldev *dev;
+	unsigned long idle;
+	int timeout;
+
+	mutex_lock(&wl->mutex);
+	dev = wl->current_dev;
+	if (!dev || b43_status(dev) < B43_STAT_STARTED || !wl->ps_enabled ||
+	    wl->ps_scanning || dev->ps)
+		goto out;
+	if (wl->ps_null_acked && dev->hwps) {
+		b43_ps_doze(dev);
+		goto out;
+	}
+	timeout = b43_ps_timeout(wl);
+	idle = wl->ps_last + msecs_to_jiffies(timeout);
+	if (time_before(jiffies, idle)) {
+		schedule_delayed_work(&wl->ps_work, idle - jiffies);
+		goto out;
+	}
+	if (!b43_tx_empty(dev)) {
+		schedule_delayed_work(&wl->ps_work,
+				      msecs_to_jiffies(max(timeout, 10)));
+		goto out;
+	}
+	b43_ps_send_null(wl, true);
+	/* Its TX status reschedules this, unless the frame is dropped. */
+	schedule_delayed_work(&wl->ps_work, msecs_to_jiffies(max(timeout, 10)));
+out:
+	mutex_unlock(&wl->mutex);
+}
+
+/* The TX status of a null frame with PM=1 to the AP, unless a frame with
+ * PM=0 followed it.
+ */
+void b43_ps_tx_status(struct b43_wldev *dev, struct sk_buff *skb, bool acked)
+{
+	struct b43_wl *wl = dev->wl;
+	struct ieee80211_hdr *hdr = (struct ieee80211_hdr *)skb->data;
+
+	if (!wl->ps_enabled || wl->ps_scanning ||
+	    IEEE80211_SKB_CB(skb)->flags & IEEE80211_TX_CTL_INJECTED ||
+	    !ieee80211_is_any_nullfunc(hdr->frame_control) ||
+	    !ieee80211_has_pm(hdr->frame_control) ||
+	    !ether_addr_equal(hdr->addr1, wl->bssid))
+		return;
+	wl->ps_null_acked = acked && dev->hwps;
+	/* Doze, or try again after the timeout. */
+	mod_delayed_work(system_percpu_wq, &wl->ps_work, acked ? 0 :
+			 msecs_to_jiffies(max(b43_ps_timeout(wl), 10)));
+}
+
+/* Called for frames from the AP while power save is enabled. In power save
+ * the TSF follows the AP's from the first beacon after association, which
+ * may come after power save started. When the TSF jumps, the timer start
+ * does not follow if it is more than 2^31 us behind the new TSF, and
+ * otherwise moves to a multiple of the interval in the low 32 bits of the
+ * TSF only. So check it once a beacon has updated the TSF. A beacon whose
+ * TIM has the station's bit wakes the station up in dynamic power save and
+ * sends a PS-Poll in static power save, as does a buffered frame with More
+ * Data. A frame to this station answers a PS-Poll, and the next beacon ends
+ * the wait for an answer. Unicast data restarts the dynamic timeout.
+ */
+void b43_ps_rx(struct b43_wldev *dev, struct sk_buff *skb)
+{
+	struct b43_wl *wl = dev->wl;
+	struct ieee80211_mgmt *mgmt = (struct ieee80211_mgmt *)skb->data;
+	struct ieee80211_vif *vif = wl->vif;
+	__le16 fc = mgmt->frame_control;
+	bool held = !dev->ps_tbtt || dev->ps_poll;
+	bool poll = false;
+	const struct element *tim;
+	int len;
+
+	if (ieee80211_is_beacon(fc)) {
+		len = skb->len - FCS_LEN -
+		      offsetof(struct ieee80211_mgmt, u.beacon.variable);
+		if (!dev->ps || len < 0)
+			return;
+		if (vif->bss_conf.beacon_int &&
+		    b43_read32(dev, B43_MMIO_TSF_CFP_START) !=
+		    b43_sta_next_tbtt(dev, vif->bss_conf.beacon_int))
+			b43_set_sta_tbtt(dev, vif->bss_conf.beacon_int);
+		dev->ps_tbtt = true;
+		dev->ps_poll = false;
+		tim = cfg80211_find_elem(WLAN_EID_TIM, mgmt->u.beacon.variable,
+					 len);
+		if (tim && ieee80211_check_tim((const void *)tim->data,
+					       tim->datalen, vif->cfg.aid,
+					       false)) {
+			if (b43_ps_timeout(wl)) {
+				dev->ps = false;
+				b43_power_saving_ctl_bits(dev, 0);
+				b43_ps_send_null(wl, false);
+				return;
+			}
+			poll = true;
+		}
+	} else if (ether_addr_equal(mgmt->da, vif->addr)) {
+		if (!ieee80211_has_morefrags(fc))
+			dev->ps_poll = false;
+		if (ieee80211_is_data(fc)) {
+			wl->ps_last = jiffies;
+			if (!dev->ps)
+				schedule_delayed_work(&wl->ps_work,
+					msecs_to_jiffies(b43_ps_timeout(wl)));
+			poll = dev->ps && ieee80211_has_moredata(fc) &&
+			       !b43_ps_timeout(wl);
+		}
+	}
+	if (held != (!dev->ps_tbtt || dev->ps_poll))
+		b43_power_saving_ctl_bits(dev, 0);
+	if (poll)
+		b43_ps_send(wl, ieee80211_pspoll_get(wl->hw, vif), true);
+}
+
+/* mac80211 allows power save while associated, with power save enabled. */
+static void b43_ps_update(struct b43_wldev *dev, bool enabled)
+{
+	struct b43_wl *wl = dev->wl;
+
+	wl->ps_enabled = enabled;
+	wl->ps_null_acked = false;
+	if (enabled) {
+		wl->ps_last = jiffies;
+		schedule_delayed_work(&wl->ps_work, 0);
+		return;
+	}
+	cancel_delayed_work(&wl->ps_work);
+	dev->ps = false;
+	/* The AP would keep buffering until the station next transmits. */
+	if (dev->hwps && wl->vif->cfg.assoc)
+		b43_ps_send_null(wl, false);
+	else
+		dev->hwps = false;
+	b43_power_saving_ctl_bits(dev, 0);
 }
 
 static void b43_op_wake_tx_queue(struct ieee80211_hw *hw,
@@ -5297,8 +5949,12 @@ static int b43_op_get_stats(struct ieee80211_hw *hw,
 			    struct ieee80211_low_level_stats *stats)
 {
 	struct b43_wl *wl = hw_to_b43_wl(hw);
+	struct b43_wldev *dev;
 
 	mutex_lock(&wl->mutex);
+	dev = wl->current_dev;
+	if (dev && dev->ht && b43_status(dev) >= B43_STAT_INITIALIZED)
+		b43_macstat_update(dev, true);
 	memcpy(stats, &wl->ieee_stats, sizeof(*stats));
 	mutex_unlock(&wl->mutex);
 
@@ -5672,7 +6328,9 @@ static int b43_op_config(struct ieee80211_hw *hw, int radio_idx, u32 changed)
 	mutex_lock(&wl->mutex);
 	b43_mac_suspend(dev);
 
-	if (changed & IEEE80211_CONF_CHANGE_LISTEN_INTERVAL)
+	/* With a listen interval the BCM43227's microcode listened to every
+	 * fifth beacon only in power save. */
+	if (changed & IEEE80211_CONF_CHANGE_LISTEN_INTERVAL && !dev->ht)
 		b43_set_beacon_listen_interval(dev, conf->listen_interval);
 
 	if (changed & IEEE80211_CONF_CHANGE_CHANNEL) {
@@ -5736,20 +6394,16 @@ static int b43_op_config(struct ieee80211_hw *hw, int radio_idx, u32 changed)
 	if (changed & IEEE80211_CONF_CHANGE_RETRY_LIMITS)
 		b43_set_retry_limits(dev, conf->short_frame_max_tx_count,
 					  conf->long_frame_max_tx_count);
-	changed &= ~IEEE80211_CONF_CHANGE_RETRY_LIMITS;
+	/* Power save follows vif->cfg.ps (b43_ps_update()). */
+	changed &= ~(IEEE80211_CONF_CHANGE_RETRY_LIMITS |
+		     IEEE80211_CONF_CHANGE_PS);
 	if (!changed)
 		goto out_mac_enable;
 
 	dev->wl->radiotap_enabled = !!(conf->flags & IEEE80211_CONF_MONITOR);
 
 	/* Adjust the desired TX power level. */
-	if (conf->power_level != 0) {
-		if (conf->power_level != phy->desired_txpower) {
-			phy->desired_txpower = conf->power_level;
-			b43_phy_txpower_check(dev, B43_TXPWR_IGNORE_TIME |
-						   B43_TXPWR_IGNORE_TSSI);
-		}
-	}
+	b43_update_txpower(dev);
 
 	/* Antennas for RX and management frame TX. */
 	antenna = B43_ANTENNA_DEFAULT;
@@ -5874,6 +6528,9 @@ static void b43_op_bss_info_changed(struct ieee80211_hw *hw,
 		}
 	}
 
+	if (changed & BSS_CHANGED_TXPOWER)
+		b43_update_txpower(dev);
+
 	b43_mac_suspend(dev);
 
 	/* Update templates for AP/mesh mode. */
@@ -5883,6 +6540,11 @@ static void b43_op_bss_info_changed(struct ieee80211_hw *hw,
 	     b43_is_mode(wl, NL80211_IFTYPE_ADHOC)) &&
 	    conf->beacon_int)
 		b43_set_beacon_int(dev, conf->beacon_int);
+
+	if (changed & BSS_CHANGED_BEACON_INFO && dev->ht &&
+	    b43_is_mode(wl, NL80211_IFTYPE_STATION))
+		b43_shm_write16(dev, B43_SHM_SHARED, B43_SHM_SH_DTIMPER,
+				conf->dtim_period);
 
 	if (changed & BSS_CHANGED_BASIC_RATES)
 		b43_update_basic_rates(dev, conf->basic_rates);
@@ -5899,6 +6561,10 @@ static void b43_op_bss_info_changed(struct ieee80211_hw *hw,
 		b43_ac_dump_tx_state(dev, "beaconing");
 
 	b43_mac_enable(dev);
+
+	if (changed & BSS_CHANGED_PS && dev->ht &&
+	    b43_is_mode(wl, NL80211_IFTYPE_STATION))
+		b43_ps_update(dev, vif->cfg.ps);
 out_unlock_mutex:
 	mutex_unlock(&wl->mutex);
 }
@@ -6121,6 +6787,7 @@ redo:
 	cancel_delayed_work_sync(&dev->periodic_work);
 	cancel_delayed_work_sync(&dev->radar_work);
 	cancel_work_sync(&wl->tx_work);
+	cancel_delayed_work_sync(&wl->ps_work);
 	b43_leds_stop(dev);
 	mutex_lock(&wl->mutex);
 	dev = wl->current_dev;
@@ -6128,6 +6795,8 @@ redo:
 		/* Whoops, aliens ate up the device while we were unlocked. */
 		return dev;
 	}
+	if (dev->ht)
+		b43_macstat_update(dev, true);
 
 	/* Disable interrupts on the device. */
 	b43_set_status(dev, B43_STAT_INITIALIZED);
@@ -6159,6 +6828,7 @@ redo:
 	}
 	mask = b43_read32(dev, B43_MMIO_GEN_IRQ_MASK);
 	B43_WARN_ON(mask != 0xFFFFFFFF && mask);
+	dev->rx_ht_valid = false;
 
 	/* Drain all TX queues. */
 	for (queue_num = 0; queue_num < B43_QOS_QUEUE_NUM; queue_num++) {
@@ -6168,7 +6838,9 @@ redo:
 			skb = skb_dequeue(&wl->tx_queue[queue_num]);
 			ieee80211_free_txskb(wl->hw, skb);
 		}
+		wl->tx_queue_stopped[queue_num] = false;
 	}
+	b43_dma_ampdu_tx_purge(wl);
 	skb_queue_purge(&wl->rx_queue);
 	ieee80211_purge_tx_queue(wl->hw, &wl->txstatus_queue);
 
@@ -6436,6 +7108,10 @@ static int b43_phy_versioning(struct b43_wldev *dev)
 	phy->type = phy_type;
 	phy->rev = phy_rev;
 
+	/* The BCM43227's core, N-PHY and radio revisions */
+	dev->ht = core_rev == 30 && phy_type == B43_PHYTYPE_N &&
+		  phy_rev == 16 && radio_rev == 9;
+
 	return 0;
 }
 
@@ -6456,6 +7132,11 @@ static void setup_struct_phy_for_init(struct b43_wldev *dev,
 static void setup_struct_wldev_for_init(struct b43_wldev *dev)
 {
 	dev->dfq_valid = false;
+	dev->rx_ht_valid = false;
+	dev->ps = false;
+	dev->hwps = false;
+	dev->ps_tbtt = false;
+	dev->ps_poll = false;
 
 	/* Assume the radio is enabled. If it's not enabled, the state will
 	 * immediately get fixed on the first periodic work run. */
@@ -6475,6 +7156,9 @@ static void setup_struct_wldev_for_init(struct b43_wldev *dev)
 		dev->irq_mask = B43_IRQ_MASKTEMPLATE;
 		if (b43_modparam_verbose < B43_VERBOSITY_DEBUG)
 			dev->irq_mask &= ~B43_IRQ_PHY_TXERR;
+		/* The PSM microcode watchdog, as on the AC cores. */
+		if (dev->ht)
+			dev->irq_mask |= B43_IRQ_TIMER0;
 	}
 
 	dev->mac_suspended = 1;
@@ -6558,6 +7242,11 @@ static void b43_set_synth_pu_delay(struct b43_wldev *dev, bool idle)
 		pu_delay = 500;
 	if ((dev->phy.radio_ver == 0x2050) && (dev->phy.radio_rev == 8))
 		pu_delay = max(pu_delay, (u16)2400);
+	/* With less, the BCM43227's microcode wakes up too late for most
+	 * beacons in power save.
+	 */
+	if (dev->ht)
+		pu_delay = 2048;
 
 	b43_shm_write16(dev, B43_SHM_SHARED, B43_SHM_SH_SPUWKUP, pu_delay);
 }
@@ -6630,6 +7319,129 @@ static void b43_wireless_core_exit(struct b43_wldev *dev)
 
 	b43_device_disable(dev, 0);
 	b43_bus_may_powerdown(dev);
+}
+
+static bool b43_txfifo_set(struct b43_wldev *dev,
+			   const u16 definition[6][2], const u16 sizes[4],
+			   u16 selector, u32 shm_control)
+{
+	bool valid = true;
+	int i;
+
+	for (i = 0; i < 6; i++) {
+		u16 command = 0x8000 | (i << 8);
+
+		b43_write16(dev, B43_MMIO_XMTFIFOCMD, command);
+		b43_write16(dev, B43_MMIO_XMTFIFODEF, definition[i][0]);
+		b43_write16(dev, B43_MMIO_XMTFIFODEF1, definition[i][1]);
+		b43_write16(dev, B43_MMIO_XMTFIFOCMD, command);
+	}
+	for (i = 0; i < 4; i++)
+		b43_shm_write16(dev, B43_SHM_SHARED, B43_SHM_SH_SIZE01 + 2 * i,
+				sizes[i]);
+	for (i = 0; i < 6; i++) {
+		b43_write16(dev, B43_MMIO_XMTFIFOCMD, i << 8);
+		valid &= b43_read16(dev, B43_MMIO_XMTFIFOCMD) == (i << 8);
+		valid &= b43_read16(dev, B43_MMIO_XMTFIFODEF) ==
+			 definition[i][0];
+		valid &= b43_read16(dev, B43_MMIO_XMTFIFODEF1) ==
+			 definition[i][1];
+	}
+	for (i = 0; i < 4; i++)
+		valid &= b43_shm_read16(dev, B43_SHM_SHARED,
+					B43_SHM_SH_SIZE01 + 2 * i) == sizes[i];
+	b43_write16(dev, B43_MMIO_XMTFIFOCMD, selector);
+	b43_write32(dev, B43_MMIO_SHM_CONTROL, shm_control);
+	valid &= b43_read16(dev, B43_MMIO_XMTFIFOCMD) == selector;
+	valid &= b43_read32(dev, B43_MMIO_SHM_CONTROL) == shm_control;
+	valid &= !(b43_read32(dev, B43_MMIO_MACCTL) & B43_MACCTL_ENABLED);
+
+	return valid;
+}
+
+static int b43_txfifo_init_ht(struct b43_wldev *dev)
+{
+	/* 256-byte blocks starting at block 6,
+	 * BK/BE/VI/VO/BCMC/ATIM = 9/98/22/14/14/5 */
+	static const u16 definition[6][2] = {
+		{ 0x0e06, 0 }, { 0x700f, 0 }, { 0x8671, 0 },
+		{ 0x9487, 0 }, { 0xa295, 0 }, { 0xa7a3, 0 },
+	};
+	/* BE, VI, (VO << 8) | BK, (ATIM << 8) | BCMC */
+	static const u16 sizes[4] = { 98, 22, 0x0e09, 0x050e };
+	u16 old_definition[6][2], old_sizes[4], selector;
+	u32 shm_control;
+	bool valid = true;
+	int i;
+
+	if (!dev->ht || dev->dev->bus_type != B43_BUS_BCMA || dev->use_pio)
+		return 0;
+
+	lockdep_assert_held(&dev->wl->mutex);
+	/* Run only during core initialization, before allocating DMA rings.
+	 * tx_work cannot submit before STARTED and holds this same mutex. */
+	if (b43_status(dev) != B43_STAT_UNINIT || !dev->mac_suspended ||
+	    (b43_read32(dev, B43_MMIO_MACCTL) & B43_MACCTL_ENABLED))
+		return -EBUSY;
+	for (i = 0; i < 6; i++) {
+		u16 base = B43_MMIO_DMA64_BASE0 + 0x40 * i;
+		u32 control = b43_read32(dev, base + B43_DMA64_TXCTL);
+		u32 status = b43_read32(dev, base + B43_DMA64_TXSTATUS);
+		u32 error = b43_read32(dev, base + B43_DMA64_TXERROR);
+
+		if ((control & B43_DMA64_TXENABLE) ||
+		    (status & B43_DMA64_TXSTAT) != B43_DMA64_TXSTAT_DISABLED)
+			return -EBUSY;
+		if (error & B43_DMA64_TXERR)
+			return -EIO;
+	}
+	selector = b43_read16(dev, B43_MMIO_XMTFIFOCMD);
+	if ((selector & ~0x0700) || selector > 0x0500)
+		return -EIO;
+	shm_control = b43_read32(dev, B43_MMIO_SHM_CONTROL);
+	for (i = 0; i < 6; i++) {
+		b43_write16(dev, B43_MMIO_XMTFIFOCMD, i << 8);
+		valid &= b43_read16(dev, B43_MMIO_XMTFIFOCMD) == (i << 8);
+		old_definition[i][0] = b43_read16(dev, B43_MMIO_XMTFIFODEF);
+		old_definition[i][1] = b43_read16(dev, B43_MMIO_XMTFIFODEF1);
+	}
+	for (i = 0; i < 4; i++)
+		old_sizes[i] = b43_shm_read16(dev, B43_SHM_SHARED,
+					      B43_SHM_SH_SIZE01 + 2 * i);
+	b43_write16(dev, B43_MMIO_XMTFIFOCMD, selector);
+	b43_write32(dev, B43_MMIO_SHM_CONTROL, shm_control);
+	if (!valid)
+		return -EIO;
+
+	if (b43_txfifo_set(dev, definition, sizes, selector, shm_control))
+		return 0;
+	if (b43_read32(dev, B43_MMIO_MACCTL) & B43_MACCTL_ENABLED) {
+		b43err(dev->wl, "Cannot restore TX FIFOs with MAC enabled\n");
+		return -EIO;
+	}
+	if (!b43_txfifo_set(dev, old_definition, old_sizes,
+			    selector, shm_control))
+		b43err(dev->wl, "TX FIFO restoration failed\n");
+	return -EIO;
+}
+
+
+/* Frames of earlier rings are gone; restart a station's TX A-MPDU
+ * windows. Only DMA aggregates, so PIO ends its sessions' aggregation. */
+static void b43_ampdu_tx_restart_sta(void *data, struct ieee80211_sta *sta)
+{
+	struct b43_wldev *dev = data;
+	struct b43_sta *bsta = (struct b43_sta *)sta->drv_priv;
+	int i;
+
+	for (i = 0; i < IEEE80211_NUM_TIDS; i++) {
+		struct b43_ampdu_tx_tid *t = &bsta->ampdu_tx[i];
+
+		if (dev->__using_pio_transfers)
+			t->operational = false;
+		t->outstanding = 0;
+		memset(t->retries, 0, sizeof(t->retries));
+	}
 }
 
 /* Initialize a wireless core */
@@ -6742,8 +7554,10 @@ static int b43_wireless_core_init(struct b43_wldev *dev)
 
 	b43_set_retry_limits(dev, B43_DEFAULT_SHORT_RETRY_LIMIT,
 			     B43_DEFAULT_LONG_RETRY_LIMIT);
-	b43_shm_write16(dev, B43_SHM_SHARED, B43_SHM_SH_SFFBLIM, 3);
-	b43_shm_write16(dev, B43_SHM_SHARED, B43_SHM_SH_LFFBLIM, 2);
+	b43_shm_write16(dev, B43_SHM_SHARED, B43_SHM_SH_SFFBLIM,
+			B43_SHORT_FALLBACK_LIMIT);
+	b43_shm_write16(dev, B43_SHM_SHARED, B43_SHM_SH_LFFBLIM,
+			B43_LONG_FALLBACK_LIMIT);
 
 	/*
 	 * The initvals leave IFSCTL at 0x0f0b and the four entries of the
@@ -6816,6 +7630,12 @@ static int b43_wireless_core_init(struct b43_wldev *dev)
 	b43_shm_write16(dev, B43_SHM_SHARED, B43_SHM_SH_PHYTYPE, phy->type);
 	b43_shm_write16(dev, B43_SHM_SHARED, B43_SHM_SH_PHYVER, phy->rev);
 
+	err = b43_txfifo_init_ht(dev);
+	if (err) {
+		b43err(dev->wl, "Cannot initialize the TX FIFOs (%d)\n", err);
+		goto err_chip_exit;
+	}
+
 	b43dbg(dev->wl, "init: DMA\n");
 
 	if (b43_bus_host_is_pcmcia(dev->dev) ||
@@ -6844,6 +7664,16 @@ static int b43_wireless_core_init(struct b43_wldev *dev)
 	}
 	if (err)
 		goto err_chip_exit;
+	/* The microcode drops longer frames, by default those over 2352
+	 * bytes: a QoS data frame with CCMP and a 2304-byte MSDU is longer.
+	 * DMA receives them into several buffers. */
+	if (dev->ht && !b43_using_pio_transfers(dev))
+		b43_shm_write16(dev, B43_SHM_SHARED, B43_SHM_SH_MAXRXFRMLEN,
+				B43_DMA_RX_MAX_FRAME_LEN);
+	if (dev->ht)
+		b43_macstat_update(dev, false);
+	ieee80211_iterate_stations_atomic(dev->wl->hw,
+					  b43_ampdu_tx_restart_sta, dev);
 	b43_qos_init(dev);
 	/* Both stock drivers captured at the bus write it once, here. */
 	if (phy->type == B43_PHYTYPE_AC)
@@ -7007,6 +7837,7 @@ static void b43_op_remove_interface(struct ieee80211_hw *hw,
 		return;
 	}
 	wl->vif = NULL;
+	wl->ps_enabled = false;
 
 	wl->operating = false;
 
@@ -7096,6 +7927,7 @@ out_unlock:
 	mutex_unlock(&wl->mutex);
 out:
 	cancel_work_sync(&(wl->txpower_adjust_work));
+	cancel_delayed_work_sync(&wl->ps_work);
 }
 
 static int b43_op_beacon_set_tim(struct ieee80211_hw *hw,
@@ -7114,8 +7946,19 @@ static void b43_op_sta_notify(struct ieee80211_hw *hw,
 			      struct ieee80211_sta *sta)
 {
 	struct b43_wl *wl = hw_to_b43_wl(hw);
+	struct b43_wldev *dev = READ_ONCE(wl->current_dev);
 
 	B43_WARN_ON(!vif || (wl->vif != vif && b43_mbss_slot(wl, vif) < 0));
+	if (dev && dev->ht)
+		b43_dma_ampdu_tx_sta_ps(wl, sta,
+					notify_cmd == STA_NOTIFY_SLEEP);
+}
+
+static void b43_op_sta_pre_rcu_remove(struct ieee80211_hw *hw,
+				      struct ieee80211_vif *vif,
+				      struct ieee80211_sta *sta)
+{
+	b43_dma_ampdu_tx_sta_drop(hw_to_b43_wl(hw), sta);
 }
 
 /*
@@ -7162,6 +8005,15 @@ static void b43_op_sw_scan_start_notifier(struct ieee80211_hw *hw,
 		/* Disable CFP update during scan on other channels. */
 		b43_hf_write(dev, b43_hf_read(dev) | B43_HF_SKCFPUP);
 	}
+	/* mac80211 announces power save to the AP before leaving its
+	 * channel, and the station stays awake until the scan completes.
+	 */
+	wl->ps_scanning = true;
+	cancel_delayed_work(&wl->ps_work);
+	if (dev && b43_status(dev) >= B43_STAT_STARTED && dev->ps) {
+		dev->ps = false;
+		b43_power_saving_ctl_bits(dev, 0);
+	}
 	mutex_unlock(&wl->mutex);
 }
 
@@ -7177,7 +8029,41 @@ static void b43_op_sw_scan_complete_notifier(struct ieee80211_hw *hw,
 		/* Re-enable CFP update. */
 		b43_hf_write(dev, b43_hf_read(dev) & ~B43_HF_SKCFPUP);
 	}
+	wl->ps_scanning = false;
+	if (wl->ps_enabled) {
+		wl->ps_last = jiffies;
+		schedule_delayed_work(&wl->ps_work,
+				      msecs_to_jiffies(b43_ps_timeout(wl)));
+	}
 	mutex_unlock(&wl->mutex);
+}
+
+/* Whether every frame from mac80211 has got its TX status. */
+static bool b43_tx_flushed(struct b43_wl *wl)
+{
+	struct b43_wldev *dev;
+	bool flushed = true;
+
+	mutex_lock(&wl->mutex);
+	dev = wl->current_dev;
+	if (dev && b43_status(dev) >= B43_STAT_STARTED)
+		flushed = b43_tx_empty(dev);
+	mutex_unlock(&wl->mutex);
+
+	return flushed;
+}
+
+/* Wait up to 500 ms for the queued frames, whether or not mac80211 asks to
+ * drop them. */
+static void b43_op_flush(struct ieee80211_hw *hw, struct ieee80211_vif *vif,
+			 u32 queues, bool drop)
+{
+	struct b43_wl *wl = hw_to_b43_wl(hw);
+	bool flushed;
+
+	if (poll_timeout_us(flushed = b43_tx_flushed(wl), flushed,
+			    2000, 500 * USEC_PER_MSEC, false))
+		b43dbg(wl, "TX flush timed out\n");
 }
 
 static int b43_op_get_survey(struct ieee80211_hw *hw, int idx,
@@ -7191,8 +8077,11 @@ static int b43_op_get_survey(struct ieee80211_hw *hw, int idx,
 		return -ENOENT;
 
 	survey->channel = conf->chandef.chan;
-	survey->filled = SURVEY_INFO_NOISE_DBM;
-	survey->noise = dev->stats.link_noise;
+	/* link_noise stays 0 until a noise measurement completes. */
+	if (dev->stats.link_noise) {
+		survey->filled = SURVEY_INFO_NOISE_DBM;
+		survey->noise = dev->stats.link_noise;
+	}
 
 	return 0;
 }
@@ -7204,7 +8093,11 @@ static int b43_op_get_survey(struct ieee80211_hw *hw, int idx,
  * it for a session, so a session is the window kept here. On RX the
  * microcode answers an A-MPDU or a block ack request with a block ack of
  * its own making (frame code 0x25, at 0x076C on 784), from no table a
- * driver fills; mac80211 reorders.
+ * driver fills; mac80211 reorders. The BCM43227's microcode (dev->ht) does
+ * the same on RX, with DMA or PIO, from the transmitter address in its
+ * template RAM (b43_write_mac_bssid_templates()). On TX b43 builds the
+ * BCM43227's A-MPDUs itself, with DMA (b43_dma_tx_ampdu()), on BE (TIDs 0
+ * and 3) and VI (TIDs 4 and 5), whose TX FIFOs b43_txfifo_init_ht() sizes.
  */
 static int b43_op_ampdu_action(struct ieee80211_hw *hw,
 			       struct ieee80211_vif *vif,
@@ -7212,6 +8105,8 @@ static int b43_op_ampdu_action(struct ieee80211_hw *hw,
 {
 	struct b43_wl *wl = hw_to_b43_wl(hw);
 	struct b43_sta *bsta = (struct b43_sta *)params->sta->drv_priv;
+	struct b43_ampdu_tx_tid *t = &bsta->ampdu_tx[params->tid];
+	struct ieee80211_sta_ht_cap *ht_cap = &params->sta->deflink.ht_cap;
 	struct b43_wldev *dev;
 	bool ok;
 
@@ -7222,6 +8117,20 @@ static int b43_op_ampdu_action(struct ieee80211_hw *hw,
 		dev = wl->current_dev;
 		ok = dev && dev->fw.hdr_format == B43_FW_HDR_AC &&
 		     !b43_using_pio_transfers(dev);
+		if (dev && dev->ht)
+			ok = b43_status(dev) >= B43_STAT_STARTED &&
+			     vif == wl->vif &&
+			     (vif->type == NL80211_IFTYPE_STATION ||
+			      vif->type == NL80211_IFTYPE_AP ||
+			      vif->type == NL80211_IFTYPE_ADHOC);
+		if (params->action == IEEE80211_AMPDU_TX_START &&
+		    dev && dev->ht) {
+			ok = ok && !b43_using_pio_transfers(dev) &&
+			     (params->tid == 0 || params->tid == 3 ||
+			      params->tid == 4 || params->tid == 5);
+			if (ok)
+				memset(t, 0, sizeof(*t));
+		}
 		mutex_unlock(&wl->mutex);
 		if (!ok)
 			return -EOPNOTSUPP;
@@ -7230,21 +8139,104 @@ static int b43_op_ampdu_action(struct ieee80211_hw *hw,
 		return IEEE80211_AMPDU_TX_START_IMMEDIATE;
 	case IEEE80211_AMPDU_TX_OPERATIONAL:
 		WRITE_ONCE(bsta->ampdu_win[params->tid], params->buf_size);
+		mutex_lock(&wl->mutex);
+		dev = wl->current_dev;
+		if (dev && dev->ht) {
+			memset(t, 0, sizeof(*t));
+			skb_queue_head_init(&t->queue);
+			t->buf_size = min_t(u16, params->buf_size,
+					    B43_AMPDU_TX_WINDOW);
+			t->operational = t->buf_size;
+			bsta->ampdu_tx_max_len =
+				(1 << (IEEE80211_HT_MAX_AMPDU_FACTOR +
+				       ht_cap->ampdu_factor)) - 1;
+			bsta->ampdu_tx_density = ht_cap->ampdu_density;
+		}
+		mutex_unlock(&wl->mutex);
 		return 0;
 	case IEEE80211_AMPDU_TX_STOP_CONT:
 		WRITE_ONCE(bsta->ampdu_win[params->tid], 0);
+		/* Queued and retried members continue as ordinary MPDUs. */
+		mutex_lock(&wl->mutex);
+		b43_dma_ampdu_tx_stop(wl, t, false);
+		mutex_unlock(&wl->mutex);
 		ieee80211_stop_tx_ba_cb_irqsafe(vif, params->sta->addr,
 						params->tid);
 		return 0;
 	case IEEE80211_AMPDU_TX_STOP_FLUSH:
 	case IEEE80211_AMPDU_TX_STOP_FLUSH_CONT:
 		WRITE_ONCE(bsta->ampdu_win[params->tid], 0);
+		mutex_lock(&wl->mutex);
+		b43_dma_ampdu_tx_stop(wl, t, params->action ==
+				      IEEE80211_AMPDU_TX_STOP_FLUSH);
+		mutex_unlock(&wl->mutex);
 		return 0;
 	case IEEE80211_AMPDU_RX_STOP:
 		return 0;
 	default:
 		return -EOPNOTSUPP;
 	}
+}
+
+/* mac80211 sends a peer only MCS that are in our own RX MCS set, up to the
+ * TX stream limit.
+ */
+static void b43_ht_set_chains(struct b43_wldev *dev)
+{
+	struct ieee80211_sta_ht_cap *ht = &dev->wl->band_2ghz_ht.ht_cap;
+	unsigned int tx_streams = hweight8(dev->txchain);
+	unsigned int rx_streams = hweight8(dev->rxchain);
+	/* MCS 7 with the short GI, per stream */
+	unsigned int highest = ht->cap & IEEE80211_HT_CAP_SUP_WIDTH_20_40 ?
+			       150 : 72;
+
+	ht->mcs.rx_mask[1] = rx_streams > 1 ? 0xff : 0;
+	ht->mcs.rx_highest = cpu_to_le16(highest * rx_streams);
+	ht->mcs.tx_params = IEEE80211_HT_MCS_TX_DEFINED;
+	if (tx_streams != rx_streams)
+		ht->mcs.tx_params |= IEEE80211_HT_MCS_TX_RX_DIFF |
+				     (tx_streams - 1) <<
+				     IEEE80211_HT_MCS_TX_MAX_STREAMS_SHIFT;
+	/* STBC sends one stream on both cores. Without this, mac80211 also
+	 * hides the peer's RX STBC from rate control.
+	 */
+	if (tx_streams > 1)
+		ht->cap |= IEEE80211_HT_CAP_TX_STBC;
+	else
+		ht->cap &= ~IEEE80211_HT_CAP_TX_STBC;
+}
+
+/* mac80211 allows this only while the device is stopped. */
+static int b43_op_set_antenna(struct ieee80211_hw *hw, int radio_idx,
+			      u32 tx_ant, u32 rx_ant)
+{
+	struct b43_wl *wl = hw_to_b43_wl(hw);
+	struct b43_wldev *dev = wl->current_dev;
+
+	if (!tx_ant || !rx_ant)
+		return -EINVAL;
+
+	mutex_lock(&wl->mutex);
+	dev->txchain = tx_ant;
+	dev->rxchain = rx_ant;
+	b43_ht_set_chains(dev);
+	mutex_unlock(&wl->mutex);
+
+	return 0;
+}
+
+static int b43_op_get_antenna(struct ieee80211_hw *hw, int radio_idx,
+			      u32 *tx_ant, u32 *rx_ant)
+{
+	struct b43_wl *wl = hw_to_b43_wl(hw);
+	struct b43_wldev *dev = wl->current_dev;
+
+	mutex_lock(&wl->mutex);
+	*tx_ant = dev->txchain;
+	*rx_ant = dev->rxchain;
+	mutex_unlock(&wl->mutex);
+
+	return 0;
 }
 
 static const struct ieee80211_ops b43_hw_ops = {
@@ -7270,11 +8262,16 @@ static const struct ieee80211_ops b43_hw_ops = {
 	.stop			= b43_op_stop,
 	.set_tim		= b43_op_beacon_set_tim,
 	.sta_notify		= b43_op_sta_notify,
+	.release_buffered_frames = b43_op_release_buffered_frames,
+	.sta_pre_rcu_remove	= b43_op_sta_pre_rcu_remove,
 	.sta_state		= b43_op_sta_state,
 	.sw_scan_start		= b43_op_sw_scan_start_notifier,
 	.sw_scan_complete	= b43_op_sw_scan_complete_notifier,
+	.flush			= b43_op_flush,
 	.get_survey		= b43_op_get_survey,
 	.ampdu_action		= b43_op_ampdu_action,
+	.set_antenna		= b43_op_set_antenna,
+	.get_antenna		= b43_op_get_antenna,
 	.rfkill_poll		= b43_rfkill_poll,
 };
 
@@ -7532,6 +8529,46 @@ static int b43_setup_bands(struct b43_wldev *dev,
 	} else {
 		if (have_5ghz_phy)
 			hw->wiphy->bands[NL80211_BAND_5GHZ] = &b43_band_5GHz_aphy;
+	}
+
+	/* Keep the shared legacy band templates unchanged. */
+	dev->ht = dev->ht && modparam_qos && have_2ghz_phy;
+	if (dev->ht) {
+		struct ieee80211_supported_band *band = &dev->wl->band_2ghz_ht;
+		struct ieee80211_sta_ht_cap *ht = &band->ht_cap;
+
+		*band = *hw->wiphy->bands[NL80211_BAND_2GHZ];
+		ht->ht_supported = true;
+		/* Both RX chains stay awake. */
+		ht->cap = IEEE80211_HT_CAP_SM_PS | IEEE80211_HT_CAP_SGI_20 |
+			  IEEE80211_HT_CAP_MAX_AMSDU |
+			  1 << IEEE80211_HT_CAP_RX_STBC_SHIFT;
+		ht->ampdu_factor = IEEE80211_HT_MAX_AMPDU_64K;
+		ht->ampdu_density = IEEE80211_HT_MPDU_DENSITY_4;
+		ht->mcs.rx_mask[0] = 0xff;
+		dev->txchain = 0x3;
+		dev->rxchain = 0x3;
+		b43_ht_set_chains(dev);
+		hw->wiphy->available_antennas_tx = 0x3;
+		hw->wiphy->available_antennas_rx = 0x3;
+		ieee80211_hw_set(hw, AMPDU_AGGREGATION);
+		/* mac80211 builds A-MSDUs from what waits (b43_tx_pull()),
+		 * on its fast transmit path only, and linearizes them: an
+		 * A-MPDU member takes two DMA slots (b43_dma_tx_ampdu()).
+		 */
+		ieee80211_hw_set(hw, TX_AMSDU);
+		ieee80211_hw_set(hw, SUPPORT_FAST_XMIT);
+		hw->max_rx_aggregation_subframes = IEEE80211_MAX_AMPDU_BUF_HT;
+		hw->max_tx_aggregation_subframes = B43_AMPDU_TX_WINDOW;
+		hw->wiphy->bands[NL80211_BAND_2GHZ] = band;
+		/* Station power save, off by default (b43_ps_update()). */
+		ieee80211_hw_set(hw, SUPPORTS_PS);
+		ieee80211_hw_set(hw, SUPPORTS_DYNAMIC_PS);
+		hw->wiphy->flags &= ~WIPHY_FLAG_PS_ON_BY_DEFAULT;
+		/* Every frame's TX status says whether it was acknowledged,
+		 * also for each A-MPDU member.
+		 */
+		ieee80211_hw_set(hw, REPORTS_TX_ACK_STATUS);
 	}
 
 	dev->phy.supports_2ghz = have_2ghz_phy;
@@ -7920,6 +8957,7 @@ static struct b43_wl *b43_wireless_init(struct b43_bus_dev *dev)
 	INIT_WORK(&wl->beacon_update_trigger, b43_beacon_update_trigger_work);
 	INIT_WORK(&wl->txpower_adjust_work, b43_phy_txpower_adjust_work);
 	INIT_WORK(&wl->tx_work, b43_tx_work);
+	INIT_DELAYED_WORK(&wl->ps_work, b43_ps_work);
 
 	/* Initialize queues and flags. */
 	for (queue_num = 0; queue_num < B43_QOS_QUEUE_NUM; queue_num++) {
