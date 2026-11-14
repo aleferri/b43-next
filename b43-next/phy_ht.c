@@ -897,6 +897,20 @@ static void b43_phy_ht_gain_state_write(struct b43_wldev *dev,
 }
 
 /*
+ * Whether the channel or its type differ from the last init's: wl restores
+ * the gain state then (docs/ht-retrace-todo.md, "The hot cycle").
+ */
+static bool b43_phy_ht_home_changed(struct b43_wldev *dev)
+{
+	struct b43_phy_ht *phy_ht = dev->phy.ht;
+	struct cfg80211_chan_def *chandef = &dev->wl->hw->conf.chandef;
+
+	return phy_ht->home_channel &&
+	       (phy_ht->home_channel != chandef->chan->hw_value ||
+		phy_ht->home_type != cfg80211_get_chandef_type(chandef));
+}
+
+/*
  * The gain control setup wl runs at the end of the channel setup, as its
  * captures show it on every 2.4 GHz channel at 20 and 40 MHz. The reads
  * are wl's; b43 has no use for their values yet.
@@ -1030,8 +1044,12 @@ static void b43_phy_ht_gain_ctl_setup(struct b43_wldev *dev,
 		}
 		if (i)
 			continue;
-		/* On a later init wl writes these two again here */
-		if (!dev->phy.do_full_init) {
+		/*
+		 * On a later init on the channel of the one before wl writes
+		 * these two again here; on another it restores the gain state
+		 * at the end of the init instead.
+		 */
+		if (!dev->phy.do_full_init && !b43_phy_ht_home_changed(dev)) {
 			b43_phy_maskset(dev, 0x280, 0xff00, 0x3a);
 			b43_phy_maskset(dev, 0x283, 0xff00, 0x3a);
 		}
@@ -1142,11 +1160,18 @@ static void b43_phy_ht_op_prepare_structs(struct b43_wldev *dev)
 	struct b43_phy *phy = &dev->phy;
 	struct b43_phy_ht *phy_ht = phy->ht;
 	u8 glitch_high = phy_ht->glitch_high;
+	unsigned int home_channel = phy_ht->home_channel;
+	enum nl80211_channel_type home_type = phy_ht->home_type;
 	int i;
 
 	memset(phy_ht, 0, sizeof(*phy_ht));
-	/* wl keeps the turns over the glitch threshold across a down */
+	/*
+	 * wl keeps across a down the turns over the glitch threshold and the
+	 * channel of its last init
+	 */
 	phy_ht->glitch_high = glitch_high;
+	phy_ht->home_channel = home_channel;
+	phy_ht->home_type = home_type;
 
 	phy_ht->tx_pwr_ctl = true;
 	for (i = 0; i < 3; i++)
@@ -1165,7 +1190,7 @@ static int b43_phy_ht_op_init(struct b43_wldev *dev)
 	bool saved_tx_pwr_ctl;
 	bool anapactrl = dev->dev->bus_sprom->boardflags2_hi &
 			 SSBN_BFL2_HI_ANAPACTRL_2G;
-	int i;
+	int i, c;
 
 	if (dev->dev->bus_type != B43_BUS_BCMA) {
 		b43err(dev->wl, "HT-PHY is supported only on BCMA bus!\n");
@@ -1296,6 +1321,26 @@ static int b43_phy_ht_op_init(struct b43_wldev *dev)
 		b43_phy_maskset(dev, 0x259, ~0x00f0, 0x0040);
 		b43_phy_maskset(dev, 0x259, ~0x0f00, 0x0400);
 	}
+
+	/*
+	 * On another channel than the last init's wl restores the gain state
+	 * four times, with the clip thresholds between the second and the
+	 * third (the hot captures; on the same channel, as the second cycle
+	 * of attach-2x-ch11, it does not).
+	 */
+	if (b43_phy_ht_home_changed(dev)) {
+		for (i = 0; i < 2; i++)
+			b43_phy_ht_gain_state_write(dev, &phy_ht->gain_state);
+		for (c = 0; c < 3; c++) {
+			b43_phy_maskset(dev, 0x273 + c * 3, 0xff00, 0x62);
+			b43_phy_maskset(dev, 0x273 + c * 3, 0x00ff, 0x5f00);
+		}
+		for (i = 0; i < 2; i++)
+			b43_phy_ht_gain_state_write(dev, &phy_ht->gain_state);
+	}
+	phy_ht->home_channel = dev->wl->hw->conf.chandef.chan->hw_value;
+	phy_ht->home_type =
+		cfg80211_get_chandef_type(&dev->wl->hw->conf.chandef);
 
 	return 0;
 }
