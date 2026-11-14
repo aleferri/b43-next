@@ -394,6 +394,46 @@ static void test_environment(bool cac)
 	}
 }
 
+/*
+ * B43_CYCLE2=N: a second `ifconfig up` after the first down, on channel N of
+ * the same band, with the AP started again and 5 s of its work: what a
+ * reconfiguration does, for what it can break (the state kept across a
+ * down, the restore on another channel). The oracle has run out by then,
+ * so the reads are the capture's last; it is a run for crashes and
+ * warnings, not a score.
+ */
+static void test_second_cycle(void)
+{
+	long want = b43_test_env_long("B43_CYCLE2", 0);
+	struct ieee80211_supported_band *sb;
+	int i, up;
+
+	if (!want)
+		return;
+	sb = b43_test_hw->wiphy->bands[b43_test_hw->conf.chandef.chan->band];
+	for (i = 0; i < sb->n_channels; i++)
+		if (sb->channels[i].hw_value == want)
+			break;
+	if (i == sb->n_channels) {
+		b43_trace_note("B43_CYCLE2=%d: no such channel\n", (int)want);
+		return;
+	}
+	b43_test_hw->conf.chandef.chan = &sb->channels[i];
+	b43_test_hw->conf.chandef.center_freq1 = sb->channels[i].center_freq +
+		(b43_test_hw->conf.chandef.width == NL80211_CHAN_WIDTH_40 ?
+		 10 : 0);
+	up = b43_test_hw_ops->start(b43_test_hw);
+	b43_trace_note("cycle 2 start: %d\n", up);
+	if (up)
+		return;
+	test_ifup();
+	test_start_ap();
+	b43_test_run_until(jiffies + 5 * HZ);
+	b43_test_hw_ops->remove_interface(b43_test_hw, test_vif);
+	if (b43_test_hw_ops->stop)
+		b43_test_hw_ops->stop(b43_test_hw, false);
+}
+
 int main(void)
 {
 	int err;
@@ -423,7 +463,10 @@ int main(void)
 	 * ieee80211_alloc_hw_nm() nello stub, come __bcmn_driver_register
 	 * cattura la probe.
 	 */
-	if (!err && b43_test_hw_ops && b43_test_hw_ops->start) {
+	/* A registration cfg80211 would refuse leaves no channel to start on */
+	if (!err && b43_test_hw && !b43_test_hw->conf.chandef.chan)
+		b43_trace_note("no channel registered, no start: %d\n", -EINVAL);
+	else if (!err && b43_test_hw_ops && b43_test_hw_ops->start) {
 		int up = b43_test_hw_ops->start(b43_test_hw);
 
 		b43_trace_note("start: %d\n", up);
@@ -440,6 +483,7 @@ int main(void)
 			b43_test_hw_ops->remove_interface(b43_test_hw, test_vif);
 			if (b43_test_hw_ops->stop)
 				b43_test_hw_ops->stop(b43_test_hw, false);
+			test_second_cycle();
 		}
 	}
 
