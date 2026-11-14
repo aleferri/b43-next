@@ -2144,9 +2144,12 @@ void b43_rx(struct b43_wldev *dev, struct sk_buff *skb, const void *_rxhdr)
 		 */
 		keyidx = b43_kidx_to_raw(dev, keyidx);
 		/*
-		 * Some frames come with index 63, past the key table, yet
-		 * decrypted: no decryption error, the LLC header in the clear.
+		 * The BCM43227 (dev->ht) reports index 63, past the key table,
+		 * for some frames it decrypted: no decryption error, the LLC
+		 * header in the clear. Elsewhere such an index stays an error.
 		 */
+		if (B43_WARN_ON(keyidx >= ARRAY_SIZE(dev->key) && !dev->ht))
+			goto drop;
 		if (keyidx >= ARRAY_SIZE(dev->key) ||
 		    dev->key[keyidx].algorithm != B43_SEC_ALGO_NONE) {
 			wlhdr_len = ieee80211_hdrlen(fctl);
