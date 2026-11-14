@@ -9,7 +9,8 @@
 #   ./gates.sh --min-block 8 --gap-tol 2 [CAPTURE...]
 #
 # CAPTURE is a name under traces/mmio-cold, e.g. cold-2g6-20; without, the
-# three 20 MHz ones (the flow sets up 20 MHz only). GATE_TMP keeps the
+# three 20 MHz ones; cold-2g1l-40, cold-2g6l-40 and cold-2g11u-40 run the
+# flow at 40 MHz on their control channel and sideband. GATE_TMP keeps the
 # window's trace and b43's. Each capture gets two rows: all the operations,
 # and the PHY's and radio's only, the perimeter of this harness, which
 # compiles no core.
@@ -40,8 +41,14 @@ for c in "$@"; do
 	first=$(awk "/MARK 'up'/ { u = 1; next } u && / PHY\./ { print substr(\$2, 2); exit }" "$ops")
 	last=$(awk "/MARK 'ssid'/ { print substr(\$2, 2) - 1; exit }" "$ops")
 	ch=$(echo "$c" | sed 's/cold-2g\([0-9]*\).*/\1/')
-	echo "== $c, ops $first:$last, channel $ch"
-	N_CHANNEL=$ch ./n-trace full "$ops" "$first" "$last" -o "$T/$c.trace"
+	# cold-2g6l-40: 40 MHz, the control channel the lower one; 11u the upper
+	case $c in
+	*l-40) bw=40 sb=1 ;;
+	*u-40) bw=40 sb=-1 ;;
+	*) bw=20 sb=0 ;;
+	esac
+	echo "== $c, ops $first:$last, channel $ch, $bw MHz"
+	N_CHANNEL=$ch N_BW=$bw N_SB=$sb ./n-trace full "$ops" "$first" "$last" -o "$T/$c.trace"
 	python3 ../unit/cmp_skip.py "$ops" "$T/$c.trace" "$first:$last" \
 		--board rt-ac56u --bus --rmw $B | grep -A2 '^grezzo'
 	grep -E ' (PHY|RAD)\.' "$ops" > "$T/$c.phy.ops"
