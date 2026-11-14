@@ -8054,6 +8054,25 @@ static void b43_nphy_band_edge_caps(struct b43_wldev *dev,
 }
 
 /*
+ * wl 7.14.164.18 on the BCM43217 targets the highest rate of the width in
+ * use, CCK included, and backs every rate of the adjusted power table off
+ * from the rates of that width, at 20 and at 40 MHz alike. The SROM's
+ * rates of the other width (b43_ppr_load_sprom_r8_40()) would raise the
+ * target and the 40 MHz half of the table: on channel 1 at 20 MHz, 0x58
+ * where wl has 0x56. They take the rates of the width in use instead.
+ */
+static void b43_nphy_ppr_width_in_use(struct b43_wldev *dev,
+				      struct b43_ppr *ppr)
+{
+	enum b43_ppr_bw bw = b43_ppr_bw(dev->phy.chandef->width);
+	enum b43_ppr_bw other = bw == B43_PPR_BW_20 ? B43_PPR_BW_40 :
+						      B43_PPR_BW_20;
+
+	memcpy(ppr->ofdm[other], ppr->ofdm[bw], sizeof(ppr->ofdm[bw]));
+	memcpy(ppr->mcs[other], ppr->mcs[bw], sizeof(ppr->mcs[bw]));
+}
+
+/*
  * TX power limits of radio 2057 rev 9 before the 1.5 dB backoff: CCK 15.5
  * dBm, OFDM 16 dBm and every 40 MHz rate 11.5 dBm; on channels 12 and 13,
  * CCK 11.5 dBm, OFDM 11 dBm and two-chain rates 9.5 dBm.
@@ -8179,6 +8198,7 @@ static enum b43_txpwr_result b43_nphy_op_recalc_txpower(struct b43_wldev *dev,
 		else
 			b43_ppr_add(ppr, -sprom->antenna_gain.a1);
 		b43_nphy_band_edge_caps(dev, ppr);
+		b43_nphy_ppr_width_in_use(dev, ppr);
 		b43_ppr_add(ppr, -6); /* N-PHY specific */
 	}
 
