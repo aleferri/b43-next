@@ -4838,7 +4838,7 @@ static bool b43_tx_rate_ht_ok(const struct ieee80211_tx_rate *rate)
  * Whether the TX header can carry the frame's rates. On the AC the first
  * rate block must (b43_txhdr_ac_rate_ok()); a fallback it cannot carry ends
  * the blocks, in b43_generate_txhdr_ac(). On the other PHYs a legacy rate and
- * its fallback, with HT on an N-PHY core each of them a legacy rate or an
+ * its fallback, with HT on a pre-AC core each of them a legacy rate or an
  * HT MCS of one or two streams. Rate control picks nothing else, see
  * b43_ac_set_ht_vht_cap() and b43_setup_bands(), but an injected frame can
  * ask for any rate, and the header would read an MCS as an index into the
@@ -4862,7 +4862,7 @@ static bool b43_tx_rates_ok(struct ieee80211_hw *hw,
 		return dev->fw.layout.hdr->tx_rate_ok(band, &r[0]);
 	if (band->vht_cap.vht_supported)
 		return b43_txhdr_ac_rate_ok(band, &r[0]);
-	if (dev && b43_nphy_ht_enabled(dev))
+	if (dev && b43_ht_enabled(dev))
 		return b43_tx_rate_ht_ok(&r[0]) && b43_tx_rate_ht_ok(&r[1]);
 	return !b43_tx_rate_is_mcs(&r[0]) && !b43_tx_rate_is_mcs(&r[1]);
 }
