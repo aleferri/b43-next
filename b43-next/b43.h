@@ -1201,6 +1201,7 @@ struct b43_wl {
 	 */
 	struct ieee80211_supported_band band_5ghz_ac;
 	struct ieee80211_supported_band band_2ghz_ac;
+	struct ieee80211_supported_band band_2ghz_ht;
 
 	/*
 	 * The radar types the AC PHY matches (enum b43_radar_region), from

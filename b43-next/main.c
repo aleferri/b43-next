@@ -7439,6 +7439,35 @@ static const struct ieee80211_iface_combination b43_if_comb_dfs = {
  * the board's chains, the SROM rxchain the PHY also uses for receiving and
  * the txchain for transmitting.
  */
+/*
+ * The HT-PHY's HT capabilities: 20 MHz, the long guard interval and BCC, as
+ * b43_generate_txhdr() sends an MCS, received on the chains the SPROM has
+ * and sent on one stream, MCS 0-7. No A-MPDU is set up, so the factor and
+ * the density are the ones every HT station takes.
+ */
+static void b43_ht_set_ht_cap(struct b43_wldev *dev,
+			      struct ieee80211_supported_band *band)
+{
+	struct ieee80211_sta_ht_cap *ht = &band->ht_cap;
+	u8 chains = dev->dev->bus_sprom->rxchain & 0x07;
+	unsigned int nss, i;
+
+	if (!chains)
+		chains = 0x07;
+	nss = hweight8(chains);
+
+	memset(ht, 0, sizeof(*ht));
+	ht->ht_supported = true;
+	ht->cap = WLAN_HT_CAP_SM_PS_DISABLED << IEEE80211_HT_CAP_SM_PS_SHIFT;
+	ht->ampdu_factor = IEEE80211_HT_MAX_AMPDU_64K;
+	ht->ampdu_density = IEEE80211_HT_MPDU_DENSITY_8;
+	for (i = 0; i < nss; i++)
+		ht->mcs.rx_mask[i] = 0xff;
+	ht->mcs.tx_params = IEEE80211_HT_MCS_TX_DEFINED;
+	if (nss > 1)
+		ht->mcs.tx_params |= IEEE80211_HT_MCS_TX_RX_DIFF;
+}
+
 static void b43_ac_set_ht_vht_cap(struct b43_wldev *dev,
 				  struct ieee80211_supported_band *band)
 {
@@ -7515,6 +7544,13 @@ static int b43_setup_bands(struct b43_wldev *dev,
 	if (have_2ghz_phy)
 		hw->wiphy->bands[NL80211_BAND_2GHZ] = limited_2g ?
 			&b43_band_2ghz_limited : &b43_band_2GHz;
+	if (dev->phy.type == B43_PHYTYPE_HT && have_2ghz_phy) {
+		struct ieee80211_supported_band *band = &dev->wl->band_2ghz_ht;
+
+		*band = b43_band_2GHz;
+		b43_ht_set_ht_cap(dev, band);
+		hw->wiphy->bands[NL80211_BAND_2GHZ] = band;
+	}
 	if (dev->phy.type == B43_PHYTYPE_AC && have_2ghz_phy) {
 		struct ieee80211_supported_band *band = &dev->wl->band_2ghz_ac;
 
