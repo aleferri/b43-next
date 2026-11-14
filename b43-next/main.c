@@ -7198,9 +7198,14 @@ static int b43_phy_versioning(struct b43_wldev *dev)
 	phy->type = phy_type;
 	phy->rev = phy_rev;
 
-	/* The BCM43227's core, N-PHY and radio revisions */
+	/*
+	 * Where HT has been tested, all on core rev 30 with microcode 784.2:
+	 * the BCM43227 (N-PHY rev 16, radio 2057 rev 9) and the BCM43217
+	 * (N-PHY rev 17, radio 2057 rev 14)
+	 */
 	dev->ht = core_rev == 30 && phy_type == B43_PHYTYPE_N &&
-		  phy_rev == 16 && radio_rev == 9;
+		  ((phy_rev == 16 && radio_rev == 9) ||
+		   (phy_rev == 17 && radio_rev == 14));
 
 	return 0;
 }
