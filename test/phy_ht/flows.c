@@ -323,19 +323,24 @@ void bcmn_pmu_spuravoid_pllupdate(struct bcmn_drv_cc *cc, int spuravoid)
 /*
  * The core calls of the watchdog's turn and of the MAC's suspend and enable,
  * copies of main.c's as they reach the bus. b43_power_saving_ctl_bits() is
- * main.c's as its FIXME leaves it: awake, hardware power saving off.
+ * main.c's as its FIXME leaves it: hardware power saving off, awake but on
+ * an HT-PHY's AP that does not beacon yet.
  */
 void b43_power_saving_ctl_bits(struct b43_wldev *dev, unsigned int ps_flags)
 {
+	bool awake = (ps_flags & B43_PS_AWAKE) ||
+		     !b43_is_mode(dev->wl, NL80211_IFTYPE_AP) ||
+		     (dev->wl->vif && dev->wl->vif->bss_conf.enable_beacon);
 	u32 old = b43_read32(dev, B43_MMIO_MACCTL);
-	u32 macctl = (old & ~B43_MACCTL_HWPS) | B43_MACCTL_AWAKE;
+	u32 macctl = (old & ~(B43_MACCTL_HWPS | B43_MACCTL_AWAKE)) |
+		     (awake ? B43_MACCTL_AWAKE : 0);
 	int i;
 
 	if (macctl == old)
 		return;
 	b43_macctl_write(dev, macctl);
 	b43_read32(dev, B43_MMIO_MACCTL);
-	for (i = 0; i < 100; i++)
+	for (i = 0; awake && i < 100; i++)
 		if (b43_shm_read16(dev, B43_SHM_SHARED, B43_SHM_SH_UCODESTAT) !=
 		    B43_SHM_SH_UCODESTAT_SLEEP)
 			break;
