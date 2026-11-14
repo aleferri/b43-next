@@ -7804,11 +7804,16 @@ static void b43_ht_set_chains(struct b43_wldev *dev)
 	struct ieee80211_sta_ht_cap *ht = &dev->wl->band_2ghz_ht.ht_cap;
 	unsigned int tx_streams = hweight8(dev->txchain);
 	unsigned int rx_streams = hweight8(dev->rxchain);
-	/* MCS 7 with the short GI, per stream */
-	unsigned int highest = ht->cap & IEEE80211_HT_CAP_SUP_WIDTH_20_40 ?
-			       150 : 72;
+	unsigned int highest, i;
 
-	ht->mcs.rx_mask[1] = rx_streams > 1 ? 0xff : 0;
+	/* MCS 7 per stream, at the widest width and guard interval announced */
+	if (ht->cap & IEEE80211_HT_CAP_SUP_WIDTH_20_40)
+		highest = ht->cap & IEEE80211_HT_CAP_SGI_40 ? 150 : 135;
+	else
+		highest = ht->cap & IEEE80211_HT_CAP_SGI_20 ? 72 : 65;
+
+	for (i = 1; i < 4; i++)
+		ht->mcs.rx_mask[i] = i < rx_streams ? 0xff : 0;
 	ht->mcs.rx_highest = cpu_to_le16(highest * rx_streams);
 	ht->mcs.tx_params = IEEE80211_HT_MCS_TX_DEFINED;
 	if (tx_streams != rx_streams)
@@ -8168,25 +8173,43 @@ static int b43_setup_bands(struct b43_wldev *dev,
 		 */
 		ieee80211_hw_set(hw, REPORTS_TX_ACK_STATUS);
 	}
+	if (dev->phy.type == B43_PHYTYPE_HT) {
+		const struct ssbn_sprom *sprom = dev->dev->bus_sprom;
+
+		/* Every chain the SROM has receives. One sends, on the
+		 * antenna the TX header picks: of txchain only the count is
+		 * used.
+		 */
+		dev->rxchain = sprom->rxchain & 0x7 ? : 0x7;
+		dev->txchain = dev->rxchain & -dev->rxchain;
+	}
 	/* An HT STA is a QoS STA. The shared legacy band templates stay
 	 * unchanged.
 	 */
-	if (dev->phy.nphy_ht && modparam_qos && have_2ghz_phy) {
+	if (b43_ht_core(dev) && modparam_qos && have_2ghz_phy) {
 		struct ieee80211_supported_band *band = &dev->wl->band_2ghz_ht;
 		struct ieee80211_sta_ht_cap *ht = &band->ht_cap;
 
 		*band = *hw->wiphy->bands[NL80211_BAND_2GHZ];
 		ht->ht_supported = true;
-		/* Both RX chains stay awake. */
-		ht->cap = IEEE80211_HT_CAP_SM_PS | IEEE80211_HT_CAP_SGI_20 |
-			  IEEE80211_HT_CAP_MAX_AMSDU |
-			  IEEE80211_HT_CAP_SUP_WIDTH_20_40 |
-			  IEEE80211_HT_CAP_SGI_40 | IEEE80211_HT_CAP_DSSSCCK40 |
-			  1 << IEEE80211_HT_CAP_RX_STBC_SHIFT;
+		/* Every RX chain stays awake. The HT-PHY: 20 MHz, the long
+		 * guard interval and BCC.
+		 */
+		ht->cap = IEEE80211_HT_CAP_SM_PS;
+		if (dev->phy.nphy_ht)
+			ht->cap |= IEEE80211_HT_CAP_SGI_20 |
+				   IEEE80211_HT_CAP_MAX_AMSDU |
+				   IEEE80211_HT_CAP_SUP_WIDTH_20_40 |
+				   IEEE80211_HT_CAP_SGI_40 |
+				   IEEE80211_HT_CAP_DSSSCCK40 |
+				   1 << IEEE80211_HT_CAP_RX_STBC_SHIFT;
 		ht->ampdu_factor = IEEE80211_HT_MAX_AMPDU_64K;
 		ht->ampdu_density = IEEE80211_HT_MPDU_DENSITY_4;
 		ht->mcs.rx_mask[0] = 0xff;
 		b43_ht_set_chains(dev);
+		hw->wiphy->bands[NL80211_BAND_2GHZ] = band;
+	}
+	if (b43_nphy_ht_enabled(dev)) {
 		ieee80211_hw_set(hw, AMPDU_AGGREGATION);
 		/* mac80211 builds A-MSDUs from what waits (b43_tx_pull()),
 		 * on its fast transmit path only, and linearizes them: an
@@ -8196,7 +8219,6 @@ static int b43_setup_bands(struct b43_wldev *dev,
 		ieee80211_hw_set(hw, SUPPORT_FAST_XMIT);
 		hw->max_rx_aggregation_subframes = IEEE80211_MAX_AMPDU_BUF_HT;
 		hw->max_tx_aggregation_subframes = B43_AMPDU_TX_WINDOW;
-		hw->wiphy->bands[NL80211_BAND_2GHZ] = band;
 	}
 
 	dev->phy.supports_2ghz = have_2ghz_phy;
