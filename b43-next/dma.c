@@ -2720,10 +2720,62 @@ void b43_dma_handle_txstatus(struct b43_wldev *dev,
 }
 
 /*
- * A frame in an uncached RX slot: read where the device wrote it, copied
- * into a new skb, the slot poisoned again in place for the device.
+ * The buffers a frame of @len bytes takes from @slot on, and whether the
+ * device has handed all of them back: they must lie before @current_slot,
+ * which the device has not filled yet. The header and its length are in the
+ * first buffer, which the device can return while it still fills the others.
  */
-static void dma_rx_uncached(struct b43_dmaring *ring, int *slot)
+static bool dma_rx_frame_complete(struct b43_dmaring *ring, int slot,
+				  int current_slot, u16 len)
+{
+	int need = DIV_ROUND_UP(ring->frameoffset + len, ring->rx_buffersize);
+	int done = (current_slot - slot + ring->nr_slots) % ring->nr_slots;
+
+	return need <= done;
+}
+
+/*
+ * A frame longer than one uncached slot: copied out of the slots it takes
+ * into a new skb, each slot poisoned again for the device. *slot is left at
+ * the last one.
+ */
+static void dma_rx_uncached_multi(struct b43_dmaring *ring, int *slot, u16 len)
+{
+	size_t left = ring->frameoffset + len;
+	struct b43_rxhdr_fw4 *rxhdr;
+	struct sk_buff *skb;
+	size_t n;
+	u8 *buf;
+
+	skb = dev_alloc_skb(left);
+	for (;;) {
+		buf = b43_rx_slot_buf(ring, *slot);
+		n = min_t(size_t, left, ring->rx_buffersize);
+		if (skb)
+			skb_put_data(skb, buf, n);
+		b43_poison_rx_buf(ring, buf);
+		left -= n;
+		if (!left)
+			break;
+		*slot = next_slot(ring, *slot);
+	}
+	if (unlikely(!skb)) {
+		ring->dev->rx_ht_valid = false;
+		return;
+	}
+	rxhdr = (struct b43_rxhdr_fw4 *)skb->data;
+	skb_pull(skb, ring->frameoffset);
+	b43_rx(ring->dev, skb, rxhdr);
+}
+
+/*
+ * A frame in an uncached RX slot: read where the device wrote it, copied
+ * into a new skb, the slot poisoned again in place for the device. Returns
+ * false, with nothing touched, for a frame whose later slots the device has
+ * not handed back yet.
+ */
+static bool dma_rx_uncached(struct b43_dmaring *ring, int *slot,
+			    int current_slot)
 {
 	u8 *buf = b43_rx_slot_buf(ring, *slot);
 	struct b43_rxhdr_fw4 *rxhdr = (struct b43_rxhdr_fw4 *)buf;
@@ -2747,22 +2799,16 @@ static void dma_rx_uncached(struct b43_dmaring *ring, int *slot)
 		goto recycle;
 	}
 	if (unlikely(len + ring->frameoffset > ring->rx_buffersize)) {
-		s32 tmp = len;
-		int cnt = 0;
-
-		/* Over several buffers, which should never happen: dropped */
-		while (1) {
-			b43_poison_rx_buf(ring, b43_rx_slot_buf(ring, *slot));
-			*slot = next_slot(ring, *slot);
-			cnt++;
-			tmp -= ring->rx_buffersize;
-			if (tmp <= 0)
-				break;
+		/* Up to 2 bytes of padding precede the PLCP header. */
+		if (unlikely(len > 2 + B43_DMA_RX_MAX_FRAME_LEN)) {
+			b43dbg(ring->dev->wl,
+			       "DMA RX: Dropping %u-byte frame\n", len);
+			goto recycle;
 		}
-		b43err(ring->dev->wl, "DMA RX buffer too small "
-		       "(len: %u, buffer: %u, nr-dropped: %d)\n",
-		       len, ring->rx_buffersize, cnt);
-		return;
+		if (!dma_rx_frame_complete(ring, *slot, current_slot, len))
+			return false;
+		dma_rx_uncached_multi(ring, slot, len);
+		return true;
 	}
 
 	skb = dev_alloc_skb(len + ring->frameoffset);
@@ -2774,10 +2820,12 @@ static void dma_rx_uncached(struct b43_dmaring *ring, int *slot)
 	rxhdr = (struct b43_rxhdr_fw4 *)skb->data;
 	skb_pull(skb, ring->frameoffset);
 	b43_rx(ring->dev, skb, rxhdr);
-	return;
+	return true;
 
 recycle:
+	ring->dev->rx_ht_valid = false;
 	b43_poison_rx_buf(ring, buf);
+	return true;
 }
 
 /* A frame longer than one buffer continues in the following ones, which
@@ -2816,7 +2864,12 @@ static void dma_rx_multi(struct b43_dmaring *ring, int *slot, u16 len)
 	b43_rx(ring->dev, skb, rxhdr);
 }
 
-static void dma_rx(struct b43_dmaring *ring, int *slot)
+/*
+ * The frame that starts in @slot. Returns false, with nothing touched, for a
+ * frame whose later buffers the device has not handed back yet: b43_dma_rx()
+ * stops there and takes it on its next run.
+ */
+static bool dma_rx(struct b43_dmaring *ring, int *slot, int current_slot)
 {
 	const struct b43_dma_ops *ops = ring->ops;
 	struct b43_dmadesc_generic *desc;
@@ -2828,10 +2881,8 @@ static void dma_rx(struct b43_dmaring *ring, int *slot)
 	dma_addr_t dmaaddr;
 
 	desc = ops->idx2desc(ring, *slot, &meta);
-	if (ring->rx_coh) {
-		dma_rx_uncached(ring, slot);
-		return;
-	}
+	if (ring->rx_coh)
+		return dma_rx_uncached(ring, slot, current_slot);
 
 	/*
 	 * Only the RX header and the first bytes of the frame (the poison
@@ -2871,8 +2922,11 @@ static void dma_rx(struct b43_dmaring *ring, int *slot)
 	if (unlikely(len + ring->frameoffset > ring->rx_buffersize)) {
 		/* Up to 2 bytes of padding precede the PLCP header. */
 		if (likely(len <= 2 + B43_DMA_RX_MAX_FRAME_LEN)) {
+			if (!dma_rx_frame_complete(ring, *slot, current_slot,
+						   len))
+				return false;
 			dma_rx_multi(ring, slot, len);
-			return;
+			return true;
 		}
 		b43dbg(ring->dev->wl, "DMA RX: Dropping %u-byte frame\n", len);
 		dmaaddr = meta->dmaaddr;
@@ -2893,13 +2947,14 @@ static void dma_rx(struct b43_dmaring *ring, int *slot)
 	skb_pull(skb, ring->frameoffset);
 
 	b43_rx(ring->dev, skb, rxhdr);
-	return;
+	return true;
 
 drop_recycle_buffer:
 	ring->dev->rx_ht_valid = false;
 	/* Poison and recycle the RX buffer. */
 	b43_poison_rx_buffer(ring, skb);
 	sync_descbuffer_for_device(ring, dmaaddr, ring->rx_buffersize);
+	return true;
 }
 
 void b43_dma_rx(struct b43_dmaring *ring)
@@ -2914,7 +2969,8 @@ void b43_dma_rx(struct b43_dmaring *ring)
 
 	slot = ring->current_slot;
 	for (; slot != current_slot; slot = next_slot(ring, slot)) {
-		dma_rx(ring, &slot);
+		if (!dma_rx(ring, &slot, current_slot))
+			break;
 		update_max_used_slots(ring, ++used_slots);
 	}
 	wmb();
