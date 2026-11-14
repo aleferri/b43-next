@@ -1670,6 +1670,17 @@ void b43_power_saving_ctl_bits(struct b43_wldev *dev, unsigned int ps_flags)
 			dev->mac_suspended;
 	}
 
+	/*
+	 * As the HT-PHY's stock driver: on an AP that does not beacon yet
+	 * it lets the ucode sleep whenever it enables the MAC (MACCONTROL
+	 * 0x00160403, AWAKE clear, six times between `wl ssid` and `wl bss up`
+	 * on the R6400 v1), and wakes it for the suspend after.
+	 */
+	if (dev->phy.type == B43_PHYTYPE_HT && !(ps_flags & B43_PS_AWAKE) &&
+	    b43_is_mode(dev->wl, NL80211_IFTYPE_AP) &&
+	    !(dev->wl->vif && dev->wl->vif->bss_conf.enable_beacon))
+		awake = false;
+
 	old = b43_read32(dev, B43_MMIO_MACCTL);
 	macctl = old;
 	if (hwps)
