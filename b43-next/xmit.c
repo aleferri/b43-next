@@ -2145,10 +2145,12 @@ void b43_rx(struct b43_wldev *dev, struct sk_buff *skb, const void *_rxhdr)
 		 * key index, but the ucode passed it slightly different.
 		 */
 		keyidx = b43_kidx_to_raw(dev, keyidx);
-		if (B43_WARN_ON(keyidx >= ARRAY_SIZE(dev->key)))
-			goto drop;
-
-		if (dev->key[keyidx].algorithm != B43_SEC_ALGO_NONE) {
+		/*
+		 * Some frames come with index 63, past the key table, yet
+		 * decrypted: no decryption error, the LLC header in the clear.
+		 */
+		if (keyidx >= ARRAY_SIZE(dev->key) ||
+		    dev->key[keyidx].algorithm != B43_SEC_ALGO_NONE) {
 			wlhdr_len = ieee80211_hdrlen(fctl);
 			if (unlikely(skb->len < (wlhdr_len + 3))) {
 				b43dbg(dev->wl,
