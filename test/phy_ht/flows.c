@@ -205,8 +205,7 @@ int ht_run_flow(const char *name)
 		phy_ht.glitch_high = ht_env("HT_GLITCH_HIGH", 0);
 		/* The configuration before was on HT_PREV_CHANNEL, if any */
 		phy_ht.home_channel = ht_env("HT_PREV_CHANNEL", chan.hw_value);
-		phy_ht.home_type =
-			cfg80211_get_chandef_type(&dev->wl->hw->conf.chandef);
+		phy_ht.home_type = b43_phy_ht_tune_type(dev);
 		prev_target(dev);
 		/* b43_op_bss_info_changed() suspends the MAC around it */
 		b43_mac_suspend(dev);

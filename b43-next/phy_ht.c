@@ -897,6 +897,19 @@ static void b43_phy_ht_gain_state_write(struct b43_wldev *dev,
 }
 
 /*
+ * The channel type as the PHY tunes it, from the band mac80211 configures:
+ * its HT setup, NO_HT or HT20, is one 20 MHz tune, and only HT40's
+ * sideband tunes otherwise.
+ */
+static enum nl80211_channel_type b43_phy_ht_tune_type(struct b43_wldev *dev)
+{
+	enum nl80211_channel_type type =
+		cfg80211_get_chandef_type(&dev->wl->hw->conf.chandef);
+
+	return type == NL80211_CHAN_NO_HT ? NL80211_CHAN_HT20 : type;
+}
+
+/*
  * Whether the channel or its type differ from the last init's: wl restores
  * the gain state then (docs/ht-retrace-todo.md, "The hot cycle").
  */
@@ -907,7 +920,7 @@ static bool b43_phy_ht_home_changed(struct b43_wldev *dev)
 
 	return phy_ht->home_channel &&
 	       (phy_ht->home_channel != chandef->chan->hw_value ||
-		phy_ht->home_type != cfg80211_get_chandef_type(chandef));
+		phy_ht->home_type != b43_phy_ht_tune_type(dev));
 }
 
 /*
@@ -1339,8 +1352,7 @@ static int b43_phy_ht_op_init(struct b43_wldev *dev)
 			b43_phy_ht_gain_state_write(dev, &phy_ht->gain_state);
 	}
 	phy_ht->home_channel = dev->wl->hw->conf.chandef.chan->hw_value;
-	phy_ht->home_type =
-		cfg80211_get_chandef_type(&dev->wl->hw->conf.chandef);
+	phy_ht->home_type = b43_phy_ht_tune_type(dev);
 
 	return 0;
 }
@@ -1404,8 +1416,7 @@ static int b43_phy_ht_op_switch_channel(struct b43_wldev *dev,
 {
 	struct b43_phy_ht *phy_ht = dev->phy.ht;
 	struct ieee80211_channel *channel = dev->wl->hw->conf.chandef.chan;
-	enum nl80211_channel_type channel_type =
-		cfg80211_get_chandef_type(&dev->wl->hw->conf.chandef);
+	enum nl80211_channel_type channel_type = b43_phy_ht_tune_type(dev);
 	int err;
 
 	if (b43_current_band(dev->wl) == NL80211_BAND_2GHZ) {
