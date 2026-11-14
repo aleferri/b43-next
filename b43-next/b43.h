@@ -1243,13 +1243,27 @@ static inline struct b43_wldev *dev_to_b43_wldev(struct device *dev)
 	return ssbn_get_drvdata(ssbn_dev);
 }
 
-/* HT on an N-PHY core, as b43_setup_bands() declared it to mac80211. */
-static inline bool b43_nphy_ht_enabled(struct b43_wldev *dev)
+/* A pre-AC core b43 runs with HT: an N-PHY one of b43_nphy_ht_cores[], or
+ * an HT-PHY. */
+static inline bool b43_ht_core(struct b43_wldev *dev)
+{
+	return dev->phy.nphy_ht || dev->phy.type == B43_PHYTYPE_HT;
+}
+
+/* HT on a pre-AC core, as b43_setup_bands() declared it to mac80211. */
+static inline bool b43_ht_enabled(struct b43_wldev *dev)
 {
 	const struct ieee80211_supported_band *band =
 		dev->wl->hw->wiphy->bands[NL80211_BAND_2GHZ];
 
-	return dev->phy.nphy_ht && band && band->ht_cap.ht_supported;
+	return b43_ht_core(dev) && band && band->ht_cap.ht_supported;
+}
+
+/* HT on an N-PHY core, with what its microcode adds to it: A-MPDU, power
+ * save, the MSDU joined from its pieces. */
+static inline bool b43_nphy_ht_enabled(struct b43_wldev *dev)
+{
+	return dev->phy.nphy_ht && b43_ht_enabled(dev);
 }
 
 /* Is the device operating in a specified mode (NL80211_IFTYPE_XXX). */

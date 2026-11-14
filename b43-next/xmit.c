@@ -1966,12 +1966,13 @@ void b43_rx(struct b43_wldev *dev, struct sk_buff *skb, const void *_rxhdr)
 	u16 chanid;
 	u8 phytype;
 	bool rx_5ghz;
-	bool ht = b43_nphy_ht_enabled(dev);
+	bool ht = b43_ht_enabled(dev);
 	int padding, rate_idx;
 
 	memset(&status, 0, sizeof(status));
 
-	if (fh->rx_amsdu && (ht || !fh->rx_amsdu_ht_only) &&
+	if (fh->rx_amsdu &&
+	    (b43_nphy_ht_enabled(dev) || !fh->rx_amsdu_ht_only) &&
 	    (get_unaligned_le32(b43_rxhdr_at(rxhdr, fh->rx_mac_status)) &
 	     B43_RX_MAC_AMSDU)) {
 		skb = b43_rx_amsdu(dev, skb, &_rxhdr);
@@ -2001,7 +2002,7 @@ void b43_rx(struct b43_wldev *dev, struct sk_buff *skb, const void *_rxhdr)
 	/* brcmsmac treats frame type 3 as an error, and the BCM43227 was
 	 * not seen to report it.
 	 */
-	if (dev->phy.nphy_ht &&
+	if (b43_ht_core(dev) &&
 	    (phystat0 & B43_RX_PHYST0_FTYPE) == B43_RX_PHYST0_STD_N)
 		goto drop;
 	if (ht && !(phystat0 & B43_RX_PHYST0_PRE_N))
@@ -2156,7 +2157,7 @@ void b43_rx(struct b43_wldev *dev, struct sk_buff *skb, const void *_rxhdr)
 	if (fh->rx_rate) {
 		rate_idx = fh->rx_rate(plcp, phystat0, rx_5ghz, &status);
 	} else if (ht && (phystat0 & B43_RX_PHYST0_PRE_N)) {
-		/* Type 2 is HT on N-PHY, not a legacy CCK rate code. A
+		/* Type 2 is HT, not a legacy CCK rate code. A
 		 * failed HT-SIG cannot provide trustworthy MCS metadata. */
 		if (!ht_plcp)
 			goto drop;
