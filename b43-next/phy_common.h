@@ -477,8 +477,9 @@ int b43_phy_shm_tssi_read(struct b43_wldev *dev, u16 shm_offset);
 void b43_phyop_switch_analog_generic(struct b43_wldev *dev, bool on);
 
 bool b43_is_40mhz(struct b43_wldev *dev);
+unsigned int b43_phy_center_channel(struct b43_wldev *dev);
 
-void b43_phy_force_clock(struct b43_wldev *dev, bool force);
+bool b43_phy_force_clock(struct b43_wldev *dev, bool force);
 void b43_phy_bw_clk_set(struct b43_wldev *dev, u32 bits);
 void b43_mac_bw_set(struct b43_wldev *dev, u32 bw);
 

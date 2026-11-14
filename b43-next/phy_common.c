@@ -444,15 +444,17 @@ int b43_switch_channel(struct b43_wldev *dev, unsigned int new_channel)
 	if (phy->type == B43_PHYTYPE_AC)
 		return b43_switch_channel_ac(dev, new_channel);
 
+	dev->rx_ht_valid = false;
+
 	/* First we set the channel radio code to prevent the
 	 * firmware from sending ghost packets.
 	 */
 	channelcookie = new_channel;
+	if (b43_is_40mhz(dev))
+		channelcookie = b43_phy_center_channel(dev) |
+				B43_SHM_SH_CHAN_40MHZ;
 	if (b43_current_band(dev->wl) == NL80211_BAND_5GHZ)
 		channelcookie |= B43_SHM_SH_CHAN_5GHZ;
-	/* FIXME: set 40Mhz flag if required */
-	if (0)
-		channelcookie |= B43_SHM_SH_CHAN_40MHZ;
 	savedcookie = b43_shm_read16(dev, B43_SHM_SHARED, B43_SHM_SH_CHAN);
 	b43_shm_write16(dev, B43_SHM_SHARED, B43_SHM_SH_CHAN, channelcookie);
 
@@ -584,6 +586,12 @@ bool b43_is_40mhz(struct b43_wldev *dev)
 	return dev->phy.chandef->width == NL80211_CHAN_WIDTH_40;
 }
 
+/* The microcode takes the centre channel of a 40 MHz channel. */
+unsigned int b43_phy_center_channel(struct b43_wldev *dev)
+{
+	return ieee80211_frequency_to_channel(dev->phy.chandef->center_freq1);
+}
+
 /* https://bcm-v4.sipsolutions.net/802.11/PHY/N/BmacPhyClkFgc */
 /*
  * The PHY clock and bandwidth field of the core's IOCTL (B43_BCMA_IOCTL_PHY_BW),
@@ -623,9 +631,10 @@ void b43_mac_bw_set(struct b43_wldev *dev, u32 bw)
 	b43_read32(dev, B43_MMIO_MACCTL);
 }
 
-void b43_phy_force_clock(struct b43_wldev *dev, bool force)
+bool b43_phy_force_clock(struct b43_wldev *dev, bool force)
 {
 	u32 tmp;
+	bool was_forced = false;
 
 	WARN_ON(dev->phy.type != B43_PHYTYPE_N &&
 		dev->phy.type != B43_PHYTYPE_HT &&
@@ -635,6 +644,7 @@ void b43_phy_force_clock(struct b43_wldev *dev, bool force)
 #ifdef CONFIG_B43_NEXT_BCMA
 	case B43_BUS_BCMA:
 		tmp = bcmn_aread32(dev->dev->bdev, BCMN_IOCTL);
+		was_forced = !!(tmp & BCMN_IOCTL_FGC);
 		if (force)
 			tmp |= BCMN_IOCTL_FGC;
 		else
@@ -648,6 +658,7 @@ void b43_phy_force_clock(struct b43_wldev *dev, bool force)
 #ifdef CONFIG_B43_NEXT_SSB
 	case B43_BUS_SSB:
 		tmp = ssbn_read32(dev->dev->sdev, SSBN_TMSLOW);
+		was_forced = !!(tmp & SSBN_TMSLOW_FGC);
 		if (force)
 			tmp |= SSBN_TMSLOW_FGC;
 		else
@@ -656,4 +667,6 @@ void b43_phy_force_clock(struct b43_wldev *dev, bool force)
 		break;
 #endif
 	}
+
+	return was_forced;
 }

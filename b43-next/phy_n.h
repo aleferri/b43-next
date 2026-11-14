@@ -2,6 +2,8 @@
 #ifndef B43_NPHY_H_
 #define B43_NPHY_H_
 
+#include <linux/workqueue.h>
+
 #include "phy_common.h"
 #include "ppr.h"
 
@@ -926,6 +928,14 @@ struct b43_phy_n_txpwrindex {
 	u16 locomp;
 };
 
+struct nphy_txgains {
+	u16 tx_lpf[2];
+	u16 txgm[2];
+	u16 pga[2];
+	u16 pad[2];
+	u16 ipa[2];
+};
+
 struct b43_phy_n_pwr_ctl_info {
 	u8 idle_tssi_2g;
 	u8 idle_tssi_5g;
@@ -944,6 +954,7 @@ struct b43_phy_n {
 	bool hang_avoid;
 	bool mute;
 	u16 papd_epsilon_offset[2];
+	u8 papd_txpwr_idx[2];
 	s32 preamble_override;
 	u32 bb_mult_save;
 
@@ -969,6 +980,10 @@ struct b43_phy_n {
 	u16 mphase_txcal_cmdidx;
 	u16 mphase_txcal_numcmds;
 	u16 mphase_txcal_bestcoeffs[11];
+	struct nphy_txgains cal_target_gain;
+	unsigned long perical_last;
+	struct b43_wldev *dev;
+	struct delayed_work perical_work;
 
 	bool txpwrctrl;
 	bool pwg_gain_5ghz;
@@ -1029,5 +1044,6 @@ struct b43_phy_operations;
 extern const struct b43_phy_operations b43_phyops_n;
 
 bool b43_nphy_2057_rev14_epa(struct b43_wldev *dev);
+void b43_nphy_cancel_perical(struct b43_wldev *dev);
 
 #endif /* B43_NPHY_H_ */

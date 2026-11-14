@@ -155,6 +155,15 @@ static struct b43_wldev *setup(void)
 	hw.conf.chandef.chan = &chan;
 	hw.conf.chandef.width = NL80211_CHAN_WIDTH_20;
 	hw.conf.chandef.center_freq1 = chan.center_freq;
+	/*
+	 * N_BW=40: a 40 MHz channel, N_CHANNEL its control channel, N_SB=1
+	 * with the control channel the lower one (wl's 6l), -1 the upper (11u)
+	 */
+	if (n_env("N_BW", 20) == 40) {
+		hw.conf.chandef.width = NL80211_CHAN_WIDTH_40;
+		hw.conf.chandef.center_freq1 = chan.center_freq +
+					       10 * n_env("N_SB", 1);
+	}
 	wl.hw = &hw;
 
 	agent_ops.aread32 = agent_read32;
@@ -277,6 +286,50 @@ void mutex_unlock(struct mutex *lock) { }
 void ieee80211_queue_work(struct ieee80211_hw *h, struct work_struct *w)
 {
 	n_core("ieee80211_queue_work");
+}
+
+/*
+ * The periodic calibration's delayed work (b43_nphy_perical()): queued and
+ * cancelled as calls of the core, never run. read_poll_timeout() in the PAPD
+ * calibration needs the time and might_sleep()'s reschedule point.
+ */
+void ieee80211_queue_delayed_work(struct ieee80211_hw *hw,
+				  struct delayed_work *dwork,
+				  unsigned long delay)
+{
+	n_core("ieee80211_queue_delayed_work");
+}
+bool cancel_delayed_work(struct delayed_work *dwork)
+{
+	n_core("cancel_delayed_work");
+	return false;
+}
+bool cancel_delayed_work_sync(struct delayed_work *dwork)
+{
+	n_core("cancel_delayed_work_sync");
+	return false;
+}
+void delayed_work_timer_fn(struct timer_list *t) { UNREACHED("delayed_work_timer_fn"); }
+void timer_init_key(struct timer_list *timer,
+		    void (*func)(struct timer_list *), unsigned int flags,
+		    const char *name, struct lock_class_key *key) { }
+ktime_t ktime_get(void) { return 0; }
+int __cond_resched(void) { return 0; }
+long __static_call_return0(void) { return 0; }
+DEFINE_STATIC_CALL_RET0(might_resched, __cond_resched);
+
+/* cfg80211's, for b43_phy_center_channel() */
+int ieee80211_freq_khz_to_channel(u32 freq)
+{
+	int mhz = KHZ_TO_MHZ(freq);
+
+	if (mhz == 2484)
+		return 14;
+	if (mhz < 2484)
+		return (mhz - 2407) / 5;
+	if (mhz >= 4910 && mhz <= 4980)
+		return (mhz - 4000) / 5;
+	return (mhz - 5000) / 5;
 }
 
 /*

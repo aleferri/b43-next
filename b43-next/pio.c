@@ -459,7 +459,7 @@ static int pio_tx_frame(struct b43_pio_txqueue *q,
 	BUILD_BUG_ON(sizeof(wl->pio_scratchspace) < sizeof(struct b43_txhdr_ac));
 	B43_WARN_ON(sizeof(wl->pio_scratchspace) < hdrlen);
 	err = b43_generate_txhdr(dev, (u8 *)txhdr, skb,
-				 info, cookie);
+				 info, cookie, NULL);
 	if (err)
 		return err;
 
@@ -582,6 +582,7 @@ void b43_pio_handle_txstatus(struct b43_wldev *dev,
 	info = IEEE80211_SKB_CB(pack->skb);
 
 	b43_fill_txstatus_report(dev, info, status);
+	b43_ps_tx_status(dev, pack->skb, info->flags & IEEE80211_TX_STAT_ACK);
 
 	total_len = pack->skb->len + b43_txhdr_size(dev);
 	total_len = roundup(total_len, 4);
@@ -659,6 +660,7 @@ static bool pio_rx_frame(struct b43_pio_rxqueue *q)
 		}
 	}
 	b43warn(q->dev->wl, "PIO RX timed out\n");
+	dev->rx_ht_valid = false;
 	return true;
 data_ready:
 
@@ -694,7 +696,7 @@ data_ready:
 		break;
 	}
 	if (macstat & B43_RX_MAC_FCSERR) {
-		if (!(q->dev->wl->filter_flags & FIF_FCSFAIL)) {
+		if (!(q->dev->wl->filter_flags & FIF_FCSFAIL) && !q->dev->ht) {
 			/* Drop frames with failed FCS. */
 			err_msg = "Frame FCS error";
 			goto rx_error;
@@ -760,6 +762,7 @@ data_ready:
 	return true;
 
 rx_error:
+	dev->rx_ht_valid = false;
 	if (err_msg)
 		b43warn(q->dev->wl, "PIO RX error: %s\n", err_msg);
 	if (q->rev >= 8)
@@ -829,4 +832,19 @@ void b43_pio_tx_resume(struct b43_wldev *dev)
 	b43_pio_tx_resume_queue(dev->pio.tx_queue_AC_BE);
 	b43_pio_tx_resume_queue(dev->pio.tx_queue_AC_BK);
 	b43_power_saving_ctl_bits(dev, 0);
+}
+
+static bool b43_pio_txqueue_empty(struct b43_pio_txqueue *q)
+{
+	return q->free_packet_slots == B43_PIO_MAX_NR_TXPACKETS;
+}
+
+/* Whether every TX queue has got the status of all its frames. */
+bool b43_pio_tx_empty(struct b43_wldev *dev)
+{
+	return b43_pio_txqueue_empty(dev->pio.tx_queue_AC_BK) &&
+	       b43_pio_txqueue_empty(dev->pio.tx_queue_AC_BE) &&
+	       b43_pio_txqueue_empty(dev->pio.tx_queue_AC_VI) &&
+	       b43_pio_txqueue_empty(dev->pio.tx_queue_AC_VO) &&
+	       b43_pio_txqueue_empty(dev->pio.tx_queue_mcast);
 }
