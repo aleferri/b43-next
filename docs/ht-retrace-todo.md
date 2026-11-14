@@ -111,3 +111,40 @@ threshold of the four counters gives either (wl goes down to 0x4f where the
 rule raises to 0x5b), and at 40 MHz, in standby, 6l, 9u and 11u, where wl
 writes 0x45 at the second turn and 0x44 two later after turns with a handful
 of counts, and 2l, 4l, 5l, 7u and 8u.
+
+## 802.11n
+
+wl's HT capabilities are in its beacon template, written at the BSS start
+of the cold captures (template RAM through 0x130/0x134):
+
+| width | capabilities | A-MPDU | RX MCS |
+|---|---|---|---|
+| 20 | 0x083d: LDPC, SM power save off, greenfield, short GI 20, A-MSDU 7935 | 0x17: 64 KiB, 4 us | 0-23 |
+| 40 | 0x187f: as at 20, and 20/40, short GI 40, DSSS/CCK at 40 | 0x17 | 0-23, 32 |
+
+No STBC, TX or RX. In its shared memory the ACK/CTS, probe response and
+beacon PHY TX control words are 0x01c0, the three cores of the SROM's
+txchain 7 in the antenna field.
+
+The HT-PHY's 2.4 GHz band announces HT at 20 MHz as wl's but A-MSDU 7935:
+MCS 0-23 received, LDPC and greenfield received, the short guard interval.
+It sends MCS 0-23, a stream per TX core at most, one stream CDD, with BCC,
+on the SROM's TX cores. The header is the pre-AC one, as the 928's
+two-word TX status on the R6400 v1 shows (Erik's traffic capture, 0x170
+and 0x174 only), and the HT-PHY takes the BCM43227's HT path in it, TX and
+RX (`b43_ht_enabled()`). Not tried on hardware.
+
+Not there yet:
+
+- 40 MHz. The PHY's init at 40 is scored as at 20, but b43 sets the core's
+  width at the PHY init only (`b43_phy_ht_width()`), so the BSS start's.
+  A station's channel at 40, or another width on a running BSS, needs it
+  without one, which no capture shows.
+- A-MPDU. wl sets the shared memory as brcmsmac does for it (`MIMO_MAXSYM`
+  0xffff, `WATCHDOG_8TU` 10); how the 928 sends and acknowledges one needs
+  a traffic capture.
+- A-MSDUs over 3839 bytes. wl announces 7935 and writes `MAXRXFRMLEN`
+  0x0800, so its microcode would hand them over in pieces, as the
+  BCM43227's (`b43_rx_amsdu()`, under `b43_nphy_ht_enabled()`): a traffic
+  capture again. With 3839 announced b43 leaves `MAXRXFRMLEN` to the
+  microcode.
