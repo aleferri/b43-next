@@ -155,6 +155,15 @@ static struct b43_wldev *setup(void)
 	hw.conf.chandef.chan = &chan;
 	hw.conf.chandef.width = NL80211_CHAN_WIDTH_20;
 	hw.conf.chandef.center_freq1 = chan.center_freq;
+	/*
+	 * N_BW=40: a 40 MHz channel, N_CHANNEL its control channel, N_SB=1
+	 * with the control channel the lower one (wl's 6l), -1 the upper (11u)
+	 */
+	if (n_env("N_BW", 20) == 40) {
+		hw.conf.chandef.width = NL80211_CHAN_WIDTH_40;
+		hw.conf.chandef.center_freq1 = chan.center_freq +
+					       10 * n_env("N_SB", 1);
+	}
 	wl.hw = &hw;
 
 	agent_ops.aread32 = agent_read32;
