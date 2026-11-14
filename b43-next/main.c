@@ -9276,7 +9276,6 @@ static int __init b43_init(void)
 	if (err)
 		goto err_ssb_bus_exit;
 #endif
-	b43_ht_sig_crc_init();
 	b43_debugfs_init();
 	err = b43_sdio_init();
 	if (err)
