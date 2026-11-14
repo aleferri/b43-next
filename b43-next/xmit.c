@@ -1269,6 +1269,25 @@ static s8 b43_rssi_postprocess(struct b43_wldev *dev,
 }
 
 /*
+ * The MCS of an HT frame from its HT-SIG, the six bytes in front of the
+ * frame: the MCS and the 40 MHz bit in byte 0, coding, STBC and the short
+ * guard interval in byte 3, as brcmsmac's brcms_c_compute_rspec() reads
+ * them. Returns the MCS for mac80211.
+ */
+static int b43_rx_rate_ht_sig(const u8 *p, struct ieee80211_rx_status *status)
+{
+	status->encoding = RX_ENC_HT;
+	if (p[0] & 0x80)
+		status->bw = RATE_INFO_BW_40;
+	if (p[3] & 0x80)
+		status->enc_flags |= RX_ENC_FLAG_SHORT_GI;
+	if (p[3] & 0x40)
+		status->enc_flags |= RX_ENC_FLAG_LDPC;
+	status->enc_flags |= ((p[3] >> 4) & 0x3) << RX_ENC_FLAG_STBC_SHIFT;
+	return p[0] & 0x7f;
+}
+
+/*
  * The rate of a frame from the AC microcode, by the frame type of PHY RX
  * status 0, which here counts HT and VHT besides CCK and OFDM (Broadcom's
  * FT_HT and FT_VHT). For HT and VHT the six bytes in front of the frame are
@@ -1287,15 +1306,7 @@ static int b43_rx_rate_ac(struct b43_plcp_hdr6 *plcp, u16 phystat0,
 
 	switch (phystat0 & B43_RX_PHYST0_FTYPE) {
 	case B43_RX_PHYST0_HT:
-		status->encoding = RX_ENC_HT;
-		if (p[0] & 0x80)
-			status->bw = RATE_INFO_BW_40;
-		if (p[3] & 0x80)
-			status->enc_flags |= RX_ENC_FLAG_SHORT_GI;
-		if (p[3] & 0x40)
-			status->enc_flags |= RX_ENC_FLAG_LDPC;
-		status->enc_flags |= ((p[3] >> 4) & 0x3) << RX_ENC_FLAG_STBC_SHIFT;
-		return p[0] & 0x7f;
+		return b43_rx_rate_ht_sig(p, status);
 	case B43_RX_PHYST0_VHT:
 		a1 = p[0] | (p[1] << 8) | (p[2] << 16);
 		a2 = p[3] | (p[4] << 8) | (p[5] << 16);
@@ -1570,8 +1581,19 @@ void b43_rx(struct b43_wldev *dev, struct sk_buff *skb, const void *_rxhdr)
 		break;
 	}
 
+	/*
+	 * On the N and HT-PHYs the older microcode marks an HT frame as
+	 * pre-standard N, its HT-SIG in front, as brcmsmac decodes it; it
+	 * reports no standard N frame.
+	 */
 	if (dev->fw.hdr_format == B43_FW_HDR_AC)
 		rate_idx = b43_rx_rate_ac(plcp, phystat0, rx_5ghz, &status);
+	else if ((phytype == B43_PHYTYPE_N || phytype == B43_PHYTYPE_HT) &&
+		 (phystat0 & B43_RX_PHYST0_FTYPE) == B43_RX_PHYST0_PRE_N)
+		rate_idx = b43_rx_rate_ht_sig(plcp->raw, &status);
+	else if ((phytype == B43_PHYTYPE_N || phytype == B43_PHYTYPE_HT) &&
+		 (phystat0 & B43_RX_PHYST0_FTYPE) == B43_RX_PHYST0_STD_N)
+		rate_idx = -1;
 	else if (phystat0 & B43_RX_PHYST0_OFDM)
 		rate_idx = b43_plcp_get_bitrate_idx_ofdm(plcp, rx_5ghz);
 	else
