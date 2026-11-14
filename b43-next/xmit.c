@@ -562,14 +562,15 @@ static void b43_txhdr_ac_vht(const struct b43_phy_ac *ac,
 
 /*
  * The Duration of a unicast frame sent at an MCS. mac80211 leaves it 0 and
- * to the hardware (ieee80211_duration()), and the AC microcode does not fill
- * it in: the stock driver writes it, SIFS and the ACK at the highest basic
+ * to the hardware (ieee80211_duration()), and no microcode fills it in, as
+ * brcmsmac writes it too (brcms_c_compute_frame_dur()): the stock driver
+ * writes it, SIFS and the ACK at the highest basic
  * rate not above the MCS's non-HT reference rate, for its last fallback rate
  * (router-data/d6220/rxtx-1s-ht20-40-vht20-40-80-txbf0.zip: 48 us after HT
  * MCS 2, 44 after VHT MCS 4). @ref is that rate's non-HT reference rate, in
- * 100 kb/s (b43_txhdr_ac_ref_rate()).
+ * 100 kb/s (b43_txhdr_ref_rate()).
  */
-static void b43_txhdr_ac_mcs_duration(struct b43_wldev *dev,
+static void b43_txhdr_mcs_duration(struct b43_wldev *dev,
 				      struct sk_buff *skb,
 				      const struct ieee80211_tx_info *info,
 				      u16 ref)
@@ -612,7 +613,7 @@ static void b43_txhdr_ac_mcs_duration(struct b43_wldev *dev,
  * and coding, HT MCS modulo 8, VHT MCS 8 and 9 as 7 (54 Mb/s); a legacy
  * rate's own.
  */
-static u16 b43_txhdr_ac_ref_rate(const struct ieee80211_supported_band *sband,
+static u16 b43_txhdr_ref_rate(const struct ieee80211_supported_band *sband,
 				 const struct ieee80211_tx_rate *t)
 {
 	static const u16 ref_rate[8] = {
@@ -855,8 +856,8 @@ static int b43_generate_txhdr_ac(struct b43_wldev *dev, u8 *_txhdr,
 		b43_txhdr_ac_block(ac, sband, &txhdr->rate[i], &rates[i], ldpc,
 				   len);
 	if (c->ht || c->vht)
-		b43_txhdr_ac_mcs_duration(dev, skb, info,
-			b43_txhdr_ac_ref_rate(sband, &rates[n - 1]));
+		b43_txhdr_mcs_duration(dev, skb, info,
+			b43_txhdr_ref_rate(sband, &rates[n - 1]));
 
 	if (c->rts || c->cts) {
 		u8 code;
@@ -876,6 +877,49 @@ static int b43_generate_txhdr_ac(struct b43_wldev *dev, u8 *_txhdr,
 	b43_txhdr_ac_txbf(dev, txhdr, n, info, wlhdr);
 
 	return 0;
+}
+
+/*
+ * An HT MCS in the pre-AC header, as brcmsmac's brcms_c_d11hdrs_mac80211()
+ * writes it for its N-PHY: one stream at 20 MHz, the long guard interval,
+ * BCC, the mixed-mode preamble. Word 1 takes the MCS's coding rate and
+ * modulation in its upper byte, brcmsmac's mcs_table tx_phy_ctl3.
+ */
+static const u8 b43_txh_ht_ctl3[8] = {
+	0x00, 0x08, 0x0a, 0x10, 0x12, 0x19, 0x1a, 0x1c,
+};
+
+static u16 b43_txh_ht_phy_ctl1(u8 mcs)
+{
+	return B43_TXH_PHY1_BW_20 | B43_TXH_PHY1_MODE_SISO |
+	       b43_txh_ht_ctl3[mcs] << 8;
+}
+
+/* The HT-SIG: MCS, length, smoothing, not sounding and the reserved bit */
+static void b43_txh_ht_plcp(struct b43_plcp_hdr6 *plcp, u8 mcs,
+			    unsigned int len)
+{
+	memset(plcp, 0, sizeof(*plcp));
+	plcp->raw[0] = mcs;
+	plcp->raw[1] = len & 0xff;
+	plcp->raw[2] = len >> 8;
+	plcp->raw[3] = 0x07;
+}
+
+/*
+ * The L-SIG length of a mixed-mode frame, as brcmsmac's
+ * brcms_c_calc_lsig_len(): the data symbols at the MCS's rate, the HT-SIG's
+ * two, the HT-STF and one HT-LTF, at three bytes a symbol less three.
+ */
+static u16 b43_txh_ht_lsig_len(u8 mcs, unsigned int len)
+{
+	static const u16 kbps[8] = {
+		6500, 13000, 19500, 26000, 39000, 52000, 58500, 65000,
+	};
+	unsigned int nsyms = DIV_ROUND_UP((16 + 8 * len + 6) * 1000,
+					  kbps[mcs] * 4);
+
+	return 3 * (nsyms + 4) - 3;
 }
 
 int b43_generate_txhdr(struct b43_wldev *dev,
@@ -903,6 +947,8 @@ int b43_generate_txhdr(struct b43_wldev *dev,
 			      phy->type == B43_PHYTYPE_HT);
 	u8 extra_ft = 0;
 	struct b43_txhdr_ctl c;
+	bool ht_fb = false;
+	u8 mcs = 0, mcs_fb = 0;
 
 	b43_txhdr_ctl_get(dev, info, &c);
 	if (dev->fw.hdr_format == B43_FW_HDR_AC)
@@ -916,6 +962,25 @@ int b43_generate_txhdr(struct b43_wldev *dev,
 	fbrate = c.fbrate;
 	rate_fb = c.rate_fb;
 	rate_fb_ofdm = b43_is_ofdm_rate(rate_fb);
+	if (c.ht) {
+		const struct ieee80211_tx_rate *r = info->control.rates;
+
+		if (WARN_ON_ONCE(dev->fw.hdr_format != B43_FW_HDR_598 ||
+				 r[0].idx > 7))
+			return -EINVAL;
+		mcs = r[0].idx;
+		ht_fb = r[1].idx >= 0 && (r[1].flags & IEEE80211_TX_RC_MCS);
+		if (ht_fb && WARN_ON_ONCE(r[1].idx > 7))
+			return -EINVAL;
+		mcs_fb = ht_fb ? r[1].idx : mcs;
+		/*
+		 * The Duration first: the fallback rate's below copies it
+		 * when the fallback is an MCS too.
+		 */
+		b43_txhdr_mcs_duration(dev, skb_frag, info,
+			b43_txhdr_ref_rate(dev->wl->hw->wiphy->bands[info->band],
+					   r[1].idx >= 0 ? &r[1] : &r[0]));
+	}
 
 	if (rate_ofdm)
 		txhdr->phy_rate = b43_plcp_get_ratecode_ofdm(rate);
@@ -1003,9 +1068,24 @@ int b43_generate_txhdr(struct b43_wldev *dev,
 	}
 	b43_generate_plcp_hdr((struct b43_plcp_hdr4 *)(&txhdr->plcp_fb),
 			      plcp_fragment_len, rate_fb);
+	if (c.ht) {
+		b43_txh_ht_plcp(&txhdr->format_598.plcp, mcs,
+				plcp_fragment_len);
+		txhdr->phy_rate = mcs;
+		txhdr->mimo_modelen =
+			cpu_to_le16(b43_txh_ht_lsig_len(mcs, plcp_fragment_len));
+	}
+	if (ht_fb) {
+		b43_txh_ht_plcp(&txhdr->plcp_fb, mcs_fb, plcp_fragment_len);
+		txhdr->mimo_ratelen_fb =
+			cpu_to_le16(b43_txh_ht_lsig_len(mcs_fb,
+							plcp_fragment_len));
+	}
 
 	/* Extra Frame Types */
-	if (rate_fb_ofdm)
+	if (ht_fb)
+		extra_ft |= B43_TXH_EFT_FB_HT;
+	else if (rate_fb_ofdm)
 		extra_ft |= B43_TXH_EFT_FB_OFDM;
 	else
 		extra_ft |= B43_TXH_EFT_FB_CCK;
@@ -1017,11 +1097,13 @@ int b43_generate_txhdr(struct b43_wldev *dev,
 	txhdr->chan_radio_code = phy->channel;
 
 	/* PHY TX Control word */
-	if (rate_ofdm)
+	if (c.ht)
+		phy_ctl |= B43_TXH_PHY_ENC_HT;
+	else if (rate_ofdm)
 		phy_ctl |= B43_TXH_PHY_ENC_OFDM;
 	else
 		phy_ctl |= B43_TXH_PHY_ENC_CCK;
-	if (c.short_preamble)
+	if (c.short_preamble && !c.ht)
 		phy_ctl |= B43_TXH_PHY_SHORTPRMBL;
 
 	switch (b43_ieee80211_antenna_sanitize(dev, 0)) {
@@ -1192,10 +1274,11 @@ int b43_generate_txhdr(struct b43_wldev *dev,
 	}
 
 	if (fill_phy_ctl1) {
-		txhdr->phy_ctl1 =
-			cpu_to_le16(b43_generate_tx_phy_ctl1(dev, rate));
-		txhdr->phy_ctl1_fb =
-			cpu_to_le16(b43_generate_tx_phy_ctl1(dev, rate_fb));
+		txhdr->phy_ctl1 = cpu_to_le16(c.ht ? b43_txh_ht_phy_ctl1(mcs) :
+					      b43_generate_tx_phy_ctl1(dev, rate));
+		txhdr->phy_ctl1_fb = cpu_to_le16(ht_fb ?
+			b43_txh_ht_phy_ctl1(mcs_fb) :
+			b43_generate_tx_phy_ctl1(dev, rate_fb));
 	}
 
 	/* Apply the bitfields */
