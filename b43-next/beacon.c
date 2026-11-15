@@ -56,6 +56,15 @@ static void b43_mbss_beacons(struct b43_wldev *dev)
 	unsigned int i;
 	u64 tsf = 0;
 
+	/*
+	 * These beacons bypass mac80211's flow control: skip them while the
+	 * voice queue is stopped or backed up, or they pile up without end
+	 * when TX stalls. A beacon that missed its TBTT is stale anyway.
+	 */
+	if (wl->tx_queue_stopped[IEEE80211_AC_VO] ||
+	    skb_queue_len(&wl->tx_queue[IEEE80211_AC_VO]) >= 2 * B43_MBSS_MAX)
+		return;
+
 	for (i = 0; i < ARRAY_SIZE(wl->mbss_vif); i++) {
 		vif = wl->mbss_vif[i];
 		if (!vif || !vif->bss_conf.enable_beacon)
