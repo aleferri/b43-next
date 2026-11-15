@@ -1150,6 +1150,8 @@ struct b43_wl {
 	 * its TBTT.
 	 */
 	struct ieee80211_vif *mbss_vif[B43_MBSS_MAX - 1];
+	/* BCM4331: the factory address, then the further APs' block */
+	struct mac_address mbss_addrs[B43_MBSS_MAX];
 	/* The MAC address of the operating interface. */
 	u8 mac_addr[ETH_ALEN];
 	/* Current BSSID */

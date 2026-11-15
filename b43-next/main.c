@@ -8779,10 +8779,37 @@ static struct b43_wl *b43_wireless_init(struct b43_bus_dev *dev)
 	hw->max_rates = 2;
 	hw->sta_data_size = sizeof(struct b43_sta);
 	SET_IEEE80211_DEV(hw, dev->dev);
-	if (is_valid_ether_addr(sprom->et1mac))
+	if (dev->core_rev == B43_MBSS_SHM_CORE_REV) {
+		/*
+		 * The BCM4331's further APs must lie in one aligned block (the
+		 * ucode compares one base address under a mask). The first AP
+		 * keeps the factory address; the further ones get the locally
+		 * administered form of it with the next low bits, so the block
+		 * never holds the global addresses of the wired ports, as
+		 * under Broadcom's driver. Userspace assigns the list to the
+		 * APs in order.
+		 */
+		const u8 *fac = is_valid_ether_addr(sprom->et1mac) ?
+				sprom->et1mac : sprom->il0mac;
+		unsigned int i;
+
+		ether_addr_copy(wl->mbss_addrs[0].addr, fac);
+		for (i = 1; i < B43_MBSS_MAX; i++) {
+			u8 *a = wl->mbss_addrs[i].addr;
+
+			ether_addr_copy(a, fac);
+			a[0] |= 0x02;
+			a[5] = (a[5] & ~(B43_MBSS_MAX - 1)) |
+			       ((a[5] + i) & (B43_MBSS_MAX - 1));
+		}
+		SET_IEEE80211_PERM_ADDR(hw, wl->mbss_addrs[0].addr);
+		hw->wiphy->addresses = wl->mbss_addrs;
+		hw->wiphy->n_addresses = B43_MBSS_MAX;
+	} else if (is_valid_ether_addr(sprom->et1mac)) {
 		SET_IEEE80211_PERM_ADDR(hw, sprom->et1mac);
-	else
+	} else {
 		SET_IEEE80211_PERM_ADDR(hw, sprom->il0mac);
+	}
 
 	/* Initialize struct b43_wl */
 	wl->hw = hw;
