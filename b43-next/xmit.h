@@ -516,7 +516,7 @@ static inline u8 b43_kidx_to_fw(struct b43_wldev *dev, u8 raw_kidx)
  */
 static inline u8 b43_sec_algo_fw(struct b43_wldev *dev, u8 algorithm)
 {
-	static const u8 ac[] = {
+	static const u8 d11[] = {
 		[B43_SEC_ALGO_NONE]		= 0,
 		[B43_SEC_ALGO_WEP40]		= 1,
 		[B43_SEC_ALGO_TKIP]		= 2,
@@ -525,9 +525,9 @@ static inline u8 b43_sec_algo_fw(struct b43_wldev *dev, u8 algorithm)
 		[B43_SEC_ALGO_AES_LEGACY]	= 4,
 	};
 
-	if (dev->fw.layout.hdr_format != B43_FW_HDR_AC || algorithm >= ARRAY_SIZE(ac))
+	if (!dev->fw.layout.sec_algo_d11 || algorithm >= ARRAY_SIZE(d11))
 		return algorithm;
-	return ac[algorithm];
+	return d11[algorithm];
 }
 
 static inline u8 b43_kidx_to_raw(struct b43_wldev *dev, u8 firmware_kidx)

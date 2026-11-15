@@ -99,6 +99,17 @@ struct b43_fw_layout {
 	bool machw_bit31;	/* MAC_HW_CAP bit 31 passed to the microcode */
 	bool edcrs;		/* energy-detect carrier sense in IFSCTL1 */
 	bool g_chanid_number;	/* G-PHY RX channel ID a number, not MHz - 2400 */
+	bool kidx_empty_zero;	/* an empty key index slot is all zero */
+	bool sec_algo_d11;	/* cipher numbers as d11.h's WSEC_ALGO_* */
+	bool hw_tkip;		/* TKIP in hardware, under modparam_hwtkip */
+	bool rcmta_count;	/* told the number of RCMTA slots */
+	bool phytxctl_shm;	/* the pre-AC PHY TX control words in SHM */
+	bool hf_usedefkeys;	/* B43_HF_USEDEFKEYS follows the WEP keys */
+	bool dfq_valid;		/* B43_MACCMD_DFQ_VALID from init on */
+	bool ampdu;		/* aggregates the frames flagged A-MPDU */
+	bool txbf;		/* transmit beamforming block */
+	bool deprecated;	/* warned about at load */
+	bool unknown;		/* a revision the table does not list */
 };
 
 struct b43_fw_range {

@@ -1044,7 +1044,7 @@ static void b43_txbf_init(struct b43_wldev *dev)
 	}
 	dev->txbf_base = 0;
 	if (!modparam_txbf || dev->phy.type != B43_PHYTYPE_AC ||
-	    dev->fw.layout.hdr_format != B43_FW_HDR_AC ||
+	    !dev->fw.layout.txbf ||
 	    hweight8(b43_txbf_txchain(dev)) < 2)
 		return;
 
@@ -1292,10 +1292,9 @@ static void key_write(struct b43_wldev *dev,
 	u16 value;
 	u16 kidx;
 
-	/* Key index/algo block. An empty slot of the AC ucode is all zero. */
+	/* Key index/algo block. */
 	kidx = b43_kidx_to_fw(dev, index);
-	if (dev->fw.layout.hdr_format == B43_FW_HDR_AC &&
-	    algorithm == B43_SEC_ALGO_NONE)
+	if (dev->fw.layout.kidx_empty_zero && algorithm == B43_SEC_ALGO_NONE)
 		value = 0;
 	else
 		value = (kidx << 4) | b43_sec_algo_fw(dev, algorithm);
@@ -1365,8 +1364,7 @@ static void rx_tkip_phase1_write(struct b43_wldev *dev, u8 index, u32 iv32,
 	u32 offset;
 	u8 pairwise_keys_start = B43_NR_GROUP_KEYS * 2;
 
-	/* Where the AC microcode keeps its RX TKIP table is not known. */
-	if (!modparam_hwtkip || dev->fw.layout.hdr_format == B43_FW_HDR_AC)
+	if (!modparam_hwtkip || !dev->fw.layout.hw_tkip)
 		return;
 
 	if (dev->fw.layout.new_kidx_api)
@@ -2390,16 +2388,6 @@ static u16 b43_antenna_to_phyctl(struct b43_wldev *dev, int antenna)
 	return 0;
 }
 
-/*
- * The PHY TX control words of the beacon, the ACK/CTS and the probe
- * response in shared memory have the pre-AC layout; the AC microcode keeps
- * the beacon's elsewhere, see b43_write_beacon_phytxctl_ac().
- */
-static bool b43_phytxctl_in_shm(struct b43_wldev *dev)
-{
-	return dev->fw.layout.hdr_format != B43_FW_HDR_AC;
-}
-
 static void b43_write_beacon_phytxctl(struct b43_wldev *dev, u16 rate)
 {
 	u16 ctl;
@@ -2471,7 +2459,7 @@ static void b43_write_beacon_template(struct b43_wldev *dev,
 	b43_write_template_common(dev, (const u8 *)bcn,
 				  len, ram_offset, shm_size_offset, rate);
 
-	if (b43_phytxctl_in_shm(dev))
+	if (dev->fw.layout.phytxctl_shm)
 		b43_write_beacon_phytxctl(dev, rate);
 	else
 		b43_write_beacon_phytxctl_ac(dev, rate);
@@ -3673,13 +3661,11 @@ static int b43_upload_microcode(struct b43_wldev *dev)
 	dev->fw.rev = fwrev;
 	dev->fw.patch = fwpatch;
 	dev->fw.layout = *b43_fw_layout_get(dev->fw.family, fwrev);
-	if (!dev->fw.layout.tpl)
-		b43warn(dev->wl, "Template RAM layout of firmware %u unknown: "
-			"no AP, mesh or IBSS\n", dev->fw.rev);
-	if (dev->fw.layout.hdr_format == B43_FW_HDR_AC && !dev->fw.layout.shm)
-		b43warn(dev->wl, "Shared memory layout of firmware %u unknown: "
-			"no MAC config block, no CTS around the calibration\n",
-			dev->fw.rev);
+	if (dev->fw.layout.unknown)
+		b43warn(dev->wl, "Firmware %s %u unknown: headers assumed, "
+			"no AP, mesh or IBSS, no MAC config block, "
+			"no CTS around the calibration\n",
+			dev->fw.family->ucode, dev->fw.rev);
 	WARN_ON(dev->fw.opensource != (fwdate == 0xFFFF));
 
 	dev->qos_enabled = dev->wl->hw->queues > 1;
@@ -3719,7 +3705,7 @@ static int b43_upload_microcode(struct b43_wldev *dev)
 			dev->fw.rev, dev->fw.patch);
 	wiphy->hw_version = dev->dev->core_id;
 
-	if (dev->fw.layout.hdr_format == B43_FW_HDR_351) {
+	if (dev->fw.layout.deprecated) {
 		/* We're over the deadline, but we keep support for old fw
 		 * until it turns out to be in major conflict with something new. */
 		b43warn(dev->wl, "You are using an old firmware image. "
@@ -4259,7 +4245,7 @@ static void b43_set_phytxctl_defaults(struct b43_wldev *dev)
 {
 	u16 ctl = 0;
 
-	if (!b43_phytxctl_in_shm(dev))
+	if (!dev->fw.layout.phytxctl_shm)
 		return;
 
 	ctl |= B43_TXH_PHY_ENC_CCK;
@@ -4277,7 +4263,7 @@ static void b43_mgmtframe_txantenna(struct b43_wldev *dev, int antenna)
 	u16 ant;
 	u16 tmp;
 
-	if (!b43_phytxctl_in_shm(dev))
+	if (!dev->fw.layout.phytxctl_shm)
 		return;
 	ant = b43_antenna_to_phyctl(dev, antenna);
 
@@ -4941,8 +4927,8 @@ static void b43_security_init(struct b43_wldev *dev)
 	 * So multiply by two.
 	 */
 	dev->ktp *= 2;
-	/* Number of RCMTA address slots; the AC ucode is not told. */
-	if (dev->fw.layout.hdr_format != B43_FW_HDR_AC)
+	/* Number of RCMTA address slots. */
+	if (dev->fw.layout.rcmta_count)
 		b43_write16(dev, B43_MMIO_RCMTA_COUNT, B43_NR_PAIRWISE_KEYS);
 	/* Clear the key memory. */
 	b43_clear_keys(dev);
@@ -6566,13 +6552,9 @@ static int b43_op_set_key(struct ieee80211_hw *hw, enum set_key_cmd cmd,
 
 	switch (cmd) {
 	case SET_KEY:
-		/*
-		 * The AC header's TKIP fields (the phase 1 key, AMIC) are not
-		 * filled, so TKIP stays with mac80211 there.
-		 */
 		if (algorithm == B43_SEC_ALGO_TKIP &&
 		    (!(key->flags & IEEE80211_KEY_FLAG_PAIRWISE) ||
-		    !modparam_hwtkip || dev->fw.layout.hdr_format == B43_FW_HDR_AC)) {
+		    !modparam_hwtkip || !dev->fw.layout.hw_tkip)) {
 			/* We support only pairwise key */
 			err = -EOPNOTSUPP;
 			goto out_unlock;
@@ -6612,14 +6594,7 @@ static int b43_op_set_key(struct ieee80211_hw *hw, enum set_key_cmd cmd,
 		if (err)
 			goto out_unlock;
 
-		/*
-		 * The AC microcode's host flags are not the older ones',
-		 * and the agcombo's 7.14.43 leaves them alone when it
-		 * installs a WEP key (router-data/vd625-agcombo/
-		 * ch149-wep.bin). Whether it encrypts a protected
-		 * management frame is not known: mac80211 does.
-		 */
-		if (dev->fw.layout.hdr_format == B43_FW_HDR_AC) {
+		if (!dev->fw.layout.hf_usedefkeys) {
 			key->flags |= IEEE80211_KEY_FLAG_SW_MGMT_TX;
 		} else if (algorithm == B43_SEC_ALGO_WEP40 ||
 			   algorithm == B43_SEC_ALGO_WEP104) {
@@ -7458,14 +7433,7 @@ static int b43_wireless_core_init(struct b43_wldev *dev)
 		goto err_busdown;
 	b43_shm_write16(dev, B43_SHM_SHARED,
 			B43_SHM_SH_WLCOREREV, dev->dev->core_rev);
-	/*
-	 * Both stock drivers write this right after the core revision, in AP
-	 * and station mode, and keep it in every later MAC command (6.30 on
-	 * the archer-t5e, 7.14 on the agcombo). What it gates in the AC
-	 * microcode is not known; brcmsmac's older ucode takes it only at the
-	 * end of an IBSS ATIM window.
-	 */
-	if (dev->fw.layout.hdr_format == B43_FW_HDR_AC)
+	if (dev->fw.layout.dfq_valid)
 		b43_write32(dev, B43_MMIO_MACCMD, B43_MACCMD_DFQ_VALID);
 	hf = b43_hf_read(dev);
 	if (phy->type == B43_PHYTYPE_G) {
@@ -8068,7 +8036,7 @@ static int b43_op_ampdu_action(struct ieee80211_hw *hw,
 	case IEEE80211_AMPDU_RX_START:
 		mutex_lock(&wl->mutex);
 		dev = wl->current_dev;
-		ok = dev && dev->fw.layout.hdr_format == B43_FW_HDR_AC &&
+		ok = dev && dev->fw.layout.ampdu &&
 		     !b43_using_pio_transfers(dev);
 		if (dev && b43_nphy_ht_enabled(dev))
 			ok = b43_status(dev) >= B43_STAT_STARTED &&

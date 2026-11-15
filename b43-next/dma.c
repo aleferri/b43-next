@@ -1859,9 +1859,8 @@ int b43_dma_tx(struct b43_wldev *dev, struct sk_buff *skb)
 	 * static, so we don't need to store it per frame. */
 	ring->queue_prio = skb_get_queue_mapping(skb);
 
-	/* Frames sent outside an A-MPDU report ordinary rate-control status.
-	 * The AC's header keeps the flag on a frame it aggregates. */
-	if (dev->fw.layout.hdr_format != B43_FW_HDR_AC)
+	/* Frames sent outside an A-MPDU report ordinary rate-control status. */
+	if (!dev->fw.layout.ampdu)
 		info->flags &= ~IEEE80211_TX_CTL_AMPDU;
 	err = dma_tx_fragment(ring, skb, NULL);
 	if (unlikely(err == -ENOKEY)) {

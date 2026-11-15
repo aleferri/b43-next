@@ -73,7 +73,11 @@ static const struct b43_shm_layout b43_shm_layout_ac_928 = {
 #define B43_FW_PRE_AC					\
 	.tpl		= &b43_tpl_layout_legacy,	\
 	.keyidxblock	= B43_SHM_SH_KEYIDXBLOCK,	\
-	.machw_bit31	= true
+	.machw_bit31	= true,				\
+	.hw_tkip	= true,				\
+	.rcmta_count	= true,				\
+	.phytxctl_shm	= true,				\
+	.hf_usedefkeys	= true
 
 /*
  * new_kidx_api: FIXME: not sure the change was at 351.
@@ -81,10 +85,11 @@ static const struct b43_shm_layout b43_shm_layout_ac_928 = {
  */
 static const struct b43_fw_range b43_fw_revs_pre_ac[] = {
 	{ 0, 350, { B43_FW_PRE_AC, .hdr_format = B43_FW_HDR_351,
-		      .hdr = &b43_hdr_layout_351 } },
+		      .hdr = &b43_hdr_layout_351,
+		      .deprecated = true } },
 	{ 351, 409, { B43_FW_PRE_AC, .hdr_format = B43_FW_HDR_351,
 		      .hdr = &b43_hdr_layout_351,
-		      .new_kidx_api = true } },
+		      .new_kidx_api = true, .deprecated = true } },
 	{ 410, 507, { B43_FW_PRE_AC, .hdr_format = B43_FW_HDR_410,
 		      .hdr = &b43_hdr_layout_410,
 		      .new_kidx_api = true } },
@@ -99,10 +104,11 @@ static const struct b43_fw_range b43_fw_revs_pre_ac[] = {
 /* edcrs: firmware 784.2 uploads slower with it. */
 static const struct b43_fw_range b43_fw_revs_ucode30_mimo[] = {
 	{ 0, 350, { B43_FW_PRE_AC, .hdr_format = B43_FW_HDR_351,
-		      .hdr = &b43_hdr_layout_351 } },
+		      .hdr = &b43_hdr_layout_351,
+		      .deprecated = true } },
 	{ 351, 409, { B43_FW_PRE_AC, .hdr_format = B43_FW_HDR_351,
 		      .hdr = &b43_hdr_layout_351,
-		      .new_kidx_api = true } },
+		      .new_kidx_api = true, .deprecated = true } },
 	{ 410, 507, { B43_FW_PRE_AC, .hdr_format = B43_FW_HDR_410,
 		      .hdr = &b43_hdr_layout_410,
 		      .new_kidx_api = true } },
@@ -123,17 +129,22 @@ static const struct b43_fw_range b43_fw_revs_ucode30_mimo[] = {
 	.hdr		= &b43_hdr_layout_ac,		\
 	.keyidxblock	= B43_SHM_SH_KEYIDXBLOCK_AC,	\
 	.new_kidx_api	= true,				\
-	.g_chanid_number = true
+	.g_chanid_number = true,			\
+	.kidx_empty_zero = true,			\
+	.sec_algo_d11	= true,				\
+	.dfq_valid	= true,				\
+	.ampdu		= true,				\
+	.txbf		= true
 
 /*
- * keyidxblock: the block starts further on than on the v4 firmware: 0x05D4
- * holds PHY state, the transmit chain mask, and writing there breaks the
- * transmit path silently.
- *
- * machw_bit31: cleared by every stock driver in the captures -- 6.30.102.7
- * with ucode 784, 7.14 with 928 on three boards -- except the x86 hybrid
- * 6.30.223, which leaves it set for its ucode 832. That one is followed too:
- * the captures cannot tell the ucode from the build.
+ * keyidxblock: 0x05D4 holds the TX chain mask here.
+ * machw_bit31: in the captures only 6.30.223 (832) leaves it set.
+ * hw_tkip: the RX TKIP table and the TX header's TKIP fields are not known.
+ * phytxctl_shm: the beacon's is elsewhere, b43_write_beacon_phytxctl_ac().
+ * hf_usedefkeys: 7.14.43 leaves the host flags alone on a WEP key
+ * (vd625-agcombo/ch149-wep.bin); mac80211 encrypts management frames.
+ * dfq_valid: set by 6.30 and 7.14 from init on; what it gates is not known.
+ * unknown: the header of a revision not listed is assumed.
  */
 static const struct b43_fw_range b43_fw_revs_ucode42[] = {
 	{ 784, 784, { B43_FW_AC, .tpl = &b43_tpl_layout_ac_784,
@@ -142,7 +153,7 @@ static const struct b43_fw_range b43_fw_revs_ucode42[] = {
 		      .shm = &b43_shm_layout_ac_832, .machw_bit31 = true } },
 	{ 928, 928, { B43_FW_AC, .tpl = &b43_tpl_layout_ac_832,
 		      .shm = &b43_shm_layout_ac_928 } },
-	{ 0, 0xffff, { B43_FW_AC } },
+	{ 0, 0xffff, { B43_FW_AC, .unknown = true } },
 };
 
 #define B43_FW_FAMILY(name, revs)					\
