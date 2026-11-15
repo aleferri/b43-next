@@ -258,6 +258,20 @@ static u16 b43_phy_ht_classifier(struct b43_wldev *dev, u16 mask, u16 val)
 	return tmp;
 }
 
+/* Turn CCK (802.11b) reception on or off, also for later PHY inits */
+void b43_phy_ht_set_cck_rx(struct b43_wldev *dev, bool on)
+{
+	struct b43_phy_ht *phy_ht = dev->phy.ht;
+
+	if (phy_ht->cck_rx_off == !on)
+		return;
+	phy_ht->cck_rx_off = !on;
+	if (b43_current_band(dev->wl) == NL80211_BAND_2GHZ)
+		b43_phy_ht_classifier(dev, B43_PHY_HT_CLASS_CTL_CCK_EN,
+				      on ? B43_PHY_HT_CLASS_CTL_CCK_EN : 0);
+	b43dbg(dev->wl, "HT-PHY: CCK reception %s\n", on ? "on" : "off");
+}
+
 static void b43_phy_ht_reset_cca(struct b43_wldev *dev)
 {
 	u16 bbcfg;
@@ -586,6 +600,29 @@ static void b43_phy_ht_tx_power_fix(struct b43_wldev *dev)
 	b43_phy_ht_tx_gain_fix(dev, dev->phy.ht->tx_gain_idx);
 }
 
+/*
+ * The static TX gain index to use instead of the TX power control loop, or
+ * -1 for the loop. On the BCM4331 boards with an external PA (Netgear R6400)
+ * the loop drives the gain to (near) maximum, which compresses the PA: at a
+ * fixed client distance the download doubled (12 -> 22.5 Mbit/s at 802.11g)
+ * with the loop off and a fixed gain from table 0x1a entry 0xc0 + index, for
+ * every index from 16 up to 40 on the R6400 v2 (BFL_FEM); index 12 shows the
+ * first loss, index 8 distorts, index 0 is as bad as the loop. A board with
+ * a high-gain external PA (BFL_HGPA, R6400 v1) still compresses at index 16
+ * and is clean from 20. Use 24 with BFL_HGPA, else 16: about four steps above
+ * the measured edge on both boards. Elsewhere the loop stays on: an Apple
+ * BCM4331 card has an external LNA and PA too (BFL_EXTLNA, extpagain 0) but
+ * neither flag, and there the loop holds the SPROM target power.
+ */
+static int b43_phy_ht_static_txgain(struct b43_wldev *dev)
+{
+	u16 bf = dev->dev->bus_sprom->boardflags_lo;
+
+	if (!(bf & (B43_BFL_FEM | B43_BFL_HGPA)))
+		return -1;
+	return (bf & B43_BFL_HGPA) ? 24 : 16;
+}
+
 static void b43_phy_ht_tx_power_ctl(struct b43_wldev *dev, bool enable)
 {
 	struct b43_phy_ht *phy_ht = dev->phy.ht;
@@ -599,6 +636,11 @@ static void b43_phy_ht_tx_power_ctl(struct b43_wldev *dev, bool enable)
 					    B43_PHY_HT_TX_PCTL_STATUS_C2,
 					    B43_PHY_HT_TX_PCTL_STATUS_C3 };
 	int i;
+	int fixed = enable ? b43_phy_ht_static_txgain(dev) : -1;
+
+	/* On such a board every enable fixes the static gain instead */
+	if (fixed >= 0)
+		enable = false;
 
 	if (!enable) {
 		if (b43_phy_read(dev, B43_PHY_HT_TXPCTL_CMD_C1) & en_bits) {
@@ -631,6 +673,18 @@ static void b43_phy_ht_tx_power_ctl(struct b43_wldev *dev, bool enable)
 	}
 
 	phy_ht->tx_pwr_ctl = enable;
+
+	if (fixed >= 0) {
+		/*
+		 * Keep the index that the calibrations fix again: 40 until
+		 * the RX calibration fixes its own (b43_phy_ht_tx_gain_fix())
+		 */
+		u8 cal_idx = phy_ht->tx_gain_idx;
+
+		b43dbg(dev->wl, "HT-PHY: static TX gain index %d\n", fixed);
+		b43_phy_ht_tx_gain_fix(dev, fixed);
+		phy_ht->tx_gain_idx = cal_idx;
+	}
 }
 
 static void b43_phy_ht_tx_power_ctl_idle_tssi(struct b43_wldev *dev)
@@ -1195,6 +1249,37 @@ static void b43_phy_ht_op_prepare_structs(struct b43_wldev *dev)
 		phy_ht->bb_mult_save[i] = -1;
 }
 
+/*
+ * On BCM4331 boards whose 2.4 GHz external PAs are driven by the analog PA
+ * control lines (BFL2_ANAPACTRL_2G, e.g. the Netgear R6400 v1 and v2), bcma
+ * leaves the digital ones (EXTPA_EN, EXTPA_EN2) enabled and the external LNA
+ * off, as for every BCM4331: the receiver is deaf. Switch the chipcontrol to
+ * the analog lines and enable the external LNA when the board has one. The
+ * 12x9 package (9, 11) wires the ext PA lines to GPIO 2/5 and is left alone.
+ */
+static void b43_phy_ht_ext_pa_analog(struct b43_wldev *dev)
+{
+	struct bcmn_bus *bus = dev->dev->bdev->bus;
+	struct bcmn_drv_cc *cc = &bus->drv_cc;
+	u32 set = BCMN_CHIPCTL_4331_EXTPA_ANA_EN;
+	u32 old;
+
+	if (bus->chipinfo.id != BCMN_CHIP_ID_BCM4331 ||
+	    bus->chipinfo.pkg == 9 || bus->chipinfo.pkg == 11 ||
+	    b43_current_band(dev->wl) != NL80211_BAND_2GHZ)
+		return;
+
+	if (dev->dev->bus_sprom->boardflags_lo & B43_BFL_EXTLNA)
+		set |= BCMN_CHIPCTL_4331_EXT_LNA;
+	old = bcmn_cc_read32(cc, BCMN_CC_CHIPCTL);
+	bcmn_cc_maskset32(cc, BCMN_CC_CHIPCTL,
+			  ~(BCMN_CHIPCTL_4331_EXTPA_EN |
+			    BCMN_CHIPCTL_4331_EXTPA_EN2), set);
+	if (old != bcmn_cc_read32(cc, BCMN_CC_CHIPCTL))
+		b43dbg(dev->wl, "HT-PHY: analog PA control, chipcontrol 0x%08x -> 0x%08x\n",
+		       old, bcmn_cc_read32(cc, BCMN_CC_CHIPCTL));
+}
+
 static int b43_phy_ht_op_init(struct b43_wldev *dev)
 {
 	struct b43_phy_ht *phy_ht = dev->phy.ht;
@@ -1209,6 +1294,10 @@ static int b43_phy_ht_op_init(struct b43_wldev *dev)
 		b43err(dev->wl, "HT-PHY is supported only on BCMA bus!\n");
 		return -EOPNOTSUPP;
 	}
+
+	/* Before anything of the PHY and radio is set up */
+	if (anapactrl)
+		b43_phy_ht_ext_pa_analog(dev);
 
 	if (dev->phy.do_full_init)
 		b43_phy_ht_tables_init(dev);
@@ -1236,6 +1325,7 @@ static int b43_phy_ht_op_init(struct b43_wldev *dev)
 		b43_phy_ht_classifier(dev, B43_PHY_HT_CLASS_CTL_CCK_EN, 0);
 	else
 		b43_phy_ht_classifier(dev, B43_PHY_HT_CLASS_CTL_CCK_EN,
+				      phy_ht->cck_rx_off ? 0 :
 				      B43_PHY_HT_CLASS_CTL_CCK_EN);
 
 	b43_phy_set(dev, 0xb1, 0x91);
