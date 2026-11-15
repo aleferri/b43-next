@@ -530,6 +530,7 @@
 #define BCMN_CHIPCTL_4331_EXTPA_EN2		BIT(12)	/* 0 ext pa disable, 1 ext pa enabled */
 #define BCMN_CHIPCTL_4331_BT_SHD0_ON_GPIO4	BIT(16)	/* enable bt_shd0 at gpio4 */
 #define BCMN_CHIPCTL_4331_BT_SHD1_ON_GPIO5	BIT(17)	/* enable bt_shd1 at gpio5 */
+#define BCMN_CHIPCTL_4331_EXTPA_ANA_EN		BIT(24)	/* analog control of the ext PAs (Broadcom sbchipc.h) */
 
 /* 43224 chip-specific ChipControl register bits */
 #define BCMN_CCTRL_43224_GPIO_TOGGLE		0x8000		/* gpio[3:0] pins as btcoex or s/w gpio */
