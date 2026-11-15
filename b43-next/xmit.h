@@ -400,7 +400,7 @@ struct b43_rxhdr_fw4 {
 	} __packed;
 } __packed;
 
-/* A header field at an offset of struct b43_hdr_layout. */
+/* A header field at an offset of struct b43_fw_hdr. */
 static inline void *b43_txhdr_at(struct b43_txhdr *txhdr, u8 offset)
 {
 	return (u8 *)txhdr + offset;
@@ -481,6 +481,10 @@ void b43_rx_amsdu_free(struct b43_wldev *dev);
 
 void b43_txstatus_dump(struct b43_wldev *dev,
 		       const struct b43_txstatus *status);
+void b43_txstatus_poll_fw4(struct b43_wldev *dev);
+void b43_txstatus_poll_ac(struct b43_wldev *dev);
+void b43_txstatus_drain_fw4(struct b43_wldev *dev);
+void b43_txstatus_drain_ac(struct b43_wldev *dev);
 void b43_handle_txstatus(struct b43_wldev *dev,
 			 const struct b43_txstatus *status);
 bool b43_fill_txstatus_report(struct b43_wldev *dev,

@@ -1945,16 +1945,18 @@ static void b43_decode_txstatus(u32 v0, u32 v1, struct b43_txstatus *stat)
 	stat->ba_bitmap = 0;
 }
 
-static void handle_irq_transmit_status(struct b43_wldev *dev)
+void b43_txstatus_poll_ac(struct b43_wldev *dev)
+{
+	struct b43_txstatus stat = {};
+
+	while (b43_txstatus_read_ac(dev, &stat))
+		b43_handle_txstatus(dev, &stat);
+}
+
+void b43_txstatus_poll_fw4(struct b43_wldev *dev)
 {
 	u32 v0, v1;
 	struct b43_txstatus stat = {};
-
-	if (dev->fw.layout.hdr_format == B43_FW_HDR_AC) {
-		while (b43_txstatus_read_ac(dev, &stat))
-			b43_handle_txstatus(dev, &stat);
-		return;
-	}
 
 	while (1) {
 		v0 = b43_read32(dev, B43_MMIO_XMITSTAT_0);
@@ -2002,28 +2004,35 @@ static void handle_irq_transmit_status(struct b43_wldev *dev)
 	}
 }
 
-static void drain_txstatus_queue(struct b43_wldev *dev)
+void b43_txstatus_drain_ac(struct b43_wldev *dev)
 {
 	struct b43_txstatus stat;
+
+	while (b43_txstatus_read_ac(dev, &stat))
+		;
+}
+
+void b43_txstatus_drain_fw4(struct b43_wldev *dev)
+{
 	u32 dummy;
 
-	dev->ampdu_txstat_pending = false;
-	if (dev->dev->core_rev < 5)
-		return;
-	if (dev->fw.layout.hdr_format == B43_FW_HDR_AC) {
-		while (b43_txstatus_read_ac(dev, &stat))
-			;
-		return;
-	}
-	/* Read all entries from the microcode TXstatus FIFO
-	 * and throw them away.
-	 */
 	while (1) {
 		dummy = b43_read32(dev, B43_MMIO_XMITSTAT_0);
 		if (!(dummy & 0x00000001))
 			break;
 		dummy = b43_read32(dev, B43_MMIO_XMITSTAT_1);
 	}
+}
+
+static void drain_txstatus_queue(struct b43_wldev *dev)
+{
+	dev->ampdu_txstat_pending = false;
+	if (dev->dev->core_rev < 5)
+		return;
+	/* Read all entries from the microcode TXstatus FIFO
+	 * and throw them away.
+	 */
+	dev->fw.layout.hdr->txstatus_drain(dev);
 }
 
 static u32 b43_jssi_read(struct b43_wldev *dev)
@@ -3034,7 +3043,7 @@ static void b43_do_interrupt_thread(struct b43_wldev *dev)
 	B43_WARN_ON(dma_reason[5] & B43_DMAIRQ_RX_DONE);
 
 	if (reason & B43_IRQ_TX_OK)
-		handle_irq_transmit_status(dev);
+		dev->fw.layout.hdr->txstatus_poll(dev);
 
 	/* Re-enable interrupts on the device by restoring the current interrupt mask. */
 	b43_write32(dev, B43_MMIO_GEN_IRQ_MASK, dev->irq_mask);
@@ -5138,7 +5147,7 @@ static bool b43_tx_rate_ht_ok(const struct ieee80211_tx_rate *rate)
 /*
  * Whether the TX header can carry the frame's rates. On the AC the first
  * rate block must (b43_txhdr_ac_rate_ok()); a fallback it cannot carry ends
- * the blocks, in b43_generate_txhdr(). On the other PHYs a legacy rate and
+ * the blocks, in b43_generate_txhdr_ac(). On the other PHYs a legacy rate and
  * its fallback, with HT on an N-PHY core each of them a legacy rate or an
  * HT MCS of one or two streams. Rate control picks nothing else, see
  * b43_ac_set_ht_vht_cap() and b43_setup_bands(), but an injected frame can
@@ -5159,8 +5168,9 @@ static bool b43_tx_rates_ok(struct ieee80211_hw *hw,
 	 * header format, not the band: the 2.4 GHz band of an AC-PHY core has
 	 * HT but no VHT, and its MCS rates need the AC descriptor as well.
 	 */
-	if (band->vht_cap.vht_supported ||
-	    (dev && dev->fw.layout.hdr_format == B43_FW_HDR_AC))
+	if (dev && dev->fw.layout.hdr && dev->fw.layout.hdr->tx_rate_ok)
+		return dev->fw.layout.hdr->tx_rate_ok(band, &r[0]);
+	if (band->vht_cap.vht_supported)
 		return b43_txhdr_ac_rate_ok(band, &r[0]);
 	if (dev && b43_nphy_ht_enabled(dev))
 		return b43_tx_rate_ht_ok(&r[0]) && b43_tx_rate_ht_ok(&r[1]);

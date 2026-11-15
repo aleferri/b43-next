@@ -84,49 +84,37 @@ static const struct b43_shm_layout b43_shm_layout_ac_928 = {
  * g_chanid_number: changed between 478.104 and 508.1084.
  */
 static const struct b43_fw_range b43_fw_revs_pre_ac[] = {
-	{ 0, 350, { B43_FW_PRE_AC, .hdr_format = B43_FW_HDR_351,
-		      .hdr = &b43_hdr_layout_351,
+	{ 0, 350, { B43_FW_PRE_AC, .hdr = &b43_hdr_351,
 		      .deprecated = true } },
-	{ 351, 409, { B43_FW_PRE_AC, .hdr_format = B43_FW_HDR_351,
-		      .hdr = &b43_hdr_layout_351,
+	{ 351, 409, { B43_FW_PRE_AC, .hdr = &b43_hdr_351,
 		      .new_kidx_api = true, .deprecated = true } },
-	{ 410, 507, { B43_FW_PRE_AC, .hdr_format = B43_FW_HDR_410,
-		      .hdr = &b43_hdr_layout_410,
+	{ 410, 507, { B43_FW_PRE_AC, .hdr = &b43_hdr_410,
 		      .new_kidx_api = true } },
-	{ 508, 597, { B43_FW_PRE_AC, .hdr_format = B43_FW_HDR_410,
-		      .hdr = &b43_hdr_layout_410,
+	{ 508, 597, { B43_FW_PRE_AC, .hdr = &b43_hdr_410,
 		      .new_kidx_api = true, .g_chanid_number = true } },
-	{ 598, 0xffff, { B43_FW_PRE_AC, .hdr_format = B43_FW_HDR_598,
-			 .hdr = &b43_hdr_layout_598,
+	{ 598, 0xffff, { B43_FW_PRE_AC, .hdr = &b43_hdr_598,
 			 .new_kidx_api = true, .g_chanid_number = true } },
 };
 
 /* edcrs: firmware 784.2 uploads slower with it. */
 static const struct b43_fw_range b43_fw_revs_ucode30_mimo[] = {
-	{ 0, 350, { B43_FW_PRE_AC, .hdr_format = B43_FW_HDR_351,
-		      .hdr = &b43_hdr_layout_351,
+	{ 0, 350, { B43_FW_PRE_AC, .hdr = &b43_hdr_351,
 		      .deprecated = true } },
-	{ 351, 409, { B43_FW_PRE_AC, .hdr_format = B43_FW_HDR_351,
-		      .hdr = &b43_hdr_layout_351,
+	{ 351, 409, { B43_FW_PRE_AC, .hdr = &b43_hdr_351,
 		      .new_kidx_api = true, .deprecated = true } },
-	{ 410, 507, { B43_FW_PRE_AC, .hdr_format = B43_FW_HDR_410,
-		      .hdr = &b43_hdr_layout_410,
+	{ 410, 507, { B43_FW_PRE_AC, .hdr = &b43_hdr_410,
 		      .new_kidx_api = true } },
-	{ 508, 597, { B43_FW_PRE_AC, .hdr_format = B43_FW_HDR_410,
-		      .hdr = &b43_hdr_layout_410,
+	{ 508, 597, { B43_FW_PRE_AC, .hdr = &b43_hdr_410,
 		      .new_kidx_api = true, .g_chanid_number = true } },
-	{ 598, 831, { B43_FW_PRE_AC, .hdr_format = B43_FW_HDR_598,
-		      .hdr = &b43_hdr_layout_598,
+	{ 598, 831, { B43_FW_PRE_AC, .hdr = &b43_hdr_598,
 		      .new_kidx_api = true, .g_chanid_number = true } },
-	{ 832, 0xffff, { B43_FW_PRE_AC, .hdr_format = B43_FW_HDR_598,
-			 .hdr = &b43_hdr_layout_598,
+	{ 832, 0xffff, { B43_FW_PRE_AC, .hdr = &b43_hdr_598,
 			 .new_kidx_api = true, .g_chanid_number = true,
 			 .edcrs = true } },
 };
 
 #define B43_FW_AC					\
-	.hdr_format	= B43_FW_HDR_AC,		\
-	.hdr		= &b43_hdr_layout_ac,		\
+	.hdr		= &b43_ac_hdr_784,		\
 	.keyidxblock	= B43_SHM_SH_KEYIDXBLOCK_AC,	\
 	.new_kidx_api	= true,				\
 	.g_chanid_number = true,			\

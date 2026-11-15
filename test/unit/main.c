@@ -56,8 +56,8 @@ static struct b43_bus_dev      g_bus_dev;
 static struct b43_wldev        g_wldev;
 
 /* Le geometrie degli header stanno in xmit.c, fuori dal link. */
-const struct b43_hdr_layout b43_hdr_layout_351, b43_hdr_layout_410,
-			    b43_hdr_layout_598, b43_hdr_layout_ac;
+const struct b43_fw_hdr b43_hdr_351, b43_hdr_410, b43_hdr_598,
+			b43_ac_hdr_784;
 
 /*
  * Il bit 0 di PHY 0x0270 e' il flag di start della misura RX-IQ e l'hardware lo

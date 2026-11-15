@@ -709,8 +709,8 @@ static void b43_poison_rx_buffer(struct b43_dmaring *ring, struct sk_buff *skb)
  * page, and gets them back when the stack frees the frame. The driver
  * still maps each buffer itself.
  *
- * The buffer's size is the microcode's: its RX header layout
- * (dev->fw.layout.hdr_format) sets the frame offset and how long a frame may be.
+ * The buffer's size is the microcode's: its RX header
+ * (struct b43_fw_hdr) sets the frame offset and how long a frame may be.
  * A ring whose buffer fits in a page with its skb_shared_info, as the 598
  * and 351 layouts' do, gains nothing from a pool and keeps
  * __dev_alloc_skb(); today only the AC layout's does not fit.

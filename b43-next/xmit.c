@@ -45,64 +45,6 @@
 #include <linux/ktime.h>
 #include <linux/unaligned.h>
 
-const struct b43_hdr_layout b43_hdr_layout_351 = {
-	.tx_len		= offsetofend(struct b43_txhdr, format_351.plcp),
-	.tx_cookie	= offsetof(struct b43_txhdr, format_351.cookie),
-	.tx_rts_plcp	= offsetof(struct b43_txhdr, format_351.rts_plcp),
-	.tx_rts_frame	= offsetof(struct b43_txhdr, format_351.rts_frame),
-	.tx_plcp	= offsetof(struct b43_txhdr, format_351.plcp),
-	.rx_len		= offsetofend(struct b43_rxhdr_fw4, format_351),
-	.rx_frame_offset = B43_DMA0_RX_FW351_FO,
-	.rx_buffersize	= B43_DMA0_RX_FW351_BUFSIZE,
-	.rx_mac_status	= offsetof(struct b43_rxhdr_fw4, format_351.mac_status),
-	.rx_mac_time	= offsetof(struct b43_rxhdr_fw4, format_351.mac_time),
-	.rx_channel	= offsetof(struct b43_rxhdr_fw4, format_351.channel),
-};
-
-const struct b43_hdr_layout b43_hdr_layout_410 = {
-	.tx_len		= offsetofend(struct b43_txhdr, format_410.plcp),
-	.tx_cookie	= offsetof(struct b43_txhdr, format_410.cookie),
-	.tx_rts_plcp	= offsetof(struct b43_txhdr, format_410.rts_plcp),
-	.tx_rts_frame	= offsetof(struct b43_txhdr, format_410.rts_frame),
-	.tx_plcp	= offsetof(struct b43_txhdr, format_410.plcp),
-	.rx_len		= offsetofend(struct b43_rxhdr_fw4, format_351),
-	.rx_frame_offset = B43_DMA0_RX_FW351_FO,
-	.rx_buffersize	= B43_DMA0_RX_FW351_BUFSIZE,
-	.rx_mac_status	= offsetof(struct b43_rxhdr_fw4, format_351.mac_status),
-	.rx_mac_time	= offsetof(struct b43_rxhdr_fw4, format_351.mac_time),
-	.rx_channel	= offsetof(struct b43_rxhdr_fw4, format_351.channel),
-};
-
-const struct b43_hdr_layout b43_hdr_layout_598 = {
-	.tx_len		= offsetofend(struct b43_txhdr, format_598.plcp),
-	.tx_cookie	= offsetof(struct b43_txhdr, format_598.cookie),
-	.tx_rts_plcp	= offsetof(struct b43_txhdr, format_598.rts_plcp),
-	.tx_rts_frame	= offsetof(struct b43_txhdr, format_598.rts_frame),
-	.tx_plcp	= offsetof(struct b43_txhdr, format_598.plcp),
-	.tx_ppdu_plcp	= true,
-	.tx_preload	= offsetof(struct b43_txhdr, format_598.preload_size),
-	.rx_len		= offsetofend(struct b43_rxhdr_fw4, format_598),
-	.rx_frame_offset = B43_DMA0_RX_FW598_FO,
-	.rx_buffersize	= B43_DMA0_RX_FW598_BUFSIZE,
-	.rx_mac_status	= offsetof(struct b43_rxhdr_fw4, format_598.mac_status),
-	.rx_mac_time	= offsetof(struct b43_rxhdr_fw4, format_598.mac_time),
-	.rx_channel	= offsetof(struct b43_rxhdr_fw4, format_598.channel),
-};
-
-/*
- * The AC microcode has a TX header of its own, b43_generate_txhdr_ac()'s, and
- * no PIO. Its RX header fields are assumed where the 598 one has them, not
- * verified; RcvOffset is 40 with wl 6.30 and 7.14 alike.
- */
-const struct b43_hdr_layout b43_hdr_layout_ac = {
-	.tx_len		= sizeof(struct b43_txhdr_ac),
-	.rx_frame_offset = B43_DMA0_RX_AC_FO,
-	.rx_buffersize	= B43_DMA0_RX_AC_BUFSIZE,
-	.rx_mac_status	= offsetof(struct b43_rxhdr_fw4, format_598.mac_status),
-	.rx_mac_time	= offsetof(struct b43_rxhdr_fw4, format_598.mac_time),
-	.rx_channel	= offsetof(struct b43_rxhdr_fw4, format_598.channel),
-};
-
 static const struct b43_tx_legacy_rate_phy_ctl_entry b43_tx_legacy_rate_phy_ctl[] = {
 	{ B43_CCK_RATE_1MB,	0x0,			0x0 },
 	{ B43_CCK_RATE_2MB,	0x0,			0x1 },
@@ -545,7 +487,7 @@ static u16 b43_txhdr_ac_rate_idx(u8 rate)
 
 /*
  * What the TX header formats share, decided once from mac80211's TX info:
- * the rates, the MAC flags and the protection frame. b43_generate_txhdr()
+ * the rates, the MAC flags and the protection frame. b43_generate_txhdr_fw4()
  * writes it in the pre-AC header, b43_generate_txhdr_ac() in the AC one.
  */
 struct b43_txhdr_ctl {
@@ -1058,10 +1000,12 @@ static bool b43_txhdr_ac_ampdu(struct b43_txhdr_ac *txhdr,
  */
 static int b43_generate_txhdr_ac(struct b43_wldev *dev, u8 *_txhdr,
 				 struct sk_buff *skb,
-				 struct ieee80211_tx_info *info,
-				 const struct b43_txhdr_ctl *c, u16 cookie)
+				 struct ieee80211_tx_info *info, u16 cookie,
+				 const struct b43_txhdr_ampdu *ampdu)
 {
 	struct b43_txhdr_ac *txhdr = (struct b43_txhdr_ac *)_txhdr;
+	struct b43_txhdr_ctl ctl;
+	const struct b43_txhdr_ctl *c = &ctl;
 	const struct ieee80211_hdr *wlhdr =
 	    (const struct ieee80211_hdr *)skb->data;
 	const struct ieee80211_supported_band *sband =
@@ -1076,6 +1020,8 @@ static int b43_generate_txhdr_ac(struct b43_wldev *dev, u8 *_txhdr,
 
 	BUILD_BUG_ON(sizeof(struct b43_txhdr_ac) != 128);
 	BUILD_BUG_ON(B43_TXH_AC_RATES > IEEE80211_TX_MAX_RATES);
+
+	b43_txhdr_ctl_get(dev, info, &ctl);
 
 	if (key)
 		len += key->icv_len;
@@ -1157,17 +1103,17 @@ static int b43_generate_txhdr_ac(struct b43_wldev *dev, u8 *_txhdr,
 	return 0;
 }
 
-int b43_generate_txhdr(struct b43_wldev *dev,
-		       u8 *_txhdr,
-		       struct sk_buff *skb_frag,
-		       struct ieee80211_tx_info *info,
-		       u16 cookie,
-		       const struct b43_txhdr_ampdu *ampdu)
+static int b43_generate_txhdr_fw4(struct b43_wldev *dev,
+				  u8 *_txhdr,
+				  struct sk_buff *skb_frag,
+				  struct ieee80211_tx_info *info,
+				  u16 cookie,
+				  const struct b43_txhdr_ampdu *ampdu)
 {
 	const unsigned char *fragment_data = skb_frag->data;
 	unsigned int fragment_len = skb_frag->len;
 	struct b43_txhdr *txhdr = (struct b43_txhdr *)_txhdr;
-	const struct b43_hdr_layout *hl = dev->fw.layout.hdr;
+	const struct b43_fw_hdr *fh = dev->fw.layout.hdr;
 	const struct b43_phy *phy = &dev->phy;
 	struct ieee80211_hdr *wlhdr =
 	    (struct ieee80211_hdr *)fragment_data;
@@ -1194,12 +1140,9 @@ int b43_generate_txhdr(struct b43_wldev *dev,
 	struct b43_txhdr_ctl c;
 
 	/* Only the first A-MPDU member's protection precedes the PPDU. */
-	if (dev->fw.layout.hdr_format != B43_FW_HDR_AC && protect)
+	if (protect)
 		b43_tx_ht_protect(dev, info);
 	b43_txhdr_ctl_get(dev, info, &c);
-	if (dev->fw.layout.hdr_format == B43_FW_HDR_AC)
-		return b43_generate_txhdr_ac(dev, _txhdr, skb_frag, info,
-					     &c, cookie);
 
 	memset(txhdr, 0, sizeof(*txhdr));
 
@@ -1329,8 +1272,8 @@ int b43_generate_txhdr(struct b43_wldev *dev,
 	/* The first header describes the whole A-MPDU PPDU. Continuation
 	 * PLCP and mixed-mode lengths stay individual. */
 	ppdu_len = ampdu && ampdu->first ? ampdu->len : plcp_fragment_len;
-	plcp_main = b43_txhdr_at(txhdr, hl->tx_plcp);
-	if (hl->tx_ppdu_plcp) {
+	plcp_main = b43_txhdr_at(txhdr, fh->tx_plcp);
+	if (fh->tx_ppdu_plcp) {
 		b43_generate_plcp_hdr((struct b43_plcp_hdr4 *)plcp_main,
 				      ppdu_len, rate, rate_ht);
 		if (bw40)
@@ -1342,7 +1285,7 @@ int b43_generate_txhdr(struct b43_wldev *dev,
 		if (ampdu && ampdu->first) {
 			plcp_main->raw[3] |= 0x08; /* Aggregation */
 			put_unaligned_le16(ampdu->preload,
-					   b43_txhdr_at(txhdr, hl->tx_preload));
+					   b43_txhdr_at(txhdr, fh->tx_preload));
 		}
 	} else {
 		b43_generate_plcp_hdr((struct b43_plcp_hdr4 *)plcp_main,
@@ -1479,7 +1422,7 @@ int b43_generate_txhdr(struct b43_wldev *dev,
 		if (c.cts) {
 			struct ieee80211_cts *cts;
 
-			cts = b43_txhdr_at(txhdr, hl->tx_rts_frame);
+			cts = b43_txhdr_at(txhdr, fh->tx_rts_frame);
 			if (ht) {
 				cts->frame_control =
 					cpu_to_le16(IEEE80211_FTYPE_CTL |
@@ -1497,7 +1440,7 @@ int b43_generate_txhdr(struct b43_wldev *dev,
 		} else {
 			struct ieee80211_rts *rts;
 
-			rts = b43_txhdr_at(txhdr, hl->tx_rts_frame);
+			rts = b43_txhdr_at(txhdr, fh->tx_rts_frame);
 			if (ht) {
 				rts->frame_control =
 					cpu_to_le16(IEEE80211_FTYPE_CTL |
@@ -1516,14 +1459,14 @@ int b43_generate_txhdr(struct b43_wldev *dev,
 		len += FCS_LEN;
 
 		/* Generate the PLCP headers for the RTS/CTS frame */
-		plcp = b43_txhdr_at(txhdr, hl->tx_rts_plcp);
+		plcp = b43_txhdr_at(txhdr, fh->tx_rts_plcp);
 		b43_generate_plcp_hdr((struct b43_plcp_hdr4 *)plcp,
 				      len, rts_rate, false);
 		plcp = &txhdr->rts_plcp_fb;
 		b43_generate_plcp_hdr((struct b43_plcp_hdr4 *)plcp,
 				      len, rts_rate_fb, false);
 
-		hdr = b43_txhdr_at(txhdr, hl->tx_rts_frame);
+		hdr = b43_txhdr_at(txhdr, fh->tx_rts_frame);
 		txhdr->rts_dur_fb = hdr->duration_id;
 		if (ht) {
 			/* The HT RTS/CTS frames above carry no duration yet. */
@@ -1598,7 +1541,7 @@ int b43_generate_txhdr(struct b43_wldev *dev,
 	}
 
 	/* Magic cookie */
-	put_unaligned_le16(cookie, b43_txhdr_at(txhdr, hl->tx_cookie));
+	put_unaligned_le16(cookie, b43_txhdr_at(txhdr, fh->tx_cookie));
 
 	if (fill_phy_ctl1) {
 		txhdr->phy_ctl1 = cpu_to_le16(
@@ -1615,6 +1558,17 @@ int b43_generate_txhdr(struct b43_wldev *dev,
 	txhdr->extra_ft = extra_ft;
 
 	return 0;
+}
+
+int b43_generate_txhdr(struct b43_wldev *dev,
+		       u8 *_txhdr,
+		       struct sk_buff *skb_frag,
+		       struct ieee80211_tx_info *info,
+		       u16 cookie,
+		       const struct b43_txhdr_ampdu *ampdu)
+{
+	return dev->fw.layout.hdr->gen_txhdr(dev, _txhdr, skb_frag, info,
+					     cookie, ampdu);
 }
 
 /* On-air PSDU length of a TX frame: hardware appends ICV and FCS. */
@@ -2004,7 +1958,7 @@ void b43_rx(struct b43_wldev *dev, struct sk_buff *skb, const void *_rxhdr)
 	const u8 *ht_plcp = NULL;
 	struct ieee80211_hdr *wlhdr;
 	const struct b43_rxhdr_fw4 *rxhdr = _rxhdr;
-	const struct b43_hdr_layout *hl = dev->fw.layout.hdr;
+	const struct b43_fw_hdr *fh = dev->fw.layout.hdr;
 	__le16 fctl;
 	u16 phystat0, phystat3;
 	u16 chanstat, mactime;
@@ -2017,9 +1971,9 @@ void b43_rx(struct b43_wldev *dev, struct sk_buff *skb, const void *_rxhdr)
 
 	memset(&status, 0, sizeof(status));
 
-	if ((dev->fw.layout.hdr_format == B43_FW_HDR_AC ||
-	     (ht && dev->fw.layout.hdr_format == B43_FW_HDR_598)) &&
-	    (le32_to_cpu(rxhdr->format_598.mac_status) & B43_RX_MAC_AMSDU)) {
+	if (fh->rx_amsdu && (ht || !fh->rx_amsdu_ht_only) &&
+	    (get_unaligned_le32(b43_rxhdr_at(rxhdr, fh->rx_mac_status)) &
+	     B43_RX_MAC_AMSDU)) {
 		skb = b43_rx_amsdu(dev, skb, &_rxhdr);
 		if (!skb)
 			return;
@@ -2029,9 +1983,9 @@ void b43_rx(struct b43_wldev *dev, struct sk_buff *skb, const void *_rxhdr)
 	/* Get metadata about the frame from the header. */
 	phystat0 = le16_to_cpu(rxhdr->phy_status0);
 	phystat3 = le16_to_cpu(rxhdr->phy_status3);
-	macstat = get_unaligned_le32(b43_rxhdr_at(rxhdr, hl->rx_mac_status));
-	mactime = get_unaligned_le16(b43_rxhdr_at(rxhdr, hl->rx_mac_time));
-	chanstat = get_unaligned_le16(b43_rxhdr_at(rxhdr, hl->rx_channel));
+	macstat = get_unaligned_le32(b43_rxhdr_at(rxhdr, fh->rx_mac_status));
+	mactime = get_unaligned_le16(b43_rxhdr_at(rxhdr, fh->rx_mac_time));
+	chanstat = get_unaligned_le16(b43_rxhdr_at(rxhdr, fh->rx_channel));
 
 	/* The channel field of the older microcode is (cookie << 3) | phytype,
 	 * and three bits cannot carry B43_PHYTYPE_AC. What the AC microcode
@@ -2067,7 +2021,7 @@ void b43_rx(struct b43_wldev *dev, struct sk_buff *skb, const void *_rxhdr)
 		if (!(macstat & B43_RX_MAC_RXST_VALID))
 			status.flag &= ~RX_FLAG_FAILED_PLCP_CRC;
 		padding = (macstat & B43_RX_MAC_PADDING) ? 2 : 0;
-		if (dev->fw.layout.hdr_format == B43_FW_HDR_598 &&
+		if (fh->rx_ht_plcp &&
 		    !(status.flag & RX_FLAG_FAILED_PLCP_CRC) &&
 		    skb->len >= sizeof(struct b43_plcp_hdr6) + padding)
 			ht_plcp = b43_rx_ht_plcp(dev, skb->data + padding,
@@ -2199,8 +2153,8 @@ void b43_rx(struct b43_wldev *dev, struct sk_buff *skb, const void *_rxhdr)
 		break;
 	}
 
-	if (dev->fw.layout.hdr_format == B43_FW_HDR_AC) {
-		rate_idx = b43_rx_rate_ac(plcp, phystat0, rx_5ghz, &status);
+	if (fh->rx_rate) {
+		rate_idx = fh->rx_rate(plcp, phystat0, rx_5ghz, &status);
 	} else if (ht && (phystat0 & B43_RX_PHYST0_PRE_N)) {
 		/* Type 2 is HT on N-PHY, not a legacy CCK rate code. A
 		 * failed HT-SIG cannot provide trustworthy MCS metadata. */
@@ -2299,16 +2253,15 @@ drop:
 }
 
 /*
- * A TX status whose cookie matches no queue: on the AC microcode, the words
- * it came in, for what the status says when it is not about one of b43's
- * frames.
+ * A TX status whose cookie matches no queue, as the words it came in where
+ * the status keeps them.
  */
 void b43_txstatus_dump(struct b43_wldev *dev,
 		       const struct b43_txstatus *status)
 {
 	const u32 *w = status->raw;
 
-	if (dev->fw.layout.hdr_format != B43_FW_HDR_AC)
+	if (!dev->fw.layout.hdr->txstatus_raw)
 		return;
 	b43warn(dev->wl, "TX status %08x %08x %08x %08x / "
 		"%08x %08x %08x %08x\n",
@@ -2335,7 +2288,7 @@ void b43_handle_txstatus(struct b43_wldev *dev,
 	if (status->intermediate)
 		return;
 	/* A frame held for a station in power save or flushed is not an error. */
-	if (dev->fw.layout.hdr_format == B43_FW_HDR_AC &&
+	if (dev->fw.layout.hdr->txstatus_raw &&
 	    status->supp_reason != B43_TXST_SUPP_NONE &&
 	    status->supp_reason != B43_TXST_SUPP_PMQ &&
 	    status->supp_reason != B43_TXST_SUPP_FLUSH)
@@ -2440,8 +2393,8 @@ bool b43_fill_txstatus_report(struct b43_wldev *dev,
 			frame_success = false;
 		}
 	}
-	if (dev->fw.layout.hdr_format == B43_FW_HDR_AC) {
-		b43_fill_txstatus_rates_ac(report, status);
+	if (dev->fw.layout.hdr->txstatus_rates) {
+		dev->fw.layout.hdr->txstatus_rates(report, status);
 		return frame_success;
 	}
 	if (status->frame_count == 0) {
@@ -2490,3 +2443,81 @@ void b43_tx_resume(struct b43_wldev *dev)
 	else
 		b43_dma_tx_resume(dev);
 }
+
+const struct b43_fw_hdr b43_hdr_351 = {
+	.gen_txhdr	= b43_generate_txhdr_fw4,
+	.txstatus_poll	= b43_txstatus_poll_fw4,
+	.txstatus_drain	= b43_txstatus_drain_fw4,
+	.tx_len		= offsetofend(struct b43_txhdr, format_351.plcp),
+	.tx_cookie	= offsetof(struct b43_txhdr, format_351.cookie),
+	.tx_rts_plcp	= offsetof(struct b43_txhdr, format_351.rts_plcp),
+	.tx_rts_frame	= offsetof(struct b43_txhdr, format_351.rts_frame),
+	.tx_plcp	= offsetof(struct b43_txhdr, format_351.plcp),
+	.rx_len		= offsetofend(struct b43_rxhdr_fw4, format_351),
+	.rx_frame_offset = B43_DMA0_RX_FW351_FO,
+	.rx_buffersize	= B43_DMA0_RX_FW351_BUFSIZE,
+	.rx_mac_status	= offsetof(struct b43_rxhdr_fw4, format_351.mac_status),
+	.rx_mac_time	= offsetof(struct b43_rxhdr_fw4, format_351.mac_time),
+	.rx_channel	= offsetof(struct b43_rxhdr_fw4, format_351.channel),
+};
+
+const struct b43_fw_hdr b43_hdr_410 = {
+	.gen_txhdr	= b43_generate_txhdr_fw4,
+	.txstatus_poll	= b43_txstatus_poll_fw4,
+	.txstatus_drain	= b43_txstatus_drain_fw4,
+	.tx_len		= offsetofend(struct b43_txhdr, format_410.plcp),
+	.tx_cookie	= offsetof(struct b43_txhdr, format_410.cookie),
+	.tx_rts_plcp	= offsetof(struct b43_txhdr, format_410.rts_plcp),
+	.tx_rts_frame	= offsetof(struct b43_txhdr, format_410.rts_frame),
+	.tx_plcp	= offsetof(struct b43_txhdr, format_410.plcp),
+	.rx_len		= offsetofend(struct b43_rxhdr_fw4, format_351),
+	.rx_frame_offset = B43_DMA0_RX_FW351_FO,
+	.rx_buffersize	= B43_DMA0_RX_FW351_BUFSIZE,
+	.rx_mac_status	= offsetof(struct b43_rxhdr_fw4, format_351.mac_status),
+	.rx_mac_time	= offsetof(struct b43_rxhdr_fw4, format_351.mac_time),
+	.rx_channel	= offsetof(struct b43_rxhdr_fw4, format_351.channel),
+};
+
+const struct b43_fw_hdr b43_hdr_598 = {
+	.gen_txhdr	= b43_generate_txhdr_fw4,
+	.txstatus_poll	= b43_txstatus_poll_fw4,
+	.txstatus_drain	= b43_txstatus_drain_fw4,
+	.tx_len		= offsetofend(struct b43_txhdr, format_598.plcp),
+	.tx_cookie	= offsetof(struct b43_txhdr, format_598.cookie),
+	.tx_rts_plcp	= offsetof(struct b43_txhdr, format_598.rts_plcp),
+	.tx_rts_frame	= offsetof(struct b43_txhdr, format_598.rts_frame),
+	.tx_plcp	= offsetof(struct b43_txhdr, format_598.plcp),
+	.tx_ppdu_plcp	= true,
+	.tx_preload	= offsetof(struct b43_txhdr, format_598.preload_size),
+	.rx_len		= offsetofend(struct b43_rxhdr_fw4, format_598),
+	.rx_frame_offset = B43_DMA0_RX_FW598_FO,
+	.rx_buffersize	= B43_DMA0_RX_FW598_BUFSIZE,
+	.rx_mac_status	= offsetof(struct b43_rxhdr_fw4, format_598.mac_status),
+	.rx_mac_time	= offsetof(struct b43_rxhdr_fw4, format_598.mac_time),
+	.rx_channel	= offsetof(struct b43_rxhdr_fw4, format_598.channel),
+	.rx_amsdu	= true,
+	.rx_amsdu_ht_only = true,
+	.rx_ht_plcp	= true,
+};
+
+/*
+ * The AC cores' header, seen on 784, 832 and 928: no PIO, an eight-word TX
+ * status. The RX fields are assumed where the 598 header has them, A-MSDU
+ * path included; not verified, as they are not visible at the bus.
+ */
+const struct b43_fw_hdr b43_ac_hdr_784 = {
+	.gen_txhdr	= b43_generate_txhdr_ac,
+	.tx_rate_ok	= b43_txhdr_ac_rate_ok,
+	.rx_rate	= b43_rx_rate_ac,
+	.txstatus_poll	= b43_txstatus_poll_ac,
+	.txstatus_drain	= b43_txstatus_drain_ac,
+	.txstatus_rates	= b43_fill_txstatus_rates_ac,
+	.txstatus_raw	= true,
+	.tx_len		= sizeof(struct b43_txhdr_ac),
+	.rx_frame_offset = B43_DMA0_RX_AC_FO,
+	.rx_buffersize	= B43_DMA0_RX_AC_BUFSIZE,
+	.rx_mac_status	= offsetof(struct b43_rxhdr_fw4, format_598.mac_status),
+	.rx_mac_time	= offsetof(struct b43_rxhdr_fw4, format_598.mac_time),
+	.rx_channel	= offsetof(struct b43_rxhdr_fw4, format_598.channel),
+	.rx_amsdu	= true,
+};
