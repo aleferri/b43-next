@@ -15,6 +15,8 @@
 #include <linux/types.h>
 #include <linux/kernel.h>
 
+#include "fw_layout.h"
+
 /* Forward decls used by the header shape. */
 struct b43_wldev;
 struct b43_wl;
@@ -253,6 +255,11 @@ struct b43_bus_dev {
 /*
  * Radio version constants (only the bits the code compares are used).
  */
+#define B43_PHYTYPE_N		0x04
+#define B43_PHYTYPE_LP		0x05
+#define B43_PHYTYPE_HT		0x07
+#define B43_PHYTYPE_LCN		0x08
+#define B43_PHYTYPE_LCN40	0x0a
 #define B43_PHYTYPE_AC		0x0b
 
 struct b43_phy {
@@ -292,16 +299,6 @@ struct b43_wl {
 	u8 radar_region;
 };
 
-/* Come in-tree (b43.h). */
-struct b43_shm_layout {
-	u16 mac_cfg;
-	bool mac_cfg_0020;
-	bool mac_cfg_16;
-	u16 cts_duration;
-	bool cts_suspended;
-	u16 txerr;
-};
-
 struct b43_wldev {
 	struct b43_bus_dev *dev;
 	/* Come in-tree: profondita' di annidamento di b43_mac_suspend. */
@@ -312,9 +309,9 @@ struct b43_wldev {
 	bool cac_pending;
 	/* Come in-tree: l'AP rileva i radar, il detector e' armato. */
 	bool radar_arm;
-	/* Come in-tree: la disposizione della shared memory della microcode. */
+	/* Come in-tree: quello che dipende dalla microcode. */
 	struct {
-		const struct b43_shm_layout *shm;
+		struct b43_fw_layout layout;
 	} fw;
 };
 

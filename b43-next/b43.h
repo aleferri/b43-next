@@ -18,6 +18,7 @@
 #include "bus.h"
 #include "lo.h"
 #include "phy_common.h"
+#include "fw_layout.h"
 
 
 #ifdef CONFIG_B43_NEXT_DEBUG
@@ -310,7 +311,6 @@ enum {
 #define B43_SHM_SH_NRRXTRANS		0x003E	/* # of soft RX transmitter addresses (max 8) */
 #define B43_SHM_SH_KTP			0x0056	/* Key table pointer */
 #define B43_SHM_SH_TKIPTSCTTAK		0x0318
-#define B43_SHM_SH_KEYIDXBLOCK		0x05D4	/* Key index/algorithm block (v4 firmware) */
 #define B43_SHM_SH_PSM			0x05F4	/* PSM transmitter address match block (rev < 5) */
 /* SHM_SHARED WME variables */
 #define B43_SHM_SH_EDCFSTAT		0x000E	/* EDCF status */
@@ -324,34 +324,19 @@ enum {
 #define B43_RAM_BA_TA			0x0048	/* Block Ack TX address */
 
 /* SHM_SHARED beacon/AP variables */
-#define B43_SHM_SH_BT_BASE0		0x0068	/* Beacon template base 0 */
 #define B43_SHM_SH_BTL0			0x0018	/* Beacon template length 0 */
-#define B43_SHM_SH_BT_BASE1		0x0468	/* Beacon template base 1 */
 #define B43_SHM_SH_BTL1			0x001A	/* Beacon template length 1 */
-#define B43_SHM_SH_BT_BASE0_AC784	0x00D8	/* AC ucode 784, beacon 0 */
-#define B43_SHM_SH_BT_BASE1_AC784	0x02D8	/* AC ucode 784, beacon 1 */
-#define B43_SHM_SH_BT_BASE0_AC832	0x0200	/* AC ucode 832 on, beacon 0 */
-#define B43_SHM_SH_BT_BASE1_AC832	0x0480	/* AC ucode 832 on, beacon 1 */
 /*
  * On the first PHY TX error or TX underflow the AC ucode saves the TX error
  * PHY register, the frame's PHY control words, its PLCP and its internal
  * frame code (0x20 the beacon), then sets the latch word and saves nothing
- * more until it is cleared. Offsets from the latch word; see
- * docs/ucode42/07-SUBSYSTEMS.md.
+ * more until it is cleared. Offsets from the latch word, struct
+ * b43_shm_layout's txerr; see docs/ucode42/07-SUBSYSTEMS.md.
  */
-#define B43_SHM_SH_TXERR_AC784		0x16C8	/* AC ucode 784, latch */
-#define B43_SHM_SH_TXERR_AC928		0x17F4	/* AC ucode 832 and 928, latch */
 #define  B43_TXERR_STATUS		0x0002	/* PHY reg 0x007, CCK one for CCK */
 #define  B43_TXERR_PHYCTL		0x0004	/* 3 words */
 #define  B43_TXERR_PLCP			0x000A	/* 7 words */
 #define  B43_TXERR_FRAME		0x001A	/* ucode frame code */
-/*
- * First cell of the AC ucode's MAC config block, which
- * b43_phy_ac_shm_mac_config_block() writes at fixed distances from it.
- */
-#define B43_SHM_SH_MACCFG_AC784		0x0894	/* AC ucode 784 */
-#define B43_SHM_SH_MACCFG_AC832		0x08F4	/* AC ucode 832 */
-#define B43_SHM_SH_MACCFG_AC928		0x08EC	/* AC ucode 928 */
 #define B43_SHM_SH_BTSFOFF		0x001C	/* Beacon TSF offset */
 #define B43_SHM_SH_TIMBPOS		0x001E	/* TIM B position in beacon */
 #define B43_SHM_SH_DTIMP		0x0012	/* DTIP period */
@@ -953,61 +938,6 @@ struct b43_firmware_file {
 	enum b43_firmware_file_type type;
 };
 
-enum b43_firmware_hdr_format {
-	B43_FW_HDR_598,
-	B43_FW_HDR_410,
-	B43_FW_HDR_351,
-	/*
-	 * The microcode of the AC cores, 832.127 in wl 6.30.223 and 928.1201
-	 * in 7.14.43 alike: a 40 byte RX header and an eight-word TX status.
-	 * The TX header and the fields inside the RX header are not visible
-	 * at the bus; where this format shares a case with B43_FW_HDR_598,
-	 * the 598 layout is assumed, not verified.
-	 */
-	B43_FW_HDR_AC,
-};
-
-/*
- * Where a microcode takes its beacon templates in template RAM, and what goes
- * in front of the frame there.
- *
- * The bases are constants of the microcode, not of the core: the AC builds
- * load them as immediates right before the template engine is started, those
- * of 784 and those of 832, which 928 keeps. Each beacon has the room up to the
- * next template, header included.
- *
- * In front of the frame the pre-AC microcode takes the 6 byte PLCP header. The
- * AC one takes 12 bytes with the PLCP at byte 3, the rest zero (the beacon of
- * the agcombo bus capture, 928), and counts them in the template length and
- * in the TIM position (0x3c + SSID length on 784 and 928).
- *
- * TODO: probe-response offload. Its template follows the beacons, at 0x04d8
- * in 784 and 0x0700 in 832 and 928, and the stock driver rewrites it after
- * every beacon; b43 uploads none and leaves the probe requests to mac80211.
- * See docs/retrace-todo.md.
- */
-struct b43_tpl_layout {
-	u16 bcn_base[2];
-	u16 bcn_size;
-	u8 hdr_len;
-	u8 plcp_off;		/* PLCP header offset in the template, OFDM rates */
-	u8 plcp_off_cck;	/* the same for CCK rates */
-};
-
-/*
- * What b43 writes to the shared memory of an AC microcode where the
- * microcodes differ: the offsets, in bytes, and the values and order their
- * own drivers use.
- */
-struct b43_shm_layout {
-	u16 mac_cfg;		/* first cell of the MAC config block */
-	bool mac_cfg_0020;	/* 0x0020 = 0x0800 before the block */
-	bool mac_cfg_16;	/* the seven words from mac_cfg + 0x16 */
-	u16 cts_duration;	/* us, of the CTS-to-self of the RX-cal suspend */
-	bool cts_suspended;	/* armed with the MAC already suspended */
-	u16 txerr;		/* latch of the saved TX fault; 0 if none known */
-};
-
 /* Pointers to the firmware data and meta information about it. */
 struct b43_firmware {
 	/* Microcode */
@@ -1024,12 +954,9 @@ struct b43_firmware {
 	/* Firmware patchlevel */
 	u16 patch;
 
-	/* Format of header used by firmware */
-	enum b43_firmware_hdr_format hdr_format;
-	/* Template RAM layout; NULL for an AC microcode not known here */
-	const struct b43_tpl_layout *tpl;
-	/* Shared memory layout; NULL but for an AC microcode known here */
-	const struct b43_shm_layout *shm;
+	/* Chosen with the files, before the microcode tells its revision */
+	const struct b43_fw_family *family;
+	struct b43_fw_layout layout;
 
 	/* Set to true, if we are using an opensource firmware.
 	 * Use this to check for proprietary vs opensource. */

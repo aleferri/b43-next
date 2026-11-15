@@ -614,7 +614,7 @@ static bool pio_rx_frame(struct b43_pio_rxqueue *q)
 	size_t rxhdr_size = sizeof(*rxhdr);
 
 	BUILD_BUG_ON(sizeof(wl->pio_scratchspace) < sizeof(*rxhdr));
-	switch (dev->fw.hdr_format) {
+	switch (dev->fw.layout.hdr_format) {
 	case B43_FW_HDR_410:
 	case B43_FW_HDR_351:
 		rxhdr_size -= sizeof(rxhdr->format_598) -
@@ -685,7 +685,7 @@ data_ready:
 		goto rx_error;
 	}
 
-	switch (dev->fw.hdr_format) {
+	switch (dev->fw.layout.hdr_format) {
 	case B43_FW_HDR_AC:
 	case B43_FW_HDR_598:
 		macstat = le32_to_cpu(rxhdr->format_598.mac_status);

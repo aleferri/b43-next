@@ -1044,7 +1044,7 @@ static void b43_txbf_init(struct b43_wldev *dev)
 	}
 	dev->txbf_base = 0;
 	if (!modparam_txbf || dev->phy.type != B43_PHYTYPE_AC ||
-	    dev->fw.hdr_format != B43_FW_HDR_AC ||
+	    dev->fw.layout.hdr_format != B43_FW_HDR_AC ||
 	    hweight8(b43_txbf_txchain(dev)) < 2)
 		return;
 
@@ -1294,13 +1294,13 @@ static void key_write(struct b43_wldev *dev,
 
 	/* Key index/algo block. An empty slot of the AC ucode is all zero. */
 	kidx = b43_kidx_to_fw(dev, index);
-	if (dev->fw.hdr_format == B43_FW_HDR_AC &&
+	if (dev->fw.layout.hdr_format == B43_FW_HDR_AC &&
 	    algorithm == B43_SEC_ALGO_NONE)
 		value = 0;
 	else
 		value = (kidx << 4) | b43_sec_algo_fw(dev, algorithm);
 	b43_shm_write16(dev, B43_SHM_SHARED,
-			b43_shm_sh_keyidxblock(dev) + (kidx * 2), value);
+			dev->fw.layout.keyidxblock + (kidx * 2), value);
 
 	/* Write the key to the Key Table Pointer offset */
 	offset = dev->ktp + (index * B43_SEC_KEYSIZE);
@@ -1315,7 +1315,7 @@ static void keymac_write(struct b43_wldev *dev, u8 index, const u8 *addr)
 {
 	u8 pairwise_keys_start = B43_NR_GROUP_KEYS * 2;
 
-	if (b43_new_kidx_api(dev))
+	if (dev->fw.layout.new_kidx_api)
 		pairwise_keys_start = B43_NR_GROUP_KEYS;
 
 	B43_WARN_ON(index < pairwise_keys_start);
@@ -1366,10 +1366,10 @@ static void rx_tkip_phase1_write(struct b43_wldev *dev, u8 index, u32 iv32,
 	u8 pairwise_keys_start = B43_NR_GROUP_KEYS * 2;
 
 	/* Where the AC microcode keeps its RX TKIP table is not known. */
-	if (!modparam_hwtkip || dev->fw.hdr_format == B43_FW_HDR_AC)
+	if (!modparam_hwtkip || dev->fw.layout.hdr_format == B43_FW_HDR_AC)
 		return;
 
-	if (b43_new_kidx_api(dev))
+	if (dev->fw.layout.new_kidx_api)
 		pairwise_keys_start = B43_NR_GROUP_KEYS;
 
 	B43_WARN_ON(index < pairwise_keys_start);
@@ -1430,7 +1430,7 @@ static void do_key_write(struct b43_wldev *dev,
 	u8 buf[B43_SEC_KEYSIZE] = { 0, };
 	u8 pairwise_keys_start = B43_NR_GROUP_KEYS * 2;
 
-	if (b43_new_kidx_api(dev))
+	if (dev->fw.layout.new_kidx_api)
 		pairwise_keys_start = B43_NR_GROUP_KEYS;
 
 	B43_WARN_ON(index >= ARRAY_SIZE(dev->key));
@@ -1491,7 +1491,7 @@ static int b43_key_write(struct b43_wldev *dev,
 	}
 	if (index < 0) {
 		/* Pairwise key. Get an empty slot for the key. */
-		if (b43_new_kidx_api(dev))
+		if (dev->fw.layout.new_kidx_api)
 			pairwise_keys_start = B43_NR_GROUP_KEYS;
 		else
 			pairwise_keys_start = B43_NR_GROUP_KEYS * 2;
@@ -1513,7 +1513,7 @@ static int b43_key_write(struct b43_wldev *dev,
 		B43_WARN_ON(index > 3);
 
 	do_key_write(dev, index, algorithm, key, key_len, mac_addr);
-	if ((index <= 3) && !b43_new_kidx_api(dev)) {
+	if ((index <= 3) && !dev->fw.layout.new_kidx_api) {
 		/* Default RX key */
 		B43_WARN_ON(mac_addr);
 		do_key_write(dev, index + 4, algorithm, key, key_len, NULL);
@@ -1534,7 +1534,7 @@ static int b43_key_clear(struct b43_wldev *dev, int index)
 		return -EINVAL;
 	do_key_write(dev, index, B43_SEC_ALGO_NONE,
 		     NULL, B43_SEC_KEYSIZE, NULL);
-	if ((index <= 3) && !b43_new_kidx_api(dev)) {
+	if ((index <= 3) && !dev->fw.layout.new_kidx_api) {
 		do_key_write(dev, index + 4, B43_SEC_ALGO_NONE,
 			     NULL, B43_SEC_KEYSIZE, NULL);
 	}
@@ -1547,7 +1547,7 @@ static void b43_clear_keys(struct b43_wldev *dev)
 {
 	int i, count;
 
-	if (b43_new_kidx_api(dev))
+	if (dev->fw.layout.new_kidx_api)
 		count = B43_NR_GROUP_KEYS + B43_NR_PAIRWISE_KEYS;
 	else
 		count = B43_NR_GROUP_KEYS * 2 + B43_NR_PAIRWISE_KEYS;
@@ -1606,7 +1606,7 @@ static void b43_dump_keymemory(struct b43_wldev *dev)
 	hf = b43_hf_read(dev);
 	b43dbg(dev->wl, "Hardware key memory dump:  USEDEFKEYS=%u\n",
 	       !!(hf & B43_HF_USEDEFKEYS));
-	if (b43_new_kidx_api(dev)) {
+	if (dev->fw.layout.new_kidx_api) {
 		pairwise_keys_start = B43_NR_GROUP_KEYS;
 		count = B43_NR_GROUP_KEYS + B43_NR_PAIRWISE_KEYS;
 	} else {
@@ -1624,7 +1624,7 @@ static void b43_dump_keymemory(struct b43_wldev *dev)
 		}
 
 		algo = b43_shm_read16(dev, B43_SHM_SHARED,
-				      b43_shm_sh_keyidxblock(dev) +
+				      dev->fw.layout.keyidxblock +
 				      (index * 2));
 		printk("   Algo: %04X/%02X", algo, key->algorithm);
 
@@ -1952,7 +1952,7 @@ static void handle_irq_transmit_status(struct b43_wldev *dev)
 	u32 v0, v1;
 	struct b43_txstatus stat = {};
 
-	if (dev->fw.hdr_format == B43_FW_HDR_AC) {
+	if (dev->fw.layout.hdr_format == B43_FW_HDR_AC) {
 		while (b43_txstatus_read_ac(dev, &stat))
 			b43_handle_txstatus(dev, &stat);
 		return;
@@ -2012,7 +2012,7 @@ static void drain_txstatus_queue(struct b43_wldev *dev)
 	dev->ampdu_txstat_pending = false;
 	if (dev->dev->core_rev < 5)
 		return;
-	if (dev->fw.hdr_format == B43_FW_HDR_AC) {
+	if (dev->fw.layout.hdr_format == B43_FW_HDR_AC) {
 		while (b43_txstatus_read_ac(dev, &stat))
 			;
 		return;
@@ -2295,90 +2295,6 @@ static void handle_irq_pmq(struct b43_wldev *dev)
 	b43_write16(dev, B43_MMIO_PS_STATUS, 0x0002);
 }
 
-static const struct b43_tpl_layout b43_tpl_layout_legacy = {
-	.bcn_base	= { B43_SHM_SH_BT_BASE0, B43_SHM_SH_BT_BASE1 },
-	.bcn_size	= 0x0200,
-	.hdr_len	= sizeof(struct b43_plcp_hdr6),
-	.plcp_off	= 0,
-	.plcp_off_cck	= 0,
-};
-
-static const struct b43_tpl_layout b43_tpl_layout_ac_784 = {
-	.bcn_base	= { B43_SHM_SH_BT_BASE0_AC784,
-			    B43_SHM_SH_BT_BASE1_AC784 },
-	.bcn_size	= 0x0200,
-	.hdr_len	= 12,
-	.plcp_off	= 3,
-	.plcp_off_cck	= 6,
-};
-
-static const struct b43_tpl_layout b43_tpl_layout_ac_832 = {
-	.bcn_base	= { B43_SHM_SH_BT_BASE0_AC832,
-			    B43_SHM_SH_BT_BASE1_AC832 },
-	.bcn_size	= 0x0280,
-	.hdr_len	= 12,
-	.plcp_off	= 3,
-	.plcp_off_cck	= 6,
-};
-
-static const struct b43_tpl_layout *b43_tpl_layout_find(struct b43_wldev *dev)
-{
-	if (dev->fw.hdr_format != B43_FW_HDR_AC)
-		return &b43_tpl_layout_legacy;
-
-	switch (dev->fw.rev) {
-	case 784:
-		return &b43_tpl_layout_ac_784;
-	case 832:
-	case 928:
-		return &b43_tpl_layout_ac_832;
-	}
-	return NULL;
-}
-
-/*
- * 784 is the microcode of 6.30 on the DSL-3580L, 832 of the x86 hybrid
- * 6.30.223, 928 of 7.14; each layout is what that driver writes
- * (router-data/dsl3580l, router-data/archer-t5e, router-data/d6220).
- */
-static const struct b43_shm_layout b43_shm_layout_ac_784 = {
-	.mac_cfg	= B43_SHM_SH_MACCFG_AC784,
-	.cts_duration	= 4400,
-	.cts_suspended	= true,
-	.txerr		= B43_SHM_SH_TXERR_AC784,
-};
-
-static const struct b43_shm_layout b43_shm_layout_ac_832 = {
-	.mac_cfg	= B43_SHM_SH_MACCFG_AC832,
-	.mac_cfg_16	= true,
-	.cts_duration	= 29000,
-	.txerr		= B43_SHM_SH_TXERR_AC928,
-};
-
-static const struct b43_shm_layout b43_shm_layout_ac_928 = {
-	.mac_cfg	= B43_SHM_SH_MACCFG_AC928,
-	.mac_cfg_0020	= true,
-	.mac_cfg_16	= true,
-	.cts_duration	= 29000,
-	.txerr		= B43_SHM_SH_TXERR_AC928,
-};
-
-static const struct b43_shm_layout *b43_shm_layout_find(struct b43_wldev *dev)
-{
-	if (dev->fw.hdr_format != B43_FW_HDR_AC)
-		return NULL;
-
-	switch (dev->fw.rev) {
-	case 784:
-		return &b43_shm_layout_ac_784;
-	case 832:
-		return &b43_shm_layout_ac_832;
-	case 928:
-		return &b43_shm_layout_ac_928;
-	}
-	return NULL;
-}
-
 /* Byte @i of a template: a @hdr_len header with the PLCP at @plcp_off, then
  * the frame. */
 static u8 b43_tpl_byte(u8 hdr_len, u8 plcp_off,
@@ -2397,7 +2313,7 @@ static void b43_write_template_common(struct b43_wldev *dev,
 				      u16 ram_offset,
 				      u16 shm_size_offset, u8 rate)
 {
-	const struct b43_tpl_layout *tpl = dev->fw.tpl;
+	const struct b43_tpl_layout *tpl = dev->fw.layout.tpl;
 	u8 plcp_off = b43_is_cck_rate(rate) ? tpl->plcp_off_cck : tpl->plcp_off;
 	unsigned int i, total = tpl->hdr_len + size;
 	struct b43_ram_seq seq = { .next = U16_MAX }, *s = NULL;
@@ -2481,7 +2397,7 @@ static u16 b43_antenna_to_phyctl(struct b43_wldev *dev, int antenna)
  */
 static bool b43_phytxctl_in_shm(struct b43_wldev *dev)
 {
-	return dev->fw.hdr_format != B43_FW_HDR_AC;
+	return dev->fw.layout.hdr_format != B43_FW_HDR_AC;
 }
 
 static void b43_write_beacon_phytxctl(struct b43_wldev *dev, u16 rate)
@@ -2525,7 +2441,7 @@ static void b43_write_beacon_template(struct b43_wldev *dev,
 				      u16 ram_offset,
 				      u16 shm_size_offset)
 {
-	const struct b43_tpl_layout *tpl = dev->fw.tpl;
+	const struct b43_tpl_layout *tpl = dev->fw.layout.tpl;
 	unsigned int i, len, variable_len;
 	const struct ieee80211_mgmt *bcn;
 	const u8 *ie;
@@ -2618,7 +2534,7 @@ static void b43_upload_beacon0(struct b43_wldev *dev)
 
 	if (wl->beacon0_uploaded)
 		return;
-	b43_write_beacon_template(dev, dev->fw.tpl->bcn_base[0],
+	b43_write_beacon_template(dev, dev->fw.layout.tpl->bcn_base[0],
 				  B43_SHM_SH_BTL0);
 	wl->beacon0_uploaded = true;
 }
@@ -2629,7 +2545,7 @@ static void b43_upload_beacon1(struct b43_wldev *dev)
 
 	if (wl->beacon1_uploaded)
 		return;
-	b43_write_beacon_template(dev, dev->fw.tpl->bcn_base[1],
+	b43_write_beacon_template(dev, dev->fw.layout.tpl->bcn_base[1],
 				  B43_SHM_SH_BTL1);
 	wl->beacon1_uploaded = true;
 }
@@ -2995,7 +2911,7 @@ static void b43_ac_dump_tx_state(struct b43_wldev *dev, const char *why)
 
 static void b43_ac_report_phy_txerr(struct b43_wldev *dev)
 {
-	u16 base = dev->fw.shm ? dev->fw.shm->txerr : 0;
+	u16 base = dev->fw.layout.shm ? dev->fw.layout.shm->txerr : 0;
 	u16 ctl[3], plcp[7];
 	unsigned int i;
 
@@ -3430,76 +3346,10 @@ static int b43_try_request_fw(struct b43_request_fw_context *ctx)
 	int err;
 
 	/* Get microcode */
-	filename = NULL;
-	switch (rev) {
-	case 42:
-		if (phy->type == B43_PHYTYPE_AC)
-			filename = "ucode42";
-		break;
-	case 40:
-		if (phy->type == B43_PHYTYPE_AC)
-			filename = "ucode40";
-		break;
-	case 33:
-		if (phy->type == B43_PHYTYPE_LCN40)
-			filename = "ucode33_lcn40";
-		break;
-	case 30:
-		if (phy->type == B43_PHYTYPE_N)
-			filename = "ucode30_mimo";
-		break;
-	case 29:
-		if (phy->type == B43_PHYTYPE_HT)
-			filename = "ucode29_mimo";
-		break;
-	case 26:
-		if (phy->type == B43_PHYTYPE_HT)
-			filename = "ucode26_mimo";
-		break;
-	case 28:
-	case 25:
-		if (phy->type == B43_PHYTYPE_N)
-			filename = "ucode25_mimo";
-		else if (phy->type == B43_PHYTYPE_LCN)
-			filename = "ucode25_lcn";
-		break;
-	case 24:
-		if (phy->type == B43_PHYTYPE_LCN)
-			filename = "ucode24_lcn";
-		break;
-	case 23:
-		if (phy->type == B43_PHYTYPE_N)
-			filename = "ucode16_mimo";
-		break;
-	case 22:
-		if (phy->type == B43_PHYTYPE_N)
-			filename = "ucode22_mimo";
-		break;
-	case 16 ... 19:
-		if (phy->type == B43_PHYTYPE_N)
-			filename = "ucode16_mimo";
-		else if (phy->type == B43_PHYTYPE_LP)
-			filename = "ucode16_lp";
-		break;
-	case 15:
-		filename = "ucode15";
-		break;
-	case 14:
-		filename = "ucode14";
-		break;
-	case 13:
-		filename = "ucode13";
-		break;
-	case 11 ... 12:
-		filename = "ucode11";
-		break;
-	case 5 ... 10:
-		filename = "ucode5";
-		break;
-	}
-	if (!filename)
+	fw->family = b43_fw_family_find(rev, phy->type);
+	if (!fw->family)
 		goto err_no_ucode;
-	err = b43_do_request_fw(ctx, filename, &fw->ucode, true);
+	err = b43_do_request_fw(ctx, fw->family->ucode, &fw->ucode, true);
 	if (err)
 		goto err_load;
 
@@ -3822,22 +3672,11 @@ static int b43_upload_microcode(struct b43_wldev *dev)
 	}
 	dev->fw.rev = fwrev;
 	dev->fw.patch = fwpatch;
-	/* The AC microcode is told by the core, as b43_request_firmware()
-	 * picks it: its revisions are not ordered against the others'. */
-	if (dev->phy.type == B43_PHYTYPE_AC && dev->dev->core_rev == 42)
-		dev->fw.hdr_format = B43_FW_HDR_AC;
-	else if (dev->fw.rev >= 598)
-		dev->fw.hdr_format = B43_FW_HDR_598;
-	else if (dev->fw.rev >= 410)
-		dev->fw.hdr_format = B43_FW_HDR_410;
-	else
-		dev->fw.hdr_format = B43_FW_HDR_351;
-	dev->fw.tpl = b43_tpl_layout_find(dev);
-	if (!dev->fw.tpl)
+	dev->fw.layout = *b43_fw_layout_get(dev->fw.family, fwrev);
+	if (!dev->fw.layout.tpl)
 		b43warn(dev->wl, "Template RAM layout of firmware %u unknown: "
 			"no AP, mesh or IBSS\n", dev->fw.rev);
-	dev->fw.shm = b43_shm_layout_find(dev);
-	if (dev->fw.hdr_format == B43_FW_HDR_AC && !dev->fw.shm)
+	if (dev->fw.layout.hdr_format == B43_FW_HDR_AC && !dev->fw.layout.shm)
 		b43warn(dev->wl, "Shared memory layout of firmware %u unknown: "
 			"no MAC config block, no CTS around the calibration\n",
 			dev->fw.rev);
@@ -3880,7 +3719,7 @@ static int b43_upload_microcode(struct b43_wldev *dev)
 			dev->fw.rev, dev->fw.patch);
 	wiphy->hw_version = dev->dev->core_id;
 
-	if (dev->fw.hdr_format == B43_FW_HDR_351) {
+	if (dev->fw.layout.hdr_format == B43_FW_HDR_351) {
 		/* We're over the deadline, but we keep support for old fw
 		 * until it turns out to be in major conflict with something new. */
 		b43warn(dev->wl, "You are using an old firmware image. "
@@ -4664,9 +4503,9 @@ static void b43_chip_init_mac(struct b43_wldev *dev)
 				B43_SHM_SH_WATCHDOG_8TU, 10);
 	}
 	/* Enable energy-detect carrier sense in IFSCTL1 and in the copy that
-	 * the firmware restores it from. Firmware 784.2 uploads slower with it.
+	 * the firmware restores it from.
 	 */
-	if (dev->dev->core_rev == 30 && dev->fw.rev >= 832) {
+	if (dev->fw.layout.edcrs) {
 		u16 ifsctl1 = b43_shm_read16(dev, B43_SHM_SHARED,
 					     B43_SHM_SH_IFSCTL1);
 
@@ -5103,7 +4942,7 @@ static void b43_security_init(struct b43_wldev *dev)
 	 */
 	dev->ktp *= 2;
 	/* Number of RCMTA address slots; the AC ucode is not told. */
-	if (dev->fw.hdr_format != B43_FW_HDR_AC)
+	if (dev->fw.layout.hdr_format != B43_FW_HDR_AC)
 		b43_write16(dev, B43_MMIO_RCMTA_COUNT, B43_NR_PAIRWISE_KEYS);
 	/* Clear the key memory. */
 	b43_clear_keys(dev);
@@ -5335,7 +5174,7 @@ static bool b43_tx_rates_ok(struct ieee80211_hw *hw,
 	 * HT but no VHT, and its MCS rates need the AC descriptor as well.
 	 */
 	if (band->vht_cap.vht_supported ||
-	    (dev && dev->fw.hdr_format == B43_FW_HDR_AC))
+	    (dev && dev->fw.layout.hdr_format == B43_FW_HDR_AC))
 		return b43_txhdr_ac_rate_ok(band, &r[0]);
 	if (dev && b43_nphy_ht_enabled(dev))
 		return b43_tx_rate_ht_ok(&r[0]) && b43_tx_rate_ht_ok(&r[1]);
@@ -6733,7 +6572,7 @@ static int b43_op_set_key(struct ieee80211_hw *hw, enum set_key_cmd cmd,
 		 */
 		if (algorithm == B43_SEC_ALGO_TKIP &&
 		    (!(key->flags & IEEE80211_KEY_FLAG_PAIRWISE) ||
-		    !modparam_hwtkip || dev->fw.hdr_format == B43_FW_HDR_AC)) {
+		    !modparam_hwtkip || dev->fw.layout.hdr_format == B43_FW_HDR_AC)) {
 			/* We support only pairwise key */
 			err = -EOPNOTSUPP;
 			goto out_unlock;
@@ -6780,7 +6619,7 @@ static int b43_op_set_key(struct ieee80211_hw *hw, enum set_key_cmd cmd,
 		 * ch149-wep.bin). Whether it encrypts a protected
 		 * management frame is not known: mac80211 does.
 		 */
-		if (dev->fw.hdr_format == B43_FW_HDR_AC) {
+		if (dev->fw.layout.hdr_format == B43_FW_HDR_AC) {
 			key->flags |= IEEE80211_KEY_FLAG_SW_MGMT_TX;
 		} else if (algorithm == B43_SEC_ALGO_WEP40 ||
 			   algorithm == B43_SEC_ALGO_WEP104) {
@@ -7626,7 +7465,7 @@ static int b43_wireless_core_init(struct b43_wldev *dev)
 	 * microcode is not known; brcmsmac's older ucode takes it only at the
 	 * end of an IBSS ATIM window.
 	 */
-	if (dev->fw.hdr_format == B43_FW_HDR_AC)
+	if (dev->fw.layout.hdr_format == B43_FW_HDR_AC)
 		b43_write32(dev, B43_MMIO_MACCMD, B43_MACCMD_DFQ_VALID);
 	hf = b43_hf_read(dev);
 	if (phy->type == B43_PHYTYPE_G) {
@@ -7657,14 +7496,7 @@ static int b43_wireless_core_init(struct b43_wldev *dev)
 	if (dev->dev->core_rev >= 13) {
 		u32 mac_hw_cap = b43_read32(dev, B43_MMIO_MAC_HW_CAP);
 
-		/*
-		 * The AC microcode gets bit 31 cleared from every stock driver
-		 * in the captures -- 6.30.102.7 with ucode 784, 7.14 with 928
-		 * on three boards -- except the x86 hybrid 6.30.223, which
-		 * leaves it set for its ucode 832. That one is followed too:
-		 * the captures cannot tell the ucode from the build.
-		 */
-		if (dev->fw.hdr_format == B43_FW_HDR_AC && dev->fw.rev != 832)
+		if (!dev->fw.layout.machw_bit31)
 			mac_hw_cap &= ~0x80000000;
 
 		b43_shm_write16(dev, B43_SHM_SHARED, B43_SHM_SH_MACHW_L,
@@ -7893,7 +7725,7 @@ static int b43_op_add_interface(struct ieee80211_hw *hw,
 
 	b43dbg(wl, "Adding Interface type %d\n", vif->type);
 
-	if (vif->type != NL80211_IFTYPE_STATION && !dev->fw.tpl)
+	if (vif->type != NL80211_IFTYPE_STATION && !dev->fw.layout.tpl)
 		goto out_mutex_unlock;
 
 	wl->operating = true;
@@ -8236,7 +8068,7 @@ static int b43_op_ampdu_action(struct ieee80211_hw *hw,
 	case IEEE80211_AMPDU_RX_START:
 		mutex_lock(&wl->mutex);
 		dev = wl->current_dev;
-		ok = dev && dev->fw.hdr_format == B43_FW_HDR_AC &&
+		ok = dev && dev->fw.layout.hdr_format == B43_FW_HDR_AC &&
 		     !b43_using_pio_transfers(dev);
 		if (dev && b43_nphy_ht_enabled(dev))
 			ok = b43_status(dev) >= B43_STAT_STARTED &&

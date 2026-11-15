@@ -274,7 +274,7 @@ struct b43_txhdr_ac {
 static inline
 size_t b43_txhdr_size(struct b43_wldev *dev)
 {
-	switch (dev->fw.hdr_format) {
+	switch (dev->fw.layout.hdr_format) {
 	case B43_FW_HDR_AC:
 		return sizeof(struct b43_txhdr_ac);
 	case B43_FW_HDR_598:
@@ -492,35 +492,10 @@ void b43_tx_resume(struct b43_wldev *dev);
 /* Helper functions for converting the key-table index from "firmware-format"
  * to "raw-format" and back. The firmware API changed for this at some revision.
  * We need to account for that here. */
-static inline int b43_new_kidx_api(struct b43_wldev *dev)
-{
-	/* FIXME: Not sure the change was at rev 351 */
-	return (dev->fw.rev >= 351);
-}
-
-/* Base of the key index/algorithm block in shared memory.
- *
- * B43_SHM_SH_KEYIDXBLOCK is the v4 firmware layout, as b43.h says. On the
- * microcode the AC cores load the block starts at 0x05E0, and 0x05D4 holds PHY
- * state -- the transmit chain mask -- so writing there breaks the transmit
- * path silently.
- *
- * Keyed on the microcode identity, not the PHY type: the layout is the
- * microcode's. b43_request_firmware() selects "ucode42" for core revision 42
- * with an AC PHY, and this is the same test. ucode40 is the other AC entry and
- * no capture covers it; it almost certainly needs this too.
- */
-static inline u16 b43_shm_sh_keyidxblock(struct b43_wldev *dev)
-{
-	if (dev->phy.type == B43_PHYTYPE_AC && dev->dev->core_rev == 42)
-		return 0x05E0;
-	return B43_SHM_SH_KEYIDXBLOCK;
-}
-
 static inline u8 b43_kidx_to_fw(struct b43_wldev *dev, u8 raw_kidx)
 {
 	u8 firmware_kidx;
-	if (b43_new_kidx_api(dev)) {
+	if (dev->fw.layout.new_kidx_api) {
 		firmware_kidx = raw_kidx;
 	} else {
 		if (raw_kidx >= 4)	/* Is per STA key? */
@@ -548,7 +523,7 @@ static inline u8 b43_sec_algo_fw(struct b43_wldev *dev, u8 algorithm)
 		[B43_SEC_ALGO_AES_LEGACY]	= 4,
 	};
 
-	if (dev->fw.hdr_format != B43_FW_HDR_AC || algorithm >= ARRAY_SIZE(ac))
+	if (dev->fw.layout.hdr_format != B43_FW_HDR_AC || algorithm >= ARRAY_SIZE(ac))
 		return algorithm;
 	return ac[algorithm];
 }
@@ -556,7 +531,7 @@ static inline u8 b43_sec_algo_fw(struct b43_wldev *dev, u8 algorithm)
 static inline u8 b43_kidx_to_raw(struct b43_wldev *dev, u8 firmware_kidx)
 {
 	u8 raw_kidx;
-	if (b43_new_kidx_api(dev))
+	if (dev->fw.layout.new_kidx_api)
 		raw_kidx = firmware_kidx;
 	else
 		raw_kidx = firmware_kidx + 4;	/* RX default keys or per STA keys */

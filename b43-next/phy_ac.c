@@ -1399,7 +1399,7 @@ static void b43_phy_ac_shm_mac_config_block(struct b43_wldev *dev)
 	static const u16 blocco_16[] = {
 		0x41c2, 0x0000, 0x0017, 0x024b, 0x0097, 0x0500, 0x0000,
 	};
-	const struct b43_shm_layout *shm = dev->fw.shm;
+	const struct b43_shm_layout *shm = dev->fw.layout.shm;
 	u16 base;
 	unsigned int i;
 
@@ -7347,7 +7347,7 @@ void b43_phy_ac_post_cal_finalize(struct b43_wldev *dev)
  */
 static void b43_phy_ac_cal_mac_suspend(struct b43_wldev *dev)
 {
-	const struct b43_shm_layout *shm = dev->fw.shm;
+	const struct b43_shm_layout *shm = dev->fw.layout.shm;
 
 	if (shm && !shm->cts_suspended)
 		b43_shm_write16(dev, B43_SHM_SHARED, B43_SHM_SH_CTS_DURATION,
@@ -11578,7 +11578,7 @@ static int b43_phy_ac_op_switch_channel(struct b43_wldev *dev, unsigned int new_
 	 * 0x0056 is the key table pointer, B43_SHM_SH_KTP: 0x087a, the key
 	 * material at 0x10f4. Here the stock driver zeroes it (480 words up to
 	 * 0x14b2), then the corerev 42 key index block at 0x05e0-0x0666
-	 * (b43_shm_sh_keyidxblock(), 68 words), then the key rows of the
+	 * (the layout's keyidxblock, 68 words), then the key rows of the
 	 * address match table: the key table init of the stock up (cold01
 	 * #12311-#12858). In b43 it is b43_security_init()'s, at core init.
 	 */

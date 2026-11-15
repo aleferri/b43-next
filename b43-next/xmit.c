@@ -1134,10 +1134,10 @@ int b43_generate_txhdr(struct b43_wldev *dev,
 	struct b43_txhdr_ctl c;
 
 	/* Only the first A-MPDU member's protection precedes the PPDU. */
-	if (dev->fw.hdr_format != B43_FW_HDR_AC && protect)
+	if (dev->fw.layout.hdr_format != B43_FW_HDR_AC && protect)
 		b43_tx_ht_protect(dev, info);
 	b43_txhdr_ctl_get(dev, info, &c);
-	if (dev->fw.hdr_format == B43_FW_HDR_AC)
+	if (dev->fw.layout.hdr_format == B43_FW_HDR_AC)
 		return b43_generate_txhdr_ac(dev, _txhdr, skb_frag, info,
 					     &c, cookie);
 
@@ -1269,7 +1269,7 @@ int b43_generate_txhdr(struct b43_wldev *dev,
 	/* The first header describes the whole A-MPDU PPDU. Continuation
 	 * PLCP and mixed-mode lengths stay individual. */
 	ppdu_len = ampdu && ampdu->first ? ampdu->len : plcp_fragment_len;
-	switch (dev->fw.hdr_format) {
+	switch (dev->fw.layout.hdr_format) {
 	case B43_FW_HDR_AC:
 	case B43_FW_HDR_598:
 		b43_generate_plcp_hdr((struct b43_plcp_hdr4 *)(&txhdr->format_598.plcp),
@@ -1426,7 +1426,7 @@ int b43_generate_txhdr(struct b43_wldev *dev,
 		if (c.cts) {
 			struct ieee80211_cts *cts;
 
-			switch (dev->fw.hdr_format) {
+			switch (dev->fw.layout.hdr_format) {
 			case B43_FW_HDR_AC:
 			case B43_FW_HDR_598:
 				cts = (struct ieee80211_cts *)
@@ -1458,7 +1458,7 @@ int b43_generate_txhdr(struct b43_wldev *dev,
 		} else {
 			struct ieee80211_rts *rts;
 
-			switch (dev->fw.hdr_format) {
+			switch (dev->fw.layout.hdr_format) {
 			case B43_FW_HDR_AC:
 			case B43_FW_HDR_598:
 				rts = (struct ieee80211_rts *)
@@ -1491,7 +1491,7 @@ int b43_generate_txhdr(struct b43_wldev *dev,
 		len += FCS_LEN;
 
 		/* Generate the PLCP headers for the RTS/CTS frame */
-		switch (dev->fw.hdr_format) {
+		switch (dev->fw.layout.hdr_format) {
 		case B43_FW_HDR_AC:
 		case B43_FW_HDR_598:
 			plcp = &txhdr->format_598.rts_plcp;
@@ -1509,7 +1509,7 @@ int b43_generate_txhdr(struct b43_wldev *dev,
 		b43_generate_plcp_hdr((struct b43_plcp_hdr4 *)plcp,
 				      len, rts_rate_fb, false);
 
-		switch (dev->fw.hdr_format) {
+		switch (dev->fw.layout.hdr_format) {
 		case B43_FW_HDR_AC:
 		case B43_FW_HDR_598:
 			hdr = (struct ieee80211_hdr *)
@@ -1598,7 +1598,7 @@ int b43_generate_txhdr(struct b43_wldev *dev,
 	}
 
 	/* Magic cookie */
-	switch (dev->fw.hdr_format) {
+	switch (dev->fw.layout.hdr_format) {
 	case B43_FW_HDR_AC:
 	case B43_FW_HDR_598:
 		txhdr->format_598.cookie = cpu_to_le16(cookie);
@@ -2027,8 +2027,8 @@ void b43_rx(struct b43_wldev *dev, struct sk_buff *skb, const void *_rxhdr)
 
 	memset(&status, 0, sizeof(status));
 
-	if ((dev->fw.hdr_format == B43_FW_HDR_AC ||
-	     (ht && dev->fw.hdr_format == B43_FW_HDR_598)) &&
+	if ((dev->fw.layout.hdr_format == B43_FW_HDR_AC ||
+	     (ht && dev->fw.layout.hdr_format == B43_FW_HDR_598)) &&
 	    (le32_to_cpu(rxhdr->format_598.mac_status) & B43_RX_MAC_AMSDU)) {
 		skb = b43_rx_amsdu(dev, skb, &_rxhdr);
 		if (!skb)
@@ -2039,7 +2039,7 @@ void b43_rx(struct b43_wldev *dev, struct sk_buff *skb, const void *_rxhdr)
 	/* Get metadata about the frame from the header. */
 	phystat0 = le16_to_cpu(rxhdr->phy_status0);
 	phystat3 = le16_to_cpu(rxhdr->phy_status3);
-	switch (dev->fw.hdr_format) {
+	switch (dev->fw.layout.hdr_format) {
 	case B43_FW_HDR_AC:
 	case B43_FW_HDR_598:
 		macstat = le32_to_cpu(rxhdr->format_598.mac_status);
@@ -2088,7 +2088,7 @@ void b43_rx(struct b43_wldev *dev, struct sk_buff *skb, const void *_rxhdr)
 		if (!(macstat & B43_RX_MAC_RXST_VALID))
 			status.flag &= ~RX_FLAG_FAILED_PLCP_CRC;
 		padding = (macstat & B43_RX_MAC_PADDING) ? 2 : 0;
-		if (dev->fw.hdr_format == B43_FW_HDR_598 &&
+		if (dev->fw.layout.hdr_format == B43_FW_HDR_598 &&
 		    !(status.flag & RX_FLAG_FAILED_PLCP_CRC) &&
 		    skb->len >= sizeof(struct b43_plcp_hdr6) + padding)
 			ht_plcp = b43_rx_ht_plcp(dev, skb->data + padding,
@@ -2220,7 +2220,7 @@ void b43_rx(struct b43_wldev *dev, struct sk_buff *skb, const void *_rxhdr)
 		break;
 	}
 
-	if (dev->fw.hdr_format == B43_FW_HDR_AC) {
+	if (dev->fw.layout.hdr_format == B43_FW_HDR_AC) {
 		rate_idx = b43_rx_rate_ac(plcp, phystat0, rx_5ghz, &status);
 	} else if (ht && (phystat0 & B43_RX_PHYST0_PRE_N)) {
 		/* Type 2 is HT on N-PHY, not a legacy CCK rate code. A
@@ -2275,10 +2275,7 @@ void b43_rx(struct b43_wldev *dev, struct sk_buff *skb, const void *_rxhdr)
 	switch (phytype) {
 	case B43_PHYTYPE_G:
 		status.band = NL80211_BAND_2GHZ;
-		/* Somewhere between 478.104 and 508.1084 firmware for G-PHY
-		 * has been modified to be compatible with N-PHY and others.
-		 */
-		if (dev->fw.rev >= 508)
+		if (dev->fw.layout.g_chanid_number)
 			status.freq = ieee80211_channel_to_frequency(chanid, status.band);
 		else
 			status.freq = chanid + 2400;
@@ -2332,7 +2329,7 @@ void b43_txstatus_dump(struct b43_wldev *dev,
 {
 	const u32 *w = status->raw;
 
-	if (dev->fw.hdr_format != B43_FW_HDR_AC)
+	if (dev->fw.layout.hdr_format != B43_FW_HDR_AC)
 		return;
 	b43warn(dev->wl, "TX status %08x %08x %08x %08x / "
 		"%08x %08x %08x %08x\n",
@@ -2359,7 +2356,7 @@ void b43_handle_txstatus(struct b43_wldev *dev,
 	if (status->intermediate)
 		return;
 	/* A frame held for a station in power save or flushed is not an error. */
-	if (dev->fw.hdr_format == B43_FW_HDR_AC &&
+	if (dev->fw.layout.hdr_format == B43_FW_HDR_AC &&
 	    status->supp_reason != B43_TXST_SUPP_NONE &&
 	    status->supp_reason != B43_TXST_SUPP_PMQ &&
 	    status->supp_reason != B43_TXST_SUPP_FLUSH)
@@ -2464,7 +2461,7 @@ bool b43_fill_txstatus_report(struct b43_wldev *dev,
 			frame_success = false;
 		}
 	}
-	if (dev->fw.hdr_format == B43_FW_HDR_AC) {
+	if (dev->fw.layout.hdr_format == B43_FW_HDR_AC) {
 		b43_fill_txstatus_rates_ac(report, status);
 		return frame_success;
 	}

@@ -710,7 +710,7 @@ static void b43_poison_rx_buffer(struct b43_dmaring *ring, struct sk_buff *skb)
  * still maps each buffer itself.
  *
  * The buffer's size is the microcode's: its RX header layout
- * (dev->fw.hdr_format) sets the frame offset and how long a frame may be.
+ * (dev->fw.layout.hdr_format) sets the frame offset and how long a frame may be.
  * A ring whose buffer fits in a page with its skb_shared_info, as the 598
  * and 351 layouts' do, gains nothing from a pool and keeps
  * __dev_alloc_skb(); today only the AC layout's does not fit.
@@ -1188,7 +1188,7 @@ struct b43_dmaring *b43_setup_dmaring(struct b43_wldev *dev,
 		ring->current_slot = -1;
 	} else {
 		if (ring->index == 0) {
-			switch (dev->fw.hdr_format) {
+			switch (dev->fw.layout.hdr_format) {
 			case B43_FW_HDR_AC:
 				/* RcvOffset 40 on the AC cores, with wl 6.30
 				 * and 7.14 alike. */
@@ -1876,7 +1876,7 @@ int b43_dma_tx(struct b43_wldev *dev, struct sk_buff *skb)
 
 	/* Frames sent outside an A-MPDU report ordinary rate-control status.
 	 * The AC's header keeps the flag on a frame it aggregates. */
-	if (dev->fw.hdr_format != B43_FW_HDR_AC)
+	if (dev->fw.layout.hdr_format != B43_FW_HDR_AC)
 		info->flags &= ~IEEE80211_TX_CTL_AMPDU;
 	err = dma_tx_fragment(ring, skb, NULL);
 	if (unlikely(err == -ENOKEY)) {
