@@ -617,6 +617,29 @@ static void b43_phy_ht_tx_power_fix(struct b43_wldev *dev)
 	b43_phy_ht_tx_gain_fix(dev, dev->phy.ht->tx_gain_idx);
 }
 
+/*
+ * The static TX gain index to use instead of the TX power control loop, or
+ * -1 for the loop. On the BCM4331 boards with an external PA (Netgear R6400)
+ * the loop drives the gain to (near) maximum, which compresses the PA: at a
+ * fixed client distance the download doubled (12 -> 22.5 Mbit/s at 802.11g)
+ * with the loop off and a fixed gain from table 0x1a entry 0xc0 + index, for
+ * every index from 16 up to 40 on the R6400 v2 (BFL_FEM); index 12 shows the
+ * first loss, index 8 distorts, index 0 is as bad as the loop. A board with
+ * a high-gain external PA (BFL_HGPA, R6400 v1) still compresses at index 16
+ * and is clean from 20. Use 24 with BFL_HGPA, else 16: about four steps above
+ * the measured edge on both boards. Elsewhere the loop stays on: an Apple
+ * BCM4331 card has an external LNA and PA too (BFL_EXTLNA, extpagain 0) but
+ * neither flag, and there the loop holds the SPROM target power.
+ */
+static int b43_phy_ht_static_txgain(struct b43_wldev *dev)
+{
+	u16 bf = dev->dev->bus_sprom->boardflags_lo;
+
+	if (!(bf & (B43_BFL_FEM | B43_BFL_HGPA)))
+		return -1;
+	return (bf & B43_BFL_HGPA) ? 24 : 16;
+}
+
 static void b43_phy_ht_tx_power_ctl(struct b43_wldev *dev, bool enable)
 {
 	struct b43_phy_ht *phy_ht = dev->phy.ht;
@@ -630,6 +653,11 @@ static void b43_phy_ht_tx_power_ctl(struct b43_wldev *dev, bool enable)
 					    B43_PHY_HT_TX_PCTL_STATUS_C2,
 					    B43_PHY_HT_TX_PCTL_STATUS_C3 };
 	int i;
+	int fixed = enable ? b43_phy_ht_static_txgain(dev) : -1;
+
+	/* On such a board every enable fixes the static gain instead */
+	if (fixed >= 0)
+		enable = false;
 
 	if (!enable) {
 		if (b43_phy_read(dev, B43_PHY_HT_TXPCTL_CMD_C1) & en_bits) {
@@ -662,6 +690,18 @@ static void b43_phy_ht_tx_power_ctl(struct b43_wldev *dev, bool enable)
 	}
 
 	phy_ht->tx_pwr_ctl = enable;
+
+	if (fixed >= 0) {
+		/*
+		 * Keep the index that the calibrations fix again: 40 until
+		 * the RX calibration fixes its own (b43_phy_ht_tx_gain_fix())
+		 */
+		u8 cal_idx = phy_ht->tx_gain_idx;
+
+		b43dbg(dev->wl, "HT-PHY: static TX gain index %d\n", fixed);
+		b43_phy_ht_tx_gain_fix(dev, fixed);
+		phy_ht->tx_gain_idx = cal_idx;
+	}
 }
 
 static void b43_phy_ht_tx_power_ctl_idle_tssi(struct b43_wldev *dev)

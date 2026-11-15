@@ -242,6 +242,7 @@ int ht_run_flow(const char *name)
 
 void b43err(struct b43_wl *w, const char *fmt, ...) { ht_log(fmt); }
 void b43err_restart(struct b43_wl *w, const char *fmt, ...) { ht_log(fmt); }
+void b43dbg(struct b43_wl *w, const char *fmt, ...) { }
 void __const_udelay(unsigned long xloops) { }
 void __udelay(unsigned long usecs) { }
 void msleep(unsigned int msecs) { }
