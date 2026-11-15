@@ -39,6 +39,11 @@ dkms add .                 # or through DKMS: dkms.conf builds the module
 
 The firmware is b43's, in `/lib/firmware/b43/`, as `b43-fwcutter` writes it.
 
+On OpenWrt, which has no udev, the `kmod-b43-next` package
+([openwrt/openwrt#26717](https://github.com/openwrt/openwrt/pull/26717))
+installs the module and the firmware, and its init script hands the cards to
+b43-next at boot.
+
 ## Next to the kernel's drivers
 
 The buses are `ssb-next` and `bcma-next`, their PCI bridges
@@ -92,8 +97,6 @@ and their headers into this tree's names and paths.
   PMU and GPIO to the kernel, as OpenWrt's `wl_glue` does for `wl`.
 - LCN, which upstream does not build, and LCN40, which upstream does not have.
 - The cores of `b43legacy` (revisions 2 and 4), and the ssb PCMCIA host.
-- OpenWrt packaging: the binding helper uses `modprobe --resolve-alias`,
-  which OpenWrt's userland does not have.
 
 ## License
 
