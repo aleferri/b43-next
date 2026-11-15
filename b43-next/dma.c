@@ -1188,23 +1188,8 @@ struct b43_dmaring *b43_setup_dmaring(struct b43_wldev *dev,
 		ring->current_slot = -1;
 	} else {
 		if (ring->index == 0) {
-			switch (dev->fw.layout.hdr_format) {
-			case B43_FW_HDR_AC:
-				/* RcvOffset 40 on the AC cores, with wl 6.30
-				 * and 7.14 alike. */
-				ring->rx_buffersize = B43_DMA0_RX_AC_BUFSIZE;
-				ring->frameoffset = B43_DMA0_RX_AC_FO;
-				break;
-			case B43_FW_HDR_598:
-				ring->rx_buffersize = B43_DMA0_RX_FW598_BUFSIZE;
-				ring->frameoffset = B43_DMA0_RX_FW598_FO;
-				break;
-			case B43_FW_HDR_410:
-			case B43_FW_HDR_351:
-				ring->rx_buffersize = B43_DMA0_RX_FW351_BUFSIZE;
-				ring->frameoffset = B43_DMA0_RX_FW351_FO;
-				break;
-			}
+			ring->rx_buffersize = dev->fw.layout.hdr->rx_buffersize;
+			ring->frameoffset = dev->fw.layout.hdr->rx_frame_offset;
 		} else
 			B43_WARN_ON(1);
 	}

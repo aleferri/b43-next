@@ -274,17 +274,7 @@ struct b43_txhdr_ac {
 static inline
 size_t b43_txhdr_size(struct b43_wldev *dev)
 {
-	switch (dev->fw.layout.hdr_format) {
-	case B43_FW_HDR_AC:
-		return sizeof(struct b43_txhdr_ac);
-	case B43_FW_HDR_598:
-		return 112 + sizeof(struct b43_plcp_hdr6);
-	case B43_FW_HDR_410:
-		return 104 + sizeof(struct b43_plcp_hdr6);
-	case B43_FW_HDR_351:
-		return 100 + sizeof(struct b43_plcp_hdr6);
-	}
-	return 0;
+	return dev->fw.layout.hdr->tx_len;
 }
 
 
@@ -409,6 +399,18 @@ struct b43_rxhdr_fw4 {
 		} format_351 __packed;
 	} __packed;
 } __packed;
+
+/* A header field at an offset of struct b43_hdr_layout. */
+static inline void *b43_txhdr_at(struct b43_txhdr *txhdr, u8 offset)
+{
+	return (u8 *)txhdr + offset;
+}
+
+static inline const void *b43_rxhdr_at(const struct b43_rxhdr_fw4 *rxhdr,
+				       u8 offset)
+{
+	return (const u8 *)rxhdr + offset;
+}
 
 /* PHY RX Status 0 */
 #define B43_RX_PHYST0_GAINCTL		0x4000 /* Gain Control */

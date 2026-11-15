@@ -45,6 +45,64 @@
 #include <linux/ktime.h>
 #include <linux/unaligned.h>
 
+const struct b43_hdr_layout b43_hdr_layout_351 = {
+	.tx_len		= offsetofend(struct b43_txhdr, format_351.plcp),
+	.tx_cookie	= offsetof(struct b43_txhdr, format_351.cookie),
+	.tx_rts_plcp	= offsetof(struct b43_txhdr, format_351.rts_plcp),
+	.tx_rts_frame	= offsetof(struct b43_txhdr, format_351.rts_frame),
+	.tx_plcp	= offsetof(struct b43_txhdr, format_351.plcp),
+	.rx_len		= offsetofend(struct b43_rxhdr_fw4, format_351),
+	.rx_frame_offset = B43_DMA0_RX_FW351_FO,
+	.rx_buffersize	= B43_DMA0_RX_FW351_BUFSIZE,
+	.rx_mac_status	= offsetof(struct b43_rxhdr_fw4, format_351.mac_status),
+	.rx_mac_time	= offsetof(struct b43_rxhdr_fw4, format_351.mac_time),
+	.rx_channel	= offsetof(struct b43_rxhdr_fw4, format_351.channel),
+};
+
+const struct b43_hdr_layout b43_hdr_layout_410 = {
+	.tx_len		= offsetofend(struct b43_txhdr, format_410.plcp),
+	.tx_cookie	= offsetof(struct b43_txhdr, format_410.cookie),
+	.tx_rts_plcp	= offsetof(struct b43_txhdr, format_410.rts_plcp),
+	.tx_rts_frame	= offsetof(struct b43_txhdr, format_410.rts_frame),
+	.tx_plcp	= offsetof(struct b43_txhdr, format_410.plcp),
+	.rx_len		= offsetofend(struct b43_rxhdr_fw4, format_351),
+	.rx_frame_offset = B43_DMA0_RX_FW351_FO,
+	.rx_buffersize	= B43_DMA0_RX_FW351_BUFSIZE,
+	.rx_mac_status	= offsetof(struct b43_rxhdr_fw4, format_351.mac_status),
+	.rx_mac_time	= offsetof(struct b43_rxhdr_fw4, format_351.mac_time),
+	.rx_channel	= offsetof(struct b43_rxhdr_fw4, format_351.channel),
+};
+
+const struct b43_hdr_layout b43_hdr_layout_598 = {
+	.tx_len		= offsetofend(struct b43_txhdr, format_598.plcp),
+	.tx_cookie	= offsetof(struct b43_txhdr, format_598.cookie),
+	.tx_rts_plcp	= offsetof(struct b43_txhdr, format_598.rts_plcp),
+	.tx_rts_frame	= offsetof(struct b43_txhdr, format_598.rts_frame),
+	.tx_plcp	= offsetof(struct b43_txhdr, format_598.plcp),
+	.tx_ppdu_plcp	= true,
+	.tx_preload	= offsetof(struct b43_txhdr, format_598.preload_size),
+	.rx_len		= offsetofend(struct b43_rxhdr_fw4, format_598),
+	.rx_frame_offset = B43_DMA0_RX_FW598_FO,
+	.rx_buffersize	= B43_DMA0_RX_FW598_BUFSIZE,
+	.rx_mac_status	= offsetof(struct b43_rxhdr_fw4, format_598.mac_status),
+	.rx_mac_time	= offsetof(struct b43_rxhdr_fw4, format_598.mac_time),
+	.rx_channel	= offsetof(struct b43_rxhdr_fw4, format_598.channel),
+};
+
+/*
+ * The AC microcode has a TX header of its own, b43_generate_txhdr_ac()'s, and
+ * no PIO. Its RX header fields are assumed where the 598 one has them, not
+ * verified; RcvOffset is 40 with wl 6.30 and 7.14 alike.
+ */
+const struct b43_hdr_layout b43_hdr_layout_ac = {
+	.tx_len		= sizeof(struct b43_txhdr_ac),
+	.rx_frame_offset = B43_DMA0_RX_AC_FO,
+	.rx_buffersize	= B43_DMA0_RX_AC_BUFSIZE,
+	.rx_mac_status	= offsetof(struct b43_rxhdr_fw4, format_598.mac_status),
+	.rx_mac_time	= offsetof(struct b43_rxhdr_fw4, format_598.mac_time),
+	.rx_channel	= offsetof(struct b43_rxhdr_fw4, format_598.channel),
+};
+
 static const struct b43_tx_legacy_rate_phy_ctl_entry b43_tx_legacy_rate_phy_ctl[] = {
 	{ B43_CCK_RATE_1MB,	0x0,			0x0 },
 	{ B43_CCK_RATE_2MB,	0x0,			0x1 },
@@ -1109,9 +1167,11 @@ int b43_generate_txhdr(struct b43_wldev *dev,
 	const unsigned char *fragment_data = skb_frag->data;
 	unsigned int fragment_len = skb_frag->len;
 	struct b43_txhdr *txhdr = (struct b43_txhdr *)_txhdr;
+	const struct b43_hdr_layout *hl = dev->fw.layout.hdr;
 	const struct b43_phy *phy = &dev->phy;
 	struct ieee80211_hdr *wlhdr =
 	    (struct ieee80211_hdr *)fragment_data;
+	struct b43_plcp_hdr6 *plcp_main;
 	int use_encryption = !!info->control.hw_key;
 	__le16 fctl = wlhdr->frame_control;
 	struct ieee80211_rate *fbrate;
@@ -1269,31 +1329,24 @@ int b43_generate_txhdr(struct b43_wldev *dev,
 	/* The first header describes the whole A-MPDU PPDU. Continuation
 	 * PLCP and mixed-mode lengths stay individual. */
 	ppdu_len = ampdu && ampdu->first ? ampdu->len : plcp_fragment_len;
-	switch (dev->fw.layout.hdr_format) {
-	case B43_FW_HDR_AC:
-	case B43_FW_HDR_598:
-		b43_generate_plcp_hdr((struct b43_plcp_hdr4 *)(&txhdr->format_598.plcp),
+	plcp_main = b43_txhdr_at(txhdr, hl->tx_plcp);
+	if (hl->tx_ppdu_plcp) {
+		b43_generate_plcp_hdr((struct b43_plcp_hdr4 *)plcp_main,
 				      ppdu_len, rate, rate_ht);
 		if (bw40)
-			txhdr->format_598.plcp.raw[0] |= 0x80; /* 40 MHz */
+			plcp_main->raw[0] |= 0x80; /* 40 MHz */
 		if (stbc)
-			txhdr->format_598.plcp.raw[3] |= 0x10; /* STC 1 */
+			plcp_main->raw[3] |= 0x10; /* STC 1 */
 		if (sgi)
-			txhdr->format_598.plcp.raw[3] |= 0x80; /* Short GI */
+			plcp_main->raw[3] |= 0x80; /* Short GI */
 		if (ampdu && ampdu->first) {
-			txhdr->format_598.plcp.raw[3] |= 0x08; /* Aggregation */
-			txhdr->format_598.preload_size =
-				cpu_to_le16(ampdu->preload);
+			plcp_main->raw[3] |= 0x08; /* Aggregation */
+			put_unaligned_le16(ampdu->preload,
+					   b43_txhdr_at(txhdr, hl->tx_preload));
 		}
-		break;
-	case B43_FW_HDR_351:
-		b43_generate_plcp_hdr((struct b43_plcp_hdr4 *)(&txhdr->format_351.plcp),
+	} else {
+		b43_generate_plcp_hdr((struct b43_plcp_hdr4 *)plcp_main,
 				      plcp_fragment_len, rate, rate_ht);
-		break;
-	case B43_FW_HDR_410:
-		b43_generate_plcp_hdr((struct b43_plcp_hdr4 *)(&txhdr->format_410.plcp),
-				      plcp_fragment_len, rate, rate_ht);
-		break;
 	}
 	b43_generate_plcp_hdr((struct b43_plcp_hdr4 *)(&txhdr->plcp_fb),
 			      plcp_fragment_len, rate_fb, rate_fb_ht);
@@ -1426,21 +1479,7 @@ int b43_generate_txhdr(struct b43_wldev *dev,
 		if (c.cts) {
 			struct ieee80211_cts *cts;
 
-			switch (dev->fw.layout.hdr_format) {
-			case B43_FW_HDR_AC:
-			case B43_FW_HDR_598:
-				cts = (struct ieee80211_cts *)
-					(txhdr->format_598.rts_frame);
-				break;
-			case B43_FW_HDR_351:
-				cts = (struct ieee80211_cts *)
-					(txhdr->format_351.rts_frame);
-				break;
-			case B43_FW_HDR_410:
-				cts = (struct ieee80211_cts *)
-					(txhdr->format_410.rts_frame);
-				break;
-			}
+			cts = b43_txhdr_at(txhdr, hl->tx_rts_frame);
 			if (ht) {
 				cts->frame_control =
 					cpu_to_le16(IEEE80211_FTYPE_CTL |
@@ -1458,21 +1497,7 @@ int b43_generate_txhdr(struct b43_wldev *dev,
 		} else {
 			struct ieee80211_rts *rts;
 
-			switch (dev->fw.layout.hdr_format) {
-			case B43_FW_HDR_AC:
-			case B43_FW_HDR_598:
-				rts = (struct ieee80211_rts *)
-					(txhdr->format_598.rts_frame);
-				break;
-			case B43_FW_HDR_351:
-				rts = (struct ieee80211_rts *)
-					(txhdr->format_351.rts_frame);
-				break;
-			case B43_FW_HDR_410:
-				rts = (struct ieee80211_rts *)
-					(txhdr->format_410.rts_frame);
-				break;
-			}
+			rts = b43_txhdr_at(txhdr, hl->tx_rts_frame);
 			if (ht) {
 				rts->frame_control =
 					cpu_to_le16(IEEE80211_FTYPE_CTL |
@@ -1491,39 +1516,14 @@ int b43_generate_txhdr(struct b43_wldev *dev,
 		len += FCS_LEN;
 
 		/* Generate the PLCP headers for the RTS/CTS frame */
-		switch (dev->fw.layout.hdr_format) {
-		case B43_FW_HDR_AC:
-		case B43_FW_HDR_598:
-			plcp = &txhdr->format_598.rts_plcp;
-			break;
-		case B43_FW_HDR_351:
-			plcp = &txhdr->format_351.rts_plcp;
-			break;
-		case B43_FW_HDR_410:
-			plcp = &txhdr->format_410.rts_plcp;
-			break;
-		}
+		plcp = b43_txhdr_at(txhdr, hl->tx_rts_plcp);
 		b43_generate_plcp_hdr((struct b43_plcp_hdr4 *)plcp,
 				      len, rts_rate, false);
 		plcp = &txhdr->rts_plcp_fb;
 		b43_generate_plcp_hdr((struct b43_plcp_hdr4 *)plcp,
 				      len, rts_rate_fb, false);
 
-		switch (dev->fw.layout.hdr_format) {
-		case B43_FW_HDR_AC:
-		case B43_FW_HDR_598:
-			hdr = (struct ieee80211_hdr *)
-				(&txhdr->format_598.rts_frame);
-			break;
-		case B43_FW_HDR_351:
-			hdr = (struct ieee80211_hdr *)
-				(&txhdr->format_351.rts_frame);
-			break;
-		case B43_FW_HDR_410:
-			hdr = (struct ieee80211_hdr *)
-				(&txhdr->format_410.rts_frame);
-			break;
-		}
+		hdr = b43_txhdr_at(txhdr, hl->tx_rts_frame);
 		txhdr->rts_dur_fb = hdr->duration_id;
 		if (ht) {
 			/* The HT RTS/CTS frames above carry no duration yet. */
@@ -1598,18 +1598,7 @@ int b43_generate_txhdr(struct b43_wldev *dev,
 	}
 
 	/* Magic cookie */
-	switch (dev->fw.layout.hdr_format) {
-	case B43_FW_HDR_AC:
-	case B43_FW_HDR_598:
-		txhdr->format_598.cookie = cpu_to_le16(cookie);
-		break;
-	case B43_FW_HDR_351:
-		txhdr->format_351.cookie = cpu_to_le16(cookie);
-		break;
-	case B43_FW_HDR_410:
-		txhdr->format_410.cookie = cpu_to_le16(cookie);
-		break;
-	}
+	put_unaligned_le16(cookie, b43_txhdr_at(txhdr, hl->tx_cookie));
 
 	if (fill_phy_ctl1) {
 		txhdr->phy_ctl1 = cpu_to_le16(
@@ -2015,6 +2004,7 @@ void b43_rx(struct b43_wldev *dev, struct sk_buff *skb, const void *_rxhdr)
 	const u8 *ht_plcp = NULL;
 	struct ieee80211_hdr *wlhdr;
 	const struct b43_rxhdr_fw4 *rxhdr = _rxhdr;
+	const struct b43_hdr_layout *hl = dev->fw.layout.hdr;
 	__le16 fctl;
 	u16 phystat0, phystat3;
 	u16 chanstat, mactime;
@@ -2039,20 +2029,9 @@ void b43_rx(struct b43_wldev *dev, struct sk_buff *skb, const void *_rxhdr)
 	/* Get metadata about the frame from the header. */
 	phystat0 = le16_to_cpu(rxhdr->phy_status0);
 	phystat3 = le16_to_cpu(rxhdr->phy_status3);
-	switch (dev->fw.layout.hdr_format) {
-	case B43_FW_HDR_AC:
-	case B43_FW_HDR_598:
-		macstat = le32_to_cpu(rxhdr->format_598.mac_status);
-		mactime = le16_to_cpu(rxhdr->format_598.mac_time);
-		chanstat = le16_to_cpu(rxhdr->format_598.channel);
-		break;
-	case B43_FW_HDR_410:
-	case B43_FW_HDR_351:
-		macstat = le32_to_cpu(rxhdr->format_351.mac_status);
-		mactime = le16_to_cpu(rxhdr->format_351.mac_time);
-		chanstat = le16_to_cpu(rxhdr->format_351.channel);
-		break;
-	}
+	macstat = get_unaligned_le32(b43_rxhdr_at(rxhdr, hl->rx_mac_status));
+	mactime = get_unaligned_le16(b43_rxhdr_at(rxhdr, hl->rx_mac_time));
+	chanstat = get_unaligned_le16(b43_rxhdr_at(rxhdr, hl->rx_channel));
 
 	/* The channel field of the older microcode is (cookie << 3) | phytype,
 	 * and three bits cannot carry B43_PHYTYPE_AC. What the AC microcode

@@ -12,8 +12,8 @@ enum b43_firmware_hdr_format {
 	 * The microcode of the AC cores, 832.127 in wl 6.30.223 and 928.1201
 	 * in 7.14.43 alike: a 40 byte RX header and an eight-word TX status.
 	 * The TX header and the fields inside the RX header are not visible
-	 * at the bus; where this format shares a case with B43_FW_HDR_598,
-	 * the 598 layout is assumed, not verified.
+	 * at the bus; where b43 reads the RX header as the 598 one, in
+	 * b43_hdr_layout_ac and the A-MSDU path, that is assumed, not verified.
 	 */
 	B43_FW_HDR_AC,
 };
@@ -59,9 +59,37 @@ struct b43_shm_layout {
 	u16 txerr;		/* latch of the saved TX fault; 0 if none known */
 };
 
+/*
+ * Where the fields that move with the microcode sit in its TX and RX headers,
+ * in bytes from the start of the header, and how DMA ring 0 receives them.
+ * The tx_ offsets but tx_len are those of the pre-AC header,
+ * b43_generate_txhdr()'s.
+ */
+struct b43_hdr_layout {
+	u8 tx_len;
+	u8 tx_cookie;
+	u8 tx_rts_plcp;
+	u8 tx_rts_frame;
+	u8 tx_plcp;
+	bool tx_ppdu_plcp;	/* PLCP of the PPDU: HT bits, A-MPDU preload */
+	u8 tx_preload;		/* with tx_ppdu_plcp */
+	u8 rx_len;		/* as PIO reads it; 0 if none is known */
+	u8 rx_frame_offset;
+	u16 rx_buffersize;
+	u8 rx_mac_status;
+	u8 rx_mac_time;
+	u8 rx_channel;
+};
+
+extern const struct b43_hdr_layout b43_hdr_layout_351;
+extern const struct b43_hdr_layout b43_hdr_layout_410;
+extern const struct b43_hdr_layout b43_hdr_layout_598;
+extern const struct b43_hdr_layout b43_hdr_layout_ac;
+
 /* Everything b43 decides from the microcode it runs. */
 struct b43_fw_layout {
 	enum b43_firmware_hdr_format hdr_format;
+	const struct b43_hdr_layout *hdr;
 	/* NULL for an AC microcode not known here */
 	const struct b43_tpl_layout *tpl;
 	/* NULL but for an AC microcode known here */

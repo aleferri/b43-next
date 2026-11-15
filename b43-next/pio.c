@@ -19,6 +19,7 @@
 #include <linux/delay.h>
 #include <linux/sched.h>
 #include <linux/slab.h>
+#include <linux/unaligned.h>
 
 
 static u16 generate_cookie(struct b43_pio_txqueue *q,
@@ -611,22 +612,12 @@ static bool pio_rx_frame(struct b43_pio_rxqueue *q)
 	const char *err_msg = NULL;
 	struct b43_rxhdr_fw4 *rxhdr =
 		(struct b43_rxhdr_fw4 *)wl->pio_scratchspace;
-	size_t rxhdr_size = sizeof(*rxhdr);
+	size_t rxhdr_size = dev->fw.layout.hdr->rx_len;
 
 	BUILD_BUG_ON(sizeof(wl->pio_scratchspace) < sizeof(*rxhdr));
-	switch (dev->fw.layout.hdr_format) {
-	case B43_FW_HDR_410:
-	case B43_FW_HDR_351:
-		rxhdr_size -= sizeof(rxhdr->format_598) -
-			sizeof(rxhdr->format_351);
-		break;
-	case B43_FW_HDR_598:
-		break;
-	case B43_FW_HDR_AC:
-		/* b43_wireless_core_init() keeps the AC cores on DMA. */
-		WARN_ON_ONCE(1);
+	/* b43_wireless_core_init() keeps the AC cores on DMA. */
+	if (WARN_ON_ONCE(!rxhdr_size))
 		return false;
-	}
 	memset(rxhdr, 0, rxhdr_size);
 
 	/* Check if we have data and wait for it to get ready. */
@@ -685,16 +676,8 @@ data_ready:
 		goto rx_error;
 	}
 
-	switch (dev->fw.layout.hdr_format) {
-	case B43_FW_HDR_AC:
-	case B43_FW_HDR_598:
-		macstat = le32_to_cpu(rxhdr->format_598.mac_status);
-		break;
-	case B43_FW_HDR_410:
-	case B43_FW_HDR_351:
-		macstat = le32_to_cpu(rxhdr->format_351.mac_status);
-		break;
-	}
+	macstat = get_unaligned_le32(b43_rxhdr_at(rxhdr,
+				     dev->fw.layout.hdr->rx_mac_status));
 	if (macstat & B43_RX_MAC_FCSERR) {
 		if (!(q->dev->wl->filter_flags & FIF_FCSFAIL) &&
 		    !b43_nphy_ht_enabled(q->dev)) {
