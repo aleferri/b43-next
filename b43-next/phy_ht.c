@@ -1277,6 +1277,37 @@ static void b43_phy_ht_op_prepare_structs(struct b43_wldev *dev)
 		phy_ht->bb_mult_save[i] = -1;
 }
 
+/*
+ * On BCM4331 boards whose 2.4 GHz external PAs are driven by the analog PA
+ * control lines (BFL2_ANAPACTRL_2G, e.g. the Netgear R6400 v1 and v2), bcma
+ * leaves the digital ones (EXTPA_EN, EXTPA_EN2) enabled and the external LNA
+ * off, as for every BCM4331: the receiver is deaf. Switch the chipcontrol to
+ * the analog lines and enable the external LNA when the board has one. The
+ * 12x9 package (9, 11) wires the ext PA lines to GPIO 2/5 and is left alone.
+ */
+static void b43_phy_ht_ext_pa_analog(struct b43_wldev *dev)
+{
+	struct bcmn_bus *bus = dev->dev->bdev->bus;
+	struct bcmn_drv_cc *cc = &bus->drv_cc;
+	u32 set = BCMN_CHIPCTL_4331_EXTPA_ANA_EN;
+	u32 old;
+
+	if (bus->chipinfo.id != BCMN_CHIP_ID_BCM4331 ||
+	    bus->chipinfo.pkg == 9 || bus->chipinfo.pkg == 11 ||
+	    b43_current_band(dev->wl) != NL80211_BAND_2GHZ)
+		return;
+
+	if (dev->dev->bus_sprom->boardflags_lo & B43_BFL_EXTLNA)
+		set |= BCMN_CHIPCTL_4331_EXT_LNA;
+	old = bcmn_cc_read32(cc, BCMN_CC_CHIPCTL);
+	bcmn_cc_maskset32(cc, BCMN_CC_CHIPCTL,
+			  ~(BCMN_CHIPCTL_4331_EXTPA_EN |
+			    BCMN_CHIPCTL_4331_EXTPA_EN2), set);
+	if (old != bcmn_cc_read32(cc, BCMN_CC_CHIPCTL))
+		b43dbg(dev->wl, "HT-PHY: analog PA control, chipcontrol 0x%08x -> 0x%08x\n",
+		       old, bcmn_cc_read32(cc, BCMN_CC_CHIPCTL));
+}
+
 static int b43_phy_ht_op_init(struct b43_wldev *dev)
 {
 	struct b43_phy_ht *phy_ht = dev->phy.ht;
@@ -1291,6 +1322,10 @@ static int b43_phy_ht_op_init(struct b43_wldev *dev)
 		b43err(dev->wl, "HT-PHY is supported only on BCMA bus!\n");
 		return -EOPNOTSUPP;
 	}
+
+	/* Before anything of the PHY and radio is set up */
+	if (anapactrl)
+		b43_phy_ht_ext_pa_analog(dev);
 
 	if (dev->phy.do_full_init)
 		b43_phy_ht_tables_init(dev);
