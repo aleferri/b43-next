@@ -465,6 +465,17 @@ enum {
  * the B43_NR_PAIRWISE_KEYS rows the pairwise keys use.
  */
 #define B43_MBSS_MAX			4
+/*
+ * Several APs on a BCM4331 (core rev 29, ucode 784), which has no wide
+ * address match table: the ucode accepts every receiver address that
+ * equals the base address in SHM, except for the low bits of its last
+ * byte that are set in the mask, so the further APs' BSSIDs lie in one
+ * aligned block of B43_MBSS_MAX addresses.
+ */
+#define B43_MBSS_SHM_CORE_REV		29
+#define B43_MBSS_SHM_FW_REV		784
+#define B43_SHM_SH_MBSS_BASE		0x0640	/* 3 words */
+#define B43_SHM_SH_MBSS_MASK		0x064C
 #define B43_AMT_MBSS(i)			(B43_AMT_BSSID - 1 - (i))
 #define B43_AMT_F_MBSS			(B43_AMT_F_SELF | B43_AMT_F_BSSID)
 
