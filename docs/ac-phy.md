@@ -150,6 +150,21 @@ frames and the TX statuses handed to mac80211 outside `wl->mutex` (`b91542b`,
 pulling from the mac80211 queues (`496b540`), RX buffers from a page pool
 (`5950ab5`) and AQL (`c9ad2cc`).
 
+### ASUS RT-AC68U (BCM4708, ARM; original model)
+
+An original RT-AC68U (board revision `0x1103`, two BCM4360 rev 3, core 42,
+AC-PHY rev 1 / radio 2069 rev 4, `femctrl=3` on both radios) was tested with
+b43-next `ee7ed443` (`n-fixes`) on OpenWrt kernel 6.18.60 and mac80211 7.2.
+The OpenWrt package was built with the matching SDK and installed in an
+ImageBuilder image. Firmware was 784.2; DFS and firmware squashing were off.
+
+Both cards probed using the platform's SPROM revision 11, and the OpenWrt
+init script's bridge handover was confirmed after a normal reboot. APs were
+then configured on 2.4 GHz channel 1 at HT20 and 5 GHz channel 36 at VHT80,
+with WPA2-CCMP and country IN. A phone connected and had Internet access on
+each band. Throughput, long-term stability, DFS, power-save compatibility
+and a reboot with the AP interfaces configured were not tested.
+
 ### D-Link DSL-3580L (BCM6362, MIPS)
 
 The DSL-3580L runs the port under OpenWrt with `ucode42.fw` 784.2 from
