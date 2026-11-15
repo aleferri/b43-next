@@ -6,12 +6,26 @@
 # lives in one place, the module. The kernel's bcma or ssb may hold the
 # device already (built in, or loaded for another one): then it is unbound
 # first.
-set -eu
+#
+# The aliases come from the alias: lines of modinfo, which kmod, busybox
+# and OpenWrt's ubox all print; modprobe --resolve-alias is kmod's only.
+set -euf	# -f: the aliases are glob patterns for case, not for the shell
 
 pci=/sys/bus/pci
 dev=$pci/devices/$1
 
-modprobe -q --resolve-alias "$(cat "$dev/modalias")" | grep -qx b43_next || exit 0
+claims() {
+	modalias=$(cat "$dev/modalias") || return 1
+	for alias in $(modinfo b43_next 2>/dev/null |
+		       sed -n 's/^alias:[[:space:]]*//p'); do
+		case "$modalias" in
+		$alias) return 0 ;;
+		esac
+	done
+	return 1
+}
+
+claims || exit 0
 modprobe b43_next
 
 for drv in bcma-next-pci-bridge ssb-next-pci-bridge; do
