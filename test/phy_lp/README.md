@@ -37,7 +37,7 @@ On 2026-11-16, `--min-block 8 --gap-tol 2`:
 
 | capture | all | PHY+radio |
 |---|---|---|
-| attach | 19905/26301 = 75.68% | 19893/24329 = 81.77% |
+| attach | 19906/26300 = 75.69% | 19894/24328 = 81.77% |
 
 What is left, largest first:
 
