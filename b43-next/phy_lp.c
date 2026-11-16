@@ -1207,6 +1207,7 @@ static void lpphy_set_tx_power_control(struct b43_wldev *dev,
 static int b43_lpphy_op_switch_channel(struct b43_wldev *dev,
 				       unsigned int new_channel);
 
+/* On channel 7, where b43_lpphy_op_init() tunes before it */
 static void lpphy_rev0_1_rc_calib(struct b43_wldev *dev)
 {
 	struct b43_phy_lp *lpphy = dev->phy.lp;
@@ -1224,17 +1225,11 @@ static void lpphy_rev0_1_rc_calib(struct b43_wldev *dev)
 	    old_rf2_ovr, old_rf2_ovrval, old_phy_ctl;
 	enum b43_lpphy_txpctl_mode old_txpctl;
 	u32 normal_pwr, ideal_pwr, mean_sq_pwr, tmp = 0, mean_sq_pwr_min = 0;
-	int loopback, i, j, inner_sum, err;
+	int loopback, i, j, inner_sum;
 
 	memset(&iq_est, 0, sizeof(iq_est));
 	b43_cal_begin(dev, B43_CAL_RCCAL);
 
-	err = b43_lpphy_op_switch_channel(dev, 7);
-	if (err) {
-		b43dbg(dev->wl,
-		       "RC calib: Failed to switch to channel 7, error = %d\n",
-		       err);
-	}
 	old_txg_ovr = !!(b43_phy_read(dev, B43_LPPHY_AFE_CTL_OVR) & 0x40);
 	old_bbmult = lpphy_get_bb_mult(dev);
 	if (old_txg_ovr)
@@ -2969,14 +2964,20 @@ static int b43_lpphy_op_init(struct b43_wldev *dev)
 	lpphy_read_band_sprom(dev); //FIXME should this be in prepare_structs?
 	lpphy_baseband_init(dev);
 	lpphy_radio_init(dev);
-	lpphy_calibrate_rc(dev);
 	err = b43_lpphy_op_switch_channel(dev, 7);
 	if (err) {
 		b43dbg(dev->wl, "Switch to channel 7 failed, error = %d.\n",
 		       err);
 	}
-	lpphy_tx_pctl_init(dev);
 	lpphy_calibration(dev);
+	lpphy_calibrate_rc(dev);
+	err = b43_lpphy_op_switch_channel(dev, dev->phy.channel);
+	if (err) {
+		b43dbg(dev->wl, "Switch to channel %u failed, error = %d.\n",
+		       dev->phy.channel, err);
+	}
+	lpphy_calibration(dev);
+	lpphy_tx_pctl_init(dev);
 	//TODO ACI init
 
 	return 0;
