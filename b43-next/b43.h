@@ -795,7 +795,7 @@ struct b43_noise_calculation {
 };
 
 struct b43_stats {
-	u8 link_noise;
+	s8 link_noise;
 };
 
 /* TX A-MPDU state of one TID of a station, protected by wl->mutex. */
