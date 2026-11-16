@@ -4889,51 +4889,6 @@ again:
 	mutex_unlock(&wl->mutex);
 }
 
-static bool b43_tx_rate_is_mcs(const struct ieee80211_tx_rate *rate)
-{
-	return rate->idx >= 0 &&
-	       (rate->flags & (IEEE80211_TX_RC_MCS | IEEE80211_TX_RC_VHT_MCS));
-}
-
-static bool b43_tx_rate_ht_ok(const struct ieee80211_tx_rate *rate)
-{
-	return !b43_tx_rate_is_mcs(rate) ||
-	       ((rate->flags & IEEE80211_TX_RC_MCS) && rate->idx < 16);
-}
-
-/*
- * Whether the TX header can carry the frame's rates. On the AC the first
- * rate block must (b43_txhdr_ac_rate_ok()); a fallback it cannot carry ends
- * the blocks, in b43_generate_txhdr_ac(). On the other PHYs a legacy rate and
- * its fallback, with HT on a pre-AC core each of them a legacy rate or an
- * HT MCS of one or two streams. Rate control picks nothing else, see
- * b43_ac_set_ht_vht_cap() and b43_setup_bands(), but an injected frame can
- * ask for any rate, and the header would read an MCS as an index into the
- * legacy rate table.
- */
-static bool b43_tx_rates_ok(struct ieee80211_hw *hw,
-			    const struct ieee80211_tx_info *info)
-{
-	const struct ieee80211_supported_band *band = hw->wiphy->bands[info->band];
-	const struct ieee80211_tx_rate *r = info->control.rates;
-	struct b43_wldev *dev = hw_to_b43_wl(hw)->current_dev;
-
-	if (!band)
-		return false;
-	/*
-	 * Whether the frame gets the AC descriptor follows the firmware's
-	 * header format, not the band: the 2.4 GHz band of an AC-PHY core has
-	 * HT but no VHT, and its MCS rates need the AC descriptor as well.
-	 */
-	if (dev && dev->fw.layout.hdr && dev->fw.layout.hdr->tx_rate_ok)
-		return dev->fw.layout.hdr->tx_rate_ok(band, &r[0]);
-	if (band->vht_cap.vht_supported)
-		return b43_txhdr_ac_rate_ok(band, &r[0]);
-	if (dev && b43_ht_enabled(dev))
-		return b43_tx_rate_ht_ok(&r[0]) && b43_tx_rate_ht_ok(&r[1]);
-	return !b43_tx_rate_is_mcs(&r[0]) && !b43_tx_rate_is_mcs(&r[1]);
-}
-
 static void b43_op_tx(struct ieee80211_hw *hw,
 		      struct ieee80211_tx_control *control,
 		      struct sk_buff *skb)
@@ -4947,7 +4902,7 @@ static void b43_op_tx(struct ieee80211_hw *hw,
 		return;
 	}
 	B43_WARN_ON(skb_shinfo(skb)->nr_frags);
-	if (unlikely(!b43_tx_rates_ok(hw, IEEE80211_SKB_CB(skb)))) {
+	if (unlikely(!b43_tx_rates_ok(wl->current_dev, IEEE80211_SKB_CB(skb)))) {
 		const struct ieee80211_tx_rate *r =
 			IEEE80211_SKB_CB(skb)->control.rates;
 
@@ -5054,8 +5009,8 @@ static int b43_tx_pull_round(struct b43_wldev *dev, int ac, bool ofdm_op)
 		       (skb = ieee80211_tx_dequeue(hw, txq))) {
 			taken++;
 			if (unlikely(skb->len < 2 + 2 + 6 ||
-				     !b43_tx_rates_ok(hw,
-					IEEE80211_SKB_CB(skb)))) {
+				     !b43_tx_rates_ok(dev,
+						      IEEE80211_SKB_CB(skb)))) {
 				ieee80211_free_txskb(hw, skb);
 				continue;
 			}

@@ -57,16 +57,14 @@ struct b43_shm_layout {
 
 /*
  * A microcode's TX and RX headers and TX status. Offsets in bytes; the tx_
- * ones are the pre-AC header's. rx_rate, txstatus_rates and tx_rate_ok are
- * NULL where the pre-AC code applies.
+ * ones are the pre-AC header's. rx_rate and txstatus_rates are NULL where
+ * the pre-AC code applies.
  */
 struct b43_fw_hdr {
 	int (*gen_txhdr)(struct b43_wldev *dev, u8 *txhdr,
 			 struct sk_buff *skb_frag,
 			 struct ieee80211_tx_info *info, u16 cookie,
 			 const struct b43_txhdr_ampdu *ampdu);
-	bool (*tx_rate_ok)(const struct ieee80211_supported_band *band,
-			   const struct ieee80211_tx_rate *rate);
 	int (*rx_rate)(struct b43_plcp_hdr6 *plcp, u16 phystat0, bool rx_5ghz,
 		       struct ieee80211_rx_status *status);
 	void (*txstatus_poll)(struct b43_wldev *dev);
@@ -80,6 +78,9 @@ struct b43_fw_hdr {
 	u8 tx_rts_frame;
 	u8 tx_plcp;
 	bool tx_ppdu_plcp;	/* PLCP of the PPDU: HT bits, A-MPDU preload */
+	bool tx_rates_cut;	/* rates it cannot carry cut, not refused */
+	bool tx_stbc;		/* STBC on HT rates of one stream */
+	bool tx_ldpc;		/* LDPC on HT and VHT rates */
 	u8 tx_preload;		/* with tx_ppdu_plcp */
 	u8 rx_len;		/* as PIO reads it; 0 if none is known */
 	u8 rx_frame_offset;

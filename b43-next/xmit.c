@@ -45,50 +45,104 @@
 #include <linux/ktime.h>
 #include <linux/unaligned.h>
 
-static const struct b43_tx_legacy_rate_phy_ctl_entry b43_tx_legacy_rate_phy_ctl[] = {
-	{ B43_CCK_RATE_1MB,	0x0,			0x0 },
-	{ B43_CCK_RATE_2MB,	0x0,			0x1 },
-	{ B43_CCK_RATE_5MB,	0x0,			0x2 },
-	{ B43_CCK_RATE_11MB,	0x0,			0x3 },
-	{ B43_OFDM_RATE_6MB,	B43_TXH_PHY1_CRATE_1_2,	B43_TXH_PHY1_MODUL_BPSK },
-	{ B43_OFDM_RATE_9MB,	B43_TXH_PHY1_CRATE_3_4,	B43_TXH_PHY1_MODUL_BPSK },
-	{ B43_OFDM_RATE_12MB,	B43_TXH_PHY1_CRATE_1_2,	B43_TXH_PHY1_MODUL_QPSK },
-	{ B43_OFDM_RATE_18MB,	B43_TXH_PHY1_CRATE_3_4,	B43_TXH_PHY1_MODUL_QPSK },
-	{ B43_OFDM_RATE_24MB,	B43_TXH_PHY1_CRATE_1_2,	B43_TXH_PHY1_MODUL_QAM16 },
-	{ B43_OFDM_RATE_36MB,	B43_TXH_PHY1_CRATE_3_4,	B43_TXH_PHY1_MODUL_QAM16 },
-	{ B43_OFDM_RATE_48MB,	B43_TXH_PHY1_CRATE_2_3,	B43_TXH_PHY1_MODUL_QAM64 },
-	{ B43_OFDM_RATE_54MB,	B43_TXH_PHY1_CRATE_3_4,	B43_TXH_PHY1_MODUL_QAM64 },
+/*
+ * The OFDM rates: the legacy ones and those of the HT and VHT MCS, one for
+ * each modulation and coding, in the order of the legacy rates. The coded
+ * bits per subcarrier and the coding rate give the data bits per symbol;
+ * an HT or VHT frame's response goes at the legacy rate of its row, its
+ * non-HT reference rate; a legacy rate's L-SIG carries its RATE code; PHY
+ * control word 1 of the pre-AC TX header takes the modulation and coding.
+ */
+struct b43_ofdm_rate {
+	u8 bpscs;
+	u8 num, den;
+	u8 legacy;		/* B43_OFDM_RATE_* */
+	u8 signal;		/* of the legacy rates */
+	u16 phy_ctl1;
 };
 
-static const struct b43_tx_legacy_rate_phy_ctl_entry *
-b43_tx_legacy_rate_phy_ctl_ent(u8 bitrate)
+#define OFDM(_bpscs, _num, _den, _modul, _legacy, _signal) {		\
+	.bpscs = _bpscs, .num = _num, .den = _den,			\
+	.legacy = B43_OFDM_RATE_##_legacy, .signal = _signal,		\
+	.phy_ctl1 = B43_TXH_PHY1_MODUL_##_modul |			\
+		    B43_TXH_PHY1_CRATE_##_num##_##_den }
+static const struct b43_ofdm_rate b43_ofdm_rates[] = {
+	OFDM(1, 1, 2, BPSK, 6MB, 0xB),
+	OFDM(1, 3, 4, BPSK, 9MB, 0xF),
+	OFDM(2, 1, 2, QPSK, 12MB, 0xA),
+	OFDM(2, 3, 4, QPSK, 18MB, 0xE),
+	OFDM(4, 1, 2, QAM16, 24MB, 0x9),
+	OFDM(4, 3, 4, QAM16, 36MB, 0xD),
+	OFDM(6, 2, 3, QAM64, 48MB, 0x8),
+	OFDM(6, 3, 4, QAM64, 54MB, 0xC),
+	OFDM(6, 5, 6, QAM64, 54MB, 0),
+	OFDM(8, 3, 4, QAM256, 54MB, 0),
+	OFDM(8, 5, 6, QAM256, 54MB, 0),
+};
+#undef OFDM
+
+#define B43_OFDM_LEGACY_RATES	8
+
+/* The rows of HT MCS 0-7 and VHT MCS 0-9: all but 9 Mbit/s's. */
+static const u8 b43_mcs_ofdm_rates[10] = { 0, 2, 3, 4, 5, 6, 7, 8, 9, 10 };
+
+/* A legacy OFDM rate, B43_OFDM_RATE_*. */
+static const struct b43_ofdm_rate *b43_ofdm_rate(u8 rate)
 {
-	const struct b43_tx_legacy_rate_phy_ctl_entry *e;
 	unsigned int i;
 
-	for (i = 0; i < ARRAY_SIZE(b43_tx_legacy_rate_phy_ctl); i++) {
-		e = &(b43_tx_legacy_rate_phy_ctl[i]);
-		if (e->bitrate == bitrate)
-			return e;
-	}
-
+	for (i = 0; i < B43_OFDM_LEGACY_RATES; i++)
+		if (b43_ofdm_rates[i].legacy == rate)
+			return &b43_ofdm_rates[i];
 	B43_WARN_ON(1);
-	return NULL;
+	return &b43_ofdm_rates[0];
+}
+
+/* The OFDM rate of an HT MCS within its stream, or of a VHT MCS. */
+static const struct b43_ofdm_rate *b43_mcs_ofdm_rate(u8 mcs)
+{
+	return &b43_ofdm_rates[b43_mcs_ofdm_rates[mcs]];
+}
+
+/* Data bits per symbol on @nsd data subcarriers and @nss streams */
+static unsigned int b43_ofdm_ndbps(const struct b43_ofdm_rate *r,
+				   unsigned int nsd, unsigned int nss)
+{
+	return nsd * nss * r->bpscs * r->num / r->den;
+}
+
+/* The CCK rates, with the SIGNAL of their PLCP header. */
+struct b43_cck_rate {
+	u8 rate;		/* B43_CCK_RATE_* */
+	u8 signal;
+};
+
+static const struct b43_cck_rate b43_cck_rates[] = {
+	{ B43_CCK_RATE_1MB, 0x0A },
+	{ B43_CCK_RATE_2MB, 0x14 },
+	{ B43_CCK_RATE_5MB, 0x37 },
+	{ B43_CCK_RATE_11MB, 0x6E },
+};
+
+static unsigned int b43_cck_rate_idx(u8 rate)
+{
+	unsigned int i;
+
+	for (i = 0; i < ARRAY_SIZE(b43_cck_rates); i++)
+		if (b43_cck_rates[i].rate == rate)
+			return i;
+	B43_WARN_ON(1);
+	return 0;
 }
 
 /* Extract the bitrate index out of a CCK PLCP header. */
 static int b43_plcp_get_bitrate_idx_cck(struct b43_plcp_hdr6 *plcp)
 {
-	switch (plcp->raw[0]) {
-	case 0x0A:
-		return 0;
-	case 0x14:
-		return 1;
-	case 0x37:
-		return 2;
-	case 0x6E:
-		return 3;
-	}
+	unsigned int i;
+
+	for (i = 0; i < ARRAY_SIZE(b43_cck_rates); i++)
+		if (b43_cck_rates[i].signal == plcp->raw[0])
+			return i;
 	return -1;
 }
 
@@ -96,79 +150,31 @@ static int b43_plcp_get_bitrate_idx_cck(struct b43_plcp_hdr6 *plcp)
 static int b43_plcp_get_bitrate_idx_ofdm(struct b43_plcp_hdr6 *plcp, bool ghz5)
 {
 	/* For 2 GHz band first OFDM rate is at index 4, see main.c */
-	int base = ghz5 ? 0 : 4;
+	int base = ghz5 ? 0 : ARRAY_SIZE(b43_cck_rates);
+	unsigned int i;
 
-	switch (plcp->raw[0] & 0xF) {
-	case 0xB:
-		return base + 0;
-	case 0xF:
-		return base + 1;
-	case 0xA:
-		return base + 2;
-	case 0xE:
-		return base + 3;
-	case 0x9:
-		return base + 4;
-	case 0xD:
-		return base + 5;
-	case 0x8:
-		return base + 6;
-	case 0xC:
-		return base + 7;
-	}
+	for (i = 0; i < B43_OFDM_LEGACY_RATES; i++)
+		if (b43_ofdm_rates[i].signal == (plcp->raw[0] & 0xF))
+			return base + i;
 	return -1;
 }
 
 u8 b43_plcp_get_ratecode_cck(const u8 bitrate)
 {
-	switch (bitrate) {
-	case B43_CCK_RATE_1MB:
-		return 0x0A;
-	case B43_CCK_RATE_2MB:
-		return 0x14;
-	case B43_CCK_RATE_5MB:
-		return 0x37;
-	case B43_CCK_RATE_11MB:
-		return 0x6E;
-	}
-	B43_WARN_ON(1);
-	return 0;
+	return b43_cck_rates[b43_cck_rate_idx(bitrate)].signal;
 }
 
 u8 b43_plcp_get_ratecode_ofdm(const u8 bitrate)
 {
-	switch (bitrate) {
-	case B43_OFDM_RATE_6MB:
-		return 0xB;
-	case B43_OFDM_RATE_9MB:
-		return 0xF;
-	case B43_OFDM_RATE_12MB:
-		return 0xA;
-	case B43_OFDM_RATE_18MB:
-		return 0xE;
-	case B43_OFDM_RATE_24MB:
-		return 0x9;
-	case B43_OFDM_RATE_36MB:
-		return 0xD;
-	case B43_OFDM_RATE_48MB:
-		return 0x8;
-	case B43_OFDM_RATE_54MB:
-		return 0xC;
-	}
-	B43_WARN_ON(1);
-	return 0;
+	return b43_ofdm_rate(bitrate)->signal;
 }
 
 void b43_generate_plcp_hdr(struct b43_plcp_hdr4 *plcp,
-			   const u16 octets, const u8 bitrate, bool ht)
+			   const u16 octets, const u8 bitrate)
 {
 	__u8 *raw = plcp->raw;
 
-	if (ht) {
-		raw[0] = bitrate;
-		put_unaligned_le16(octets, raw + 1);
-		raw[3] = 0x07; /* Smoothing, not sounding, reserved. */
-	} else if (b43_is_ofdm_rate(bitrate)) {
+	if (b43_is_ofdm_rate(bitrate)) {
 		u32 d;
 
 		d = b43_plcp_get_ratecode_ofdm(bitrate);
@@ -193,86 +199,293 @@ void b43_generate_plcp_hdr(struct b43_plcp_hdr4 *plcp,
 	}
 }
 
-/* MCS 0-7 with BCC, from brcmsmac's MCS table */
-static const u16 b43_ht20_ndbps[8] = { 26, 52, 78, 104, 156, 208, 234, 260 };
-static const u16 b43_ht40_ndbps[8] = { 54, 108, 162, 216, 324, 432, 486, 540 };
-static const u16 b43_ht20_phyctl[8] = {
-	0x0000, 0x0800, 0x0a00, 0x1000, 0x1200, 0x1900, 0x1a00, 0x1c00,
+/*
+ * One rate of a frame as the device sends it (b43_tx_rate_get()). @rate is
+ * the B43_*_RATE_* of a legacy rate, the MCS of an HT one, the MCS of a
+ * stream of a VHT one; @bw 0 for 20 MHz, 1 for 40, 2 for 80.
+ */
+enum b43_tx_enc {
+	B43_TX_CCK,
+	B43_TX_OFDM,
+	B43_TX_HT,
+	B43_TX_VHT,
 };
 
-/* Data bits per symbol */
-static unsigned int b43_ht_ndbps(u8 mcs, bool bw40)
+struct b43_tx_rate {
+	enum b43_tx_enc enc;
+	u8 rate;
+	u8 nss;
+	u8 bw;
+	bool sgi;
+	bool stbc;
+	bool ldpc;
+	bool short_preamble;
+	const struct b43_ofdm_rate *ofdm;	/* all but CCK */
+};
+
+/* A legacy rate, B43_*_RATE_*: the short preamble is CCK's, not 1 Mbit/s's. */
+static void b43_tx_rate_legacy(struct b43_tx_rate *r, u8 rate,
+			       bool short_preamble)
 {
-	return (bw40 ? b43_ht40_ndbps : b43_ht20_ndbps)[mcs & 7] *
-	       (1 + (mcs >> 3));
+	memset(r, 0, sizeof(*r));
+	r->rate = rate;
+	r->nss = 1;
+	if (b43_is_ofdm_rate(rate)) {
+		r->enc = B43_TX_OFDM;
+		r->ofdm = b43_ofdm_rate(rate);
+	} else {
+		r->enc = B43_TX_CCK;
+		r->short_preamble = short_preamble && rate != B43_CCK_RATE_1MB;
+	}
 }
 
-/* Data duration in 4 us periods: 802.11n rounds short-GI (3.6 us)
+/* Whether @t is an HT MCS on the streams of the band's TX MCS set. */
+static bool b43_tx_ht_ok(const struct ieee80211_supported_band *band,
+			 const struct ieee80211_tx_rate *t)
+{
+	const struct ieee80211_mcs_info *mcs = &band->ht_cap.mcs;
+	unsigned int nss = t->idx / 8 + 1;
+
+	if (!(mcs->tx_params & IEEE80211_HT_MCS_TX_DEFINED) || t->idx > 31)
+		return false;
+	if ((mcs->tx_params & IEEE80211_HT_MCS_TX_RX_DIFF) &&
+	    nss > ((mcs->tx_params & IEEE80211_HT_MCS_TX_MAX_STREAMS_MASK) >>
+		   IEEE80211_HT_MCS_TX_MAX_STREAMS_SHIFT) + 1)
+		return false;
+	return mcs->rx_mask[t->idx / 8] & BIT(t->idx % 8);
+}
+
+/*
+ * Whether @t is a VHT MCS 0-9 at 20, 40 or 80 MHz on a stream count the
+ * band's TX map has.
+ */
+static bool b43_tx_vht_ok(const struct ieee80211_supported_band *band,
+			  const struct ieee80211_tx_rate *t)
+{
+	u8 nss = ieee80211_rate_get_vht_nss(t);
+	u16 map;
+
+	if (!band->vht_cap.vht_supported)
+		return false;
+	map = le16_to_cpu(band->vht_cap.vht_mcs.tx_mcs_map);
+	return ((map >> (2 * (nss - 1))) & 3) !=
+		IEEE80211_VHT_MCS_NOT_SUPPORTED &&
+	       ieee80211_rate_get_vht_mcs(t) <= 9 &&
+	       !(t->flags & IEEE80211_TX_RC_160_MHZ_WIDTH);
+}
+
+/* The width mac80211 asks for, as b43_tx_rate's bw. */
+static u8 b43_tx_rate_bw(const struct ieee80211_tx_rate *t)
+{
+	if (t->flags & IEEE80211_TX_RC_80_MHZ_WIDTH)
+		return 2;
+	if (t->flags & IEEE80211_TX_RC_40_MHZ_WIDTH)
+		return 1;
+	return 0;
+}
+
+/* The channel's width, as b43_tx_rate's bw. */
+static u8 b43_tx_chan_bw(struct b43_wldev *dev)
+{
+	switch (dev->phy.chandef->width) {
+	case NL80211_CHAN_WIDTH_40:
+		return 1;
+	case NL80211_CHAN_WIDTH_80:
+		return 2;
+	default:
+		return 0;
+	}
+}
+
+/*
+ * @t of @info as the device sends it, from the microcode's TX header
+ * (dev->fw.layout.hdr: STBC, LDPC), the core (its TX chains, its channel's
+ * width) and the configuration (the band's rates and TX MCS sets); false
+ * when the header cannot carry it.
+ */
+static bool b43_tx_rate_get(struct b43_wldev *dev,
+			    const struct ieee80211_tx_info *info,
+			    const struct ieee80211_tx_rate *t,
+			    struct b43_tx_rate *r)
+{
+	const struct ieee80211_supported_band *band =
+		dev->wl->hw->wiphy->bands[info->band];
+	const struct b43_fw_hdr *fh = dev->fw.layout.hdr;
+
+	if (t->idx < 0 || !band)
+		return false;
+	if (!(t->flags & (IEEE80211_TX_RC_MCS | IEEE80211_TX_RC_VHT_MCS))) {
+		if (t->idx >= band->n_bitrates)
+			return false;
+		b43_tx_rate_legacy(r, band->bitrates[t->idx].hw_value,
+				   t->flags & IEEE80211_TX_RC_USE_SHORT_PREAMBLE);
+		return true;
+	}
+
+	memset(r, 0, sizeof(*r));
+	if (t->flags & IEEE80211_TX_RC_VHT_MCS) {
+		if (!b43_tx_vht_ok(band, t))
+			return false;
+		r->enc = B43_TX_VHT;
+		r->rate = ieee80211_rate_get_vht_mcs(t);
+		r->nss = ieee80211_rate_get_vht_nss(t);
+		r->ofdm = b43_mcs_ofdm_rate(r->rate);
+	} else {
+		if (!b43_tx_ht_ok(band, t))
+			return false;
+		r->enc = B43_TX_HT;
+		r->rate = t->idx;
+		r->nss = t->idx / 8 + 1;
+		r->ofdm = b43_mcs_ofdm_rate(t->idx % 8);
+	}
+	r->bw = min(b43_tx_rate_bw(t), b43_tx_chan_bw(dev));
+	r->sgi = t->flags & IEEE80211_TX_RC_SHORT_GI;
+	/* One stream as two space-time streams, one per TX core */
+	r->stbc = fh && fh->tx_stbc && r->enc == B43_TX_HT && r->nss == 1 &&
+		  hweight8(dev->txchain) > 1 &&
+		  (info->flags & IEEE80211_TX_CTL_STBC);
+	r->ldpc = fh && fh->tx_ldpc && (info->flags & IEEE80211_TX_CTL_LDPC);
+	return true;
+}
+
+/*
+ * Whether the TX header can carry the frame's rates: the first, and on the
+ * pre-AC header the fallback too; the AC descriptor ends its rate blocks at
+ * one it cannot carry (b43_generate_txhdr_ac()). Rate control picks
+ * nothing else, see b43_ac_set_ht_vht_cap() and b43_setup_bands(), but an
+ * injected frame can ask for any rate.
+ */
+bool b43_tx_rates_ok(struct b43_wldev *dev,
+		     const struct ieee80211_tx_info *info)
+{
+	const struct ieee80211_tx_rate *rates = info->control.rates;
+	const struct b43_fw_hdr *fh;
+	struct b43_tx_rate r;
+
+	if (!dev || !b43_tx_rate_get(dev, info, &rates[0], &r))
+		return false;
+	fh = dev->fw.layout.hdr;
+	return (fh && fh->tx_rates_cut) || rates[1].idx < 0 ||
+	       b43_tx_rate_get(dev, info, &rates[1], &r);
+}
+
+/* Data bits per symbol */
+static unsigned int b43_tx_ndbps(const struct b43_tx_rate *r)
+{
+	static const u8 nsd[] = { 52, 108, 234 };
+
+	if (r->enc == B43_TX_OFDM)
+		return b43_ofdm_ndbps(r->ofdm, 48, 1);
+	return b43_ofdm_ndbps(r->ofdm, nsd[r->bw], r->nss);
+}
+
+/* The data of an HT rate in 4 us periods: 802.11n rounds short-GI (3.6 us)
  * symbols up to a 4 us boundary for TXTIME and the L-SIG length. STBC
  * sends an even number of symbols.
  */
-static unsigned int b43_ht_periods(u8 mcs, bool bw40, unsigned int octets,
-				   bool sgi, bool stbc)
+static unsigned int b43_tx_ht_periods(const struct b43_tx_rate *r,
+				      unsigned int octets)
 {
-	unsigned int m = stbc ? 2 : 1;
+	unsigned int m = r->stbc ? 2 : 1;
 	unsigned int symbols = m * DIV_ROUND_UP(16 + 8 * octets + 6,
-						m * b43_ht_ndbps(mcs, bw40));
+						m * b43_tx_ndbps(r));
 
-	return sgi ? DIV_ROUND_UP(9 * symbols, 10) : symbols;
+	return r->sgi ? DIV_ROUND_UP(9 * symbols, 10) : symbols;
+}
+
+/* The HT-LTFs: one per space-time stream, four for three. */
+static unsigned int b43_tx_ht_ltfs(const struct b43_tx_rate *r)
+{
+	unsigned int nsts = r->nss + r->stbc;
+
+	return nsts == 3 ? 4 : nsts;
 }
 
 /* Mixed-mode L-SIG length: the octets 6 Mbit/s would carry after the
  * L-SIG, three per 4 us of HT-SIG, HT-STF, HT-LTFs and data, less three
  * for the service and tail bits.
  */
-static unsigned int b43_ht_lsig_len(u8 mcs, bool bw40, unsigned int octets,
-				    bool sgi, bool stbc)
+static unsigned int b43_tx_lsig_len(const struct b43_tx_rate *r,
+				    unsigned int octets)
 {
-	return 3 * (b43_ht_periods(mcs, bw40, octets, sgi, stbc) +
-		    (mcs >> 3) + stbc + 4) - 3;
+	return 3 * (b43_tx_ht_periods(r, octets) + b43_tx_ht_ltfs(r) + 3) - 3;
 }
 
-/* With STBC, one-stream MCS go out as two space-time streams, one per TX
- * core.
+/* Airtime of a legacy or HT rate, with the FCS/trailer in octets but not
+ * SIFS.
  */
-static bool b43_tx_stbc(struct b43_wldev *dev, struct ieee80211_tx_info *info,
-			u8 rate, bool ht)
+static unsigned int b43_tx_airtime(const struct b43_tx_rate *r,
+				   unsigned int octets, bool gmode)
 {
-	return ht && rate < 8 && hweight8(dev->txchain) > 1 &&
-	       (info->flags & IEEE80211_TX_CTL_STBC);
-}
-
-/* Airtime includes the FCS/trailer in octets, but not SIFS. For HT rates
- * short_preamble selects the short guard interval, and each space-time
- * stream after the first adds an HT-LTF.
- */
-static unsigned int b43_tx_airtime(u8 rate, bool ht, bool bw40, bool stbc,
-				   bool short_preamble, unsigned int octets,
-				   bool gmode)
-{
-	if (ht)
-		return 36 + 4 * ((rate >> 3) + stbc) +
-		       4 * b43_ht_periods(rate, bw40, octets, short_preamble,
-					  stbc) +
-		       (gmode ? 6 : 0);
-	if (b43_is_ofdm_rate(rate))
+	switch (r->enc) {
+	case B43_TX_CCK:
+		return (r->short_preamble ? 96 : 192) +
+		       DIV_ROUND_UP(16 * octets, r->rate);
+	case B43_TX_OFDM:
 		return 20 + 4 * DIV_ROUND_UP(16 + 8 * octets + 6,
-					     2 * rate) + (gmode ? 6 : 0);
-	return (short_preamble ? 96 : 192) +
-	       DIV_ROUND_UP(16 * octets, rate);
+					     b43_tx_ndbps(r)) +
+		       (gmode ? 6 : 0);
+	default:
+		return 36 + 4 * (b43_tx_ht_ltfs(r) - 1) +
+		       4 * b43_tx_ht_periods(r, octets) + (gmode ? 6 : 0);
+	}
+}
+
+/*
+ * The SIG of an HT or VHT rate: the first four bytes of the HT-SIG (the
+ * MCS, 40 MHz, the length, smoothing, not sounding and the reserved bit
+ * set, aggregation, STBC, LDPC, the short guard interval), or VHT-SIG-A1
+ * and A2 (group ID 63 and both reserved bits set, the SGI disambiguation
+ * and LDPC extra-symbol bits left clear).
+ */
+static void b43_tx_sig(const struct b43_tx_rate *r, unsigned int len,
+		       bool aggregation, u8 *sig)
+{
+	u32 a1, a2;
+
+	if (r->enc == B43_TX_HT) {
+		sig[0] = r->rate | (r->bw ? 0x80 : 0);
+		put_unaligned_le16(len, sig + 1);
+		sig[3] = 0x07 | (aggregation ? 0x08 : 0) |
+			 (r->stbc ? 0x10 : 0) | (r->ldpc ? 0x40 : 0) |
+			 (r->sgi ? 0x80 : 0);
+		return;
+	}
+	a1 = r->bw | BIT(2) | (63 << 4) | (r->nss - 1) << 10 | BIT(23);
+	a2 = (r->sgi ? BIT(0) : 0) | (r->ldpc ? BIT(2) : 0) |
+	     (r->rate << 4) | BIT(9);
+	put_unaligned_le24(a1, sig);
+	put_unaligned_le24(a2, sig + 3);
+}
+
+/* The PLCP header of a rate of the pre-AC header */
+static void b43_tx_plcp(const struct b43_tx_rate *r, unsigned int len,
+			bool aggregation, struct b43_plcp_hdr6 *plcp)
+{
+	if (r->enc == B43_TX_HT)
+		b43_tx_sig(r, len, aggregation, plcp->raw);
+	else
+		b43_generate_plcp_hdr((struct b43_plcp_hdr4 *)plcp, len,
+				      r->rate);
+}
+
+/* The legacy rate an MCS's response goes at, or a legacy rate's own. */
+static u8 b43_tx_ref_rate(const struct b43_tx_rate *r)
+{
+	return r->enc == B43_TX_HT || r->enc == B43_TX_VHT ?
+	       r->ofdm->legacy : r->rate;
 }
 
 static u8 b43_tx_response_rate(struct b43_wldev *dev,
 			       struct ieee80211_tx_info *info,
-			       u8 rate, bool ht, bool protection)
+			       const struct b43_tx_rate *r, bool protection)
 {
-	static const u8 mcs_legacy[8] = { 12, 24, 36, 48, 72, 96, 108, 108 };
 	struct ieee80211_supported_band *sband =
 		dev->wl->hw->wiphy->bands[info->band];
 	struct ieee80211_vif *vif = info->control.vif;
 	u8 response = 0;
 	int i;
-	u8 target = ht ? mcs_legacy[rate & 7] : rate;
+	u8 target = b43_tx_ref_rate(r);
 
 	if (protection && vif && vif->bss_conf.use_cts_prot)
 		target = B43_CCK_RATE_11MB;
@@ -299,33 +512,30 @@ static u8 b43_tx_response_rate(struct b43_wldev *dev,
 	return response;
 }
 
-/* Responses and protection frames follow the BSS preamble setting. */
-static bool b43_tx_response_short_preamble(struct ieee80211_vif *vif, u8 rate)
+/* A response or protection frame, legacy, with the BSS's preamble. */
+static void b43_tx_rate_bss(struct b43_tx_rate *r, u8 rate,
+			    const struct ieee80211_vif *vif)
 {
-	return vif && vif->bss_conf.use_short_preamble &&
-	       b43_is_cck_rate(rate) && rate != B43_CCK_RATE_1MB;
+	b43_tx_rate_legacy(r, rate, vif && vif->bss_conf.use_short_preamble);
 }
 
 /* The response is a 14-byte ACK, or a 32-byte compressed Block Ack. */
 static unsigned int b43_tx_nav(struct b43_wldev *dev,
 			       struct ieee80211_tx_info *info,
-			       u8 rate, bool ht, bool bw40, bool short_preamble,
+			       const struct b43_tx_rate *r,
 			       unsigned int next_len, bool block_ack)
 {
-	u8 response = b43_tx_response_rate(dev, info, rate, ht, false);
-	bool response_short_preamble =
-		b43_tx_response_short_preamble(info->control.vif, response);
+	struct b43_tx_rate response;
 	unsigned int sifs = dev->phy.gmode ? 10 : 16;
-	unsigned int nav = sifs + b43_tx_airtime(response, false, false, false,
-						 response_short_preamble,
-						 block_ack ? 32 : 14,
-						 dev->phy.gmode);
+	unsigned int nav;
 
+	b43_tx_rate_bss(&response, b43_tx_response_rate(dev, info, r, false),
+			info->control.vif);
+	nav = sifs + b43_tx_airtime(&response, block_ack ? 32 : 14,
+				    dev->phy.gmode);
 	if (next_len)
 		nav = 2 * nav + sifs +
-		      b43_tx_airtime(rate, ht, bw40,
-				     b43_tx_stbc(dev, info, rate, ht),
-				     short_preamble, next_len, dev->phy.gmode);
+		      b43_tx_airtime(r, next_len, dev->phy.gmode);
 	return nav;
 }
 
@@ -368,52 +578,47 @@ static void b43_tx_ht_protect(struct b43_wldev *dev,
 			rates[0].flags |= IEEE80211_TX_RC_USE_RTS_CTS;
 }
 
-/* TODO: verify if needed for SSLPN or LCN  */
-static u16 b43_generate_tx_phy_ctl1(struct b43_wldev *dev, u8 bitrate, bool ht,
-				    bool bw40, bool stbc)
+/*
+ * PHY control word 1 of the pre-AC header. A legacy OFDM rate at 40 MHz
+ * (an RTS or CTS ahead of a 40 MHz frame) goes on both halves.
+ */
+static u16 b43_generate_tx_phy_ctl1(struct b43_wldev *dev,
+				    const struct b43_tx_rate *r)
 {
 	const struct b43_phy *phy = &dev->phy;
-	const struct b43_tx_legacy_rate_phy_ctl_entry *e;
-	u16 control = 0;
-	u16 bw;
+	u16 control;
 
-	/* On a 40 MHz channel, send 20 MHz frames on the control channel, and
-	 * legacy OFDM ones at 40 MHz (an RTS or CTS) on both halves. */
+	/* On a 40 MHz channel, send 20 MHz frames on the control channel. */
 	if (!b43_is_40mhz(dev))
-		bw = B43_TXH_PHY1_BW_20;
-	else if (bw40 && ht)
-		bw = B43_TXH_PHY1_BW_40;
-	else if (bw40 && b43_is_ofdm_rate(bitrate))
-		bw = B43_TXH_PHY1_BW_40DUP;
+		control = B43_TXH_PHY1_BW_20;
+	else if (r->bw && r->enc == B43_TX_HT)
+		control = B43_TXH_PHY1_BW_40;
+	else if (r->bw && r->enc == B43_TX_OFDM)
+		control = B43_TXH_PHY1_BW_40DUP;
 	else if (phy->chandef->chan->center_freq > phy->chandef->center_freq1)
-		bw = B43_TXH_PHY1_BW_20U;
+		control = B43_TXH_PHY1_BW_20U;
 	else
-		bw = B43_TXH_PHY1_BW_20;
+		control = B43_TXH_PHY1_BW_20;
 
-	if (ht) {
-		control = bw | b43_ht20_phyctl[bitrate & 7];
-		if (bitrate >= 8)
-			control |= B43_TXH_PHY1_MODE_SDM |
-				   (1 << B43_TXH_PHY1_NSS_SHIFT);
-		else if (stbc)
-			control |= B43_TXH_PHY1_MODE_STBC;
-		else if (hweight8(dev->txchain) == 1)
-			control |= B43_TXH_PHY1_MODE_SISO;
-		else
-			control |= B43_TXH_PHY1_MODE_CDD;
-	} else if (b43_is_cck_rate(bitrate) && phy->type != B43_PHYTYPE_LP) {
-		control = bw;
-	} else {
-		control = bw;
-		e = b43_tx_legacy_rate_phy_ctl_ent(bitrate);
-		if (e) {
-			control |= e->coding_rate;
-			control |= e->modulation;
-		}
-		control |= B43_TXH_PHY1_MODE_SISO;
+	switch (r->enc) {
+	case B43_TX_CCK:
+		/* The LP-PHY's CCK rates add their index, as upstream b43. */
+		if (phy->type == B43_PHYTYPE_LP)
+			control |= b43_cck_rate_idx(r->rate);
+		return control;
+	case B43_TX_OFDM:
+		return control | r->ofdm->phy_ctl1 | B43_TXH_PHY1_MODE_SISO;
+	default:
+		control |= r->ofdm->phy_ctl1;
+		if (r->nss > 1)
+			return control | B43_TXH_PHY1_MODE_SDM |
+			       (r->nss - 1) << B43_TXH_PHY1_NSS_SHIFT;
+		if (r->stbc)
+			return control | B43_TXH_PHY1_MODE_STBC;
+		if (hweight8(dev->txchain) == 1)
+			return control | B43_TXH_PHY1_MODE_SISO;
+		return control | B43_TXH_PHY1_MODE_CDD;
 	}
-
-	return control;
 }
 
 static u8 b43_calc_fallback_rate(u8 bitrate, int gmode)
@@ -459,30 +664,9 @@ static u8 b43_calc_fallback_rate(u8 bitrate, int gmode)
 /* Index of a legacy rate in PHY TX control word 2 of the AC microcode. */
 static u16 b43_txhdr_ac_rate_idx(u8 rate)
 {
-	switch (rate) {
-	case B43_CCK_RATE_1MB:
-	case B43_OFDM_RATE_6MB:
-		return 0;
-	case B43_CCK_RATE_2MB:
-	case B43_OFDM_RATE_9MB:
-		return 1;
-	case B43_CCK_RATE_5MB:
-	case B43_OFDM_RATE_12MB:
-		return 2;
-	case B43_CCK_RATE_11MB:
-	case B43_OFDM_RATE_18MB:
-		return 3;
-	case B43_OFDM_RATE_24MB:
-		return 4;
-	case B43_OFDM_RATE_36MB:
-		return 5;
-	case B43_OFDM_RATE_48MB:
-		return 6;
-	case B43_OFDM_RATE_54MB:
-		return 7;
-	}
-	B43_WARN_ON(1);
-	return 0;
+	if (b43_is_cck_rate(rate))
+		return b43_cck_rate_idx(rate);
+	return b43_ofdm_rate(rate) - b43_ofdm_rates;
 }
 
 /*
@@ -491,49 +675,26 @@ static u16 b43_txhdr_ac_rate_idx(u8 rate)
  * writes it in the pre-AC header, b43_generate_txhdr_ac() in the AC one.
  */
 struct b43_txhdr_ctl {
-	struct ieee80211_rate *fbrate;
-	bool ht;		/* rates[0] is an HT MCS: rate and fbrate unset */
-	bool vht;		/* rates[0] is a VHT MCS: rate and fbrate unset */
-	u8 rate;		/* hw_value of the rate */
-	u8 rate_fb;		/* hw_value of the fallback rate */
 	u8 rts_rate;		/* hw_value of the RTS or CTS rate */
 	bool ack;		/* expect an ACK */
 	bool hwseq;		/* hardware sequence number */
 	bool first_frag;	/* first fragment of an MSDU */
 	bool long_frame;	/* long retry limit */
-	bool short_preamble;
 	bool rts;		/* RTS before the frame */
 	bool cts;		/* CTS-to-self before the frame */
 };
-
-/* An index into the band's legacy rate table, which an MCS is not. */
-static bool b43_tx_rate_legacy(const struct ieee80211_tx_rate *r)
-{
-	return r->idx >= 0 &&
-	       !(r->flags & (IEEE80211_TX_RC_MCS | IEEE80211_TX_RC_VHT_MCS));
-}
 
 static void b43_txhdr_ctl_get(struct b43_wldev *dev,
 			      struct ieee80211_tx_info *info,
 			      struct b43_txhdr_ctl *c)
 {
 	struct ieee80211_tx_rate *rates = info->control.rates;
-	struct ieee80211_rate *txrate = NULL, *rts_cts_rate;
-
-	c->ht = rates[0].idx >= 0 && (rates[0].flags & IEEE80211_TX_RC_MCS);
-	c->vht = rates[0].idx >= 0 && (rates[0].flags & IEEE80211_TX_RC_VHT_MCS);
-	if (b43_tx_rate_legacy(&rates[0]))
-		txrate = ieee80211_get_tx_rate(dev->wl->hw, info);
-	c->rate = txrate ? txrate->hw_value : B43_CCK_RATE_1MB;
-	c->fbrate = b43_tx_rate_legacy(&rates[1]) ?
-		    ieee80211_get_alt_retry_rate(dev->wl->hw, info, 0) : txrate;
-	c->rate_fb = c->fbrate ? c->fbrate->hw_value : c->rate;
+	struct ieee80211_rate *rts_cts_rate;
 
 	c->ack = !(info->flags & IEEE80211_TX_CTL_NO_ACK);
 	/* use hardware sequence counter as the non-TID counter */
 	c->hwseq = info->flags & IEEE80211_TX_CTL_ASSIGN_SEQ;
 	c->first_frag = info->flags & IEEE80211_TX_CTL_FIRST_FRAGMENT;
-	c->short_preamble = rates[0].flags & IEEE80211_TX_RC_USE_SHORT_PREAMBLE;
 
 	/* Overwrite rates[0].count to make the retry calculation
 	 * in the tx status easier. need the actual retry limit to
@@ -578,49 +739,6 @@ static u16 b43_txhdr_ac_subband(const struct b43_phy_ac *ac, unsigned int bw)
 		B43_PHY_AC_CHANSPEC_SB_SHIFT) >> bw;
 }
 
-/* Whether @r is an HT MCS on the streams of the band's TX MCS set. */
-static bool b43_txhdr_ac_ht_ok(const struct ieee80211_supported_band *band,
-			       const struct ieee80211_tx_rate *r)
-{
-	const struct ieee80211_mcs_info *mcs = &band->ht_cap.mcs;
-	unsigned int nss = r->idx / 8 + 1;
-
-	if (!(mcs->tx_params & IEEE80211_HT_MCS_TX_DEFINED) || r->idx > 31)
-		return false;
-	if ((mcs->tx_params & IEEE80211_HT_MCS_TX_RX_DIFF) &&
-	    nss > ((mcs->tx_params & IEEE80211_HT_MCS_TX_MAX_STREAMS_MASK) >>
-		   IEEE80211_HT_MCS_TX_MAX_STREAMS_SHIFT) + 1)
-		return false;
-	return mcs->rx_mask[r->idx / 8] & BIT(r->idx % 8);
-}
-
-/*
- * Whether a rate block of the AC descriptor can carry @r: a legacy rate of
- * the band, an HT MCS 0-31 at 20 or 40 MHz in the band's TX MCS set, or a
- * VHT MCS 0-9 at 20, 40 or 80 MHz on a stream count the band's TX map has.
- */
-bool b43_txhdr_ac_rate_ok(const struct ieee80211_supported_band *band,
-			  const struct ieee80211_tx_rate *r)
-{
-	if (r->idx < 0)
-		return false;
-	if (r->flags & IEEE80211_TX_RC_VHT_MCS) {
-		u8 nss = ieee80211_rate_get_vht_nss(r);
-		u16 map;
-
-		if (!band->vht_cap.vht_supported)
-			return false;
-		map = le16_to_cpu(band->vht_cap.vht_mcs.tx_mcs_map);
-		return ((map >> (2 * (nss - 1))) & 3) !=
-			IEEE80211_VHT_MCS_NOT_SUPPORTED &&
-		       ieee80211_rate_get_vht_mcs(r) <= 9 &&
-		       !(r->flags & IEEE80211_TX_RC_160_MHZ_WIDTH);
-	}
-	if (r->flags & IEEE80211_TX_RC_MCS)
-		return b43_txhdr_ac_ht_ok(band, r);
-	return r->idx < band->n_bitrates;
-}
-
 /*
  * Under thermal throttling TX has one chain (b43_phy_ac_temp_throttle()),
  * which carries one stream: each MCS goes out on one at the same index,
@@ -661,19 +779,8 @@ static void b43_txhdr_ac_legacy(const struct b43_phy_ac *ac,
 	r->phy_ctl[1] = cpu_to_le16((po & B43_TXH_AC_PHY1_TXPWR_OFFSET) |
 				    b43_txhdr_ac_subband(ac, 0));
 	r->phy_ctl[2] = cpu_to_le16(b43_txhdr_ac_rate_idx(rate));
-	b43_generate_plcp_hdr((struct b43_plcp_hdr4 *)&r->plcp, len, rate,
-			      false);
+	b43_generate_plcp_hdr((struct b43_plcp_hdr4 *)&r->plcp, len, rate);
 	r->tx_rate = cpu_to_le16(rate);
-}
-
-/* Width of an MCS rate as word 0 and the SIG fields take it. */
-static unsigned int b43_txhdr_ac_rate_bw(const struct ieee80211_tx_rate *t)
-{
-	if (t->flags & IEEE80211_TX_RC_80_MHZ_WIDTH)
-		return 2;
-	if (t->flags & IEEE80211_TX_RC_40_MHZ_WIDTH)
-		return 1;
-	return 0;
 }
 
 /*
@@ -690,12 +797,11 @@ static unsigned int b43_txhdr_ac_rate_bw(const struct ieee80211_tx_rate *t)
  */
 static void b43_txhdr_ac_ht(const struct b43_phy_ac *ac,
 			    struct b43_txhdr_ac_rate *r,
-			    const struct ieee80211_tx_rate *t, bool ldpc,
-			    unsigned int len)
+			    const struct b43_tx_rate *t, unsigned int len)
 {
-	unsigned int bw = b43_txhdr_ac_rate_bw(t);
-	u8 mcs = t->idx;
-	bool sgi = t->flags & IEEE80211_TX_RC_SHORT_GI;
+	unsigned int bw = t->bw;
+	u8 mcs = t->rate;
+	bool sgi = t->sgi;
 	struct rate_info ri = {
 		.flags = RATE_INFO_FLAGS_MCS |
 			 (sgi ? RATE_INFO_FLAGS_SHORT_GI : 0),
@@ -713,11 +819,7 @@ static void b43_txhdr_ac_ht(const struct b43_phy_ac *ac,
 				    b43_txhdr_ac_subband(ac, bw));
 	r->phy_ctl[2] = cpu_to_le16(mcs);
 
-	r->plcp.raw[0] = mcs | (bw ? 0x80 : 0);
-	r->plcp.raw[1] = len;
-	r->plcp.raw[2] = len >> 8;
-	r->plcp.raw[3] = 0x07 | (ldpc ? 0x40 : 0) |
-			  (sgi ? 0x80 : 0);
+	b43_tx_sig(t, len, false, r->plcp.raw);
 	r->tx_rate = cpu_to_le16(cfg80211_calculate_bitrate(&ri) / 5);
 }
 
@@ -740,15 +842,14 @@ static void b43_txhdr_ac_ht(const struct b43_phy_ac *ac,
  */
 static void b43_txhdr_ac_vht(const struct b43_phy_ac *ac,
 			     struct b43_txhdr_ac_rate *r,
-			     const struct ieee80211_tx_rate *t, bool ldpc)
+			     const struct b43_tx_rate *t)
 {
 	static const u8 rate_bw[] = {
 		RATE_INFO_BW_20, RATE_INFO_BW_40, RATE_INFO_BW_80,
 	};
-	unsigned int bw = b43_txhdr_ac_rate_bw(t);
-	u8 mcs = ieee80211_rate_get_vht_mcs(t);
-	u8 nss = ieee80211_rate_get_vht_nss(t);
-	bool sgi = t->flags & IEEE80211_TX_RC_SHORT_GI;
+	unsigned int bw = t->bw;
+	u8 mcs = t->rate, nss = t->nss;
+	bool sgi = t->sgi;
 	struct rate_info ri = {
 		.flags = RATE_INFO_FLAGS_VHT_MCS |
 			 (sgi ? RATE_INFO_FLAGS_SHORT_GI : 0),
@@ -757,8 +858,6 @@ static void b43_txhdr_ac_vht(const struct b43_phy_ac *ac,
 		.bw = rate_bw[bw],
 	};
 	u16 phy0, phy1 = ac->rate_po_vht[bw][mcs] & B43_TXH_AC_PHY1_TXPWR_OFFSET;
-	u32 a1, a2;
-
 	phy0 = B43_TXH_PHY_ENC_VHT | B43_TXH_AC_PHY0_NON_SOUNDING |
 	       b43_txhdr_ac_cores(ac, B43_PHY_AC_TXCORE_NSTS1 + nss - 1) |
 	       bw << B43_TXH_AC_PHY0_BW_SHIFT;
@@ -767,16 +866,7 @@ static void b43_txhdr_ac_vht(const struct b43_phy_ac *ac,
 	r->phy_ctl[2] = cpu_to_le16((mcs & B43_TXH_AC_PHY2_VHT_MCS) |
 				    (nss - 1) << B43_TXH_AC_PHY2_VHT_NSS_SHIFT);
 
-	a1 = bw | BIT(2) | (63 << 4) | (nss - 1) << 10 | BIT(23);
-	a2 = (sgi ? BIT(0) : 0) |
-	     (ldpc ? BIT(2) : 0) |
-	     (mcs << 4) | BIT(9);
-	r->plcp.raw[0] = a1;
-	r->plcp.raw[1] = a1 >> 8;
-	r->plcp.raw[2] = a1 >> 16;
-	r->plcp.raw[3] = a2;
-	r->plcp.raw[4] = a2 >> 8;
-	r->plcp.raw[5] = a2 >> 16;
+	b43_tx_sig(t, 0, false, r->plcp.raw);
 	r->fbw_info = cpu_to_le16(0x0300);
 	r->tx_rate = cpu_to_le16(cfg80211_calculate_bitrate(&ri) / 5);
 }
@@ -787,13 +877,13 @@ static void b43_txhdr_ac_vht(const struct b43_phy_ac *ac,
  * it in: the stock driver writes it, SIFS and the ACK at the highest basic
  * rate not above the MCS's non-HT reference rate, for its last fallback rate
  * (router-data/d6220/rxtx-1s-ht20-40-vht20-40-80-txbf0.zip: 48 us after HT
- * MCS 2, 44 after VHT MCS 4). @ref is that rate's non-HT reference rate, in
- * 100 kb/s (b43_txhdr_ac_ref_rate()).
+ * MCS 2, 44 after VHT MCS 4). @ref is that rate's non-HT reference rate
+ * (b43_tx_ref_rate()).
  */
 static void b43_txhdr_ac_mcs_duration(struct b43_wldev *dev,
 				      struct sk_buff *skb,
 				      const struct ieee80211_tx_info *info,
-				      u16 ref)
+				      u8 ref)
 {
 	struct ieee80211_hdr *hdr = (struct ieee80211_hdr *)skb->data;
 	struct ieee80211_hw *hw = dev->wl->hw;
@@ -814,7 +904,7 @@ static void b43_txhdr_ac_mcs_duration(struct b43_wldev *dev,
 		struct ieee80211_rate *rate = &sband->bitrates[i];
 
 		if (!(vif->bss_conf.basic_rates & BIT(i)) ||
-		    rate->bitrate > ref)
+		    rate->bitrate > B43_RATE_TO_BASE100KBPS(ref))
 			continue;
 		if (!ack || rate->bitrate > ack->bitrate)
 			ack = rate;
@@ -828,42 +918,17 @@ static void b43_txhdr_ac_mcs_duration(struct b43_wldev *dev,
 	hdr->duration_id = cpu_to_le16(dur);
 }
 
-/*
- * The non-HT reference rate of @t, in 100 kb/s: an MCS's by its modulation
- * and coding, HT MCS modulo 8, VHT MCS 8 and 9 as 7 (54 Mb/s); a legacy
- * rate's own.
- */
-static u16 b43_txhdr_ac_ref_rate(const struct ieee80211_supported_band *sband,
-				 const struct ieee80211_tx_rate *t)
-{
-	static const u16 ref_rate[8] = {
-		60, 120, 180, 240, 360, 480, 540, 540,
-	};
-
-	if (t->flags & IEEE80211_TX_RC_VHT_MCS)
-		return ref_rate[min_t(unsigned int,
-				       ieee80211_rate_get_vht_mcs(t), 7)];
-	if (t->flags & IEEE80211_TX_RC_MCS)
-		return ref_rate[t->idx % 8];
-	return sband->bitrates[t->idx].bitrate;
-}
-
 /* One rate block from one of the frame's rates. */
 static void b43_txhdr_ac_block(const struct b43_phy_ac *ac,
-			       const struct ieee80211_supported_band *sband,
 			       struct b43_txhdr_ac_rate *r,
-			       const struct ieee80211_tx_rate *t, bool ldpc,
-			       unsigned int len)
+			       const struct b43_tx_rate *t, unsigned int len)
 {
-	bool sp = t->flags & IEEE80211_TX_RC_USE_SHORT_PREAMBLE;
-
-	if (t->flags & IEEE80211_TX_RC_VHT_MCS)
-		b43_txhdr_ac_vht(ac, r, t, ldpc);
-	else if (t->flags & IEEE80211_TX_RC_MCS)
-		b43_txhdr_ac_ht(ac, r, t, ldpc, len);
+	if (t->enc == B43_TX_VHT)
+		b43_txhdr_ac_vht(ac, r, t);
+	else if (t->enc == B43_TX_HT)
+		b43_txhdr_ac_ht(ac, r, t, len);
 	else
-		b43_txhdr_ac_legacy(ac, r, sband->bitrates[t->idx].hw_value, sp,
-				    len);
+		b43_txhdr_ac_legacy(ac, r, t->rate, t->short_preamble, len);
 }
 
 /*
@@ -1008,10 +1073,8 @@ static int b43_generate_txhdr_ac(struct b43_wldev *dev, u8 *_txhdr,
 	const struct b43_txhdr_ctl *c = &ctl;
 	const struct ieee80211_hdr *wlhdr =
 	    (const struct ieee80211_hdr *)skb->data;
-	const struct ieee80211_supported_band *sband =
-		dev->wl->hw->wiphy->bands[info->band];
 	struct ieee80211_tx_rate *rates = info->control.rates;
-	bool ldpc = info->flags & IEEE80211_TX_CTL_LDPC;
+	struct b43_tx_rate t[B43_TXH_AC_RATES];
 	const struct b43_phy_ac *ac = dev->phy.ac;
 	const struct ieee80211_key_conf *key = info->control.hw_key;
 	unsigned int len = skb->len + FCS_LEN;
@@ -1028,11 +1091,12 @@ static int b43_generate_txhdr_ac(struct b43_wldev *dev, u8 *_txhdr,
 
 	if (READ_ONCE(ac->thermal_throttled))
 		b43_txhdr_ac_one_stream(rates);
+	if (!b43_tx_rate_get(dev, info, &rates[0], &t[0]))
+		return -EINVAL;
 	for (n = 1; n < B43_TXH_AC_RATES; n++) {
-		const struct ieee80211_tx_rate *t = &rates[n];
-
-		if (!t->count || !b43_txhdr_ac_rate_ok(sband, t) ||
-		    (c->vht && !(t->flags & IEEE80211_TX_RC_VHT_MCS)))
+		if (!rates[n].count ||
+		    !b43_tx_rate_get(dev, info, &rates[n], &t[n]) ||
+		    (t[0].enc == B43_TX_VHT && t[n].enc != B43_TX_VHT))
 			break;
 	}
 	for (i = n; i < IEEE80211_TX_MAX_RATES; i++)
@@ -1058,7 +1122,7 @@ static int b43_generate_txhdr_ac(struct b43_wldev *dev, u8 *_txhdr,
 		mac_lo |= B43_TXH_AC_MAC_AMPDU;
 	else
 		info->flags &= ~IEEE80211_TX_CTL_AMPDU;
-	if (c->vht && !(mac_lo & B43_TXH_AC_MAC_AMPDU))
+	if (t[0].enc == B43_TX_VHT && !(mac_lo & B43_TXH_AC_MAC_AMPDU))
 		mac_hi |= B43_TXH_AC_MAC_SVHT;
 
 	txhdr->mac_ctl_lo = cpu_to_le16(mac_lo);
@@ -1077,11 +1141,10 @@ static int b43_generate_txhdr_ac(struct b43_wldev *dev, u8 *_txhdr,
 	txhdr->seq = wlhdr->seq_ctrl;
 
 	for (i = 0; i < n; i++)
-		b43_txhdr_ac_block(ac, sband, &txhdr->rate[i], &rates[i], ldpc,
-				   len);
-	if (c->ht || c->vht)
+		b43_txhdr_ac_block(ac, &txhdr->rate[i], &t[i], len);
+	if (t[0].enc == B43_TX_HT || t[0].enc == B43_TX_VHT)
 		b43_txhdr_ac_mcs_duration(dev, skb, info,
-			b43_txhdr_ac_ref_rate(sband, &rates[n - 1]));
+					  b43_tx_ref_rate(&t[n - 1]));
 
 	if (c->rts || c->cts) {
 		u8 code;
@@ -1120,13 +1183,11 @@ static int b43_generate_txhdr_fw4(struct b43_wldev *dev,
 	struct b43_plcp_hdr6 *plcp_main;
 	int use_encryption = !!info->control.hw_key;
 	__le16 fctl = wlhdr->frame_control;
-	struct ieee80211_rate *fbrate;
-	u8 rate, rate_fb;	/* Legacy 500 kbps units, or MCS index. */
-	int rate_ofdm, rate_fb_ofdm;
-	const struct ieee80211_tx_rate *rc_fb;
-	bool rate_ht, rate_fb_ht = false;
-	bool ht, short_preamble, short_preamble_fb, sgi, sgi_fb;
-	bool bw40, bw40_fb, stbc, stbc_fb;
+	const struct ieee80211_tx_rate *rates = info->control.rates;
+	/* Without a fallback stage, retry at the primary rate. */
+	const struct ieee80211_tx_rate *t_fb = &rates[rates[1].idx < 0 ? 0 : 1];
+	struct b43_tx_rate r, fb;
+	bool ht;
 	unsigned int fes = 0, fes_fb = 0, next_len = 0;
 	struct ieee80211_vif *vif = info->control.vif;
 	unsigned int plcp_fragment_len, ppdu_len;
@@ -1146,52 +1207,25 @@ static int b43_generate_txhdr_fw4(struct b43_wldev *dev,
 
 	memset(txhdr, 0, sizeof(*txhdr));
 
-	rate_ht = c.ht;
-	rate = rate_ht ? info->control.rates[0].idx : c.rate;
-	rate_ofdm = !rate_ht && b43_is_ofdm_rate(rate);
-	fbrate = c.fbrate;
-	rate_fb = c.rate_fb;
-	rc_fb = &info->control.rates[info->control.rates[1].idx < 0 ? 0 : 1];
-	if (info->control.rates[1].idx >= 0 &&
-	    (rc_fb->flags & IEEE80211_TX_RC_MCS)) {
-		rate_fb = rc_fb->idx;
-		rate_fb_ht = true;
-	} else if (rate_ht && info->control.rates[1].idx < 0) {
-		/* Without a fallback stage, retry at the primary MCS. */
-		rate_fb = rate;
-		rate_fb_ht = true;
-	}
-	rate_fb_ofdm = !rate_fb_ht && b43_is_ofdm_rate(rate_fb);
-	ht = rate_ht || rate_fb_ht;
-	/* A-MPDU members use the primary HT rate; the caller checks limits. */
-	if (ampdu && (!rate_ht || !c.ack))
+	if (!b43_tx_rate_get(dev, info, &rates[0], &r) ||
+	    !b43_tx_rate_get(dev, info, t_fb, &fb))
 		return -EINVAL;
-	short_preamble = !rate_ht && c.short_preamble;
-	short_preamble_fb = !rate_fb_ht && !rate_fb_ofdm &&
-			    rate_fb != B43_CCK_RATE_1MB &&
-			    (rc_fb->flags & IEEE80211_TX_RC_USE_SHORT_PREAMBLE);
-	/* Neither applies to legacy rates, as short preambles do not to HT. */
-	sgi = rate_ht &&
-	      (info->control.rates[0].flags & IEEE80211_TX_RC_SHORT_GI);
-	sgi_fb = rate_fb_ht && (rc_fb->flags & IEEE80211_TX_RC_SHORT_GI);
-	bw40 = rate_ht && b43_is_40mhz(dev) &&
-	       (info->control.rates[0].flags & IEEE80211_TX_RC_40_MHZ_WIDTH);
-	bw40_fb = rate_fb_ht && b43_is_40mhz(dev) &&
-		  (rc_fb->flags & IEEE80211_TX_RC_40_MHZ_WIDTH);
-	stbc = b43_tx_stbc(dev, info, rate, rate_ht);
-	stbc_fb = b43_tx_stbc(dev, info, rate_fb, rate_fb_ht);
+	ht = r.enc == B43_TX_HT || fb.enc == B43_TX_HT;
+	/* A-MPDU members use the primary HT rate; the caller checks limits. */
+	if (ampdu && (r.enc != B43_TX_HT || !c.ack))
+		return -EINVAL;
 
-	if (rate_ht)
-		txhdr->phy_rate = rate;
-	else if (rate_ofdm)
-		txhdr->phy_rate = b43_plcp_get_ratecode_ofdm(rate);
+	if (r.enc == B43_TX_HT)
+		txhdr->phy_rate = r.rate;
+	else if (r.enc == B43_TX_OFDM)
+		txhdr->phy_rate = r.ofdm->signal;
 	else
-		txhdr->phy_rate = b43_plcp_get_ratecode_cck(rate);
+		txhdr->phy_rate = b43_plcp_get_ratecode_cck(r.rate);
 	txhdr->mac_frame_ctl = wlhdr->frame_control;
 	memcpy(txhdr->tx_receiver, wlhdr->addr1, ETH_ALEN);
 
 	/* Calculate duration for fallback rate */
-	if (ht || (rate_fb == rate) ||
+	if (ht || fb.rate == r.rate ||
 	    (wlhdr->duration_id & cpu_to_le16(0x8000)) ||
 	    (wlhdr->duration_id == cpu_to_le16(0))) {
 		/* If the fallback rate equals the normal rate or the
@@ -1201,7 +1235,8 @@ static int b43_generate_txhdr_fw4(struct b43_wldev *dev,
 	} else {
 		txhdr->dur_fb = ieee80211_generic_frame_duration(
 			dev->wl->hw, info->control.vif, info->band,
-			fragment_len, fbrate);
+			fragment_len,
+			&dev->wl->hw->wiphy->bands[info->band]->bitrates[t_fb->idx]);
 	}
 
 	plcp_fragment_len = fragment_len + FCS_LEN;
@@ -1262,70 +1297,39 @@ static int b43_generate_txhdr_fw4(struct b43_wldev *dev,
 		if (ieee80211_has_morefrags(fctl))
 			next_len = plcp_fragment_len;
 		wlhdr->duration_id = cpu_to_le16(c.ack ?
-			b43_tx_nav(dev, info, rate, rate_ht, bw40,
-				   short_preamble || sgi, next_len, ampdu) : 0);
+			b43_tx_nav(dev, info, &r, next_len, ampdu) : 0);
 		txhdr->dur_fb = cpu_to_le16(c.ack ?
-			b43_tx_nav(dev, info, rate_fb, rate_fb_ht, bw40_fb,
-				   short_preamble_fb || sgi_fb, next_len,
-				   ampdu) : 0);
+			b43_tx_nav(dev, info, &fb, next_len, ampdu) : 0);
 	}
 	/* The first header describes the whole A-MPDU PPDU. Continuation
 	 * PLCP and mixed-mode lengths stay individual. */
 	ppdu_len = ampdu && ampdu->first ? ampdu->len : plcp_fragment_len;
 	plcp_main = b43_txhdr_at(txhdr, fh->tx_plcp);
 	if (fh->tx_ppdu_plcp) {
-		b43_generate_plcp_hdr((struct b43_plcp_hdr4 *)plcp_main,
-				      ppdu_len, rate, rate_ht);
-		if (bw40)
-			plcp_main->raw[0] |= 0x80; /* 40 MHz */
-		if (stbc)
-			plcp_main->raw[3] |= 0x10; /* STC 1 */
-		if (sgi)
-			plcp_main->raw[3] |= 0x80; /* Short GI */
-		if (ampdu && ampdu->first) {
-			plcp_main->raw[3] |= 0x08; /* Aggregation */
+		b43_tx_plcp(&r, ppdu_len, ampdu && ampdu->first, plcp_main);
+		if (ampdu && ampdu->first)
 			put_unaligned_le16(ampdu->preload,
 					   b43_txhdr_at(txhdr, fh->tx_preload));
-		}
 	} else {
-		b43_generate_plcp_hdr((struct b43_plcp_hdr4 *)plcp_main,
-				      plcp_fragment_len, rate, rate_ht);
+		b43_tx_plcp(&r, plcp_fragment_len, false, plcp_main);
 	}
-	b43_generate_plcp_hdr((struct b43_plcp_hdr4 *)(&txhdr->plcp_fb),
-			      plcp_fragment_len, rate_fb, rate_fb_ht);
-	if (bw40_fb)
-		txhdr->plcp_fb.raw[0] |= 0x80; /* 40 MHz */
-	if (stbc_fb)
-		txhdr->plcp_fb.raw[3] |= 0x10; /* STC 1 */
-	if (sgi_fb)
-		txhdr->plcp_fb.raw[3] |= 0x80; /* Short GI */
-	if (rate_ht)
-		txhdr->mimo_modelen = cpu_to_le16(
-			b43_ht_lsig_len(rate, bw40, ppdu_len, sgi, stbc));
-	if (rate_fb_ht)
-		txhdr->mimo_ratelen_fb = cpu_to_le16(
-			b43_ht_lsig_len(rate_fb, bw40_fb, ppdu_len, sgi_fb,
-					stbc_fb));
+	b43_tx_plcp(&fb, plcp_fragment_len, false, &txhdr->plcp_fb);
+	if (r.enc == B43_TX_HT)
+		txhdr->mimo_modelen = cpu_to_le16(b43_tx_lsig_len(&r, ppdu_len));
+	if (fb.enc == B43_TX_HT)
+		txhdr->mimo_ratelen_fb =
+			cpu_to_le16(b43_tx_lsig_len(&fb, ppdu_len));
 	if (ht) {
-		fes = b43_tx_airtime(rate, rate_ht, bw40, stbc,
-				     short_preamble || sgi, ppdu_len,
-				     phy->gmode) +
-		      (c.ack ? b43_tx_nav(dev, info, rate, rate_ht, bw40,
-					  short_preamble || sgi, 0,
-					  ampdu) : 0);
-		fes_fb = b43_tx_airtime(rate_fb, rate_fb_ht, bw40_fb, stbc_fb,
-					short_preamble_fb || sgi_fb,
-					ppdu_len, phy->gmode) +
-			 (c.ack ? b43_tx_nav(dev, info, rate_fb, rate_fb_ht,
-					     bw40_fb,
-					     short_preamble_fb || sgi_fb, 0,
-					     ampdu) : 0);
+		fes = b43_tx_airtime(&r, ppdu_len, phy->gmode) +
+		      (c.ack ? b43_tx_nav(dev, info, &r, 0, ampdu) : 0);
+		fes_fb = b43_tx_airtime(&fb, ppdu_len, phy->gmode) +
+			 (c.ack ? b43_tx_nav(dev, info, &fb, 0, ampdu) : 0);
 	}
 
 	/* Extra Frame Types */
-	if (rate_fb_ht)
+	if (fb.enc == B43_TX_HT)
 		extra_ft |= B43_TXH_EFT_FB_HT;
-	else if (rate_fb_ofdm)
+	else if (fb.enc == B43_TX_OFDM)
 		extra_ft |= B43_TXH_EFT_FB_OFDM;
 	else
 		extra_ft |= B43_TXH_EFT_FB_CCK;
@@ -1340,13 +1344,13 @@ static int b43_generate_txhdr_fw4(struct b43_wldev *dev,
 		txhdr->chan_radio_code = b43_phy_center_channel(dev);
 
 	/* PHY TX Control word */
-	if (rate_ht)
+	if (r.enc == B43_TX_HT)
 		phy_ctl |= B43_TXH_PHY_ENC_HT;
-	else if (rate_ofdm)
+	else if (r.enc == B43_TX_OFDM)
 		phy_ctl |= B43_TXH_PHY_ENC_OFDM;
 	else
 		phy_ctl |= B43_TXH_PHY_ENC_CCK;
-	if (short_preamble)
+	if (r.short_preamble)
 		phy_ctl |= B43_TXH_PHY_SHORTPRMBL;
 
 	switch (b43_ieee80211_antenna_sanitize(dev, 0)) {
@@ -1393,31 +1397,34 @@ static int b43_generate_txhdr_fw4(struct b43_wldev *dev,
 		mac_ctl |= B43_TXH_MAC_40MHZ;
 	if (c.long_frame)
 		mac_ctl |= B43_TXH_MAC_LONGFRAME;
-	if (short_preamble_fb)
+	if (fb.short_preamble)
 		mac_ctl |= B43_TXH_MAC_FB_SHORTPRMBL;
 
 	/* Generate the RTS or CTS-to-self frame */
 	if (protect && (c.rts || c.cts)) {
 		unsigned int len;
 		struct ieee80211_hdr *hdr;
-		int rts_rate, rts_rate_fb;
-		int rts_rate_ofdm, rts_rate_fb_ofdm;
+		struct b43_tx_rate rts, rts_fb;
 		struct b43_plcp_hdr6 *plcp;
 
 		/* mac80211 selects no protection rate for MCS frames. */
-		if (ht)
-			rts_rate = b43_tx_response_rate(dev, info, rate,
-							rate_ht, true);
-		else
-			rts_rate = c.rts_rate;
-		rts_rate_ofdm = b43_is_ofdm_rate(rts_rate);
-		if (ht)
-			rts_rate_fb = b43_tx_response_rate(dev, info, rate_fb,
-							   rate_fb_ht, true);
-		else
-			rts_rate_fb = b43_calc_fallback_rate(rts_rate,
-							     phy->gmode);
-		rts_rate_fb_ofdm = b43_is_ofdm_rate(rts_rate_fb);
+		if (ht) {
+			b43_tx_rate_bss(&rts, b43_tx_response_rate(dev, info,
+								   &r, true),
+					vif);
+			b43_tx_rate_bss(&rts_fb, b43_tx_response_rate(dev, info,
+								      &fb, true),
+					vif);
+		} else {
+			b43_tx_rate_bss(&rts, c.rts_rate, vif);
+			b43_tx_rate_bss(&rts_fb,
+					b43_calc_fallback_rate(c.rts_rate,
+							       phy->gmode),
+					vif);
+		}
+		/* Ahead of a 40 MHz frame, on both halves */
+		rts.bw = r.bw;
+		rts_fb.bw = fb.bw;
 
 		if (c.cts) {
 			struct ieee80211_cts *cts;
@@ -1460,73 +1467,53 @@ static int b43_generate_txhdr_fw4(struct b43_wldev *dev,
 
 		/* Generate the PLCP headers for the RTS/CTS frame */
 		plcp = b43_txhdr_at(txhdr, fh->tx_rts_plcp);
-		b43_generate_plcp_hdr((struct b43_plcp_hdr4 *)plcp,
-				      len, rts_rate, false);
-		plcp = &txhdr->rts_plcp_fb;
-		b43_generate_plcp_hdr((struct b43_plcp_hdr4 *)plcp,
-				      len, rts_rate_fb, false);
+		b43_tx_plcp(&rts, len, false, plcp);
+		b43_tx_plcp(&rts_fb, len, false, &txhdr->rts_plcp_fb);
 
 		hdr = b43_txhdr_at(txhdr, fh->tx_rts_frame);
 		txhdr->rts_dur_fb = hdr->duration_id;
 		if (ht) {
 			/* The HT RTS/CTS frames above carry no duration yet. */
-			bool rts_sp = b43_tx_response_short_preamble(vif,
-								     rts_rate);
-			bool rts_sp_fb =
-				b43_tx_response_short_preamble(vif,
-							       rts_rate_fb);
 			unsigned int sifs = phy->gmode ? 10 : 16;
 			unsigned int nav = sifs + fes;
 			unsigned int nav_fb = sifs + fes_fb;
 
-			if (rts_sp)
+			if (rts.short_preamble)
 				mac_ctl |= B43_TXH_MAC_RTS_SHORTPRMBL;
-			if (rts_sp_fb)
+			if (rts_fb.short_preamble)
 				mac_ctl |= B43_TXH_MAC_RTS_FB_SHORTPRMBL;
 			if (!c.cts) {
-				nav += sifs + b43_tx_airtime(rts_rate, false,
-							     false, false,
-							     rts_sp, 14,
+				nav += sifs + b43_tx_airtime(&rts, 14,
 							     phy->gmode);
-				nav_fb += sifs +
-					  b43_tx_airtime(rts_rate_fb, false,
-							 false, false,
-							 rts_sp_fb, 14,
-							 phy->gmode);
+				nav_fb += sifs + b43_tx_airtime(&rts_fb, 14,
+								phy->gmode);
 			}
 			hdr->duration_id = cpu_to_le16(nav);
 			txhdr->rts_dur_fb = cpu_to_le16(nav_fb);
-			fes = nav + b43_tx_airtime(rts_rate, false, false,
-						   false, rts_sp, len,
-						   phy->gmode);
-			fes_fb = nav_fb + b43_tx_airtime(rts_rate_fb, false,
-							 false, false,
-							 rts_sp_fb, len,
+			fes = nav + b43_tx_airtime(&rts, len, phy->gmode);
+			fes_fb = nav_fb + b43_tx_airtime(&rts_fb, len,
 							 phy->gmode);
 		}
 
-		if (rts_rate_ofdm) {
+		if (rts.enc == B43_TX_OFDM) {
 			extra_ft |= B43_TXH_EFT_RTS_OFDM;
-			txhdr->phy_rate_rts =
-			    b43_plcp_get_ratecode_ofdm(rts_rate);
+			txhdr->phy_rate_rts = rts.ofdm->signal;
 		} else {
 			extra_ft |= B43_TXH_EFT_RTS_CCK;
 			txhdr->phy_rate_rts =
-			    b43_plcp_get_ratecode_cck(rts_rate);
+			    b43_plcp_get_ratecode_cck(rts.rate);
 		}
-		if (rts_rate_fb_ofdm)
+		if (rts_fb.enc == B43_TX_OFDM)
 			extra_ft |= B43_TXH_EFT_RTSFB_OFDM;
 		else
 			extra_ft |= B43_TXH_EFT_RTSFB_CCK;
 
 		if (fill_phy_ctl1) {
-			txhdr->phy_ctl1_rts = cpu_to_le16(
-				b43_generate_tx_phy_ctl1(dev, rts_rate, false,
-							 bw40, false));
-			txhdr->phy_ctl1_rts_fb = cpu_to_le16(
-				b43_generate_tx_phy_ctl1(dev, rts_rate_fb,
-							 false, bw40_fb,
-							 false));
+			txhdr->phy_ctl1_rts =
+				cpu_to_le16(b43_generate_tx_phy_ctl1(dev, &rts));
+			txhdr->phy_ctl1_rts_fb =
+				cpu_to_le16(b43_generate_tx_phy_ctl1(dev,
+								     &rts_fb));
 		}
 	}
 	/* The null delimiters after an A-MPDU member, from byte 5 of the RTS
@@ -1544,12 +1531,9 @@ static int b43_generate_txhdr_fw4(struct b43_wldev *dev,
 	put_unaligned_le16(cookie, b43_txhdr_at(txhdr, fh->tx_cookie));
 
 	if (fill_phy_ctl1) {
-		txhdr->phy_ctl1 = cpu_to_le16(
-			b43_generate_tx_phy_ctl1(dev, rate, rate_ht, bw40,
-						 stbc));
-		txhdr->phy_ctl1_fb = cpu_to_le16(
-			b43_generate_tx_phy_ctl1(dev, rate_fb, rate_fb_ht,
-						 bw40_fb, stbc_fb));
+		txhdr->phy_ctl1 = cpu_to_le16(b43_generate_tx_phy_ctl1(dev, &r));
+		txhdr->phy_ctl1_fb =
+			cpu_to_le16(b43_generate_tx_phy_ctl1(dev, &fb));
 	}
 
 	/* Apply the bitfields */
@@ -1586,13 +1570,10 @@ unsigned int b43_tx_psdu_len(struct sk_buff *skb)
 bool b43_ampdu_tx_fits(struct b43_wldev *dev, struct ieee80211_tx_info *info,
 		       unsigned int ampdu_len)
 {
-	u8 mcs = info->control.rates[0].idx;
-	bool sgi = info->control.rates[0].flags & IEEE80211_TX_RC_SHORT_GI;
-	bool bw40 = b43_is_40mhz(dev) &&
-		(info->control.rates[0].flags & IEEE80211_TX_RC_40_MHZ_WIDTH);
+	struct b43_tx_rate r;
 
-	return b43_ht_lsig_len(mcs, bw40, ampdu_len, sgi,
-			       b43_tx_stbc(dev, info, mcs, true)) <= 4095;
+	return b43_tx_rate_get(dev, info, &info->control.rates[0], &r) &&
+	       b43_tx_lsig_len(&r, ampdu_len) <= 4095;
 }
 
 /* Minimum bytes from one MPDU start to the next for the peer's density
@@ -1600,17 +1581,14 @@ bool b43_ampdu_tx_fits(struct b43_wldev *dev, struct ieee80211_tx_info *info,
 unsigned int b43_ampdu_tx_spacing(struct b43_wldev *dev,
 				  struct ieee80211_tx_info *info, u8 density)
 {
-	u8 mcs = info->control.rates[0].idx;
-	/* Bits per 0.1 us: short GI symbols last 3.6 us instead of 4 us. */
-	unsigned int period = info->control.rates[0].flags &
-			      IEEE80211_TX_RC_SHORT_GI ? 36 : 40;
-	bool bw40 = b43_is_40mhz(dev) &&
-		(info->control.rates[0].flags & IEEE80211_TX_RC_40_MHZ_WIDTH);
+	struct b43_tx_rate r;
 
-	if (!density)
+	if (!density ||
+	    !b43_tx_rate_get(dev, info, &info->control.rates[0], &r))
 		return 0;
-	return DIV_ROUND_UP((1 << density) * b43_ht_ndbps(mcs, bw40) * 10,
-			    8 * 8 * period);
+	/* Bits per 0.1 us: short GI symbols last 3.6 us instead of 4 us. */
+	return DIV_ROUND_UP((1 << density) * b43_tx_ndbps(&r) * 10,
+			    8 * 8 * (r.sgi ? 36 : 40));
 }
 
 static s8 b43_rssi_postprocess(struct b43_wldev *dev,
@@ -2446,6 +2424,7 @@ void b43_tx_resume(struct b43_wldev *dev)
 }
 
 const struct b43_fw_hdr b43_hdr_351 = {
+	.tx_stbc	= true,
 	.gen_txhdr	= b43_generate_txhdr_fw4,
 	.txstatus_poll	= b43_txstatus_poll_fw4,
 	.txstatus_drain	= b43_txstatus_drain_fw4,
@@ -2463,6 +2442,7 @@ const struct b43_fw_hdr b43_hdr_351 = {
 };
 
 const struct b43_fw_hdr b43_hdr_410 = {
+	.tx_stbc	= true,
 	.gen_txhdr	= b43_generate_txhdr_fw4,
 	.txstatus_poll	= b43_txstatus_poll_fw4,
 	.txstatus_drain	= b43_txstatus_drain_fw4,
@@ -2480,6 +2460,7 @@ const struct b43_fw_hdr b43_hdr_410 = {
 };
 
 const struct b43_fw_hdr b43_hdr_598 = {
+	.tx_stbc	= true,
 	.gen_txhdr	= b43_generate_txhdr_fw4,
 	.txstatus_poll	= b43_txstatus_poll_fw4,
 	.txstatus_drain	= b43_txstatus_drain_fw4,
@@ -2507,8 +2488,9 @@ const struct b43_fw_hdr b43_hdr_598 = {
  * path included; not verified, as they are not visible at the bus.
  */
 const struct b43_fw_hdr b43_ac_hdr_784 = {
+	.tx_ldpc	= true,
 	.gen_txhdr	= b43_generate_txhdr_ac,
-	.tx_rate_ok	= b43_txhdr_ac_rate_ok,
+	.tx_rates_cut	= true,
 	.rx_rate	= b43_rx_rate_ac,
 	.txstatus_poll	= b43_txstatus_poll_ac,
 	.txstatus_drain	= b43_txstatus_drain_ac,

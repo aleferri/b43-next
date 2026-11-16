@@ -114,7 +114,7 @@ static void b43_write_template_common(struct b43_wldev *dev,
 	}
 
 	plcp.data = 0;
-	b43_generate_plcp_hdr(&plcp, size + FCS_LEN, rate, false);
+	b43_generate_plcp_hdr(&plcp, size + FCS_LEN, rate);
 
 	for (i = 0; i < total; i += sizeof(u32)) {
 		u32 tmp = 0;

@@ -91,12 +91,6 @@ struct b43_txhdr {
 	} __packed;
 } __packed;
 
-struct b43_tx_legacy_rate_phy_ctl_entry {
-	u8 bitrate;
-	u16 coding_rate;
-	u16 modulation;
-};
-
 /* MAC TX control */
 #define B43_TXH_MAC_RTS_FB_SHORTPRMBL	0x80000000 /* RTS fallback preamble */
 #define B43_TXH_MAC_RTS_SHORTPRMBL	0x40000000 /* RTS main rate preamble */
@@ -278,8 +272,8 @@ size_t b43_txhdr_size(struct b43_wldev *dev)
 }
 
 
-bool b43_txhdr_ac_rate_ok(const struct ieee80211_supported_band *band,
-			  const struct ieee80211_tx_rate *r);
+bool b43_tx_rates_ok(struct b43_wldev *dev,
+		     const struct ieee80211_tx_info *info);
 bool b43_txstatus_mpdu_acked(const struct b43_txstatus *status,
 			     const struct sk_buff *skb);
 /* A-MPDU membership of one generated TX header. */
@@ -474,7 +468,7 @@ u8 b43_plcp_get_ratecode_cck(const u8 bitrate);
 u8 b43_plcp_get_ratecode_ofdm(const u8 bitrate);
 
 void b43_generate_plcp_hdr(struct b43_plcp_hdr4 *plcp,
-			   const u16 octets, const u8 bitrate, bool ht);
+			   const u16 octets, const u8 bitrate);
 
 void b43_rx(struct b43_wldev *dev, struct sk_buff *skb, const void *_rxhdr);
 void b43_rx_amsdu_free(struct b43_wldev *dev);
