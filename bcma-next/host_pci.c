@@ -173,9 +173,6 @@ static int bcmn_host_pci_probe(struct pci_dev *dev,
 	if (err)
 		return err;
 
-	err = pcim_request_all_regions(dev, "bcma-next-pci-bridge");
-	if (err)
-		return err;
 	pci_set_master(dev);
 
 	/* Disable the RETRY_TIMEOUT register (0x41) to keep
@@ -193,9 +190,9 @@ static int bcmn_host_pci_probe(struct pci_dev *dev,
 	bus->dev = &dev->dev;
 
 	/* Map MMIO */
-	bus->mmio = pcim_iomap(dev, 0, 0);
-	if (!bus->mmio)
-		return -ENOMEM;
+	bus->mmio = pcim_iomap_region(dev, 0, "bcma-next-pci-bridge");
+	if (IS_ERR(bus->mmio))
+		return PTR_ERR(bus->mmio);
 
 	/* Host specific */
 	bus->host_pci = dev;

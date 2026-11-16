@@ -77,7 +77,7 @@ static int ssbn_pcihost_probe(struct pci_dev *dev,
 	err = pcim_enable_device(dev);
 	if (err)
 		return err;
-	err = pcim_request_all_regions(dev, dev_driver_string(&dev->dev));
+	err = pcim_request_region(dev, 0, dev_driver_string(&dev->dev));
 	if (err)
 		return err;
 	pci_set_master(dev);
