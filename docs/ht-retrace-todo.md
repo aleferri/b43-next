@@ -134,15 +134,56 @@ two-word TX status on the R6400 v1 shows (Erik's traffic capture, 0x170
 and 0x174 only), and the HT-PHY takes the BCM43227's HT path in it, TX and
 RX (`b43_ht_enabled()`). Not tried on hardware.
 
+## TX A-MPDU and the TX header
+
+Erik's `txh-ch11` capture (2026-11-16, not in the traces repository yet)
+records the TX descriptors wl posts, header included, on ch 11 at 20 MHz,
+WPA2 with one mt76 station: a ping, then iperf3 both ways. The header is
+the pre-AC one, 112 bytes and the PLCP, as `b43_hdr_598`.
+
+wl builds the A-MPDUs in the driver, as brcmsmac and b43 for the BCM43227
+(`ampdu.c`), and sends every data frame to the station in one, alone or
+not:
+
+- MAC TX control 0x020f on the first member, 0x0403 on the others, 0x0603
+  on the last, 0x060f on one alone: RTS and the first MSDU on the first
+  member only;
+- the first PLCP carries the whole A-MPDU (each member padded to 4 bytes
+  after a 4-byte delimiter, the last not padded) and the aggregation bit;
+  the others their own length, without it;
+- the preload, the null delimiters (byte 5 of the RTS fallback PLCP),
+  `MaxNMpdus`, `MaxABytes_*`, `MinMBytes` and `AmpduSeqCtl` are 0: b43's
+  preload starts at 0, and at MCS 23 with 1554-byte members no delimiter
+  is needed;
+- one TX status per A-MPDU, the first member's cookie with 0x20, then the
+  bitmap package; the status's sequence is the last member's less 63.
+
+The TX FIFOs are wl's (`b43_txfifo_init_ht()`): BK/BE/VI/VO/BCMC/ATIM
+150/223/223/21/17/5 blocks.
+
+Open, from the same capture:
+
+- PHY TX control word 1: 0x0032 at MCS 23 with the short GI, 0x0022 at its
+  fallback MCS 20, 0x0822 on the RTS at 24 Mbit/s. b43 writes the
+  brcmsmac layout (0x9c1a at MCS 23). Three values do not decide the
+  HT-PHY's; a capture at fixed rates would.
+- The mixed-mode length of the first header: wl computes it without the
+  short GI and with a long training field per stream (the first of a
+  1554-byte pair 114 where b43 writes 108), the others with it, as
+  brcmsmac's `ampdu.c` rebuilds the rate from the PLCP. Fallback lengths
+  match brcmsmac's `brcms_c_calc_lsig_len()`.
+- wl sends MCS 23 with the short GI and LDPC, MCS 20 with LDPC, and an
+  RTS at 24 Mbit/s before every A-MPDU; b43 sends BCC.
+
 Not there yet:
 
 - 40 MHz. The PHY's init at 40 is scored as at 20, but b43 sets the core's
   width at the PHY init only (`b43_phy_ht_width()`), so the BSS start's.
   A station's channel at 40, or another width on a running BSS, needs it
   without one, which no capture shows.
-- A-MPDU. wl sets the shared memory as brcmsmac does for it (`MIMO_MAXSYM`
-  0xffff, `WATCHDOG_8TU` 10); how the 928 sends and acknowledges one needs
-  a traffic capture.
+- RX A-MPDU. b43 refuses the block ack sessions on RX: where the 928
+  takes the transmitter address of its block acks is not known, the
+  BCM43227's template RAM (`B43_RAM_BA_TA`) is not shown on the BCM4331.
 - A-MSDUs over 3839 bytes. wl announces 7935 and writes `MAXRXFRMLEN`
   0x0800, so its microcode would hand them over in pieces, as the
   BCM43227's (`b43_rx_amsdu()`, under `b43_nphy_ht_enabled()`): a traffic
