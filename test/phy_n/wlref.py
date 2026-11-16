@@ -1,17 +1,17 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: GPL-2.0
-"""wl's calibration results and TX power values, in the report's format.
+"""wl's calibration results and TX power values, as b43's statistics.
 
     wlref.py OPS FIRST:LAST
 
 OPS is a capture's mmio2ops output and FIRST:LAST a window of it, e.g. the
-`up` window gates.sh uses. For each key of b43's calibration report (the
-calreport debugfs file, `N_CALREPORT=1` in the harness) it prints the value
-wl left in the window: the last value written (or read back, for the
-read-only power control status), so the two can be diffed line by line.
-The values wl only computes in its software state (the pre-calibration
-deltas, the idle TSSI it keeps) are taken from the operations that carry
-them.
+`up` window gates.sh uses. For the TX gain pre-calibration's decisions and
+for each readback record of b43's calibration statistics (the cal/ debugfs
+directory, `N_CALSTAT=1` in the harness) it prints the value wl left in the
+window: the last value written (or read back, for the read-only power
+control status), so the two can be diffed line by line. The values wl only
+computes in its software state (the pre-calibration deltas, the idle TSSI it
+keeps) are taken from the operations that carry them.
 """
 import re
 import sys
@@ -98,47 +98,54 @@ def main():
         grp = rs[i:i + 5]
         if grp[0]['g'] == 0 and all(r['g'] for r in grp[1:]):
             idle = (s6(grp[0]['r'][0][1]), s6(grp[0]['r'][1][1]))
+            print('cal=txgain entry=idle stage=evaluated idle=%d,%d' % idle)
             parts = []
             for r in grp[1:]:
                 core = 0 if r['bb'] == 0x4000 else 1
                 vals = [s6(v) for a, v in r['r'] if a == (0x219, 0x21a)[core]]
                 parts.append((core, (r['g'] >> 3) & 31,
                               sum(vals) - len(vals) * idle[core]))
+            for core in (0, 1):
+                tried = [p for p in parts if p[0] == core]
+                for c, pad, delta in tried:
+                    print('cal=txgain entry=delta stage=evaluated core=%u '
+                          'pad=%u delta=%d' % (c, pad, delta))
+                best = min(tried, key=lambda p: abs(p[2] - 200))
+                print('cal=txgain entry=best stage=evaluated core=%u pad=%u' %
+                      (core, best[1]))
             # the gain the calibration runs at: the first table 7 0x110
             # write after the group's last round
             ri = rounds.index(grp[-1]) + 1
             g = next((v for k, v in t7_after if k >= ri and v != grp[1]['g']
                       and v != grp[2]['g'] or (k >= ri and v in
                       (grp[1]['g'], grp[2]['g']))), 0)
-            print('N-PHY cal: precal idle=%d,%d core0 pad%u=%d pad%u=%d '
-                  'core1 pad%u=%d pad%u=%d gain=0x%04x' % (
-                      idle + tuple(x for p in parts for x in p[1:]) + (g,)))
+            print('cal=txgain entry=gain stage=computed gain=%04x' % g)
             break
 
     # the ladder's 100 % entry is the calibration multiplier of the core
-    print('N-PHY cal: orig_pwr_idx=%u,%u txcal_bbmult=0x%04x' % (
-        (first_stat.get(0x1ed, 0) >> 8) & 0x7f,
-        (first_stat.get(0x1ee, 0) >> 8) & 0x7f,
-        (tbl.get((15, 17), 0) >> 8) * 0x101))
-    print('N-PHY cal: txiqlo tbl15[80..90]= ' +
-          ' '.join('%04x' % tbl.get((15, o), 0) for o in range(80, 91)))
-    print('N-PHY cal: rxiq a0=%04x b0=%04x a1=%04x b1=%04x' %
+    print('cal=txiqlo entry=state stage=readback '
+          'orig_pwr_idx=%u,%u txcal_bbmult=%04x tbl15_80=%s' % (
+              (first_stat.get(0x1ed, 0) >> 8) & 0x7f,
+              (first_stat.get(0x1ee, 0) >> 8) & 0x7f,
+              (tbl.get((15, 17), 0) >> 8) * 0x101,
+              ','.join('%04x' % tbl.get((15, o), 0) for o in range(80, 91))))
+    print('cal=rxiq entry=comp stage=readback '
+          'a0=%04x b0=%04x a1=%04x b1=%04x' %
           tuple(phy.get(a, 0) for a in (0x9a, 0x9b, 0x9c, 0x9d)))
-    print('N-PHY cal: rssi radio=%04x,%04x phy= %s' % (
+    print('cal=rssi entry=cache stage=readback radio=%04x,%04x phy=%s' % (
         rad.get(0x0b4, 0), rad.get(0x139, 0),
-        ' '.join('%04x' % phy.get(a, 0) for a in RSSI_PHY)))
-    print('N-PHY cal: txpctl cmd=%04x n=%04x itssi=%04x tpwr=%04x bidx=%04x '
-          'stat=%04x,%04x' % tuple(phy.get(a, 0) for a in
-                                   (0x1e7, 0x1e8, 0x1e9, 0x1ea, 0x1eb,
-                                    0x1ed, 0x1ee)))
-    print('N-PHY cal: ppr adj_pwr_tbl=' + ','.join(
-        '%x' % (tbl.get((26, o), 0) & 0xff) for o in range(64, 148)))
-    chipctl = cc.get(0x28, 0)
+        ','.join('%04x' % phy.get(a, 0) for a in RSSI_PHY)))
+    print('cal=txpwr entry=pctl stage=readback cmd=%04x n=%04x itssi=%04x '
+          'tpwr=%04x bidx=%04x stat=%04x,%04x' % tuple(
+              phy.get(a, 0) for a in (0x1e7, 0x1e8, 0x1e9, 0x1ea, 0x1eb,
+                                      0x1ed, 0x1ee)))
+    print('cal=txpwr entry=adj stage=readback adj_pwr_tbl=' + ','.join(
+        '%02x' % tbl.get((26, o), 0) for o in range(64, 148)))
     pmu1 = pmu.get(1, 0)
-    print('N-PHY cal: chipctl=%08x (bit6 %u) pmu_chipctl1=%08x '
-          '(extpa c0 %u c1 %u)' % (chipctl, bool(chipctl & 0x40), pmu1,
-                                   bool(pmu1 & (1 << 13)),
-                                   bool(pmu1 & (1 << 8))))
+    print('cal=txpwr entry=chipctl stage=readback chipctl=%08x '
+          'pmu_chipctl1=%08x extpa=%u,%u' % (
+              cc.get(0x28, 0), pmu1, bool(pmu1 & (1 << 13)),
+              bool(pmu1 & (1 << 8))))
 
 
 if __name__ == '__main__':

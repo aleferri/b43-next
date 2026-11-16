@@ -92,17 +92,23 @@ Every run prints, on stderr:
   neither the TX I/Q-LO nor the RX I/Q calibration. An experiment, not
   b43's flow; see the todo.
 
-## The calibration report
+## The calibration statistics
 
-`N_CALREPORT=1` runs the driver's calibration report (the `calreport`
-debugfs file of a `B43_NEXT_CALREPORT=y` build) and prints it on stderr; the report reads in peek mode, from
-the mirror of the driver's writes, and changes neither the stream nor the
-reads served. `wlref.py OPS FIRST:LAST` prints the same keys from wl's
-operations in the window, so the two diff line by line:
+`N_CALSTAT=1` keeps the driver's calibration statistics (the `cal/` debugfs
+directory of a `B43_NEXT_CALSTAT=y` build) with `calstat.c` as the driver
+does, and prints them on stderr at the end of the flow, a slot a line in the
+order they were reported, without sequence number, run and channel. The
+readback entries read in peek mode, from the mirror of the driver's writes,
+and change neither the stream nor the reads served. `wlref.py OPS
+FIRST:LAST` prints wl's values in the window for the readback entries it
+can rebuild and the TX gain pre-calibration's decisions, so the two diff
+line by line:
 
 ```sh
-N_CALREPORT=1 N_HWPCTL=1 ./n-trace full OPS FIRST LAST -o /tmp/t 2> /tmp/b43.rep
+N_CALSTAT=1 N_HWPCTL=1 ./n-trace full OPS FIRST LAST -o /tmp/t 2> /tmp/b43.rep
 ./wlref.py OPS FIRST:LAST > /tmp/wl.rep
+grep -E 'cal=txgain entry=(idle|delta|best|gain) |entry=(state|comp|cache|pctl|adj|chipctl) stage=readback' /tmp/b43.rep |
+	grep -v '^cal=txgain entry=state' | diff - /tmp/wl.rep
 ```
 
 In the harness b43's calibration results are computed from wl's own
@@ -113,7 +119,7 @@ hardware. Three keys are not b43's in the harness:
   harness has no value for them;
 - the RSSI calibration's radio values come from read-backs of the radio,
   which the harness serves from wl's reads: b43's writes to 0x0b4/0x139
-  are wl's (0x4a/0x4b) though the report prints others;
+  are wl's (0x4a/0x4b) though the statistics print others;
 - `TXPCTL_CMD`: b43 enables the control (0xe019), then reads the register
   back for its "recover state" step, and gets wl's read there, so the
   mirror ends at 0.
@@ -122,7 +128,7 @@ hardware. Three keys are not b43's in the harness:
 
 `N_NVRAM` (the board's nvram file), `N_CHANNEL` (1-14, default 6),
 `N_PERICAL`, `N_MAXPWR` (the channel's regulatory limit, 30 dBm), `N_HWPCTL`
-(the hwpctl module parameter), `N_CALREPORT=1` (above), `N_DEBUG=1` (each
+(the hwpctl module parameter), `N_CALSTAT=1` (above), `N_DEBUG=1` (each
 read past the window on stderr), `N_FN=1`
 (function markers, `----FN:name----` and `----/FN:name----`, in the trace;
 the binary must be built with `make N_FN=1`, which instruments the

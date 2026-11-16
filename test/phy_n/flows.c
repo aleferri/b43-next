@@ -7,9 +7,8 @@
  * modified.
  */
 #include "n_trace.h"
-/* The calibration report reads without disturbing the stream: peek mode */
-#define B43_NPHY_REPORT_BEGIN(dev)	n_peek(1)
-#define B43_NPHY_REPORT_END(dev)	n_peek(0)
+/* The statistics' readback does not disturb the stream: peek mode */
+#define B43_CAL_PEEK(dev, on)	n_peek(on)
 #include "phy_n.c"
 
 static struct ieee80211_channel chan = {
@@ -115,23 +114,27 @@ static void core_write32(struct bcmn_device *c, u16 offset, u32 value)
 		n_log("unreached: bcma write32 of the 802.11 core");
 }
 
-/* The calibration report of a build with CONFIG_B43_NEXT_CALREPORT */
-static int calreport;
+/*
+ * The calibration statistics of a build with CONFIG_B43_NEXT_CALSTAT, on with
+ * N_CALSTAT=1: calstat.c keeps them as in the driver, and they are printed
+ * at the end of the flow without sequence numbers, runs and channels, as
+ * wlref.py prints wl's.
+ */
+static struct b43_calstat calstat;
+static struct b43_cal_ring cal_rings[ARRAY_SIZE(b43_nphy_cal_entries)];
+static u8 cal_mem[64 * 1024];
 
-bool b43_calreport_on(struct b43_wldev *dev)
+static void calstat_print(void)
 {
-	return calreport;
-}
+	unsigned int entry, age;
+	char line[1024];
+	u32 seq = 0;
 
-void b43_calreport(struct b43_wldev *dev, const char *fmt, ...)
-{
-	char line[512];
-	va_list ap;
-
-	va_start(ap, fmt);
-	vscnprintf(line, sizeof(line), fmt, ap);
-	va_end(ap);
-	n_report(line);
+	while (b43_cal_next(&calstat, &seq, &entry, &age)) {
+		b43_cal_format(&calstat, entry, age, 0, line, sizeof(line) - 1);
+		strcat(line, "\n");
+		n_report(line);
+	}
 }
 
 void b43info(struct b43_wl *w, const char *fmt, ...)
@@ -147,7 +150,6 @@ void b43info(struct b43_wl *w, const char *fmt, ...)
 
 static struct b43_wldev *setup(void)
 {
-	calreport = n_env("N_CALREPORT", 0);
 	chan.hw_value = n_env("N_CHANNEL", 6);
 	chan.center_freq = 2407 + 5 * chan.hw_value;
 	/* The regulatory limit: the US one at 2.4 GHz, 30 dBm, by default */
@@ -210,6 +212,16 @@ static struct b43_wldev *setup(void)
 	 * RX I/Q calibration): an experiment, not b43's flow.
 	 */
 	phy_n.perical = n_env("N_PERICAL", phy_n.perical);
+
+	if (n_env("N_CALSTAT", 0)) {
+		b43_calstat_setup(&calstat, &wldev, b43_nphy_cal_entries,
+				  ARRAY_SIZE(b43_nphy_cal_entries), cal_rings);
+		if (calstat.size > sizeof(cal_mem))
+			n_log("calstat: cal_mem too small");
+		else
+			b43_calstat_start(&calstat, cal_mem);
+		wldev.calstat = &calstat;
+	}
 	return &wldev;
 }
 
@@ -233,6 +245,7 @@ int n_run_flow(const char *name)
 				      B43_TXPWR_IGNORE_TSSI);
 	} else
 		return -1;
+	calstat_print();
 	return 0;
 }
 

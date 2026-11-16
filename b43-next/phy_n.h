@@ -970,11 +970,6 @@ struct b43_phy_n {
 	u16 init_cal_freq;
 	/* The pre-calibration set the TSSI path up: leave its radio routing */
 	bool tssi_route_kept;
-	/* The TX gain pre-calibration of radio 2057 rev 14, for the report */
-	s8 precal_idle[2];
-	u8 precal_pad[2][2];
-	s16 precal_delta[2][2];
-	u16 precal_gain;
 
 	u8 mphase_cal_phase_id;
 	u16 mphase_txcal_cmdidx;

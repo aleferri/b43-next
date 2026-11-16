@@ -22,7 +22,7 @@ KFLAGS := -nostdinc -I$(REPO)/b43-next -I$(REPO) $(KINC) -D__KERNEL__ -DMODULE \
           -include $(K)/include/linux/kconfig.h \
           -include $(K)/include/linux/compiler_types.h \
           -DCONFIG_B43_NEXT_BCMA=1 -DCONFIG_B43_NEXT_PHY_N=1 \
-          -DCONFIG_B43_NEXT_CALREPORT=1 \
+          -DCONFIG_B43_NEXT_CALSTAT=1 \
           -O2 -fno-strict-aliasing -fno-common -std=gnu11 \
           -Wall -Werror -Wno-pointer-sign -Wno-unused-function \
           -Wno-address-of-packed-member \
@@ -38,7 +38,8 @@ KFLAGS += $(if $(shell grep -sw 'define kzalloc_flex' $(K)/include/linux/slab.h)
 UFLAGS := -O2 -g -Wall -Werror -std=gnu11
 
 # flows.c includes phy_n.c; the others are linked as they are.
-DRIVER := tables_nphy.c radio_2057.c radio_2056.c radio_2055.c phy_common.c ppr.c
+DRIVER := tables_nphy.c radio_2057.c radio_2056.c radio_2055.c phy_common.c ppr.c \
+	  calstat.c
 
 OBJS := $(patsubst %.c,$(B)/%.o,$(DRIVER)) $(B)/cordic.o $(B)/int_sqrt.o \
 	$(B)/flows.o $(B)/trace.o
