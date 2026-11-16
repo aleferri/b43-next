@@ -5724,6 +5724,14 @@ static int b43_switch_band(struct b43_wldev *dev,
 
 	if (phy->type == B43_PHYTYPE_AC)
 		return b43_ac_switch_band(dev, gmode);
+	/*
+	 * The HT-PHY's tables do not survive the PHY reset above: without
+	 * a full init its tables stay at their reset values on the new band,
+	 * table 9 among them (at 5 GHz an Apple BCM4331 then reports every
+	 * frame about 26 dB weaker).
+	 */
+	if (phy->type == B43_PHYTYPE_HT)
+		phy->do_full_init = true;
 	b43_phy_init(dev);
 
 	return 0;
