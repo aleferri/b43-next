@@ -200,7 +200,7 @@ static const struct b206x_init_tab_entry b2062_init_tab[] = {
 	{ .offset = B2062_S_RFPLL_CTL11, .value_a = 0x0008, .value_g = 0x0008, .flags = B206X_FLAG_A | B206X_FLAG_G, },
 	{ .offset = B2062_S_RFPLL_CTL12, .value_a = 0x0033, .value_g = 0x0033, .flags = B206X_FLAG_A | B206X_FLAG_G, },
 	{ .offset = B2062_S_RFPLL_CTL13, .value_a = 0x000A, .value_g = 0x000A, .flags = B206X_FLAG_A | B206X_FLAG_G, },
-	{ .offset = B2062_S_RFPLL_CTL14, .value_a = 0x0006, .value_g = 0x0006, .flags = B206X_FLAG_A | B206X_FLAG_G, },
+	{ .offset = B2062_S_RFPLL_CTL14, .value_a = 0x0006, .value_g = 0x0016, .flags = B206X_FLAG_A | B206X_FLAG_G, },
 	/* { .offset = B2062_S_RFPLL_CTL15, .value_a = 0x0000, .value_g = 0x0000, .flags = 0, }, */
 	/* { .offset = B2062_S_RFPLL_CTL16, .value_a = 0x0000, .value_g = 0x0000, .flags = 0, }, */
 	/* { .offset = B2062_S_RFPLL_CTL17, .value_a = 0x0000, .value_g = 0x0000, .flags = 0, }, */
