@@ -19,6 +19,7 @@
 #include "lo.h"
 #include "main.h"
 #include "wa.h"
+#include "calstat.h"
 
 #include <linux/bitrev.h>
 #include <linux/slab.h>
@@ -460,6 +461,7 @@ static void b43_calc_nrssi_offset(struct b43_wldev *dev)
 	v47F = (s16) ((b43_phy_read(dev, 0x047F) >> 8) & 0x003F);
 	if (v47F >= 0x20)
 		v47F -= 0x40;
+	b43_cal_report(dev, G_CAL_NRSSI_V47F, 0, -1, v47F);
 	if (v47F == 31) {
 		for (i = 7; i >= 4; i--) {
 			b43_radio_write16(dev, 0x007B, i);
@@ -468,6 +470,7 @@ static void b43_calc_nrssi_offset(struct b43_wldev *dev)
 			    (s16) ((b43_phy_read(dev, 0x047F) >> 8) & 0x003F);
 			if (v47F >= 0x20)
 				v47F -= 0x40;
+			b43_cal_report(dev, G_CAL_NRSSI_V47F, 0, i, v47F);
 			if (v47F < 31 && saved == 0xFFFF)
 				saved = i;
 		}
@@ -503,6 +506,7 @@ static void b43_calc_nrssi_offset(struct b43_wldev *dev)
 		v47F = (s16) ((b43_phy_read(dev, 0x047F) >> 8) & 0x003F);
 		if (v47F >= 0x20)
 			v47F -= 0x40;
+		b43_cal_report(dev, G_CAL_NRSSI_V47F, 1, -1, v47F);
 		if (v47F == -32) {
 			for (i = 0; i < 4; i++) {
 				b43_radio_write16(dev, 0x007B, i);
@@ -512,6 +516,7 @@ static void b43_calc_nrssi_offset(struct b43_wldev *dev)
 					   0x003F);
 				if (v47F >= 0x20)
 					v47F -= 0x40;
+				b43_cal_report(dev, G_CAL_NRSSI_V47F, 1, i, v47F);
 				if (v47F > -31 && saved == 0xFFFF)
 					saved = i;
 			}
@@ -520,6 +525,7 @@ static void b43_calc_nrssi_offset(struct b43_wldev *dev)
 		} else
 			saved = 0;
 	}
+	b43_cal_report(dev, G_CAL_NRSSI_OFFSET, saved);
 	b43_radio_write16(dev, 0x007B, saved);
 
 	if (phy->rev >= 6) {
@@ -565,6 +571,7 @@ static void b43_calc_nrssi_slope(struct b43_wldev *dev)
 
 	if (phy->radio_rev >= 9)
 		return;
+	b43_cal_begin(dev, B43_CAL_NRSSI);
 	if (phy->radio_rev == 8)
 		b43_calc_nrssi_offset(dev);
 
@@ -652,6 +659,7 @@ static void b43_calc_nrssi_slope(struct b43_wldev *dev)
 	nrssi1 = (s16) ((b43_phy_read(dev, 0x047F) >> 8) & 0x003F);
 	if (nrssi1 >= 0x0020)
 		nrssi1 -= 0x0040;
+	b43_cal_report(dev, G_CAL_NRSSI_SLOPE_SAMPLES, nrssi0, nrssi1);
 	if (nrssi0 == nrssi1)
 		gphy->nrssislope = 0x00010000;
 	else
@@ -660,6 +668,8 @@ static void b43_calc_nrssi_slope(struct b43_wldev *dev)
 		gphy->nrssi[0] = nrssi1;
 		gphy->nrssi[1] = nrssi0;
 	}
+	b43_cal_report(dev, G_CAL_NRSSI_SLOPE, gphy->nrssislope, gphy->nrssi[0],
+		       gphy->nrssi[1]);
 	if (phy->rev >= 3) {
 		b43_phy_write(dev, 0x002E, backup[10]);
 		b43_phy_write(dev, 0x002F, backup[11]);
@@ -710,11 +720,14 @@ static void b43_calc_nrssi_threshold(struct b43_wldev *dev)
 		tmp16 = b43_nrssi_hw_read(dev, 0x20);
 		if (tmp16 >= 0x20)
 			tmp16 -= 0x40;
+		b43_cal_report(dev, G_CAL_NRSSI_HW20, tmp16);
 		if (tmp16 < 3) {
 			b43_phy_maskset(dev, 0x048A, 0xF000, 0x09EB);
 		} else {
 			b43_phy_maskset(dev, 0x048A, 0xF000, 0x0AED);
 		}
+		b43_cal_report(dev, G_CAL_NRSSI_THRESH,
+			       tmp16 < 3 ? 0x09EB : 0x0AED);
 	} else {
 		if (gphy->interfmode == B43_INTERFMODE_NONWLAN) {
 			a = 0xE;
@@ -749,6 +762,7 @@ static void b43_calc_nrssi_threshold(struct b43_wldev *dev)
 		tmp_u16 |= ((u32) b & 0x0000003F);
 		tmp_u16 |= (((u32) a & 0x0000003F) << 6);
 		b43_phy_write(dev, 0x048A, tmp_u16);
+		b43_cal_report(dev, G_CAL_NRSSI_THRESH_AB, a, b);
 	}
 }
 
@@ -1844,6 +1858,11 @@ static void b43_calc_loopback_gain(struct b43_wldev *dev)
 	gphy->max_lb_gain =
 	    ((loop1_inner_done * 6) - (loop1_outer_done * 4)) - 11;
 	gphy->trsw_rx_gain = trsw_rx * 2;
+	b43_cal_begin(dev, B43_CAL_LO);
+	b43_cal_report(dev, G_CAL_LO_LOOPBACK, loop1_outer_done,
+		       loop1_inner_done);
+	b43_cal_report(dev, G_CAL_LO_LB_GAIN, gphy->max_lb_gain,
+		       gphy->trsw_rx_gain);
 }
 
 static void b43_hardware_pctl_early_init(struct b43_wldev *dev)
@@ -1953,6 +1972,9 @@ static void b43_phy_init_pctl(struct b43_wldev *dev)
 		}
 		b43_dummy_transmission(dev, false, true);
 		gphy->cur_idle_tssi = b43_phy_read(dev, B43_PHY_ITSSI);
+		b43_cal_begin(dev, B43_CAL_IDLE_TSSI);
+		b43_cal_report(dev, G_CAL_IDLE_TSSI, gphy->cur_idle_tssi,
+			       gphy->tgt_idle_tssi);
 		if (B43_DEBUG) {
 			/* Current-Idle-TSSI sanity check. */
 			if (abs(gphy->cur_idle_tssi - gphy->tgt_idle_tssi) >= 20) {
@@ -3032,6 +3054,41 @@ static void b43_gphy_op_pwork_60sec(struct b43_wldev *dev)
 	b43_mac_enable(dev);
 }
 
+static const char *const b43_gphy_cal_gains[] = { "low", "high" };
+
+/* The calibration statistics; LO "loopback" holds where the search stopped */
+B43_CAL_TABLE(b43_gphy_cal_entries) = {
+	B43_CAL_ENTRY(G_CAL_NRSSI_V47F, NRSSI, "v47f", SAMPLED, 16,
+		      B43_CAL_E(gains, b43_gphy_cal_gains), B43_CAL_S(offset),
+		      B43_CAL_S(v47f)),
+	B43_CAL_ENTRY(G_CAL_NRSSI_OFFSET, NRSSI, "offset", COMPUTED, 1,
+		      B43_CAL_U(offset)),
+	B43_CAL_ENTRY(G_CAL_NRSSI_SLOPE_SAMPLES, NRSSI, "slope_samples",
+		      SAMPLED, 1, B43_CAL_S(nrssi0), B43_CAL_S(nrssi1)),
+	B43_CAL_ENTRY(G_CAL_NRSSI_SLOPE, NRSSI, "slope", COMPUTED, 1,
+		      B43_CAL_X(slope, 8), B43_CAL_SV(nrssi, 2)),
+	B43_CAL_ENTRY(G_CAL_NRSSI_HW20, NRSSI, "hw20", SAMPLED, 1,
+		      B43_CAL_S(hw20)),
+	B43_CAL_ENTRY(G_CAL_NRSSI_THRESH, NRSSI, "thresh", COMPUTED, 1,
+		      B43_CAL_X(thresh, 4)),
+	B43_CAL_ENTRY(G_CAL_NRSSI_THRESH_AB, NRSSI, "thresh_ab", COMPUTED, 1,
+		      B43_CAL_S(a), B43_CAL_S(b)),
+	B43_CAL_ENTRY(G_CAL_LO_LOOPBACK, LO, "loopback", EVALUATED, 1,
+		      B43_CAL_U(radio43), B43_CAL_U(rfoverval)),
+	B43_CAL_ENTRY(G_CAL_LO_LB_GAIN, LO, "lb_gain", COMPUTED, 1,
+		      B43_CAL_S(max_lb_gain), B43_CAL_S(trsw_rx_gain)),
+	B43_CAL_ENTRY(G_CAL_LO_PROBE, LO, "probe", SAMPLED, 32,
+		      B43_CAL_S(i), B43_CAL_S(q), B43_CAL_U(feedth)),
+	B43_CAL_ENTRY(G_CAL_LO_REPEAT, LO, "repeat", EVALUATED, 4,
+		      B43_CAL_U(repeat), B43_CAL_S(i), B43_CAL_S(q),
+		      B43_CAL_U(lowest), B43_CAL_S(max_rx_gain)),
+	B43_CAL_ENTRY(G_CAL_LO_CTL, LO, "ctl", COMPUTED, 32,
+		      B43_CAL_U(bbatt), B43_CAL_U(rfatt), B43_CAL_U(padmix),
+		      B43_CAL_S(i), B43_CAL_S(q)),
+	B43_CAL_ENTRY(G_CAL_IDLE_TSSI, IDLE_TSSI, "itssi", SAMPLED, 1,
+		      B43_CAL_S(itssi), B43_CAL_S(target)),
+};
+
 const struct b43_phy_operations b43_phyops_g = {
 	.allocate		= b43_gphy_op_allocate,
 	.free			= b43_gphy_op_free,
@@ -3054,4 +3111,5 @@ const struct b43_phy_operations b43_phyops_g = {
 	.adjust_txpower		= b43_gphy_op_adjust_txpower,
 	.pwork_15sec		= b43_gphy_op_pwork_15sec,
 	.pwork_60sec		= b43_gphy_op_pwork_60sec,
+	B43_CAL_OPS(b43_gphy_cal_entries)
 };

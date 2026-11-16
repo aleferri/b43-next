@@ -206,4 +206,21 @@ u8 * b43_generate_dyn_tssi2dbm_tab(struct b43_wldev *dev,
 struct b43_phy_operations;
 extern const struct b43_phy_operations b43_phyops_g;
 
+/* The entries of the calibration statistics, see b43_gphy_cal_entries[] */
+enum {
+	G_CAL_NRSSI_V47F,
+	G_CAL_NRSSI_OFFSET,
+	G_CAL_NRSSI_SLOPE_SAMPLES,
+	G_CAL_NRSSI_SLOPE,
+	G_CAL_NRSSI_HW20,
+	G_CAL_NRSSI_THRESH,
+	G_CAL_NRSSI_THRESH_AB,
+	G_CAL_LO_LOOPBACK,
+	G_CAL_LO_LB_GAIN,
+	G_CAL_LO_PROBE,
+	G_CAL_LO_REPEAT,
+	G_CAL_LO_CTL,
+	G_CAL_IDLE_TSSI,
+};
+
 #endif /* LINUX_B43_PHY_G_H_ */

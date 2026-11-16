@@ -18,6 +18,7 @@
 #include "lo.h"
 #include "phy_g.h"
 #include "main.h"
+#include "calstat.h"
 
 #include <linux/delay.h>
 #include <linux/sched.h>
@@ -618,6 +619,8 @@ static int lo_probe_possible_loctls(struct b43_wldev *dev,
 			feedth = lo_measure_feedthrough(dev, gphy->lna_gain,
 							gphy->pga_gain,
 							gphy->trsw_rx_gain);
+			b43_cal_report(dev, G_CAL_LO_PROBE, test_loctl.i,
+				       test_loctl.q, feedth);
 			if (feedth < d->lowest_feedth) {
 				memcpy(probe_loctl, &test_loctl,
 				       sizeof(struct b43_loctl));
@@ -676,6 +679,8 @@ static void lo_probe_loctls_statemachine(struct b43_wldev *dev,
 							gphy->trsw_rx_gain);
 		}
 		d.lowest_feedth = feedth;
+		b43_cal_report(dev, G_CAL_LO_PROBE, d.min_loctl.i, d.min_loctl.q,
+			       feedth);
 
 		d.current_state = 0;
 		do {
@@ -696,6 +701,8 @@ static void lo_probe_loctls_statemachine(struct b43_wldev *dev,
 			d.nr_measured++;
 		} while (d.nr_measured < 24);
 		memcpy(loctl, &d.min_loctl, sizeof(struct b43_loctl));
+		b43_cal_report(dev, G_CAL_LO_REPEAT, repeat_cnt, loctl->i,
+			       loctl->q, d.lowest_feedth, *max_rx_gain);
 
 		if (has_loopback_gain(phy)) {
 			if (d.lowest_feedth > 0x1194)
@@ -735,6 +742,7 @@ struct b43_lo_calib *b43_calibrate_lo_setting(struct b43_wldev *dev,
 	u16 txctl_value;
 	u16 pad_mix_gain;
 
+	b43_cal_begin(dev, B43_CAL_LO);
 	saved_regs.old_channel = phy->channel;
 	b43_mac_suspend(dev);
 	lo_measure_setup(dev, &saved_regs);
@@ -758,6 +766,8 @@ struct b43_lo_calib *b43_calibrate_lo_setting(struct b43_wldev *dev,
 
 	lo_measure_restore(dev, &saved_regs);
 	b43_mac_enable(dev);
+	b43_cal_report(dev, G_CAL_LO_CTL, bbatt->att, rfatt->att,
+		       rfatt->with_padmix, loctl.i, loctl.q);
 
 	if (b43_debug(dev, B43_DBG_LO)) {
 		b43dbg(dev->wl, "LO: Calibrated for BB(%u), RF(%u,%u) "
