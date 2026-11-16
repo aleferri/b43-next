@@ -21,7 +21,6 @@
  * B43_AMPDU_TX_RR_LIMIT of them the member uses its fallback rate. */
 #define B43_AMPDU_TX_RETRY_LIMIT	6
 #define B43_AMPDU_TX_RR_LIMIT		2
-#define B43_AMPDU_TX_MAX_MPDUS		32
 
 /*
  * The cores whose A-MPDUs b43 builds: the pre-AC ones with HT, as their
