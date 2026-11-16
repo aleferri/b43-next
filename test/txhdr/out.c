@@ -57,7 +57,7 @@ void txhdr_text(const char *name, const char *text)
 /* Reached from the header formats' other members, never from a header. */
 #define UNEXPECTED(sym) \
 	void sym(void) { fprintf(stderr, "unexpected: " #sym "\n"); abort(); }
-UNEXPECTED(b43_dma_handle_ampdu_txstatus)
+UNEXPECTED(b43_ampdu_txstatus)
 UNEXPECTED(b43_dma_handle_txstatus)
 UNEXPECTED(b43_dma_tx_resume)
 UNEXPECTED(b43_dma_tx_suspend)

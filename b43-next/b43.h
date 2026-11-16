@@ -19,6 +19,7 @@
 #include "lo.h"
 #include "phy_common.h"
 #include "fw_layout.h"
+#include "ampdu.h"
 
 
 #ifdef CONFIG_B43_NEXT_DEBUG
@@ -810,22 +811,6 @@ struct b43_stats {
 	s8 link_noise;
 };
 
-/* TX A-MPDU state of one TID of a station, protected by wl->mutex. */
-#define B43_AMPDU_TX_WINDOW	64
-struct b43_ampdu_tx_tid {
-	bool operational;
-	/* Negotiated reorder window, at most B43_AMPDU_TX_WINDOW. */
-	u8 buf_size;
-	/* Oldest unresolved sequence and the unresolved set relative to it. */
-	u16 win_start;
-	u64 outstanding;
-	/* Driver retransmissions, indexed by sequence modulo the window. */
-	u8 retries[B43_AMPDU_TX_WINDOW];
-	/* Retransmissions and frames taken from mac80211 that wait for the
-	 * next A-MPDU, in sequence order. Empty unless operational. */
-	struct sk_buff_head queue;
-};
-
 /*
  * Per station, in ieee80211_sta::drv_priv: the window of each TID's block
  * ack session on TX, 0 without one.
@@ -834,7 +819,7 @@ struct b43_sta {
 	u8 ampdu_win[IEEE80211_NUM_TIDS];
 	/* Beamforming slot of the station plus one, 0 for none. */
 	u8 txbf_slot;
-	/* TX A-MPDU sessions of the N-PHY cores, b43_dma_tx_ampdu(). */
+	/* The A-MPDUs b43 builds, ampdu.c. */
 	struct b43_ampdu_tx_tid ampdu_tx[IEEE80211_NUM_TIDS];
 	u32 ampdu_tx_max_len;
 	u8 ampdu_tx_density;

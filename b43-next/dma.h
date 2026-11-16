@@ -194,11 +194,6 @@ struct b43_dmadesc_generic {
 					 sizeof(struct b43_plcp_hdr6) + 2 + \
 					 IEEE80211_MAX_MPDU_LEN_VHT_3895)
 
-/* Driver retransmissions of an unacknowledged A-MPDU member; after
- * B43_AMPDU_TX_RR_LIMIT of them the member uses its fallback rate. */
-#define B43_AMPDU_TX_RETRY_LIMIT	6
-#define B43_AMPDU_TX_RR_LIMIT		2
-#define B43_AMPDU_TX_MAX_MPDUS		32
 /* A-MPDUs a ring holds before the next one is built */
 #define B43_AMPDU_TX_MAX_PENDING	2
 /* The bytes an A-MPDU loads into the TX FIFO before it is sent grow by
@@ -359,19 +354,16 @@ void b43_dma_tx_suspend(struct b43_wldev *dev);
 void b43_dma_tx_resume(struct b43_wldev *dev);
 bool b43_dma_tx_empty(struct b43_wldev *dev);
 
-struct b43_ampdu_tx_tid *b43_dma_ampdu_txq(struct ieee80211_txq *txq);
-struct sk_buff *b43_dma_ampdu_tx_dequeue(struct b43_ampdu_tx_tid *t);
-void b43_dma_ampdu_tx_stop(struct b43_wl *wl, struct b43_ampdu_tx_tid *t,
-			   bool drop);
-void b43_dma_ampdu_tx_sta_ps(struct b43_wl *wl, struct ieee80211_sta *sta,
-			     bool asleep);
-void b43_dma_ampdu_tx_sta_drop(struct b43_wl *wl, struct ieee80211_sta *sta);
-void b43_dma_ampdu_tx_purge(struct b43_wl *wl);
-bool b43_dma_ampdu_tx_queued(struct b43_wl *wl);
-int b43_dma_tx_ampdu(struct b43_wldev *dev, struct ieee80211_txq *txq,
-		     struct b43_ampdu_tx_tid *t);
-void b43_dma_handle_ampdu_txstatus(struct b43_wldev *dev,
-				   const struct b43_txstatus *status);
+struct b43_txhdr_ampdu;
+
+unsigned int b43_dma_tx_ampdu_room(struct b43_wldev *dev, u8 queue_prio);
+bool b43_dma_tx_ampdu_pending(struct b43_wldev *dev, u8 queue_prio);
+unsigned int b43_dma_tx_ampdu(struct b43_wldev *dev, u8 queue_prio,
+			      struct sk_buff **skbs,
+			      struct b43_txhdr_ampdu *ampdu, unsigned int n);
+bool b43_dma_ampdu_complete(struct b43_wldev *dev,
+			    const struct b43_txstatus *status,
+			    struct sk_buff_head *mpdus);
 int b43_dma_tx(struct b43_wldev *dev,
 	       struct sk_buff *skb);
 bool b43_dma_tx_room(struct b43_wldev *dev, u8 queue_prio);

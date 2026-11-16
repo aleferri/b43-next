@@ -944,7 +944,7 @@ static void b43_txhdr_ac_block(const struct b43_phy_ac *ac,
  * the phone's own or the stock driver's floor is not in the capture: the
  * station's, raised to 6, gives the spacing it asks for and the stock
  * one, at the cost of padding behind MPDUs shorter than 8 us. The window
- * is the session's (b43_op_ampdu_action()); without one the MPDU goes out
+ * is the session's (b43_ampdu_action()); without one the MPDU goes out
  * alone.
  */
 static unsigned int b43_sta_ampdu_exp(const struct ieee80211_sta *sta)
@@ -2259,9 +2259,9 @@ void b43_handle_txstatus(struct b43_wldev *dev,
 		if (dev->phy.nphy_ht && !status->acked &&
 		    status->supp_reason == B43_TXST_SUPP_NONE)
 			dev->wl->ieee_stats.dot11ACKFailureCount++;
-		/* Only DMA sends A-MPDUs (b43_dma_tx_ampdu()). */
+		/* Only DMA sends A-MPDUs (b43_ampdu_tx()). */
 		if (!b43_using_pio_transfers(dev))
-			b43_dma_handle_ampdu_txstatus(dev, status);
+			b43_ampdu_txstatus(dev, status);
 		return;
 	}
 	if (status->intermediate)

@@ -4767,7 +4767,7 @@ static bool b43_tx_empty(struct b43_wldev *dev)
 	}
 	if (b43_using_pio_transfers(dev))
 		return b43_pio_tx_empty(dev);
-	return b43_dma_tx_empty(dev) && !b43_dma_ampdu_tx_queued(dev->wl);
+	return b43_dma_tx_empty(dev) && !b43_ampdu_tx_queued(dev->wl);
 }
 
 /* The user's dynamic power save timeout in ms, mac80211's default of 100 ms
@@ -4948,16 +4948,16 @@ static bool b43_op_can_aggregate_in_amsdu(struct ieee80211_hw *hw,
 static bool b43_tx_pulls(struct b43_wldev *dev)
 {
 	return dev && !b43_using_pio_transfers(dev) &&
-	       (dev->phy.type == B43_PHYTYPE_AC || b43_nphy_ht_enabled(dev));
+	       (dev->phy.type == B43_PHYTYPE_AC || b43_ampdu_tx_host(dev));
 }
 
 /*
- * An N-PHY core with HT and DMA pulls as well, as an A-MPDU takes the
- * frames of one station and TID: a TX queue with a block ack session gives
- * one A-MPDU per round (b43_dma_tx_ampdu()) and keeps its place while
- * frames of the session wait in the driver, and the rounds go on while
- * they give frames and the ring has room. A dozing station's queues wait
- * until it wakes up (b43_dma_ampdu_tx_sta_ps()).
+ * A core whose A-MPDUs b43 builds pulls as well, with DMA, as an A-MPDU
+ * takes the frames of one station and TID: a TX queue with a block ack
+ * session gives one A-MPDU per round (b43_ampdu_tx()) and keeps its place
+ * while frames of the session wait in the driver, and the rounds go on
+ * while they give frames and the ring has room. A dozing station's queues
+ * wait until it wakes up (b43_ampdu_tx_sta_ps()).
  */
 static bool b43_tx_pull_asleep(struct ieee80211_txq *txq)
 {
@@ -4967,7 +4967,7 @@ static bool b43_tx_pull_asleep(struct ieee80211_txq *txq)
 	    !READ_ONCE(((struct b43_sta *)txq->sta->drv_priv)->asleep))
 		return false;
 	/* Its TIM bit announces the frames the driver holds for it. */
-	t = b43_dma_ampdu_txq(txq);
+	t = b43_ampdu_txq(txq);
 	if (t && !skb_queue_empty(&t->queue))
 		ieee80211_sta_set_buffered(txq->sta, txq->tid, true);
 	return true;
@@ -4987,7 +4987,7 @@ static int b43_tx_pull_round(struct b43_wldev *dev, int ac, bool ofdm_op)
 	struct b43_ampdu_tx_tid *t;
 	struct ieee80211_txq *txq;
 	struct sk_buff *skb;
-	bool ht = b43_nphy_ht_enabled(dev);
+	bool ht = b43_ampdu_tx_host(dev);
 	int err, taken = 0;
 	bool ofdm = false;
 
@@ -4996,7 +4996,7 @@ static int b43_tx_pull_round(struct b43_wldev *dev, int ac, bool ofdm_op)
 	       (txq = ieee80211_next_txq(hw, ac))) {
 		if (ht && b43_tx_pull_asleep(txq))
 			continue;
-		t = ht ? b43_dma_ampdu_txq(txq) : NULL;
+		t = ht ? b43_ampdu_txq(txq) : NULL;
 		if (t && ofdm_op) {
 			ieee80211_return_txq(hw, txq,
 					     !skb_queue_empty(&t->queue));
@@ -5004,7 +5004,7 @@ static int b43_tx_pull_round(struct b43_wldev *dev, int ac, bool ofdm_op)
 			break;
 		}
 		if (t) {
-			taken += b43_dma_tx_ampdu(dev, txq, t);
+			taken += b43_ampdu_tx(dev, txq, t);
 			ieee80211_return_txq(hw, txq,
 					     !skb_queue_empty(&t->queue));
 			continue;
@@ -5061,7 +5061,7 @@ static bool b43_tx_pull(struct b43_wldev *dev, bool ofdm_op)
 			    skb_queue_len(&wl->tx_queue[ac]))
 				break;
 			taken = b43_tx_pull_round(dev, ac, ofdm_op);
-		} while (b43_nphy_ht_enabled(dev) && taken > 0);
+		} while (b43_ampdu_tx_host(dev) && taken > 0);
 		if (taken == -EAGAIN)
 			break;
 	}
@@ -5099,7 +5099,7 @@ b43_op_release_buffered_frames(struct ieee80211_hw *hw,
 	struct b43_wldev *dev = READ_ONCE(wl->current_dev);
 	u32 req = B43_PS_RELEASE_VALID;
 
-	if (!dev || !b43_nphy_ht_enabled(dev))
+	if (!dev || !b43_ampdu_tx_host(dev))
 		return;
 	req |= FIELD_PREP(B43_PS_RELEASE_TIDS, tids);
 	req |= FIELD_PREP(B43_PS_RELEASE_FRAMES, min(nframes, 255));
@@ -5137,7 +5137,7 @@ static void b43_ps_release_sta(void *data, struct ieee80211_sta *sta)
 		if (!(tids & BIT(tid)))
 			continue;
 		while (nframes) {
-			skb = b43_dma_ampdu_tx_dequeue(t);
+			skb = b43_ampdu_tx_dequeue(t);
 			if (!skb)
 				skb = ieee80211_tx_dequeue(hw, sta->txq[tid]);
 			if (!skb)
@@ -6560,7 +6560,7 @@ redo:
 		}
 		wl->tx_queue_stopped[queue_num] = false;
 	}
-	b43_dma_ampdu_tx_purge(wl);
+	b43_ampdu_tx_purge(wl);
 	skb_queue_purge(&wl->rx_queue);
 	ieee80211_purge_tx_queue(wl->hw, &wl->txstatus_queue);
 
@@ -7165,22 +7165,6 @@ static int b43_txfifo_init_ht(struct b43_wldev *dev)
 
 /* Frames of earlier rings are gone; restart a station's TX A-MPDU
  * windows. Only DMA aggregates, so PIO ends its sessions' aggregation. */
-static void b43_ampdu_tx_restart_sta(void *data, struct ieee80211_sta *sta)
-{
-	struct b43_wldev *dev = data;
-	struct b43_sta *bsta = (struct b43_sta *)sta->drv_priv;
-	int i;
-
-	for (i = 0; i < IEEE80211_NUM_TIDS; i++) {
-		struct b43_ampdu_tx_tid *t = &bsta->ampdu_tx[i];
-
-		if (dev->__using_pio_transfers)
-			t->operational = false;
-		t->outstanding = 0;
-		memset(t->retries, 0, sizeof(t->retries));
-	}
-}
-
 /* Initialize a wireless core */
 static int b43_wireless_core_init(struct b43_wldev *dev)
 {
@@ -7395,8 +7379,7 @@ static int b43_wireless_core_init(struct b43_wldev *dev)
 				B43_DMA_RX_MAX_FRAME_LEN);
 	if (dev->phy.nphy_ht)
 		b43_macstat_update(dev, false);
-	ieee80211_iterate_stations_atomic(dev->wl->hw,
-					  b43_ampdu_tx_restart_sta, dev);
+	b43_ampdu_tx_restart(dev);
 	b43_qos_init(dev);
 	/* Both stock drivers captured at the bus write it once, here. */
 	if (phy->type == B43_PHYTYPE_AC)
@@ -7691,16 +7674,15 @@ static void b43_op_sta_notify(struct ieee80211_hw *hw,
 	struct b43_wldev *dev = READ_ONCE(wl->current_dev);
 
 	B43_WARN_ON(!vif || (wl->vif != vif && b43_mbss_slot(wl, vif) < 0));
-	if (dev && b43_nphy_ht_enabled(dev))
-		b43_dma_ampdu_tx_sta_ps(wl, sta,
-					notify_cmd == STA_NOTIFY_SLEEP);
+	if (dev && b43_ampdu_tx_host(dev))
+		b43_ampdu_tx_sta_ps(wl, sta, notify_cmd == STA_NOTIFY_SLEEP);
 }
 
 static void b43_op_sta_pre_rcu_remove(struct ieee80211_hw *hw,
 				      struct ieee80211_vif *vif,
 				      struct ieee80211_sta *sta)
 {
-	b43_dma_ampdu_tx_sta_drop(hw_to_b43_wl(hw), sta);
+	b43_ampdu_tx_sta_drop(hw_to_b43_wl(hw), sta);
 }
 
 /*
@@ -7842,98 +7824,6 @@ static int b43_op_get_survey(struct ieee80211_hw *hw, int idx,
 	return 0;
 }
 
-/*
- * Block ack sessions, on the AC through DMA. On TX the microcode builds the
- * A-MPDU from MPDUs posted one by one with the session's window in their
- * header (b43_txhdr_ac_ampdu()), and the stock driver programs nothing in
- * it for a session, so a session is the window kept here. On RX the
- * microcode answers an A-MPDU or a block ack request with a block ack of
- * its own making (frame code 0x25, at 0x076C on 784), from no table a
- * driver fills; mac80211 reorders. The BCM43227's microcode does
- * the same on RX, with DMA or PIO, from the transmitter address in its
- * template RAM (b43_write_mac_bssid_templates()). On TX b43 builds the
- * BCM43227's A-MPDUs itself, with DMA (b43_dma_tx_ampdu()), on BE (TIDs 0
- * and 3) and VI (TIDs 4 and 5), whose TX FIFOs b43_txfifo_init_ht() sizes.
- */
-static int b43_op_ampdu_action(struct ieee80211_hw *hw,
-			       struct ieee80211_vif *vif,
-			       struct ieee80211_ampdu_params *params)
-{
-	struct b43_wl *wl = hw_to_b43_wl(hw);
-	struct b43_sta *bsta = (struct b43_sta *)params->sta->drv_priv;
-	struct b43_ampdu_tx_tid *t = &bsta->ampdu_tx[params->tid];
-	struct ieee80211_sta_ht_cap *ht_cap = &params->sta->deflink.ht_cap;
-	struct b43_wldev *dev;
-	bool ok;
-
-	switch (params->action) {
-	case IEEE80211_AMPDU_TX_START:
-	case IEEE80211_AMPDU_RX_START:
-		mutex_lock(&wl->mutex);
-		dev = wl->current_dev;
-		ok = dev && dev->fw.layout.ampdu &&
-		     !b43_using_pio_transfers(dev);
-		if (dev && b43_nphy_ht_enabled(dev))
-			ok = b43_status(dev) >= B43_STAT_STARTED &&
-			     vif == wl->vif &&
-			     (vif->type == NL80211_IFTYPE_STATION ||
-			      vif->type == NL80211_IFTYPE_AP ||
-			      vif->type == NL80211_IFTYPE_ADHOC);
-		if (params->action == IEEE80211_AMPDU_TX_START &&
-		    dev && b43_nphy_ht_enabled(dev)) {
-			ok = ok && !b43_using_pio_transfers(dev) &&
-			     (params->tid == 0 || params->tid == 3 ||
-			      params->tid == 4 || params->tid == 5);
-			if (ok)
-				memset(t, 0, sizeof(*t));
-		}
-		mutex_unlock(&wl->mutex);
-		if (!ok)
-			return -EOPNOTSUPP;
-		if (params->action == IEEE80211_AMPDU_RX_START)
-			return 0;
-		return IEEE80211_AMPDU_TX_START_IMMEDIATE;
-	case IEEE80211_AMPDU_TX_OPERATIONAL:
-		WRITE_ONCE(bsta->ampdu_win[params->tid], params->buf_size);
-		mutex_lock(&wl->mutex);
-		dev = wl->current_dev;
-		if (dev && b43_nphy_ht_enabled(dev)) {
-			memset(t, 0, sizeof(*t));
-			skb_queue_head_init(&t->queue);
-			t->buf_size = min_t(u16, params->buf_size,
-					    B43_AMPDU_TX_WINDOW);
-			t->operational = t->buf_size;
-			bsta->ampdu_tx_max_len =
-				(1 << (IEEE80211_HT_MAX_AMPDU_FACTOR +
-				       ht_cap->ampdu_factor)) - 1;
-			bsta->ampdu_tx_density = ht_cap->ampdu_density;
-		}
-		mutex_unlock(&wl->mutex);
-		return 0;
-	case IEEE80211_AMPDU_TX_STOP_CONT:
-		WRITE_ONCE(bsta->ampdu_win[params->tid], 0);
-		/* Queued and retried members continue as ordinary MPDUs. */
-		mutex_lock(&wl->mutex);
-		b43_dma_ampdu_tx_stop(wl, t, false);
-		mutex_unlock(&wl->mutex);
-		ieee80211_stop_tx_ba_cb_irqsafe(vif, params->sta->addr,
-						params->tid);
-		return 0;
-	case IEEE80211_AMPDU_TX_STOP_FLUSH:
-	case IEEE80211_AMPDU_TX_STOP_FLUSH_CONT:
-		WRITE_ONCE(bsta->ampdu_win[params->tid], 0);
-		mutex_lock(&wl->mutex);
-		b43_dma_ampdu_tx_stop(wl, t, params->action ==
-				      IEEE80211_AMPDU_TX_STOP_FLUSH);
-		mutex_unlock(&wl->mutex);
-		return 0;
-	case IEEE80211_AMPDU_RX_STOP:
-		return 0;
-	default:
-		return -EOPNOTSUPP;
-	}
-}
-
 /* mac80211 sends a peer only MCS that are in our own RX MCS set, up to the
  * TX stream limit.
  */
@@ -8032,7 +7922,7 @@ static const struct ieee80211_ops b43_hw_ops = {
 	.sw_scan_complete	= b43_op_sw_scan_complete_notifier,
 	.flush			= b43_op_flush,
 	.get_survey		= b43_op_get_survey,
-	.ampdu_action		= b43_op_ampdu_action,
+	.ampdu_action		= b43_ampdu_action,
 	.set_antenna		= b43_op_set_antenna,
 	.get_antenna		= b43_op_get_antenna,
 	.rfkill_poll		= b43_rfkill_poll,
@@ -8347,8 +8237,11 @@ static int b43_setup_bands(struct b43_wldev *dev,
 		b43_ht_set_chains(dev);
 		hw->wiphy->bands[NL80211_BAND_2GHZ] = band;
 	}
-	if (b43_nphy_ht_enabled(dev)) {
+	if (b43_ampdu_tx_host(dev)) {
 		ieee80211_hw_set(hw, AMPDU_AGGREGATION);
+		hw->max_tx_aggregation_subframes = B43_AMPDU_TX_WINDOW;
+	}
+	if (b43_nphy_ht_enabled(dev)) {
 		/* mac80211 builds A-MSDUs from what waits (b43_tx_pull()),
 		 * on its fast transmit path only, and linearizes them: an
 		 * A-MPDU member takes two DMA slots (b43_dma_tx_ampdu()).
@@ -8356,7 +8249,6 @@ static int b43_setup_bands(struct b43_wldev *dev,
 		ieee80211_hw_set(hw, TX_AMSDU);
 		ieee80211_hw_set(hw, SUPPORT_FAST_XMIT);
 		hw->max_rx_aggregation_subframes = IEEE80211_MAX_AMPDU_BUF_HT;
-		hw->max_tx_aggregation_subframes = B43_AMPDU_TX_WINDOW;
 	}
 
 	dev->phy.supports_2ghz = have_2ghz_phy;
