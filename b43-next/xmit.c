@@ -1372,8 +1372,8 @@ static int b43_generate_txhdr_fw4(struct b43_wldev *dev,
 	default:
 		B43_WARN_ON(1);
 	}
-	/* On the N-PHY cores with HT the field holds the mask of TX cores. */
-	if (dev->phy.nphy_ht) {
+	/* On the pre-AC cores with HT the field holds the mask of TX cores. */
+	if (b43_ht_core(dev)) {
 		phy_ctl &= ~B43_TXH_PHY_ANT;
 		phy_ctl |= dev->txchain << B43_TXH_PHY_ANT_SHIFT;
 	}
