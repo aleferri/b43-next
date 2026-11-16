@@ -1,8 +1,9 @@
 #!/bin/sh
 # Runs the TX power control init of b43_phy_ht_op_init() against every
 # HT-PHY init of the R6400 v1 captures. The window of an init runs from its
-# first table 0x1a read (b43_phy_ht_tx_power_fix()) to the write that turns
-# the control on.
+# first table 0x1a read (b43_phy_ht_tx_power_fix()) to the TSSI setup, before
+# the control is turned on: on this board b43 fixes a static TX gain there
+# instead (b43_phy_ht_static_txgain()).
 #
 #   ./check.sh [-v]
 set -u
@@ -25,8 +26,9 @@ windows() {
 		start = substr($2, 2); m = mark; k = 0; next
 	}
 	start && /PHY\.WR addr=0x01e7 val=0x[89a-f]/ {
-		print start, substr($2, 2), m; start = 0
-	}' "$1"
+		print start, p2, m; start = 0
+	}
+	{ p2 = p1; p1 = substr($2, 2) }' "$1"
 }
 
 for f in "$BOARD"/traces/mmio-*/*-ops.txt.gz; do
