@@ -39,17 +39,17 @@ On 2026-11-16, `--min-block 8 --gap-tol 2`:
 |---|---|---|
 | attach | 21004/25733 = 81.62% | 20991/23760 = 88.35% |
 
-What is left, largest first:
+What is left:
 
-- **TX I/Q-LO calibration**: wl runs it before the RC calibration (575 PHY
-  and radio operations from #4187) and after the tune to channel 1 (543 from
-  #35449, and 1370 from #36075 with the RX I/Q calibration and the TX power
-  control table). b43 has none: `lpphy_calibration()` leaves it as a TODO.
-  Without it, the RC calibration's loopback search reads PHY 0x44c/0x44d at
-  other points of wl's stream than wl does.
-- **The end of the init**: b43 tunes to channel 7 again, sets the TX power
-  control and runs its calibration (581 operations from #35443); wl tunes to
-  channel 1 straight after the RC calibration.
+- **The third calibration and the hardware TX power control** (1370 PHY and
+  radio operations from #36075): wl tunes to channel 1 a second time,
+  recalibrates the TX I/Q and LO there and turns on hardware TX power
+  control. b43 tunes again after `b43_lpphy_op_init()` without calibrating,
+  and stays in software power control; see `TODO-LP.md`.
+- **Reads served out of place**: b43 switches the analog on three times
+  before the init, wl once, so the reads of PHY 0x43b and the ones after
+  them are served from other points of wl's stream (41 wrong values, in
+  the TX I/Q-LO calibration's save and restore and the RC calibration's).
 
 Every run prints, on stderr, the reads past the window (served from b43's
 own writes, or 0), the window's reads b43 did not take, b43's messages and

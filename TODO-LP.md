@@ -98,15 +98,29 @@ for 10 s at most.
 
 ### Hardware TX power control on rev 1
 
-wl runs it on the BCM4312: after the tune to channel 1 it runs the sequence
-of `lpphy_tx_pctl_init_hw()`, ends in mode `0xE000`, writes the power
-offsets of table 10 from offset 64 and, during the scans, raises bits 8-10
-of TX_PWR_CTL_NNUM (`tssi_npt`) from 0 up to 6. Besides the init, b43 lacks
-what keeps it running: the target power, the TSSI bookkeeping and the
-offsets.
+wl runs it on the BCM4312: after the second tune to channel 1 it runs the
+sequence of `lpphy_tx_pctl_init_hw()`, ends in mode `0xE000` and, during the
+scans, raises bits 8-10 of TX_PWR_CTL_NNUM (`tssi_npt`) from 0 up to 6.
+TXPwrCtrlInit gives the hardware branch to boards with NOPA set, the
+opposite of what wl does on this board without it.
 
-Check: enabling it needs those first; the capture has wl's values for all
-of them on 2 GHz.
+What the capture settles of the rest:
+
+- table 10 at 0-63, the TSSI to power table, is `(b + a) / (2a)` with
+  `a = 32768 + pa0b2 * tssi` and `b = 1024 * pa0b0 + 64 * pa0b1 * tssi`,
+  on all 64 entries. The specs' Tssi2dBm divides by `2 * tmp` and gives
+  something else.
+- table 10 at 64-75 gets the negated rate offsets: -26 for the four CCK
+  rates, -24 for the eight OFDM ones, and PHY 0x4A7 (low byte) `0x24`.
+  brcmsmac's rule for hardware control, the target of the rate less the
+  lowest target, leaves one offset at 0, so it is not what wl computes
+  here. The board's maximum power (`maxpwr_bg`) is `0x4A`.
+- after the idle TSSI read, wl reads 0x4A8 and writes back `0x000A`
+  unchanged; the specs clear its low byte or set `0x0600`.
+
+Check: the target power and the rate offsets need a capture at another
+TX power or regulatory limit before they can be computed; the rest of
+TXPowerRecalcTarget, TXPowerResetNpt and TXPwrUpdateNpt is in the specs.
 
 ### Initial TX power index override (unreachable)
 
@@ -184,8 +198,8 @@ clears `0x800` in 0x43C, leaving 0x44C/0x44D as set; it clears bit 0 of
 (RXIQCal, steps 10-13 and 23-24).
 
 Check: the writes to 0x43B, 0x43C, 0x44C, 0x44D around a noise calibration
-(the 0x49E writes mark it), and 0x44C/0x44D after it. wl runs none in the
-BCM4312 capture: it writes 0x49E = `0x0CC0`, the seed b43 starts from.
+(the 0x49E writes mark it), and 0x44C/0x44D after it, on rev0 or rev2: the
+calibration of rev1 only sets the table's compensation, as wl does.
 
 ### Overflow in the RX IQ estimate
 
@@ -198,14 +212,22 @@ Check: by computation on `i_pwr`, `q_pwr`, `iq_prod` taken from a capture
 (PHY 0x483-0x488 after the estimate), comparing the coefficient wl writes to
 0x49E with the one the code would.
 
-### TX I/Q-LO calibration
+### TX I/Q-LO calibration beyond the BCM4312
 
-`lpphy_calibration()` leaves it as a TODO. wl runs it twice in the BCM4312
-init, before the RC calibration and after the tune to channel 1: an 8-sample
-tone of amplitude 100 (table 5), the IQLO engine at PHY 0x451-0x453 and its
-results in table 0 from offset 0x40.
+`lpphy_tx_iqlo_cal()` follows wl's rev1 runs, whose coefficients it
+reproduces. Without evidence:
 
-Check: b43's version against those two runs, in `test/phy_lp`.
+- rev0 (the 5354 among them) runs the same steps; the specs' commands,
+  older than wl's, differ.
+- the target gains of boards with HGPA or NOPA are the specs' branch that
+  the capture shows inverted; the 5354 rev3 entry is the specs'.
+- rev2 has no TX I/Q-LO calibration: its branch of TXIqloCal (PHY 0x43E,
+  0x4D0, 0x503, radio 0x121) is not written.
+- wl runs a third calibration, with the recalibration steps, after its
+  second tune to channel 1; b43's own tune after `b43_lpphy_op_init()`
+  calibrates nothing until the periodic work.
+
+Check: a rev0 or rev2 capture, and the periodic calibration after 60 s.
 
 ### CCK power offsets
 
@@ -277,11 +299,12 @@ init. The values fit with the callers of today and a programmed SPROM.
 ## Not reviewed
 
 Not compared with the specs or with anything else: the rev2 baseband init,
-the 2063 radio init, the software rfkill, `lpphy_calibration()` and the
-digital filter save and restore around it, `lpphy_pr41573_workaround()`, and
+the 2063 radio init, the software rfkill, the digital filter save and
+restore around the periodic calibration, `lpphy_pr41573_workaround()`, and
 the rev2 tables in `tables_lpphy.c`.
 
 Compared with wl's bus on the BCM4312 only (`test/phy_lp`), where they agree
 but for the entries above: the 2062 radio init, the rev0/1 RC calibration and
-the loopback search, `lpphy_disable_crs()` and its restore,
-`lpphy_tx_pctl_init_hw()` and the rev0/1 tables.
+the loopback search, `lpphy_disable_crs()` and its restore, the periodic
+calibration and its TX I/Q-LO part, `lpphy_tx_pctl_init_hw()` and the rev0/1
+tables.
