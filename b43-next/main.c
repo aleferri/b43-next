@@ -953,7 +953,7 @@ static void b43_write_mac_bssid_templates(struct b43_wldev *dev)
 		tmp |= (u32) (mac_bssid[i + 3]) << 24;
 		b43_ram_write(dev, 0x20 + i, tmp);
 	}
-	if (b43_nphy_ht_enabled(dev)) {
+	if (b43_ht_enabled(dev)) {
 		b43_ram_write(dev, B43_RAM_BA_TA, get_unaligned_le32(mac));
 		b43_ram_write(dev, B43_RAM_BA_TA + 4,
 			      get_unaligned_le16(mac + 4));
@@ -4253,7 +4253,7 @@ static void b43_chip_init_mac(struct b43_wldev *dev)
 	/* Probe Response Timeout value */
 	/* FIXME: Default to 0, has to be set by ioctl probably... :-/ */
 	b43_shm_write16(dev, B43_SHM_SHARED, B43_SHM_SH_PRMAXTIME, 0);
-	if (b43_nphy_ht_enabled(dev)) {
+	if (b43_ht_enabled(dev)) {
 		b43_shm_write16(dev, B43_SHM_SHARED,
 				B43_SHM_SH_MIMO_MAXSYM, 0xFFFF);
 		b43_shm_write16(dev, B43_SHM_SHARED,
@@ -7934,7 +7934,7 @@ static int b43_op_set_antenna(struct ieee80211_hw *hw, int radio_idx,
 	mutex_lock(&wl->mutex);
 	dev->txchain = tx_ant;
 	dev->rxchain = rx_ant;
-	if (b43_nphy_ht_enabled(dev))
+	if (b43_ht_enabled(dev))
 		b43_ht_set_chains(dev);
 	mutex_unlock(&wl->mutex);
 
