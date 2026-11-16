@@ -2235,11 +2235,12 @@ static void b43_phy_ht_cal_pass(struct b43_wldev *dev)
 /*
  * The calibrations that close a channel switch, as wl runs them after the
  * later init of its down and up (b43_phy_recycle()) when the BSS starts:
- * the TX power twice, a calibration pass, the power again and a second
- * pass. Then the MAC goes on.
+ * the channel's target, the TX power twice, a calibration pass, the power
+ * again and a second pass. Then the MAC goes on.
  */
 static void b43_phy_ht_op_channel_calibrate(struct b43_wldev *dev)
 {
+	b43_phy_ht_op_recalc_txpower(dev, true);
 	b43_phy_ht_op_adjust_txpower(dev);
 	b43_phy_ht_op_adjust_txpower(dev);
 	b43_phy_ht_cal_pass(dev);
