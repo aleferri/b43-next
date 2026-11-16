@@ -1920,7 +1920,7 @@ static int lpphy_rx_iq_cal(struct b43_wldev *dev, bool noise, bool tx,
 	b43_cal_begin(dev, B43_CAL_RXIQ);
 	b43_cal_report(dev, LP_CAL_RXIQ_SEED, (u8)iqcomp->c0, (u8)iqcomp->c1);
 
-	b43_phy_maskset(dev, B43_LPPHY_RX_COMP_COEFF_S, 0xFF00, iqcomp->c1);
+	b43_phy_maskset(dev, B43_LPPHY_RX_COMP_COEFF_S, 0xFF00, (u8)iqcomp->c1);
 	b43_phy_maskset(dev, B43_LPPHY_RX_COMP_COEFF_S,
 			0x00FF, iqcomp->c0 << 8);
 
