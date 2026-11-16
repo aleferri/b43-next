@@ -16,6 +16,18 @@
 #include "tables_phy_ht.h"
 #include "radio_2059.h"
 #include "main.h"
+#include "calstat.h"
+
+/* The entries of the calibration statistics, see b43_phy_ht_cal_entries[] */
+enum {
+	HT_CAL_RCAL_TIMEOUT,
+	HT_CAL_RCAL_STATUS,
+	HT_CAL_RCCAL_TIMEOUT,
+	HT_CAL_RCCAL_DONE,
+	HT_CAL_IDLE_TSSI_RSSI,
+	HT_CAL_IDLE_TSSI,
+	HT_CAL_TXPWR,
+};
 
 /* Force values to keep compatibility with wl */
 enum ht_rssi_type {
@@ -79,6 +91,7 @@ static void b43_radio_2059_channel_setup(struct b43_wldev *dev,
 /* Calibrate resistors in LPF of PLL? */
 static void b43_radio_2059_rcal(struct b43_wldev *dev)
 {
+	b43_cal_begin(dev, B43_CAL_RCAL);
 	/* Enable */
 	b43_radio_set(dev, R2059_C3 | R2059_RCAL_CONFIG, 0x1);
 	usleep_range(10, 20);
@@ -94,8 +107,16 @@ static void b43_radio_2059_rcal(struct b43_wldev *dev)
 	b43_radio_mask(dev, R2059_C3 | R2059_RCAL_CONFIG, ~0x2);
 
 	if (!b43_radio_wait_value(dev, R2059_C3 | R2059_RCAL_STATUS, 1, 1, 100,
-				  1000000))
+				  1000000)) {
 		b43err(dev->wl, "Radio 0x2059 rcal timeout\n");
+		b43_cal_report(dev, HT_CAL_RCAL_TIMEOUT, 0x2059);
+	}
+	if (b43_cal_on(dev)) {
+		B43_CAL_PEEK(dev, 1);
+		b43_cal_report(dev, HT_CAL_RCAL_STATUS,
+			       b43_radio_read(dev, R2059_C3 | R2059_RCAL_STATUS));
+		B43_CAL_PEEK(dev, 0);
+	}
 
 	/* Disable */
 	b43_radio_mask(dev, R2059_C3 | R2059_RCAL_CONFIG, ~0x1);
@@ -111,6 +132,7 @@ static void b43_radio_2057_rccal(struct b43_wldev *dev)
 	};
 	int i;
 
+	b43_cal_begin(dev, B43_CAL_RCCAL);
 	for (i = 0; i < 3; i++) {
 		b43_radio_write(dev, R2059_RCCAL_MASTER, radio_values[i][0]);
 		b43_radio_write(dev, R2059_RCCAL_X1, 0x6E);
@@ -121,14 +143,22 @@ static void b43_radio_2057_rccal(struct b43_wldev *dev)
 
 		/* Wait */
 		if (!b43_radio_wait_value(dev, R2059_RCCAL_DONE_OSCCAP, 2, 2,
-					  500, 5000000))
+					  500, 5000000)) {
 			b43err(dev->wl, "Radio 0x2059 rccal timeout\n");
+			b43_cal_report(dev, HT_CAL_RCCAL_TIMEOUT, i);
+		}
 
 		/* Stop */
 		b43_radio_write(dev, R2059_RCCAL_START_R1_Q1_P1, 0x15);
 	}
 
 	b43_radio_mask(dev, R2059_RCCAL_MASTER, ~0x1);
+	if (b43_cal_on(dev)) {
+		B43_CAL_PEEK(dev, 1);
+		b43_cal_report(dev, HT_CAL_RCCAL_DONE,
+			       b43_radio_read(dev, R2059_RCCAL_DONE_OSCCAP));
+		B43_CAL_PEEK(dev, 0);
+	}
 }
 
 static void b43_radio_2059_init_pre(struct b43_wldev *dev)
@@ -582,6 +612,7 @@ static void b43_phy_ht_tx_power_ctl_idle_tssi(struct b43_wldev *dev)
 	s32 rssi_buf[6];
 	int core;
 
+	b43_cal_begin(dev, B43_CAL_IDLE_TSSI);
 	for (core = 0; core < 3; core++) {
 		save_regs[core][1] = b43_phy_read(dev, base[core] + 6);
 		save_regs[core][2] = b43_phy_read(dev, base[core] + 7);
@@ -602,6 +633,12 @@ static void b43_phy_ht_tx_power_ctl_idle_tssi(struct b43_wldev *dev)
 	phy_ht->idle_tssi[0] = rssi_buf[0] & 0xff;
 	phy_ht->idle_tssi[1] = rssi_buf[2] & 0xff;
 	phy_ht->idle_tssi[2] = rssi_buf[4] & 0xff;
+	for (core = 0; core < 3; core++) {
+		b43_cal_report(dev, HT_CAL_IDLE_TSSI_RSSI, core,
+			       rssi_buf[2 * core], rssi_buf[2 * core + 1]);
+		b43_cal_report(dev, HT_CAL_IDLE_TSSI, core,
+			       phy_ht->idle_tssi[core]);
+	}
 
 	for (core = 0; core < 3; core++) {
 		b43_phy_write(dev, base[core] + 0, save_regs[core][0]);
@@ -668,6 +705,10 @@ static void b43_phy_ht_tx_power_ctl_setup(struct b43_wldev *dev)
 		b0[0] = b0[1] = b0[2] = 5612;
 		b1[0] = b1[1] = b1[2] = -1393;
 	}
+	b43_cal_begin(dev, B43_CAL_TXPWR);
+	for (c = 0; c < 3; c++)
+		b43_cal_report(dev, HT_CAL_TXPWR, c, target[c], a1[c], b0[c],
+			       b1[c]);
 
 	b43_phy_set(dev, B43_PHY_HT_TSSIMODE, B43_PHY_HT_TSSIMODE_EN);
 	b43_phy_mask(dev, B43_PHY_HT_TXPCTL_CMD_C1,
@@ -1124,6 +1165,23 @@ static void b43_phy_ht_op_adjust_txpower(struct b43_wldev *dev)
  * PHY ops struct.
  **************************************************/
 
+B43_CAL_TABLE(b43_phy_ht_cal_entries) = {
+	B43_CAL_ENTRY(HT_CAL_RCAL_TIMEOUT, RCAL, "timeout", EVALUATED, 1,
+		      B43_CAL_X(radio, 4)),
+	B43_CAL_ENTRY(HT_CAL_RCAL_STATUS, RCAL, "status", READBACK, 1,
+		      B43_CAL_X(status, 2)),
+	B43_CAL_ENTRY(HT_CAL_RCCAL_TIMEOUT, RCCAL, "timeout", EVALUATED, 3,
+		      B43_CAL_U(pass)),
+	B43_CAL_ENTRY(HT_CAL_RCCAL_DONE, RCCAL, "done", READBACK, 1,
+		      B43_CAL_X(osccap, 2)),
+	B43_CAL_ENTRY(HT_CAL_IDLE_TSSI_RSSI, IDLE_TSSI, "rssi", SAMPLED, 3,
+		      B43_CAL_U(core), B43_CAL_SV(rssi, 2)),
+	B43_CAL_ENTRY(HT_CAL_IDLE_TSSI, IDLE_TSSI, "idle", COMPUTED, 3,
+		      B43_CAL_U(core), B43_CAL_U(idle)),
+	B43_CAL_ENTRY(HT_CAL_TXPWR, TXPWR, "target", COMPUTED, 3,
+		      B43_CAL_U(core), B43_CAL_U(target), B43_CAL_SV(pa, 3)),
+};
+
 const struct b43_phy_operations b43_phyops_ht = {
 	.allocate		= b43_phy_ht_op_allocate,
 	.free			= b43_phy_ht_op_free,
@@ -1138,4 +1196,5 @@ const struct b43_phy_operations b43_phyops_ht = {
 	.get_default_chan	= b43_phy_ht_op_get_default_chan,
 	.recalc_txpower		= b43_phy_ht_op_recalc_txpower,
 	.adjust_txpower		= b43_phy_ht_op_adjust_txpower,
+	B43_CAL_OPS(b43_phy_ht_cal_entries)
 };
