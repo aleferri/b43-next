@@ -643,7 +643,8 @@ static void b43_phy_ht_tx_power_fix(struct b43_wldev *dev)
  * and is clean from 20. Use 24 with BFL_HGPA, else 16: about four steps above
  * the measured edge on both boards. Elsewhere the loop stays on: an Apple
  * BCM4331 card has an external LNA and PA too (BFL_EXTLNA, extpagain 0) but
- * neither flag, and there the loop holds the SPROM target power.
+ * neither flag, and there the loop holds b43_phy_ht_op_recalc_txpower()'s
+ * target.
  */
 static int b43_phy_ht_static_txgain(struct b43_wldev *dev)
 {
@@ -1699,9 +1700,9 @@ static u8 b43_phy_ht_locale_ceiling(const struct ieee80211_channel *chan)
  * The target, the same for every core: brcmsmac's chain, as for the N-PHY
  * and the AC. The SROM's power per rate, capped by wl's locale, the
  * regulatory limit less the antenna gain and the user's, less brcmsmac's
- * 6 qdBm of hardware gain, at least 8 dBm, the highest rate's. On the
- * R6400 that is 0x60 - 6 = 0x5a, and 92 - 6 = 0x56 on ch 1 and 11, wl's
- * values.
+ * 6 qdBm of hardware gain, at least 8 dBm. With a static TX gain the
+ * highest of those powers, as wl: on the R6400 0x60 - 6 = 0x5a, and
+ * 92 - 6 = 0x56 on ch 1 and 11. Where the loop runs, the lowest.
  */
 static enum b43_txpwr_result
 b43_phy_ht_op_recalc_txpower(struct b43_wldev *dev, bool ignore_tssi)
@@ -1730,7 +1731,16 @@ b43_phy_ht_op_recalc_txpower(struct b43_wldev *dev, bool ignore_tssi)
 		b43_ppr_apply_max(ppr, INT_TO_Q52(phy->desired_txpower));
 	b43_ppr_add(ppr, -6);
 	b43_ppr_apply_min(ppr, INT_TO_Q52(8));
-	target = b43_ppr_get_max(ppr);
+	/*
+	 * Where the loop runs (no static TX gain), the weakest rate's: the
+	 * loop holds every frame at the target, and on an Apple BCM4331 64-QAM
+	 * distorts at the strongest rate's. At 5 GHz, channel 112, the target
+	 * 0x46 against 0x36: TCP up 28-35 against 52-57 Mbit/s, down the same.
+	 */
+	if (b43_phy_ht_static_txgain(dev) < 0)
+		target = b43_ppr_get_min(ppr);
+	else
+		target = b43_ppr_get_max(ppr);
 
 	if (phy_ht->tx_pwr_target[0] == target)
 		return B43_TXPWR_RES_DONE;
