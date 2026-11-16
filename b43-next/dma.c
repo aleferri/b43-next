@@ -1988,6 +1988,14 @@ unsigned int b43_dma_tx_ampdu(struct b43_wldev *dev, u8 queue_prio,
 		dma_len += skbs[i]->len;
 	/* A preload beyond the frames would wait for the next ones. */
 	ampdu[0].preload = min_t(unsigned int, ring->ampdu_preload, dma_len);
+	/*
+	 * Not on the BCM4331: with a preload its microcode (784) stops serving
+	 * the FIFO after a TX underflow, the A-MPDU's status never comes and
+	 * the queue stalls for good, within seconds of a TCP upload or download
+	 * at 5 GHz. Linux's b43 never wrote the field there.
+	 */
+	if (dev->phy.type == B43_PHYTYPE_HT)
+		ampdu[0].preload = 0;
 	ring->queue_prio = queue_prio;
 	for (i = 0; i < n; i++) {
 		err = dma_tx_fragment(ring, skbs[i], &ampdu[i]);
