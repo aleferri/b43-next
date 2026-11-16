@@ -4895,15 +4895,12 @@ again:
 		b /= tmp;
 		b -= a * a;
 		/*
-		 * wl 7.14.164.18 rounds the square root to the nearest integer
-		 * on the BCM43217: that gives its a and b for all 136 RX I/Q
-		 * compensations it writes in the RT-AC56U's captures, the floor
-		 * of int_sqrt() for 67.
+		 * wl 7.14.164.18 rounds the square root to the nearest integer:
+		 * that gives its a and b for all 136 RX I/Q compensations it
+		 * writes in the RT-AC56U's captures (BCM43217), the floor of
+		 * int_sqrt() for 67.
 		 */
-		if (dev->phy.rev == 17)
-			b = ((s32)int_sqrt(4 * (unsigned long)b) + 1) / 2;
-		else
-			b = (s32)int_sqrt((unsigned long)b);
+		b = ((s32)int_sqrt(4 * (unsigned long)b) + 1) / 2;
 		b -= (1 << 10);
 
 		if (i == 0 && (mask & 0x1)) {
