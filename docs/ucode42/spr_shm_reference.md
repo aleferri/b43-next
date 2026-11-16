@@ -370,7 +370,7 @@ static parser cannot resolve without running the code.
 | `b43_phy_ac_bss_cc_update` | phy_ac.c | 0x00cc | 0x00cc, 0x00cc |
 | `b43_phy_ac_shm_mac_config_block` | phy_ac.c | 0x0eec | 0x0020, 0x08ec, 0x0910, 0x08f4, 0x08f0, 0x0eec |
 | `b43_phy_ac_op_switch_channel` | phy_ac.c | 0x0056 | 0x0094, B43_SHM_SH_RFATT, 0x018a, 0x018c, 0x0074, 0x0082, 0x00ba, 0x003c, 0x007c, 0x005a |
-| `b43_write_beacon_template` | main.c | B43_SHM_SH_BEACPHYCTL | B43_SHM_SH_BEACPHYCTL |
+| `b43_write_beacon_template` | beacon.c | B43_SHM_SH_BEACPHYCTL | B43_SHM_SH_BEACPHYCTL |
 | `b43_mgmtframe_txantenna` | main.c | B43_SHM_SH_ACKCTSPHYCTL, B43_SHM_SH_PRPHYCTL | B43_SHM_SH_ACKCTSPHYCTL, B43_SHM_SH_PRPHYCTL |
 
 Relations **with explicit arithmetic** (an address computed from another,

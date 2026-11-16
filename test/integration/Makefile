@@ -85,7 +85,7 @@ KFLAGS += -fno-inline -g
 endif
 
 # I file di b43 che si compilano come sono. Tutti e tre a zero errori.
-UPSTREAM := main.c phy_common.c bus.c xmit.c dma.c leds.c rfkill.c \
+UPSTREAM := main.c beacon.c phy_common.c bus.c xmit.c dma.c leds.c rfkill.c \
             phy_ac.c tables_phy_ac.c radio_2069.c \
             ppr.c radar_ac.c
 
