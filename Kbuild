@@ -96,20 +96,17 @@ b43-next-$(CONFIG_BCMN_HOST_SOC_BCM6362) += bcma-next/host_soc_bcm6362.o
 
 b43-next-$(CONFIG_BCM47XX_NVRAM) += nvram/bcm47xx_sprom.o
 
-b43-next-y += $(addprefix b43-next/, \
-	main.o beacon.o bus.o fw_layout.o phy_common.o sysfs.o xmit.o dma.o pio.o \
-	rfkill.o ppr.o ampdu.o)
-b43-next-$(CONFIG_B43_NEXT_PHY_G) += $(addprefix b43-next/, \
-	phy_g.o tables.o lo.o wa.o)
-b43-next-$(CONFIG_B43_NEXT_PHY_N) += $(addprefix b43-next/, \
-	phy_n.o tables_nphy.o radio_2055.o radio_2056.o radio_2057.o)
-b43-next-$(CONFIG_B43_NEXT_PHY_LP) += b43-next/phy_lp.o b43-next/tables_lpphy.o
-b43-next-$(CONFIG_B43_NEXT_PHY_HT) += $(addprefix b43-next/, \
-	phy_ht.o tables_phy_ht.o radio_2059.o)
-b43-next-$(CONFIG_B43_NEXT_PHY_LCN) += b43-next/phy_lcn.o b43-next/tables_phy_lcn.o
-b43-next-$(CONFIG_B43_NEXT_PHY_AC) += $(addprefix b43-next/, \
-	phy_ac.o tables_phy_ac.o radio_2069.o radar_ac.o)
-b43-next-$(CONFIG_B43_NEXT_LEDS) += b43-next/leds.o
-b43-next-$(CONFIG_B43_NEXT_SDIO) += b43-next/sdio.o
-b43-next-$(CONFIG_B43_NEXT_DEBUG) += b43-next/debugfs.o
-b43-next-$(CONFIG_B43_NEXT_CALSTAT) += b43-next/calstat.o
+include $(src)/b43-next/files.mk
+b43n-obj = $(addprefix b43-next/,$(1:.c=.o))
+
+b43-next-y += $(call b43n-obj,$(b43n-core) $(b43n-phy))
+b43-next-$(CONFIG_B43_NEXT_PHY_G) += $(call b43n-obj,$(b43n-phy-g))
+b43-next-$(CONFIG_B43_NEXT_PHY_N) += $(call b43n-obj,$(b43n-phy-n))
+b43-next-$(CONFIG_B43_NEXT_PHY_LP) += $(call b43n-obj,$(b43n-phy-lp))
+b43-next-$(CONFIG_B43_NEXT_PHY_HT) += $(call b43n-obj,$(b43n-phy-ht))
+b43-next-$(CONFIG_B43_NEXT_PHY_LCN) += $(call b43n-obj,$(b43n-phy-lcn))
+b43-next-$(CONFIG_B43_NEXT_PHY_AC) += $(call b43n-obj,$(b43n-phy-ac))
+b43-next-$(CONFIG_B43_NEXT_LEDS) += $(call b43n-obj,$(b43n-leds))
+b43-next-$(CONFIG_B43_NEXT_SDIO) += $(call b43n-obj,$(b43n-sdio))
+b43-next-$(CONFIG_B43_NEXT_DEBUG) += $(call b43n-obj,$(b43n-debugfs))
+b43-next-$(CONFIG_B43_NEXT_CALSTAT) += $(call b43n-obj,$(b43n-calstat))

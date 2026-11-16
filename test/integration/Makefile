@@ -29,6 +29,7 @@
 # (scripts/Makefile.extrawarn).
 
 include ../paths.mk
+include $(REPO)/b43-next/files.mk
 
 KVER    ?= $(shell ls /usr/src/ | grep -oE '^linux-headers-[0-9.]+-[0-9]+$$' | head -1 | sed 's/linux-headers-//')
 K       ?= /usr/src/linux-headers-$(KVER)
@@ -88,11 +89,8 @@ KFLAGS += -fno-inline -g
 endif
 
 # I file di b43 che si compilano come sono. Tutti e tre a zero errori.
-UPSTREAM := main.c beacon.c phy_common.c bus.c xmit.c dma.c ampdu.c leds.c rfkill.c \
-            fw_layout.c \
-            phy_ac.c tables_phy_ac.c radio_2069.c \
-            phy_ht.c tables_phy_ht.c radio_2059.c \
-            ppr.c radar_ac.c
+UPSTREAM := $(filter-out sysfs.c pio.c,$(b43n-core)) $(b43n-phy) \
+            $(b43n-leds) $(b43n-phy-ac) $(b43n-phy-ht)
 
 # La gestione del core di bcma, anche lei com'e': reset, clock e PLL del
 # core passano dal wrapper e da clk_ctl_st, che lo stub traccia.

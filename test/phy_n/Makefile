@@ -5,6 +5,7 @@
 # flags), with a bus that turns their accesses into mmio2ops ops.
 
 include ../paths.mk
+include $(REPO)/b43-next/files.mk
 
 KVER    ?= $(shell ls /usr/src/ | grep -oE '^linux-headers-[0-9.]+-[0-9]+$$' | head -1 | sed 's/linux-headers-//')
 K       ?= /usr/src/linux-headers-$(KVER)
@@ -38,8 +39,7 @@ KFLAGS += $(if $(shell grep -sw 'define kzalloc_flex' $(K)/include/linux/slab.h)
 UFLAGS := -O2 -g -Wall -Werror -std=gnu11
 
 # flows.c includes phy_n.c; the others are linked as they are.
-DRIVER := tables_nphy.c radio_2057.c radio_2056.c radio_2055.c phy_common.c ppr.c \
-	  calstat.c
+DRIVER := $(filter-out phy_n.c,$(b43n-phy-n)) $(b43n-phy) $(b43n-calstat)
 
 OBJS := $(patsubst %.c,$(B)/%.o,$(DRIVER)) $(B)/cordic.o $(B)/int_sqrt.o \
 	$(B)/flows.o $(B)/trace.o
