@@ -1723,8 +1723,17 @@ static const u8 *b43_rx_ht_plcp(struct b43_wldev *dev, const u8 *plcp,
 	return dev->rx_ht_plcp;
 
 invalid:
+	/*
+	 * An MPDU without an HT-SIG that no first MPDU of its PPDU vouches
+	 * for (why the HT-SIG is missing is not known). Its FCS is good, only
+	 * its rate is unknown: it gets the last HT-SIG's, as dropping it loses
+	 * an MPDU the block ack already acknowledged and mac80211's reorder
+	 * buffer waits out every such hole. On a BCM4331 receiving MCS 15
+	 * A-MPDUs with the short guard interval that was 2% of them, and TCP
+	 * fell to 13 Mbit/s.
+	 */
 	dev->rx_ht_valid = false;
-	return NULL;
+	return dev->rx_ht_plcp;
 }
 
 /* The rate of an HT frame from its HT-SIG @p. Returns the MCS. */
