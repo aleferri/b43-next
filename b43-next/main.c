@@ -2397,8 +2397,12 @@ u8 b43_ieee80211_antenna_sanitize(struct b43_wldev *dev,
 /* Convert a b43 antenna number value to the PHY TX control value. */
 u16 b43_antenna_to_phyctl(struct b43_wldev *dev, int antenna)
 {
-	/* On the N-PHY cores with HT the field holds the mask of TX cores. */
-	if (dev->phy.nphy_ht)
+	/*
+	 * On the pre-AC cores with HT the field holds the mask of TX cores:
+	 * 0x01c0 in wl's ACK/CTS, probe response and beacon words on the
+	 * R6400 v1's three.
+	 */
+	if (b43_ht_core(dev))
 		return dev->txchain << B43_TXH_PHY_ANT_SHIFT;
 
 	switch (antenna) {
@@ -7955,9 +7959,10 @@ static void b43_ht_set_chains(struct b43_wldev *dev)
 				     (tx_streams - 1) <<
 				     IEEE80211_HT_MCS_TX_MAX_STREAMS_SHIFT;
 	/* STBC sends one stream on both cores. Without this, mac80211 also
-	 * hides the peer's RX STBC from rate control.
+	 * hides the peer's RX STBC from rate control. wl announces none on
+	 * the HT-PHY.
 	 */
-	if (tx_streams > 1)
+	if (tx_streams > 1 && dev->phy.nphy_ht)
 		ht->cap |= IEEE80211_HT_CAP_TX_STBC;
 	else
 		ht->cap &= ~IEEE80211_HT_CAP_TX_STBC;
@@ -8310,12 +8315,9 @@ static int b43_setup_bands(struct b43_wldev *dev,
 	if (dev->phy.type == B43_PHYTYPE_HT) {
 		const struct ssbn_sprom *sprom = dev->dev->bus_sprom;
 
-		/* Every chain the SROM has receives. One sends, on the
-		 * antenna the TX header picks: of txchain only the count is
-		 * used.
-		 */
+		/* The board's chains; unset is all three. */
 		dev->rxchain = sprom->rxchain & 0x7 ? : 0x7;
-		dev->txchain = dev->rxchain & -dev->rxchain;
+		dev->txchain = sprom->txchain & 0x7 ? : dev->rxchain;
 	}
 	/* An HT STA is a QoS STA. The shared legacy band templates stay
 	 * unchanged.
