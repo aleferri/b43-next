@@ -2058,7 +2058,7 @@ static void b43_generate_noise_sample(struct b43_wldev *dev)
 {
 	int i;
 
-	if (dev->phy.nphy_ht) {
+	if (dev->phy.type == B43_PHYTYPE_N) {
 		for (i = 0; i < 2; i++)
 			b43_shm_write32(dev, B43_SHM_SHARED,
 					B43_SHM_SH_NOISEPWR + 4 * i, 0);
@@ -2073,7 +2073,7 @@ static void b43_calculate_link_quality(struct b43_wldev *dev)
 {
 	/* Top half of Link Quality calculation. */
 
-	if (dev->phy.type != B43_PHYTYPE_G && !dev->phy.nphy_ht)
+	if (dev->phy.type != B43_PHYTYPE_G && dev->phy.type != B43_PHYTYPE_N)
 		return;
 	if (dev->noisecalc.calculation_running)
 		return;
@@ -2084,9 +2084,11 @@ static void b43_calculate_link_quality(struct b43_wldev *dev)
 }
 
 /* The microcode leaves each core's power summed over 512 samples. Returns
- * the noisier core in dBm, or 0 if the sample is missing. */
+ * the noisier core in dBm, or 0 if the sample is missing; the offset is
+ * brcmsmac's, -103 dB from rev 3 and -99 dB before. */
 static int b43_nphy_noise_dbm(struct b43_wldev *dev)
 {
+	int offset = dev->phy.rev >= 3 ? -103 : -99;
 	int core, noise = INT_MIN;
 	u32 pwr[2];
 
@@ -2103,7 +2105,7 @@ static int b43_nphy_noise_dbm(struct b43_wldev *dev)
 		/* 3 dB per bit, 2 for the next bit */
 		if (p >= 2)
 			db = 3 * ilog2(p) + 2 * ((p >> (ilog2(p) - 1)) & 1);
-		noise = max(noise, db - 103);
+		noise = max(noise, db + offset);
 	}
 	return noise;
 }
@@ -2155,7 +2157,7 @@ static void handle_irq_noise(struct b43_wldev *dev)
 
 	/* Bottom half of Link Quality calculation. */
 
-	if (dev->phy.nphy_ht) {
+	if (dev->phy.type == B43_PHYTYPE_N) {
 		b43_nphy_handle_irq_noise(dev);
 		return;
 	}
