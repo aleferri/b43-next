@@ -50,6 +50,12 @@ $(error b43-next: B43_NEXT_CALREPORT=y needs B43_NEXT_DEBUG=y)
 endif
 b43n-opts += CALREPORT
 endif
+ifeq ($(B43_NEXT_CALSTAT),y)
+ifneq ($(B43_NEXT_DEBUG),y)
+$(error b43-next: B43_NEXT_CALSTAT=y needs B43_NEXT_DEBUG=y)
+endif
+b43n-opts += CALSTAT
+endif
 # Radar channels in AP mode on the AC-PHY: tested on the RT-AC66U B1 only,
 # not a certified radar detector.
 ifeq ($(B43_NEXT_DFS),y)
@@ -112,3 +118,4 @@ b43-next-$(CONFIG_B43_NEXT_PHY_AC) += $(addprefix b43-next/, \
 b43-next-$(CONFIG_B43_NEXT_LEDS) += b43-next/leds.o
 b43-next-$(CONFIG_B43_NEXT_SDIO) += b43-next/sdio.o
 b43-next-$(CONFIG_B43_NEXT_DEBUG) += b43-next/debugfs.o
+b43-next-$(CONFIG_B43_NEXT_CALSTAT) += b43-next/calstat.o

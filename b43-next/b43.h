@@ -1098,6 +1098,11 @@ struct b43_wldev {
 	/* Debugging stuff follows. */
 #ifdef CONFIG_B43_NEXT_DEBUG
 	struct b43_dfsentry *dfsentry;
+#endif
+#ifdef CONFIG_B43_NEXT_CALSTAT
+	struct b43_calstat *calstat;
+#endif
+#ifdef CONFIG_B43_NEXT_DEBUG
 	unsigned int irq_count;
 	unsigned int irq_bit_count[32];
 	unsigned int tx_count;

@@ -16,10 +16,12 @@
 #include <linux/netdevice.h>
 #include <linux/pci.h>
 #include <linux/mutex.h>
+#include <linux/seq_file.h>
 
 #include "b43.h"
 #include "main.h"
 #include "debugfs.h"
+#include "calstat.h"
 #include "dma.h"
 #include "xmit.h"
 
@@ -715,6 +717,159 @@ static struct b43_debugfs_fops fops_calreport = {
 #endif
 
 
+#ifdef CONFIG_B43_NEXT_CALSTAT
+/* The longest line of an entry: its context and up to 96 values */
+#define B43_CAL_LINE_MAX	1024
+
+/* A file of the cal/ directory: one entry's slots, or every slot for -1 */
+struct b43_cal_view {
+	struct b43_calstat *cs;
+	int entry;
+};
+
+struct b43_dfs_cal {
+	struct b43_calstat cs;
+	struct b43_cal_view all;
+	struct b43_cal_view *views;
+	struct b43_cal_ring rings[];
+};
+
+static int b43_cal_show(struct seq_file *s, void *unused)
+{
+	const struct b43_cal_view *v = s->private;
+	struct b43_calstat *cs = v->cs;
+	unsigned int entry, age;
+	u32 seq = 0;
+	char *buf;
+	int a;
+
+	buf = kmalloc(B43_CAL_LINE_MAX, GFP_KERNEL);
+	if (!buf)
+		return -ENOMEM;
+	mutex_lock(&cs->dev->wl->mutex);
+	if (v->entry < 0) {
+		while (b43_cal_next(cs, &seq, &entry, &age))
+			if (b43_cal_format(cs, entry, age, B43_CAL_FMT_CONTEXT,
+					   buf, B43_CAL_LINE_MAX) >= 0)
+				seq_printf(s, "%s\n", buf);
+	} else {
+		for (a = cs->rings[v->entry].used - 1; a >= 0; a--)
+			if (b43_cal_format(cs, v->entry, a, B43_CAL_FMT_CONTEXT,
+					   buf, B43_CAL_LINE_MAX) >= 0)
+				seq_printf(s, "%s\n", buf);
+	}
+	mutex_unlock(&cs->dev->wl->mutex);
+	kfree(buf);
+	return 0;
+}
+DEFINE_SHOW_ATTRIBUTE(b43_cal);
+
+static ssize_t b43_cal_enable_read(struct file *file, char __user *buf,
+				   size_t count, loff_t *ppos)
+{
+	struct b43_calstat *cs = file->private_data;
+	char val[2] = { cs->mem ? '1' : '0', '\n' };
+
+	return simple_read_from_buffer(buf, count, ppos, val, sizeof(val));
+}
+
+/* 1 starts new statistics, 0 stops them and frees their storage */
+static ssize_t b43_cal_enable_write(struct file *file, const char __user *buf,
+				    size_t count, loff_t *ppos)
+{
+	struct b43_calstat *cs = file->private_data;
+	u8 *mem = NULL, *old;
+	bool on;
+	int err;
+
+	err = kstrtobool_from_user(buf, count, &on);
+	if (err)
+		return err;
+	if (on) {
+		mem = kvzalloc(cs->size, GFP_KERNEL);
+		if (!mem)
+			return -ENOMEM;
+	}
+
+	mutex_lock(&cs->dev->wl->mutex);
+	old = b43_calstat_stop(cs);
+	if (mem)
+		b43_calstat_start(cs, mem);
+	mutex_unlock(&cs->dev->wl->mutex);
+
+	kvfree(old);
+	return count;
+}
+
+static const struct file_operations b43_cal_enable_fops = {
+	.owner	= THIS_MODULE,
+	.open	= simple_open,
+	.read	= b43_cal_enable_read,
+	.write	= b43_cal_enable_write,
+	.llseek	= default_llseek,
+};
+
+/* cal/enable, cal/all and cal/<group>/<entry>, from the PHY's table */
+static void b43_cal_add(struct b43_wldev *dev, struct b43_dfsentry *e)
+{
+	const struct b43_phy_operations *ops = dev->phy.ops;
+	struct dentry *groups[__B43_NR_CAL_GROUPS] = { };
+	const struct b43_cal_entry *ce;
+	struct b43_dfs_cal *dc;
+	struct dentry *dir;
+	unsigned int i;
+
+	if (!ops->nr_cal_entries)
+		return;
+	dc = kzalloc_flex(*dc, rings, ops->nr_cal_entries);
+	if (!dc)
+		return;
+	dc->views = kzalloc_objs(struct b43_cal_view, ops->nr_cal_entries);
+	if (!dc->views) {
+		kfree(dc);
+		return;
+	}
+	b43_calstat_setup(&dc->cs, dev, ops->cal_entries, ops->nr_cal_entries,
+			  dc->rings);
+	e->cal = dc;
+	dev->calstat = &dc->cs;
+
+	dir = debugfs_create_dir("cal", e->subdir);
+	debugfs_create_file("enable", 0600, dir, &dc->cs,
+			    &b43_cal_enable_fops);
+	dc->all = (struct b43_cal_view){ .cs = &dc->cs, .entry = -1 };
+	debugfs_create_file("all", 0400, dir, &dc->all, &b43_cal_fops);
+	for (i = 0; i < ops->nr_cal_entries; i++) {
+		ce = &ops->cal_entries[i];
+		if (!groups[ce->group])
+			groups[ce->group] = debugfs_create_dir(
+				b43_cal_group_name(ce->group), dir);
+		dc->views[i] = (struct b43_cal_view){ .cs = &dc->cs, .entry = i };
+		debugfs_create_file(ce->name, 0400, groups[ce->group],
+				    &dc->views[i], &b43_cal_fops);
+	}
+}
+
+/* After the files are gone */
+static void b43_cal_remove(struct b43_wldev *dev, struct b43_dfsentry *e)
+{
+	if (!e->cal)
+		return;
+	dev->calstat = NULL;
+	kvfree(b43_calstat_stop(&e->cal->cs));
+	kfree(e->cal->views);
+	kfree(e->cal);
+}
+#else
+static inline void b43_cal_add(struct b43_wldev *dev, struct b43_dfsentry *e)
+{
+}
+static inline void b43_cal_remove(struct b43_wldev *dev,
+				  struct b43_dfsentry *e)
+{
+}
+#endif
+
 bool b43_debug(struct b43_wldev *dev, enum b43_dyndbg feature)
 {
 	bool enabled;
@@ -812,6 +967,7 @@ void b43_debugfs_add_device(struct b43_wldev *dev)
 #undef ADD_FILE
 
 	b43_add_dynamic_debug(dev);
+	b43_cal_add(dev, e);
 }
 
 void b43_debugfs_remove_device(struct b43_wldev *dev)
@@ -825,6 +981,7 @@ void b43_debugfs_remove_device(struct b43_wldev *dev)
 		return;
 
 	debugfs_remove(e->subdir);
+	b43_cal_remove(dev, e);
 #ifdef CONFIG_B43_NEXT_CALREPORT
 	kfree(e->calreport);
 #endif

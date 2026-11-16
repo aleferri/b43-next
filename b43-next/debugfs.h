@@ -73,6 +73,10 @@ struct b43_dfsentry {
 	/* Enabled/Disabled list for the dynamic debugging features. */
 	bool dyn_debug[__B43_NR_DYNDBG];
 
+#ifdef CONFIG_B43_NEXT_CALSTAT
+	struct b43_dfs_cal *cal;
+#endif
+
 #ifdef CONFIG_B43_NEXT_CALREPORT
 	/* The calibration report's lines, while the report is on */
 	char *calreport;

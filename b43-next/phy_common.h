@@ -6,6 +6,7 @@
 #include <linux/nl80211.h>
 
 struct b43_wldev;
+struct b43_cal_entry;
 
 /* PHY register routing bits */
 #define B43_PHYROUTE			0x0C00 /* PHY register routing bits mask */
@@ -217,6 +218,12 @@ struct b43_phy_operations {
 	void (*beacon_rate_set)(struct b43_wldev *dev, bool cck);
 	void (*cac_done)(struct b43_wldev *dev);
 	void (*ofdm_tx)(struct b43_wldev *dev);
+
+#ifdef CONFIG_B43_NEXT_CALSTAT
+	/* The entries of the calibration statistics, see calstat.h */
+	const struct b43_cal_entry *cal_entries;
+	unsigned int nr_cal_entries;
+#endif
 };
 
 struct b43_phy_g;
