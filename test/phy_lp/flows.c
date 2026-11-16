@@ -110,6 +110,8 @@ static struct b43_wldev *setup(void)
 {
 	chan.hw_value = lp_env("LP_CHANNEL", 1);
 	chan.center_freq = chan.hw_value == 14 ? 2484 : 2407 + 5 * chan.hw_value;
+	/* cfg80211's limit, dBm EIRP; 20 binds nothing on the HP 550 */
+	chan.max_power = lp_env("LP_MAX_POWER", 20);
 	hw.conf.chandef.chan = &chan;
 	hw.conf.chandef.width = NL80211_CHAN_WIDTH_20;
 	hw.conf.chandef.center_freq1 = chan.center_freq;
@@ -279,6 +281,10 @@ void b43_shm_write16(struct b43_wldev *dev, u16 routing, u16 offset, u16 value)
 void b43_shm_write32(struct b43_wldev *dev, u16 routing, u16 offset, u32 value)
 {
 	lp_core("b43_shm_write32");
+}
+void b43_dummy_transmission(struct b43_wldev *dev, bool ofdm, bool pa_on)
+{
+	lp_core("b43_dummy_transmission");
 }
 u64 b43_hf_read(struct b43_wldev *dev)
 {

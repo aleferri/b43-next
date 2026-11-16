@@ -37,19 +37,23 @@ On 2026-11-16, `--min-block 8 --gap-tol 2`:
 
 | capture | all | PHY+radio |
 |---|---|---|
-| attach | 21004/25733 = 81.62% | 20991/23760 = 88.35% |
+| attach | 21014/25651 = 81.92% | 20992/24374 = 86.12% |
 
 What is left:
 
-- **The third calibration and the hardware TX power control** (1370 PHY and
-  radio operations from #36075): wl tunes to channel 1 a second time,
-  recalibrates the TX I/Q and LO there and turns on hardware TX power
-  control. b43 tunes again after `b43_lpphy_op_init()` without calibrating,
-  and stays in software power control; see `TODO-LP.md`.
+- **The third calibration and the order of the power control** (wl's 1370
+  PHY and radio operations from #36075): wl tunes to channel 1 a second
+  time, recalibrates the TX I/Q and LO there and only then initialises the
+  hardware TX power control. b43 initialises it at the end of
+  `b43_lpphy_op_init()`, before its core tunes the channel again, and
+  calibrates nothing after that tune.
+- **The power control's split**: b43 writes the lowest target, 0x3c, to
+  PHY 0x4a7 and -2 and 0 as the CCK and OFDM offsets; wl writes 0x24 and
+  -26 and -24. The per-rate targets, 62 and 60, are the same.
 - **Reads served out of place**: b43 switches the analog on three times
   before the init, wl once, so the reads of PHY 0x43b and the ones after
-  them are served from other points of wl's stream (41 wrong values, in
-  the TX I/Q-LO calibration's save and restore and the RC calibration's).
+  them are served from other points of wl's stream, in the TX I/Q-LO
+  calibration's save and restore and the RC calibration's.
 
 Every run prints, on stderr, the reads past the window (served from b43's
 own writes, or 0), the window's reads b43 did not take, b43's messages and
@@ -72,7 +76,7 @@ the calls into the core.
 ## Environment
 
 `LP_SROM` (the SROM dump, set by `gates.sh`), `LP_CHANNEL` (1-14, default
-1), `LP_CALSTAT=1` (the calibration statistics on stderr, as `../phy_n`
+1), `LP_MAX_POWER` (cfg80211's limit of the channel, dBm, default 20), `LP_CALSTAT=1` (the calibration statistics on stderr, as `../phy_n`
 prints them), `LP_DEBUG=1` (each read past the window on stderr), `LP_FN=1`
 (function markers in the trace; the binary must be built with
 `make LP_FN=1`).

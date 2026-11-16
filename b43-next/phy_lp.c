@@ -1147,6 +1147,161 @@ static void lpphy_write_tx_pctl_mode_to_hardware(struct b43_wldev *dev)
 			~B43_LPPHY_TX_PWR_CTL_CMD_MODE & 0xFFFF, ctl);
 }
 
+/*
+ * wl's own locale at 2.4 GHz for the CCK rates, in qdBm before the margin,
+ * by channel: measured, as the HT-PHY's b43_phy_ht_locale_2g, from the
+ * targets of the HP 550's BCM4312 on channels 1-11, whose OFDM rates stay at
+ * the board's (maxpwr less opo) 0.5 dB under the CCK ones. A conducted limit
+ * of one class of rates, which cfg80211's per channel EIRP cannot express.
+ */
+static const struct b43_ppr_locale lpphy_locale_cck_2g[] = {
+	{ 1, 11, 68 },
+};
+
+/*
+ * The per-rate targets of the channel, brcmsmac's chain as for the other
+ * PHYs: the board's PPR, the CCK rates capped by wl's locale, the regulatory
+ * limit less the antenna gain and the user's, less 6 qdBm, at least 10 dBm
+ * (brcmsmac's floor outside the N-PHY). Kept as the lowest target and each
+ * rate's distance above it, which is what the hardware takes.
+ */
+static bool lpphy_tx_power_targets(struct b43_wldev *dev)
+{
+	struct b43_phy_lp *lpphy = dev->phy.lp;
+	const struct ssbn_sprom *sprom = dev->dev->bus_sprom;
+	struct ieee80211_channel *chan = dev->phy.chandef->chan;
+	u8 old_lo = lpphy->tx_pwr_min, lo, cck = 0;
+	unsigned int i;
+	enum b43_band band;
+	struct b43_ppr ppr;
+	bool changed;
+	s8 gain;
+
+	if (!b43_ppr_band(chan, &band))
+		band = B43_BAND_2G;
+	ppr = lpphy->tx_max_ppr[band];
+
+	if (band == B43_BAND_2G)
+		cck = b43_ppr_locale_limit(lpphy_locale_cck_2g,
+					   ARRAY_SIZE(lpphy_locale_cck_2g),
+					   chan->hw_value);
+	if (cck)
+		for (i = 0; i < B43_PPR_CCK_RATES; i++)
+			ppr.cck[i] = min(ppr.cck[i], cck);
+	gain = band == B43_BAND_2G ? sprom->antenna_gain.a0 :
+				     sprom->antenna_gain.a1;
+	if (chan->max_power)
+		b43_ppr_apply_max(&ppr, max_t(int, INT_TO_Q52(chan->max_power) -
+					     gain, 0));
+	if (dev->phy.desired_txpower)
+		b43_ppr_apply_max(&ppr, INT_TO_Q52(dev->phy.desired_txpower));
+	b43_ppr_add(&ppr, -6);
+	b43_ppr_apply_min(&ppr, INT_TO_Q52(10));
+
+	lo = b43_ppr_get_min(&ppr);
+	changed = lo != old_lo;
+	lpphy->tx_pwr_min = lo;
+	/* CCK reads 0 on 5 GHz, where the table has none: offset 0 */
+	for (i = 0; i < ARRAY_SIZE(lpphy->tx_pwr_offset); i++) {
+		u8 rate = i < B43_PPR_CCK_RATES ?
+			  b43_ppr_get_cck(&ppr, i) :
+			  b43_ppr_get_ofdm(&ppr, B43_PPR_BW_20, B43_PPR_SISO,
+					   i - B43_PPR_CCK_RATES);
+		u8 off = rate > lo ? rate - lo : 0;
+
+		changed |= off != lpphy->tx_pwr_offset[i];
+		lpphy->tx_pwr_offset[i] = off;
+	}
+	return changed;
+}
+
+static void lpphy_tx_power_reset_npt(struct b43_wldev *dev)
+{
+	struct b43_phy_lp *lpphy = dev->phy.lp;
+
+	if (b43_current_band(dev->wl) == NL80211_BAND_5GHZ)
+		lpphy->tssi_idx = 64;
+	else
+		lpphy->tssi_idx = 32;
+	lpphy->tssi_npt = 0;
+}
+
+static void lpphy_tx_power_update_npt(struct b43_wldev *dev)
+{
+	struct b43_phy_lp *lpphy = dev->phy.lp;
+	u16 tx_total, npt;
+
+	tx_total = b43_shm_read16(dev, B43_SHM_SHARED, 0xE0);
+	npt = (b43_phy_read(dev, B43_LPPHY_TX_PWR_CTL_NNUM) & 0x700) >> 8;
+	if ((1 << npt) >= (u16)(tx_total - lpphy->tssi_tx_count))
+		return;
+
+	lpphy->tssi_tx_count = tx_total;
+	if (npt < 7) {
+		npt++;
+		b43_phy_maskset(dev, B43_LPPHY_TX_PWR_CTL_NNUM,
+				0xF8FF, npt << 8);
+	}
+	lpphy->tssi_npt = npt;
+	lpphy->tssi_idx = (b43_phy_read(dev, B43_LPPHY_TX_PWR_CTL_STAT) &
+			   0x7F00) >> 8;
+}
+
+static u8 lpphy_tx_pwr_table(struct b43_wldev *dev)
+{
+	return dev->phy.rev < 2 ? 10 : 7;
+}
+
+static void lpphy_clear_tx_power_offsets(struct b43_wldev *dev)
+{
+	static const u32 zero[64];
+	u8 table = lpphy_tx_pwr_table(dev);
+
+	b43_lptab_write_bulk(dev, B43_LPTAB32(table, 0x40), 12, zero);
+	b43_lptab_write_bulk(dev, B43_LPTAB32(table, 0x80), 64, zero);
+}
+
+static void lpphy_tx_power_recalc_target(struct b43_wldev *dev)
+{
+	struct b43_phy_lp *lpphy = dev->phy.lp;
+	u16 freq = dev->phy.chandef->chan->center_freq;
+	u8 table = lpphy_tx_pwr_table(dev);
+	u32 offset[ARRAY_SIZE(lpphy->tx_pwr_offset)];
+	bool reset = false;
+	const s16 *pa;
+	unsigned int i;
+
+	for (i = 0; i < ARRAY_SIZE(offset); i++)
+		offset[i] = -(s32)lpphy->tx_pwr_offset[i];
+	b43_lptab_write_bulk(dev, B43_LPTAB32(table, 0x40),
+			     ARRAY_SIZE(offset), offset);
+
+	if (lpphy->tgt_tx_freq != freq) {
+		if (freq < 2500 || (freq >= 5321 && freq < 5701))
+			pa = lpphy->txpa;
+		else if (freq < 5321)
+			pa = lpphy->txpal;
+		else
+			pa = lpphy->txpah;
+		/* The TSSI to power table: wl's 64 entries on the BCM4312 */
+		for (i = 0; i < 64; i++)
+			b43_lptab_write(dev, B43_LPTAB32(table, i),
+					b43_ppr_est_pwr(pa[2], pa[0], pa[1], i));
+		lpphy->tgt_tx_freq = freq;
+		reset = true;
+	}
+
+	if ((b43_phy_read(dev, B43_LPPHY_TX_PWR_CTL_TARGETPWR) & 0xFF) !=
+	    lpphy->tx_pwr_min) {
+		b43_phy_maskset(dev, B43_LPPHY_TX_PWR_CTL_TARGETPWR, 0xFF00,
+				lpphy->tx_pwr_min);
+		reset = true;
+	}
+
+	if (reset)
+		lpphy_tx_power_reset_npt(dev);
+}
+
 static void lpphy_set_tx_power_control(struct b43_wldev *dev,
 				       enum b43_lpphy_txpctl_mode mode)
 {
@@ -1160,16 +1315,17 @@ static void lpphy_set_tx_power_control(struct b43_wldev *dev,
 	lpphy->txpctl_mode = mode;
 
 	if (oldmode == B43_LPPHY_TXPCTL_HW) {
-		//TODO Update TX Power NPT
-		//TODO Clear all TX Power offsets
+		lpphy_tx_power_update_npt(dev);
+		lpphy_clear_tx_power_offsets(dev);
 	} else {
 		if (mode == B43_LPPHY_TXPCTL_HW) {
-			//TODO Recalculate target TX power
+			lpphy_tx_power_recalc_target(dev);
 			b43_phy_maskset(dev, B43_LPPHY_TX_PWR_CTL_CMD,
 					0xFF80, lpphy->tssi_idx);
 			b43_phy_maskset(dev, B43_LPPHY_TX_PWR_CTL_NNUM,
 					0xF8FF, lpphy->tssi_npt << 8);
-			//TODO Set "TSSI Transmit Count" variable to total transmitted frame count
+			lpphy->tssi_tx_count =
+				b43_shm_read16(dev, B43_SHM_SHARED, 0xE0);
 			lpphy_disable_tx_gain_override(dev);
 			lpphy->tx_pwr_idx_over = -1;
 		}
@@ -1520,13 +1676,9 @@ static void lpphy_tx_pctl_init_hw(struct b43_wldev *dev)
 	u16 tmp;
 	int i;
 
-	//SPEC TODO Call LP PHY Clear TX Power offsets
-	for (i = 0; i < 64; i++) {
-		if (dev->phy.rev >= 2)
-			b43_lptab_write(dev, B43_LPTAB32(7, i + 1), i);
-		else
-			b43_lptab_write(dev, B43_LPTAB32(10, i + 1), i);
-	}
+	lpphy_clear_tx_power_offsets(dev);
+	for (i = 0; i < 64; i++)
+		b43_lptab_write(dev, B43_LPTAB32(lpphy_tx_pwr_table(dev), i), i);
 
 	b43_phy_maskset(dev, B43_LPPHY_TX_PWR_CTL_NNUM, 0xFF00, 0xFF);
 	b43_phy_maskset(dev, B43_LPPHY_TX_PWR_CTL_NNUM, 0x8FFF, 0x6000);
@@ -1561,6 +1713,7 @@ static void lpphy_tx_pctl_init_hw(struct b43_wldev *dev)
 	b43_dummy_transmission(dev, true, true);
 
 	tmp = b43_phy_read(dev, B43_LPPHY_TX_PWR_CTL_STAT);
+	b43_phy_mask(dev, B43_LPPHY_TX_PWR_CTL_DELTAPWR_LIMIT, 0x00FF);
 	if (tmp & 0x8000) {
 		b43_phy_maskset(dev, B43_LPPHY_TX_PWR_CTL_IDLETSSI,
 				0xFFC0, (tmp & 0xFF) - 32);
@@ -1568,8 +1721,9 @@ static void lpphy_tx_pctl_init_hw(struct b43_wldev *dev)
 
 	b43_phy_mask(dev, B43_LPPHY_RF_OVERRIDE_0, 0xEFFF);
 
-	// (SPEC?) TODO Set "Target TX frequency" variable to 0
-	// SPEC FIXME "Set BB Multiplier to 0xE000" impossible - bb_mult is u8!
+	dev->phy.lp->tgt_tx_freq = 0;
+	lpphy_tx_power_targets(dev);
+	lpphy_set_tx_power_control(dev, B43_LPPHY_TXPCTL_HW);
 }
 
 static void lpphy_tx_pctl_init_sw(struct b43_wldev *dev)
@@ -1594,7 +1748,8 @@ static void lpphy_tx_pctl_init_sw(struct b43_wldev *dev)
 /* Initialize TX power control */
 static void lpphy_tx_pctl_init(struct b43_wldev *dev)
 {
-	if (0/*FIXME HWPCTL capable */) {
+	/* TXPwrCtrlInit; wl on the BCM4312, without NOPA, takes this branch */
+	if (!(dev->dev->bus_sprom->boardflags_hi & B43_BFH_NOPA)) {
 		lpphy_tx_pctl_init_hw(dev);
 	} else { /* This device is only software TX power control capable. */
 		lpphy_tx_pctl_init_sw(dev);
@@ -2925,6 +3080,11 @@ static int b43_lpphy_op_switch_channel(struct b43_wldev *dev,
 		lpphy_set_analog_filter(dev, new_channel);
 		lpphy_adjust_gain_table(dev, channel2freq_lp(new_channel));
 	}
+	if (lpphy->txpctl_mode == B43_LPPHY_TXPCTL_HW) {
+		lpphy_set_tx_power_control(dev, B43_LPPHY_TXPCTL_OFF);
+		lpphy_tx_power_targets(dev);
+		lpphy_set_tx_power_control(dev, B43_LPPHY_TXPCTL_HW);
+	}
 
 	b43_write16(dev, B43_MMIO_CHANNEL, new_channel);
 
@@ -2964,14 +3124,18 @@ static int b43_lpphy_op_init(struct b43_wldev *dev)
 
 static void b43_lpphy_op_adjust_txpower(struct b43_wldev *dev)
 {
-	//TODO
+	b43_mac_suspend(dev);
+	lpphy_tx_power_recalc_target(dev);
+	b43_mac_enable(dev);
 }
 
 static enum b43_txpwr_result b43_lpphy_op_recalc_txpower(struct b43_wldev *dev,
 							 bool ignore_tssi)
 {
-	//TODO
-	return B43_TXPWR_RES_DONE;
+	if (!lpphy_tx_power_targets(dev) ||
+	    dev->phy.lp->txpctl_mode != B43_LPPHY_TXPCTL_HW)
+		return B43_TXPWR_RES_DONE;
+	return B43_TXPWR_RES_NEED_ADJUST;
 }
 
 static void b43_lpphy_op_switch_analog(struct b43_wldev *dev, bool on)
