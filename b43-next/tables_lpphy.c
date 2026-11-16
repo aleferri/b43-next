@@ -793,15 +793,8 @@ static const u16 lpphy_iqlo_cal_table[] = {
 	0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000,
 };
 
-static const u16 lpphy_rev0_ofdm_cck_gain_table[] = {
+static const u16 lpphy_rev01_ofdm_cck_gain_table[] = {
 	0x0001, 0x0001, 0x0001, 0x0001, 0x1001, 0x2001, 0x3001, 0x4001, 0x5001,
-	0x6001, 0x7001, 0x7011, 0x7021, 0x2035, 0x2045, 0x2055, 0x2065, 0x2075,
-	0x006d, 0x007d, 0x014d, 0x015d, 0x115d, 0x035d, 0x135d, 0x055d, 0x155d,
-	0x0d5d, 0x1d5d, 0x2d5d, 0x555d, 0x655d, 0x755d,
-};
-
-static const u16 lpphy_rev1_ofdm_cck_gain_table[] = {
-	0x5000, 0x6000, 0x7000, 0x0001, 0x1001, 0x2001, 0x3001, 0x4001, 0x5001,
 	0x6001, 0x7001, 0x7011, 0x7021, 0x2035, 0x2045, 0x2055, 0x2065, 0x2075,
 	0x006d, 0x007d, 0x014d, 0x015d, 0x115d, 0x035d, 0x135d, 0x055d, 0x155d,
 	0x0d5d, 0x1d5d, 0x2d5d, 0x555d, 0x655d, 0x755d,
@@ -2272,17 +2265,10 @@ void lpphy_rev0_1_table_init(struct b43_wldev *dev)
 		ARRAY_SIZE(lpphy_pll_fraction_table), lpphy_pll_fraction_table);
 	b43_lptab_write_bulk(dev, B43_LPTAB16(0, 0),
 		ARRAY_SIZE(lpphy_iqlo_cal_table), lpphy_iqlo_cal_table);
-	if (dev->phy.rev == 0) {
-		b43_lptab_write_bulk(dev, B43_LPTAB16(13, 0),
-			ARRAY_SIZE(lpphy_rev0_ofdm_cck_gain_table), lpphy_rev0_ofdm_cck_gain_table);
-		b43_lptab_write_bulk(dev, B43_LPTAB16(12, 0),
-			ARRAY_SIZE(lpphy_rev0_ofdm_cck_gain_table), lpphy_rev0_ofdm_cck_gain_table);
-	} else {
-		b43_lptab_write_bulk(dev, B43_LPTAB16(13, 0),
-			ARRAY_SIZE(lpphy_rev1_ofdm_cck_gain_table), lpphy_rev1_ofdm_cck_gain_table);
-		b43_lptab_write_bulk(dev, B43_LPTAB16(12, 0),
-			ARRAY_SIZE(lpphy_rev1_ofdm_cck_gain_table), lpphy_rev1_ofdm_cck_gain_table);
-}
+	b43_lptab_write_bulk(dev, B43_LPTAB16(13, 0),
+		ARRAY_SIZE(lpphy_rev01_ofdm_cck_gain_table), lpphy_rev01_ofdm_cck_gain_table);
+	b43_lptab_write_bulk(dev, B43_LPTAB16(12, 0),
+		ARRAY_SIZE(lpphy_rev01_ofdm_cck_gain_table), lpphy_rev01_ofdm_cck_gain_table);
 	b43_lptab_write_bulk(dev, B43_LPTAB16(15, 0),
 		ARRAY_SIZE(lpphy_gain_delta_table), lpphy_gain_delta_table);
 	b43_lptab_write_bulk(dev, B43_LPTAB32(10, 0),
