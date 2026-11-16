@@ -317,24 +317,47 @@ static struct {
 	unsigned long due;
 } dworks[SHIM_DWORKS];
 
-void ieee80211_queue_delayed_work(struct ieee80211_hw *hw,
-				  struct delayed_work *work,
-				  unsigned long delay)
+/* Whether @work was pending; @mod moves the due time of a pending one. */
+static bool shim_dwork_queue(struct delayed_work *work, unsigned long delay,
+			     bool mod)
 {
 	int i, free = -1;
 
 	for (i = 0; i < SHIM_DWORKS; i++) {
-		if (dworks[i].work == work)
-			return;
+		if (dworks[i].work == work) {
+			if (mod)
+				dworks[i].due = jiffies + delay;
+			return true;
+		}
 		if (!dworks[i].work && free < 0)
 			free = i;
 	}
 	if (free < 0) {
 		b43_trace_note("troppi delayed work in coda%d\n", 0);
-		return;
+		return false;
 	}
 	dworks[free].work = work;
 	dworks[free].due = jiffies + delay;
+	return false;
+}
+
+void ieee80211_queue_delayed_work(struct ieee80211_hw *hw,
+				  struct delayed_work *work,
+				  unsigned long delay)
+{
+	shim_dwork_queue(work, delay, false);
+}
+
+bool queue_delayed_work_on(int cpu, struct workqueue_struct *wq,
+			   struct delayed_work *work, unsigned long delay)
+{
+	return !shim_dwork_queue(work, delay, false);
+}
+
+bool mod_delayed_work_on(int cpu, struct workqueue_struct *wq,
+			 struct delayed_work *work, unsigned long delay)
+{
+	return shim_dwork_queue(work, delay, true);
 }
 
 int b43_test_dwork_cancel(void *w)
@@ -348,6 +371,22 @@ int b43_test_dwork_cancel(void *w)
 		}
 	}
 	return 0;
+}
+
+bool cancel_delayed_work(struct delayed_work *work)
+{
+	return b43_test_dwork_cancel(work);
+}
+
+unsigned long __msecs_to_jiffies(const unsigned int m)
+{
+	return DIV_ROUND_UP((unsigned long)m * HZ, MSEC_PER_SEC);
+}
+
+/* The suite's clock is jiffies, which main.c moves on. */
+ktime_t ktime_get(void)
+{
+	return (ktime_t)jiffies * (NSEC_PER_SEC / HZ);
 }
 
 /* Fa scattare, in ordine di scadenza, i work che scadono entro @until. */
@@ -526,6 +565,7 @@ int b43_pio_init(struct b43_wldev *dev) { return 0; }
 void b43_pio_free(struct b43_wldev *dev) { }
 void b43_pio_tx(struct b43_wldev *dev, struct sk_buff *skb) { }
 void b43_pio_rx(void *q) { }
+bool b43_pio_tx_empty(struct b43_wldev *dev) { return true; }
 /*
  * Non stubbati: stanno in xmit.c, che si compila. Erano qui quando xmit.c
  * non era nella lista, e tenerli darebbe "multiple definition".
@@ -571,6 +611,19 @@ u32 ieee80211_channel_to_freq_khz(int chan, enum nl80211_band band)
 		return (5000 + chan * 5) * 1000;
 	return 0;
 }
+int ieee80211_freq_khz_to_channel(u32 freq)
+{
+	freq = KHZ_TO_MHZ(freq);
+	if (freq == 2484)
+		return 14;
+	if (freq < 2484)
+		return (freq - 2407) / 5;
+	if (freq >= 4910 && freq <= 4980)
+		return (freq - 4000) / 5;
+	if (freq < 5925)
+		return (freq - 5000) / 5;
+	return 0;
+}
 struct ieee80211_channel *ieee80211_get_channel_khz(struct wiphy *wiphy,
 						    u32 freq)
 {
@@ -613,6 +666,60 @@ void ieee80211_rx_napi(struct ieee80211_hw *hw, struct ieee80211_sta *sta,
 		       struct sk_buff *skb, struct napi_struct *napi) { }
 
 /*
+ * Stations, their power save and the frames sent to them: the captures
+ * have no station, and b43 here is an AP.
+ */
+void ieee80211_iterate_stations_atomic(struct ieee80211_hw *hw,
+				       void (*iterator)(void *data,
+							struct ieee80211_sta *sta),
+				       void *data) { }
+void ieee80211_sta_set_buffered(struct ieee80211_sta *sta, u8 tid,
+				bool buffered) { }
+void ieee80211_sta_eosp(struct ieee80211_sta *pubsta) { }
+void ieee80211_txq_get_depth(struct ieee80211_txq *txq,
+			     unsigned long *frame_cnt, unsigned long *byte_cnt)
+{
+	if (frame_cnt)
+		*frame_cnt = 0;
+	if (byte_cnt)
+		*byte_cnt = 0;
+}
+void ieee80211_get_tx_rates(struct ieee80211_vif *vif,
+			    struct ieee80211_sta *sta, struct sk_buff *skb,
+			    struct ieee80211_tx_rate *dest, int max_rates)
+{
+	int i;
+
+	for (i = 0; i < max_rates; i++)
+		dest[i].idx = -1;
+}
+void ieee80211_tx_rate_update(struct ieee80211_hw *hw,
+			      struct ieee80211_sta *pubsta,
+			      struct ieee80211_tx_info *info) { }
+bool ieee80211_tx_prepare_skb(struct ieee80211_hw *hw,
+			      struct ieee80211_vif *vif, struct sk_buff *skb,
+			      int band, struct ieee80211_sta **sta)
+{
+	return false;
+}
+struct sk_buff *ieee80211_nullfunc_get(struct ieee80211_hw *hw,
+				       struct ieee80211_vif *vif,
+				       int link_id, bool qos_ok) { return NULL; }
+struct sk_buff *ieee80211_pspoll_get(struct ieee80211_hw *hw,
+				     struct ieee80211_vif *vif) { return NULL; }
+const struct element *
+cfg80211_find_elem_match(u8 eid, const u8 *ies, unsigned int len,
+			 const u8 *match, unsigned int match_len,
+			 unsigned int match_offset) { return NULL; }
+/* cfg80211's default: no power save timeout set */
+static struct wireless_dev shim_wdev = { .ps_timeout = -1 };
+
+struct wireless_dev *ieee80211_vif_to_wdev(struct ieee80211_vif *vif)
+{
+	return &shim_wdev;
+}
+
+/*
  * Le vtable dei PHY che la suite non compila: a NULL, e non e' pigrizia.
  * b43_phy_allocate() dispaccia su phy->type, quindi prende solo il ramo AC o
  * HT della board: se un giorno prendesse un altro ramo il puntatore nullo lo
@@ -622,6 +729,7 @@ void ieee80211_rx_napi(struct ieee80211_hw *hw, struct ieee80211_sta *sta,
 const struct b43_phy_operations *b43_phyops_g;
 const struct b43_phy_operations *b43_phyops_n;
 const struct b43_phy_operations *b43_phyops_lp;
+void b43_nphy_cancel_perical(struct b43_wldev *dev) { }
 
 /*
  * I work item si eseguono in linea, non si accodano.
