@@ -79,15 +79,19 @@ configuration.
 `check.sh` takes `$TRACES/bcm4331-rev2/r6400v1`: the board values from its
 `nvram.txt`, the windows from its `traces/mmio-*`. A window runs from the
 first table 0x1a read of `b43_phy_ht_tx_power_fix()` that is followed by the
-control turned off, to the write that turns it on: the tail of
-`b43_phy_ht_op_init()`, flow `pctl_init`. The cold captures have one in `up`
+control turned off, to the TSSI setup before wl turns it on: the tail of
+`b43_phy_ht_op_init()`, flow `pctl_init`. Turning it on is left out, as on
+this board (BFL_HGPA) b43 fixes a static TX gain there instead
+(`b43_phy_ht_static_txgain()`). The cold captures have one in `up`
 and one in `ssid`, the hot ones one in every `ssid-N`: every 2.4 GHz channel
 at 20 MHz, 1l-7l and 5u-11u at 40.
 
 A flow passes only if both streams are equal, no read goes past the capture
 and none of the capture's is left over, and b43 printed nothing.
 
-All 37 windows pass.
+On 2026-11-16 all 37 differ from wl at the same place: wl reads table 8 at
+0x1b (0x96) and writes it as the TSSI delay of `TXPCTL_N`, where b43 writes
+0, and the idle TSSI written to 0x1e9 and 0x965 differ.
 
 ## The start of the BSS
 

@@ -215,12 +215,10 @@ int ht_run_flow(const char *name)
 		run_turns(dev);
 	} else if (!strcmp(name, "pctl_init")) {
 		/*
-		 * The TX power control at the end of b43_phy_ht_op_init(); on
-		 * a later init (HT_LATER) with the target of the configuration
-		 * before (HT_PREV_CHANNEL).
+		 * The TX power control at the end of b43_phy_ht_op_init(), up
+		 * to turning it on; on a later init (HT_LATER) with the target
+		 * of the configuration before (HT_PREV_CHANNEL).
 		 */
-		bool saved = phy_ht.tx_pwr_ctl;
-
 		if (ht_env("HT_LATER", 0))
 			prev_target(dev);
 		b43_phy_ht_tx_power_fix(dev);
@@ -228,7 +226,6 @@ int ht_run_flow(const char *name)
 		b43_phy_ht_tx_power_ctl_idle_tssi(dev);
 		b43_phy_ht_tx_power_ctl_setup(dev);
 		b43_phy_ht_tssi_setup(dev);
-		b43_phy_ht_tx_power_ctl(dev, saved);
 	} else
 		return -1;
 	return 0;
