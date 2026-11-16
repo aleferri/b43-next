@@ -727,6 +727,7 @@ static void b43_phy_ht_tx_power_ctl_idle_tssi(struct b43_wldev *dev)
 	static const u16 clip_off[3] = { 0xffff, 0xffff, 0xffff };
 	u16 class;
 	s32 rssi_buf[6];
+	const u8 nsamp = 8;
 	int core;
 
 	b43_cal_begin(dev, B43_CAL_IDLE_TSSI);
@@ -760,14 +761,13 @@ static void b43_phy_ht_tx_power_ctl_idle_tssi(struct b43_wldev *dev)
 	b43_phy_ht_write_clip_detection(dev, clip_state);
 
 	udelay(20);
-	b43_phy_ht_poll_rssi(dev, HT_RSSI_TSSI_2G, rssi_buf, 8);
+	b43_phy_ht_poll_rssi(dev, HT_RSSI_TSSI_2G, rssi_buf, nsamp);
 	b43_phy_ht_stop_playback(dev);
 	b43_phy_ht_reset_cca(dev);
+	phy_ht->tssi_delay = b43_httab_read(dev, B43_HTTAB16(8, 0x1b));
 
-	phy_ht->idle_tssi[0] = rssi_buf[0] & 0xff;
-	phy_ht->idle_tssi[1] = rssi_buf[2] & 0xff;
-	phy_ht->idle_tssi[2] = rssi_buf[4] & 0xff;
 	for (core = 0; core < 3; core++) {
+		phy_ht->idle_tssi[core] = (rssi_buf[2 * core] / nsamp) & 0x3f;
 		b43_cal_report(dev, HT_CAL_IDLE_TSSI_RSSI, core,
 			       rssi_buf[2 * core], rssi_buf[2 * core + 1]);
 		b43_cal_report(dev, HT_CAL_IDLE_TSSI, core,
