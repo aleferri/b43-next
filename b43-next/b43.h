@@ -1214,12 +1214,14 @@ struct b43_wl {
 	struct b43_leds leds;
 
 	/*
-	 * The bands with HT, of an AC PHY or of an N-PHY core with HT. Their
+	 * The bands with HT, of an AC PHY, of an N-PHY core with HT or of an
+	 * HT-PHY (the 2.4 and the 5 GHz one, with the same capabilities). Their
 	 * capabilities depend on the board's chains, so each device has its
 	 * own copies.
 	 */
 	struct ieee80211_supported_band band_5ghz_ac;
 	struct ieee80211_supported_band band_2ghz_ht;
+	struct ieee80211_supported_band band_5ghz_ht;
 
 	/*
 	 * The radar types the AC PHY matches (enum b43_radar_region), from
@@ -1256,6 +1258,9 @@ static inline bool b43_ht_enabled(struct b43_wldev *dev)
 	const struct ieee80211_supported_band *band =
 		dev->wl->hw->wiphy->bands[NL80211_BAND_2GHZ];
 
+	/* The HT-PHY of a 5 GHz-only BCM4331 has HT on that band only */
+	if (!band)
+		band = dev->wl->hw->wiphy->bands[NL80211_BAND_5GHZ];
 	return b43_ht_core(dev) && band && band->ht_cap.ht_supported;
 }
 

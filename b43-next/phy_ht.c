@@ -1491,8 +1491,11 @@ static int b43_phy_ht_op_init(struct b43_wldev *dev)
 	if (b43_current_band(dev->wl) == NL80211_BAND_2GHZ)
 		b43_phy_ht_bphy_init(dev);
 
+	/* The TX gain table of the band: the PHY init runs on a band switch */
 	b43_httab_write_bulk(dev, B43_HTTAB32(0x1a, 0xc0),
-			B43_HTTAB_1A_C0_LATE_SIZE, b43_httab_0x1a_0xc0_late);
+			B43_HTTAB_1A_C0_LATE_SIZE,
+			b43_current_band(dev->wl) == NL80211_BAND_5GHZ ?
+			b43_httab_0x1a_0xc0_late_5g : b43_httab_0x1a_0xc0_late);
 
 	saved_tx_pwr_ctl = phy_ht->tx_pwr_ctl;
 	b43_phy_ht_tx_power_fix(dev);
@@ -1610,12 +1613,10 @@ static int b43_phy_ht_op_switch_channel(struct b43_wldev *dev,
 	enum nl80211_channel_type channel_type = b43_phy_ht_tune_type(dev);
 	int err;
 
-	if (b43_current_band(dev->wl) == NL80211_BAND_2GHZ) {
-		if ((new_channel < 1) || (new_channel > 14))
-			return -EINVAL;
-	} else {
+	/* On 5 GHz, b43_phy_ht_set_channel() rejects untabulated channels */
+	if (b43_current_band(dev->wl) == NL80211_BAND_2GHZ &&
+	    (new_channel < 1 || new_channel > 14))
 		return -EINVAL;
-	}
 
 	if (phy_ht->tuned && phy_ht->tuned_channel == channel->hw_value &&
 	    phy_ht->tuned_type == channel_type)
@@ -2044,11 +2045,18 @@ static void b43_phy_ht_txcal_setup(struct b43_wldev *dev,
 		{ B43_PHY_HT_AFE_C2, B43_PHY_HT_AFE_C2_OVER },
 		{ B43_PHY_HT_AFE_C3, B43_PHY_HT_AFE_C3_OVER },
 	};
+	/*
+	 * The radio's loopback: 0x155, 0x15a, 0x159 and 0x15b differ at
+	 * 5 GHz, and the gain is TX gain index 25 there, 0 at 2.4 GHz
+	 * (wl on an Apple BCM4331, traced on channels 6, 36 and 149; the
+	 * same on both 5 GHz channels).
+	 */
+	bool ghz5 = b43_current_band(dev->wl) == NL80211_BAND_5GHZ;
 	u32 gain[3];
 	int c, i;
 
 	for (c = 0; c < 3; c++)
-		gain[c] = b43_httab_read(dev, B43_HTTAB32(26, 0xc0));
+		gain[c] = b43_httab_read(dev, B43_HTTAB32(26, 0xc0 + (ghz5 ? 25 : 0)));
 
 	sv->classifier = b43_phy_ht_classifier(dev, 0, 0);
 	b43_phy_ht_classifier(dev, B43_PHY_HT_CLASS_CTL_CCK_EN |
@@ -2066,10 +2074,10 @@ static void b43_phy_ht_txcal_setup(struct b43_wldev *dev,
 		b43_radio_write(dev, routing[c] | 0x157, 0x55);
 		b43_radio_write(dev, routing[c] | 0x158, 0);
 		b43_radio_write(dev, routing[c] | 0x15c, 0);
-		b43_radio_write(dev, routing[c] | 0x155, 6);
-		b43_radio_write(dev, routing[c] | 0x15a, 0);
-		b43_radio_write(dev, routing[c] | 0x159, 6);
-		b43_radio_write(dev, routing[c] | 0x15b, 0x31);
+		b43_radio_write(dev, routing[c] | 0x155, ghz5 ? 0x0a : 0x06);
+		b43_radio_write(dev, routing[c] | 0x15a, ghz5 ? 0x31 : 0x00);
+		b43_radio_write(dev, routing[c] | 0x159, ghz5 ? 0x04 : 0x06);
+		b43_radio_write(dev, routing[c] | 0x15b, ghz5 ? 0x00 : 0x31);
 	}
 
 	for (c = 0; c < 3; c++) {
