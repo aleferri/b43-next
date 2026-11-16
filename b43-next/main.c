@@ -8742,74 +8742,87 @@ static void b43_print_driverinfo(void)
 	       feat_pci, feat_nphy, feat_leds, feat_sdio);
 }
 
+#ifdef CONFIG_B43_NEXT_BCMA
+static int __init b43_bcma_driver_init(void)
+{
+	return bcmn_driver_register(&b43_bcma_driver);
+}
+
+static void b43_bcma_driver_exit(void)
+{
+	bcmn_driver_unregister(&b43_bcma_driver);
+}
+#endif
+
+#ifdef CONFIG_B43_NEXT_SSB
+static int __init b43_ssb_driver_init(void)
+{
+	return ssbn_driver_register(&b43_ssb_driver);
+}
+
+static void b43_ssb_driver_exit(void)
+{
+	ssbn_driver_unregister(&b43_ssb_driver);
+}
+#endif
+
+static int __init b43_debugfs_step_init(void)
+{
+	b43_debugfs_init();
+	return 0;
+}
+
+/*
+ * Module load steps, in order. Each step's exit undoes its init; a failed
+ * load and module unload both run the exits in reverse order.
+ * The init pointers are only used by b43_init().
+ */
+static const struct b43_init_step {
+	int (*init)(void);
+	void (*exit)(void);
+} b43_init_steps[] = {
+#ifdef CONFIG_B43_NEXT_SSB
+	{ ssbn_modinit, ssbn_modexit },
+#endif
+#ifdef CONFIG_B43_NEXT_BCMA
+	{ bcmn_modinit, bcmn_modexit },
+#endif
+	{ b43_debugfs_step_init, b43_debugfs_exit },
+	{ b43_sdio_init, b43_sdio_exit },
+#ifdef CONFIG_B43_NEXT_BCMA
+	{ b43_bcma_driver_init, b43_bcma_driver_exit },
+#endif
+#ifdef CONFIG_B43_NEXT_SSB
+	{ b43_ssb_driver_init, b43_ssb_driver_exit },
+#endif
+};
+
+static void b43_unwind(unsigned int n)
+{
+	while (n--)
+		b43_init_steps[n].exit();
+}
+
 static int __init b43_init(void)
 {
+	unsigned int i;
 	int err;
 
-#ifdef CONFIG_B43_NEXT_SSB
-	err = ssbn_modinit();
-	if (err)
-		return err;
-#endif
-#ifdef CONFIG_B43_NEXT_BCMA
-	err = bcmn_modinit();
-	if (err)
-		goto err_ssb_bus_exit;
-#endif
-	b43_debugfs_init();
-	err = b43_sdio_init();
-	if (err)
-		goto err_dfs_exit;
-#ifdef CONFIG_B43_NEXT_BCMA
-	err = bcmn_driver_register(&b43_bcma_driver);
-	if (err)
-		goto err_sdio_exit;
-#endif
-#ifdef CONFIG_B43_NEXT_SSB
-	err = ssbn_driver_register(&b43_ssb_driver);
-	if (err)
-		goto err_bcma_driver_exit;
-#endif
+	for (i = 0; i < ARRAY_SIZE(b43_init_steps); i++) {
+		err = b43_init_steps[i].init();
+		if (err) {
+			b43_unwind(i);
+			return err;
+		}
+	}
 	b43_print_driverinfo();
 
-	return err;
-
-#ifdef CONFIG_B43_NEXT_SSB
-err_bcma_driver_exit:
-#endif
-#ifdef CONFIG_B43_NEXT_BCMA
-	bcmn_driver_unregister(&b43_bcma_driver);
-err_sdio_exit:
-#endif
-	b43_sdio_exit();
-err_dfs_exit:
-	b43_debugfs_exit();
-#ifdef CONFIG_B43_NEXT_BCMA
-	bcmn_modexit();
-err_ssb_bus_exit:
-#endif
-#ifdef CONFIG_B43_NEXT_SSB
-	ssbn_modexit();
-#endif
-	return err;
+	return 0;
 }
 
 static void __exit b43_exit(void)
 {
-#ifdef CONFIG_B43_NEXT_SSB
-	ssbn_driver_unregister(&b43_ssb_driver);
-#endif
-#ifdef CONFIG_B43_NEXT_BCMA
-	bcmn_driver_unregister(&b43_bcma_driver);
-#endif
-	b43_sdio_exit();
-	b43_debugfs_exit();
-#ifdef CONFIG_B43_NEXT_BCMA
-	bcmn_modexit();
-#endif
-#ifdef CONFIG_B43_NEXT_SSB
-	ssbn_modexit();
-#endif
+	b43_unwind(ARRAY_SIZE(b43_init_steps));
 }
 
 module_init(b43_init)
