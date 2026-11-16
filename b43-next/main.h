@@ -78,6 +78,8 @@ void b43_wireless_core_reset(struct b43_wldev *dev, bool gmode);
 void b43_controller_restart(struct b43_wldev *dev, const char *reason);
 
 void b43_macstat_update(struct b43_wldev *dev, bool count);
+void b43_noise_pwr_report(struct b43_wldev *dev, const u32 *pwr,
+			  unsigned int cores);
 
 #define B43_PS_ENABLED	(1 << 0)	/* Force enable hardware power saving */
 #define B43_PS_DISABLED	(1 << 1)	/* Force disable hardware power saving */

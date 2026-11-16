@@ -10297,6 +10297,7 @@ static void b43_phy_ac_wd_stats_poll_opt(struct b43_wldev *dev,
 /* Closing re-read of the window zeroed at the head, plus 0x008c. */
 static void b43_phy_ac_wd_stats_tail(struct b43_wldev *dev)
 {
+	u32 pwr[B43_PHY_AC_MAX_CORES] = { 0 };
 	u16 noise[B43_PHY_AC_MAX_CORES] = { 0 };
 	u16 off;
 
@@ -10306,15 +10307,20 @@ static void b43_phy_ac_wd_stats_tail(struct b43_wldev *dev)
 		unsigned int core = (off - 0x0308) / 4;
 
 		/*
-		 * One 32-bit cell per chain from 0x0308: the noise statistic
-		 * the CRS thresholds follow; see b43_phy_ac_crs_note_noise().
-		 * The high words and 0x0314 are read for the latch-and-clear
-		 * only.
+		 * One 32-bit cell per chain from 0x0308: the CRS thresholds
+		 * follow its low word (b43_phy_ac_crs_note_noise()), the
+		 * survey's noise the whole cell. 0x0314 is read for the
+		 * latch-and-clear only.
 		 */
-		if (!(off & 2) && core < B43_PHY_AC_MAX_CORES)
-			noise[core] = v;
+		if (core >= B43_PHY_AC_MAX_CORES)
+			continue;
+		if (off & 2)
+			pwr[core] |= (u32)v << 16;
+		else
+			pwr[core] = noise[core] = v;
 	}
 	b43_phy_ac_crs_note_noise(dev, noise);
+	b43_noise_pwr_report(dev, pwr, dev->phy.ac->num_cores);
 }
 
 static void b43_phy_ac_wd_stats_poll(struct b43_wldev *dev)

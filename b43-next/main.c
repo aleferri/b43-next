@@ -2084,21 +2084,19 @@ static void b43_calculate_link_quality(struct b43_wldev *dev)
 }
 
 /* The microcode leaves each core's power summed over 512 samples. Returns
- * the noisier core in dBm, or 0 if the sample is missing; the offset is
- * brcmsmac's, -103 dB from rev 3 and -99 dB before. */
-static int b43_nphy_noise_dbm(struct b43_wldev *dev)
+ * the noisier core in dBm, or 0 if the sample is missing. */
+static int b43_noise_pwr_dbm(const u32 *pwr, unsigned int cores, int offset)
 {
-	int offset = dev->phy.rev >= 3 ? -103 : -99;
-	int core, noise = INT_MIN;
-	u32 pwr[2];
+	int noise = INT_MIN;
+	unsigned int core;
+	u32 any = 0;
 
-	for (core = 0; core < 2; core++)
-		pwr[core] = b43_shm_read32(dev, B43_SHM_SHARED,
-					   B43_SHM_SH_NOISEPWR + 4 * core);
-	if (!pwr[0] && !pwr[1])
+	for (core = 0; core < cores; core++)
+		any |= pwr[core];
+	if (!any)
 		return 0;
 
-	for (core = 0; core < 2; core++) {
+	for (core = 0; core < cores; core++) {
 		u32 p = pwr[core] >> 9;
 		int db = 0;
 
@@ -2108,6 +2106,35 @@ static int b43_nphy_noise_dbm(struct b43_wldev *dev)
 		noise = max(noise, db + offset);
 	}
 	return noise;
+}
+
+/* The offset is brcmsmac's, -103 dB from rev 3 and -99 dB before. */
+static int b43_nphy_noise_dbm(struct b43_wldev *dev)
+{
+	u32 pwr[2];
+	int core;
+
+	for (core = 0; core < 2; core++)
+		pwr[core] = b43_shm_read32(dev, B43_SHM_SHARED,
+					   B43_SHM_SH_NOISEPWR + 4 * core);
+	return b43_noise_pwr_dbm(pwr, 2, dev->phy.rev >= 3 ? -103 : -99);
+}
+
+/*
+ * The noise sample of a PHY that requests and reads its own: the AC-PHY's,
+ * at the same SHM 0x308, taken with the N-PHY's offset until a comparison
+ * with wl says otherwise.
+ */
+void b43_noise_pwr_report(struct b43_wldev *dev, const u32 *pwr,
+			  unsigned int cores)
+{
+	int noise;
+
+	if (dev->wl->hw->conf.flags & IEEE80211_CONF_OFFCHANNEL)
+		return;
+	noise = b43_noise_pwr_dbm(pwr, cores, -103);
+	if (noise)
+		dev->stats.link_noise = noise;
 }
 
 static void b43_nphy_handle_irq_noise(struct b43_wldev *dev)
