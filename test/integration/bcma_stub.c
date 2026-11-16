@@ -112,6 +112,20 @@ static u32 rxctl;
 /* L'indirizzo che b43 ha dato all'anello di ricezione, per i suoi slot. */
 static u32 rx_ringlo;
 
+/*
+ * The TX FIFO definitions, which b43 reads back (b43_txfifo_set()) and wl
+ * never reads: XMTFIFOCMD selects one by bits 8-10, XMTFIFODEF and
+ * XMTFIFODEF1 read back the selected one's. The commit bit 15 does not read
+ * back: b43_txfifo_init_ht() refuses a selector with it, and succeeds on
+ * the R6400 v2 after the core's own FIFO writes.
+ */
+static u16 txfifo_cmd, txfifo_def[8][2];
+
+static u16 *txfifo_reg(u16 off)
+{
+	return &txfifo_def[(txfifo_cmd >> 8) & 7][off == B43_MMIO_XMTFIFODEF1];
+}
+
 void b43_test_raise_dma0(u32 reason)
 {
 	dma0_pending |= reason;
@@ -442,6 +456,15 @@ static void note_write(struct bcmn_device *core, u16 off, u32 val, int width)
 		rx_ringlo = val;
 		b43_trace_raw("REG.WR", off, val, width);
 		return;
+	case B43_MMIO_XMTFIFOCMD:
+		txfifo_cmd = val;
+		b43_trace_raw("REG.WR", off, val, width);
+		return;
+	case B43_MMIO_XMTFIFODEF:
+	case B43_MMIO_XMTFIFODEF1:
+		*txfifo_reg(off) = val;
+		b43_trace_raw("REG.WR", off, val, width);
+		return;
 	case BCMN_CLKCTLST:
 		clkctlst_init = true;
 		clkctlst_req = val & 0xffff;
@@ -672,6 +695,13 @@ static u32 note_read(struct bcmn_device *core, u16 off, int width)
 		break;
 	case B43_MMIO_DMA0_REASON:
 		v = dma0_pending;
+		break;
+	case B43_MMIO_XMTFIFOCMD:
+		v = txfifo_cmd & ~0x8000;
+		break;
+	case B43_MMIO_XMTFIFODEF:
+	case B43_MMIO_XMTFIFODEF1:
+		v = *txfifo_reg(off);
 		break;
 	case B43_MMIO_DMA1_REASON:
 	case B43_MMIO_DMA2_REASON:

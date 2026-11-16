@@ -89,6 +89,7 @@ endif
 
 # I file di b43 che si compilano come sono. Tutti e tre a zero errori.
 UPSTREAM := main.c beacon.c phy_common.c bus.c xmit.c dma.c ampdu.c leds.c rfkill.c \
+            fw_layout.c \
             phy_ac.c tables_phy_ac.c radio_2069.c \
             phy_ht.c tables_phy_ht.c radio_2059.c \
             ppr.c radar_ac.c
