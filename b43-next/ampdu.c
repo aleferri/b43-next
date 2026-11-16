@@ -301,7 +301,8 @@ static void b43_ampdu_tx_rates(struct b43_wl *wl, struct ieee80211_txq *txq,
 	ieee80211_get_tx_rates(txq->vif, txq->sta, skb, rates,
 			       wl->hw->max_rates);
 	if (t->retries[b43_ampdu_tx_seq(skb) % B43_AMPDU_TX_WINDOW] >
-	    B43_AMPDU_TX_RR_LIMIT && rates[1].idx >= 0)
+	    B43_AMPDU_TX_RR_LIMIT && rates[1].idx >= 0 &&
+	    (rates[1].flags & IEEE80211_TX_RC_MCS))
 		rates[0] = rates[1];
 }
 
