@@ -1730,7 +1730,16 @@ b43_phy_ht_op_recalc_txpower(struct b43_wldev *dev, bool ignore_tssi)
 		b43_ppr_apply_max(ppr, INT_TO_Q52(phy->desired_txpower));
 	b43_ppr_add(ppr, -6);
 	b43_ppr_apply_min(ppr, INT_TO_Q52(8));
-	target = b43_ppr_get_max(ppr);
+	/*
+	 * Where the loop runs (no static TX gain), the weakest rate's: the
+	 * loop holds every frame at the target, and on an Apple BCM4331 64-QAM
+	 * distorts at the strongest rate's. At 5 GHz, channel 112, the target
+	 * 0x46 against 0x36: TCP up 28-35 against 52-57 Mbit/s, down the same.
+	 */
+	if (b43_phy_ht_static_txgain(dev) < 0)
+		target = b43_ppr_get_min(ppr);
+	else
+		target = b43_ppr_get_max(ppr);
 
 	if (phy_ht->tx_pwr_target[0] == target)
 		return B43_TXPWR_RES_DONE;

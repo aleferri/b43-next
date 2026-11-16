@@ -75,6 +75,7 @@ void b43_ppr_add(struct b43_ppr *ppr, int diff);
 void b43_ppr_apply_max(struct b43_ppr *ppr, u8 max);
 void b43_ppr_apply_min(struct b43_ppr *ppr, u8 min);
 u8 b43_ppr_get_max(const struct b43_ppr *ppr);
+u8 b43_ppr_get_min(const struct b43_ppr *ppr);
 /* The same over the OFDM and MCS rates of one bandwidth, CCK left out. */
 u8 b43_ppr_get_bw_max(const struct b43_ppr *ppr, enum b43_ppr_bw bw);
 

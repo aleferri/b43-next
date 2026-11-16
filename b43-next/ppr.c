@@ -101,6 +101,19 @@ u8 b43_ppr_get_max(const struct b43_ppr *ppr)
 	return res;
 }
 
+/* The lowest power of the rates loaded, 0 for none */
+u8 b43_ppr_get_min(const struct b43_ppr *ppr)
+{
+	unsigned int g, i, n;
+	u8 res = U8_MAX;
+
+	ppr_for_each_entry(ppr, g, i, n)
+		if (ppr->__all[i])
+			res = min(ppr->__all[i], res);
+
+	return res == U8_MAX ? 0 : res;
+}
+
 u8 b43_ppr_get_bw_max(const struct b43_ppr *ppr, enum b43_ppr_bw bw)
 {
 	unsigned int g, i, n;
