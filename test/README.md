@@ -18,9 +18,11 @@ replaces the other.
 **`phy_ht/`** compiles the HT-PHY files and compares the TX power control
 init with the R6400 v1's `wl-mmio-trap` captures; see `phy_ht/README.md`.
 
-Two smaller ones check one piece each: **`radar/`** replays recorded and
-synthetic radar FIFO reads through `b43-next/radar_ac.c`, and **`sprom/`**
-diffs the SROM rev 11 extractor and the NVRAM path against the boards' dumps.
+Three smaller ones check one piece each: **`radar/`** replays recorded and
+synthetic radar FIFO reads through `b43-next/radar_ac.c`, **`sprom/`**
+diffs the SROM rev 11 extractor and the NVRAM path against the boards' dumps,
+and **`txhdr/`** keeps the TX headers of `b43-next/xmit.c` against its own
+expected output, for a change meant not to move them.
 
 `board_profile.h` holds the board profiles the suites take.
 
