@@ -3304,9 +3304,9 @@ static void b43_request_firmware(struct work_struct *work)
 	goto out;
 
 start_ieee80211:
+	/* mac80211 needs four queues for HT */
 	wl->hw->queues = B43_QOS_QUEUE_NUM;
-	if (!modparam_qos || dev->fw.opensource ||
-	    dev->dev->chip_id == BCMN_CHIP_ID_BCM4331)
+	if (!modparam_qos || dev->fw.opensource)
 		wl->hw->queues = 1;
 
 	err = ieee80211_register_hw(wl->hw);
