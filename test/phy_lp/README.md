@@ -37,7 +37,7 @@ On 2026-11-16, `--min-block 8 --gap-tol 2`:
 
 | capture | all | PHY+radio |
 |---|---|---|
-| attach | 18529/27673 = 66.96% | 18517/25701 = 72.05% |
+| attach | 19905/26301 = 75.68% | 19893/24329 = 81.77% |
 
 What is left, largest first:
 
@@ -48,7 +48,7 @@ What is left, largest first:
   Without it, the RC calibration's loopback search reads PHY 0x44c/0x44d at
   other points of wl's stream than wl does.
 - **The end of the init**: b43 tunes to channel 7 again, sets the TX power
-  control and runs its calibration (582 operations from #35443); wl tunes to
+  control and runs its calibration (581 operations from #35443); wl tunes to
   channel 1 straight after the RC calibration.
 
 Every run prints, on stderr, the reads past the window (served from b43's
