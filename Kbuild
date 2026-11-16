@@ -98,7 +98,7 @@ b43-next-$(CONFIG_BCM47XX_NVRAM) += nvram/bcm47xx_sprom.o
 
 b43-next-y += $(addprefix b43-next/, \
 	main.o beacon.o bus.o fw_layout.o phy_common.o sysfs.o xmit.o dma.o pio.o \
-	rfkill.o ppr.o)
+	rfkill.o ppr.o ampdu.o)
 b43-next-$(CONFIG_B43_NEXT_PHY_G) += $(addprefix b43-next/, \
 	phy_g.o tables.o lo.o wa.o)
 b43-next-$(CONFIG_B43_NEXT_PHY_N) += $(addprefix b43-next/, \
