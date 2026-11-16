@@ -221,7 +221,8 @@ static void b43_phy_ac_txpwr_adjust(struct b43_wldev *dev);
  * Runs from the TX power work with the MAC enabled, and the tables it
  * programs want it suspended. The stock driver's BSS mode block that
  * precedes it -- TBTT hold, AP and INFRA, PRETBTT, beacon promiscuity -- is
- * b43_adjust_opmode(), b43_set_beacon_int() and b43_set_pretbtt() in main.c.
+ * b43_adjust_opmode() and b43_set_pretbtt() in main.c and
+ * b43_beacon_set_interval() in beacon.c.
  * [capture-ref: router-data/d6220/cold-sweep.zip!cold01-ch36-bw20.txt;
  *   13665-14082]
  * [capture-ref: router-data/d6220/hot-sweep.zip!segmenti/01-up-ch36-bw20.txt;

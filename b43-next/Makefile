@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: GPL-2.0
 b43-y				+= main.o
+b43-y				+= beacon.o
 b43-y				+= bus.o
 b43-y				+= fw_layout.o
 b43-$(CONFIG_B43_PHY_G)		+= phy_g.o tables.o lo.o wa.o

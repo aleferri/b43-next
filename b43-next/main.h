@@ -59,6 +59,24 @@ static inline int b43_is_ofdm_rate(int rate)
 
 u8 b43_ieee80211_antenna_sanitize(struct b43_wldev *dev,
 				  u8 antenna_nr);
+u16 b43_antenna_to_phyctl(struct b43_wldev *dev, int antenna);
+
+/*
+ * Template RAM advances its address on every data write, and the AC cores'
+ * stock driver writes each template that way: RAM_CONTROL once, then the
+ * words. A sequence starts with next = U16_MAX and rewrites the control
+ * only where the offsets stop being consecutive.
+ */
+struct b43_ram_seq {
+	u16 next;
+	bool swap;
+};
+
+void b43_tpl_write(struct b43_wldev *dev, struct b43_ram_seq *seq,
+		   u16 offset, u32 val);
+
+void b43_time_lock(struct b43_wldev *dev);
+void b43_time_unlock(struct b43_wldev *dev);
 
 void b43_tsf_read(struct b43_wldev *dev, u64 * tsf);
 void b43_tsf_write(struct b43_wldev *dev, u64 tsf);
