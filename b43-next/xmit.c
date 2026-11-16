@@ -1692,7 +1692,7 @@ static const u8 *b43_rx_ht_plcp(struct b43_wldev *dev, const u8 *plcp,
 
 	if (get_unaligned_le32(plcp) || get_unaligned_le16(plcp + 4)) {
 		dev->rx_ht_valid = false;
-		if ((plcp[0] & 0x7f) > 15)
+		if ((plcp[0] & 0x7f) >= 8 * hweight8(dev->rxchain))
 			return NULL;
 		if (!(macstat & B43_RX_MAC_RXST_VALID) &&
 		    !b43_ht_sig_crc_valid(plcp))
