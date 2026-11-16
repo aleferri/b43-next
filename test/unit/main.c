@@ -751,7 +751,8 @@ static void emit_core_beacon_reload(unsigned int which);
  *                                            quella che segue un WD cade fra
  *                                            le due passate dei contatori
  *   BSS_UP  il beacon parte dopo il CAC   -> il core chiude il check, riapre
- *                                            la riga AMT e chiama cac_done
+ *                                            la riga AMT e chiama
+ *                                            channel_calibrate con cac_done
  *   NOISE   il campione di rumore pronto   -> b43_phy_ac_noise_sample_done(),
  *                                            che su hardware arriva dal
  *                                            tasklet del core
@@ -832,7 +833,8 @@ static void run_timeline(void)
 			if (g_wldev.cac_pending) {
 				g_wldev.cac_pending = false;
 				emit_core_cac_gate(true);
-				b43_phyops_ac.cac_done(&g_wldev);
+				b43_mac_suspend(&g_wldev);
+				b43_phyops_ac.channel_calibrate(&g_wldev, true);
 			}
 		} else if (!strcmp(kind, "NOISE"))
 			b43_phy_ac_noise_sample_done(&g_wldev);
@@ -1495,7 +1497,7 @@ static void run_switch_channel(void)
 	emit_core_conf_tx_passes();
 
 	if (r == 0)
-		b43_phyops_ac.channel_calibrate(&g_wldev);
+		b43_phyops_ac.channel_calibrate(&g_wldev, false);
 	else
 		b43_mac_enable(&g_wldev);
 

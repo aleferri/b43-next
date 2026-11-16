@@ -364,8 +364,8 @@ struct b43_phy_ac {
 	 * mac80211 runs the check, and the core keeps its state in
 	 * dev->cac_pending: set by the config call that tunes the channel with
 	 * hw->conf.radar_enabled, cleared when beaconing starts.
-	 * op_switch_channel() copies it, and the core's cac_done hook,
-	 * b43_phy_ac_bss_up(), clears it.
+	 * op_switch_channel() copies it, and op_channel_calibrate() at the
+	 * end of the check, b43_phy_ac_bss_up(), clears it.
 	 */
 	bool cac_pending;
 	/*
@@ -785,14 +785,6 @@ void b43_phy_ac_reset_cca(struct b43_wldev *dev);
  * matched a radar type while mac80211 asks for radar detection.
  */
 bool b43_phy_ac_radar_poll(struct b43_wldev *dev);
-
-/*
- * The BSS is up after a channel availability check: run the calibrations
- * that transmit, which the check held back. Called from the core's
- * cac_done hook; the core reopens the BSS AMT row. Nothing to do on a
- * channel without the radar duty, where the switch already calibrated.
- */
-void b43_phy_ac_bss_up(struct b43_wldev *dev);
 
 /*
  * Post-channel-setup calibrations, in the order

@@ -211,7 +211,7 @@ int ht_run_flow(const char *name)
 		/* b43_op_config() suspends the MAC, channel_calibrate enables it */
 		b43_mac_suspend(dev);
 		b43_phy_init(dev);
-		b43_phy_ht_op_channel_calibrate(dev);
+		b43_phy_ht_op_channel_calibrate(dev, false);
 		run_turns(dev);
 	} else if (!strcmp(name, "pctl_init")) {
 		/*
