@@ -1529,7 +1529,7 @@ static void lpphy_tx_pctl_init_hw(struct b43_wldev *dev)
 	}
 
 	b43_phy_maskset(dev, B43_LPPHY_TX_PWR_CTL_NNUM, 0xFF00, 0xFF);
-	b43_phy_maskset(dev, B43_LPPHY_TX_PWR_CTL_NNUM, 0x8FFF, 0x5000);
+	b43_phy_maskset(dev, B43_LPPHY_TX_PWR_CTL_NNUM, 0x8FFF, 0x6000);
 	b43_phy_maskset(dev, B43_LPPHY_TX_PWR_CTL_IDLETSSI, 0xFFC0, 0x1F);
 	if (dev->phy.rev < 2) {
 		b43_phy_mask(dev, B43_LPPHY_LP_PHY_CTL, 0xEFFF);
@@ -1542,7 +1542,6 @@ static void lpphy_tx_pctl_init_hw(struct b43_wldev *dev)
 		lpphy_set_tssi_mux(dev, TSSI_MUX_POSTPA);
 	}
 	b43_phy_maskset(dev, B43_LPPHY_TX_PWR_CTL_IDLETSSI, 0x7FFF, 0x8000);
-	b43_phy_mask(dev, B43_LPPHY_TX_PWR_CTL_DELTAPWR_LIMIT, 0xFF);
 	b43_phy_write(dev, B43_LPPHY_TX_PWR_CTL_DELTAPWR_LIMIT, 0xA);
 	b43_phy_maskset(dev, B43_LPPHY_TX_PWR_CTL_CMD,
 			~B43_LPPHY_TX_PWR_CTL_CMD_MODE & 0xFFFF,
