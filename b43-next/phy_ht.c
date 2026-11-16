@@ -2085,8 +2085,8 @@ static void b43_phy_ht_cal_rx_iq(struct b43_wldev *dev)
 /*
  * One calibration pass of wl's at the start of the BSS: the TX power
  * control off with its indices kept, the idle TSSI measured and the
- * control set up again, then the calibrations, and the control on. The
- * RX I/Q calibration that follows the TX one in wl is not ported yet.
+ * control set up again, the TX I/Q and LO and the RX I/Q calibrations,
+ * and the control on.
  */
 static void b43_phy_ht_cal_pass(struct b43_wldev *dev)
 {
@@ -2101,11 +2101,14 @@ static void b43_phy_ht_cal_pass(struct b43_wldev *dev)
 /*
  * The calibrations that close a channel switch, as wl runs them after the
  * later init of its down and up (b43_phy_recycle()) when the BSS starts:
- * the TX power twice and a calibration pass. Then the MAC goes on.
+ * the TX power twice, a calibration pass, the power again and a second
+ * pass. Then the MAC goes on.
  */
 static void b43_phy_ht_op_channel_calibrate(struct b43_wldev *dev)
 {
 	b43_phy_ht_op_adjust_txpower(dev);
+	b43_phy_ht_op_adjust_txpower(dev);
+	b43_phy_ht_cal_pass(dev);
 	b43_phy_ht_op_adjust_txpower(dev);
 	b43_phy_ht_cal_pass(dev);
 	b43_mac_enable(dev);
