@@ -846,13 +846,19 @@ struct b43_phy_lp {
 
 	/* TSSI transmit count */
 	u16 tssi_tx_count;
-	/* TSSI index */
-	u16 tssi_idx; /* FIXME initial value? */
-	/* TSSI npt */
-	u16 tssi_npt; /* FIXME initial value? */
+	/* TSSI index and npt, set by lpphy_tx_power_reset_npt() */
+	u16 tssi_idx;
+	u16 tssi_npt;
 
-	/* Target TX frequency */
-	u16 tgt_tx_freq; /* FIXME initial value? */
+	/* The frequency the TSSI to power table was written for, 0 for none */
+	u16 tgt_tx_freq;
+
+	/*
+	 * Hardware TX power control: the lowest per-rate target (qdBm) and
+	 * each rate's distance above it, CCK then OFDM.
+	 */
+	u8 tx_pwr_min;
+	u8 tx_pwr_offset[B43_PPR_CCK_RATES + B43_PPR_OFDM_RATES];
 
 	/* Transmit power index override, -1 when no index is forced */
 	s8 tx_pwr_idx_over;

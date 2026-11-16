@@ -11,15 +11,18 @@ HP 550's BCM4312 (PHY rev 1, radio 2062 rev 2, boardflags `0x00060A01`,
 `rssisav2g` 0) in b43-next-traces, `bcm4312-rev1/hp-550`: init, tunes to 7
 and 1, scans of channels 1-11. `test/phy_lp` runs b43's init against it.
 
-Two more captures would cover the rest:
+More captures would cover the rest:
 
 - a rev 2 chip (BCM4325, radio 2063): init and a channel switch, with the
   crystal frequency.
 - BCM5354 (PHY rev 0): init only.
+- a dual-band BCM4325 on 5 GHz: wl's attach, a tune to a channel of each
+  sub-band (36, 100, 149) and the SROM dump. b43 keeps the LP-PHY on
+  2 GHz (`b43_wireless_core_attach()`), so every 5 GHz path in `phy_lp.c`
+  is the specs' and has never run.
 
-Hardware TX power control is compiled out (`if (0)` in
-`lpphy_tx_pctl_init()`), so the items marked *unreachable* change nothing
-until it is enabled.
+Hardware TX power control runs on boards without NOPA; the items marked
+*unreachable* are the ones it still does not reach.
 
 ## Suspects
 
@@ -96,33 +99,24 @@ Check: which radio register gets `0x7D` after the second 0x5D/0x5E pair.
 Also open: the poll is 10000 times `msleep(1)`; the specs poll every 10 us
 for 10 s at most.
 
-### Hardware TX power control on rev 1
+### Hardware TX power control
 
-wl runs it on the BCM4312: after the second tune to channel 1 it runs the
-sequence of `lpphy_tx_pctl_init_hw()`, ends in mode `0xE000` and, during the
-scans, raises bits 8-10 of TX_PWR_CTL_NNUM (`tssi_npt`) from 0 up to 6.
-TXPwrCtrlInit gives the hardware branch to boards with NOPA set, the
-opposite of what wl does on this board without it.
+On boards without NOPA, as wl on the BCM4312 (the specs' TXPwrCtrlInit
+gives it to boards with NOPA). The per-rate targets are brcmsmac's chain
+over the board's PPR, as for the HT-PHY: wl's locale row for the CCK rates
+(17 dBm on channels 1-11), regulatory and user limits, less 1.5 dB, at
+least 10 dBm. On the HP 550 they are wl's, CCK 62 and OFDM 60,
+but b43 writes them as the lowest, 60, in PHY 0x4A7 and offsets 2 and 0
+above it, where wl writes 36 and offsets 26 and 24.
 
-What the capture settles of the rest:
+Open:
 
-- table 10 at 0-63, the TSSI to power table, is `(b + a) / (2a)` with
-  `a = 32768 + pa0b2 * tssi` and `b = 1024 * pa0b0 + 64 * pa0b1 * tssi`,
-  on all 64 entries. The specs' Tssi2dBm divides by `2 * tmp` and gives
-  something else.
-- table 10 at 64-75 gets the negated rate offsets: -26 for the four CCK
-  rates, -24 for the eight OFDM ones, and PHY 0x4A7 (low byte) `0x24`.
-  brcmsmac's rule for hardware control, the target of the rate less the
-  lowest target, leaves one offset at 0, so it is not what wl computes
-  here. The board's table from the SROM (`maxpwr_bg` 0x4A, `cck2gpo` and
-  the upper word of `ofdm2gpo` unprogrammed) is 74 on every rate but
-  6 Mb/s, at 58: the two values of wl do not come from it.
-- after the idle TSSI read, wl reads 0x4A8 and writes back `0x000A`
-  unchanged; the specs clear its low byte or set `0x0600`.
-
-Check: the target power and the rate offsets need a capture at another
-TX power or regulatory limit before they can be computed; the rest of
-TXPowerRecalcTarget, TXPowerResetNpt and TXPwrUpdateNpt is in the specs.
+- the CCK row is the one of the locale the capture was taken in; other
+  locales, and channels 12-14, which have no row, are not captured.
+- wl's base of 36 comes from no rate b43 has.
+- rev2 (table 7, PHY 0x4D0) runs the same code without a capture.
+- 5 GHz takes the specs' PA coefficients per sub-band, a TSSI index of 64
+  and no CCK limit; unreached while b43 keeps the band off.
 
 ### Initial TX power index override (unreachable)
 
@@ -222,7 +216,8 @@ reproduces. Without evidence:
 - rev0 (the 5354 among them) runs the same steps; the specs' commands,
   older than wl's, differ.
 - the target gains of boards with HGPA or NOPA are the specs' branch that
-  the capture shows inverted; the 5354 rev3 entry is the specs'.
+  the capture shows inverted; the 5354 rev3 entry and the 5 GHz one are
+  the specs'.
 - rev2 has no TX I/Q-LO calibration: its branch of TXIqloCal (PHY 0x43E,
   0x4D0, 0x503, radio 0x121) is not written.
 - wl runs a third calibration, with the recalibration steps, after its
