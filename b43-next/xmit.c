@@ -1207,6 +1207,14 @@ static int b43_generate_txhdr_fw4(struct b43_wldev *dev,
 
 	memset(txhdr, 0, sizeof(*txhdr));
 
+	/*
+	 * The members of an A-MPDU need an MCS as their fallback rate too:
+	 * retry at the primary one rather than at a legacy rate, which
+	 * minstrel_ht's CCK group gives at 2.4 GHz.
+	 */
+	if (ampdu && (rates[0].flags & IEEE80211_TX_RC_MCS) &&
+	    !(t_fb->flags & IEEE80211_TX_RC_MCS))
+		t_fb = &rates[0];
 	if (!b43_tx_rate_get(dev, info, &rates[0], &r) ||
 	    !b43_tx_rate_get(dev, info, t_fb, &fb))
 		return -EINVAL;
