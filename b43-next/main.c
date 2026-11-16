@@ -7095,24 +7095,42 @@ static bool b43_txfifo_set(struct b43_wldev *dev,
 	return valid;
 }
 
+/*
+ * The TX FIFOs of the pre-AC cores with HT, in 256-byte blocks from block 6,
+ * BK/BE/VI/VO/BCMC/ATIM: the BCM43227's, and the BCM4331's as wl 7.14 sizes
+ * them on the R6400 v1 (mmio-cold).
+ */
+static const u8 b43_txfifo_blocks_nphy[6] = { 9, 98, 22, 14, 14, 5 };
+static const u8 b43_txfifo_blocks_htphy[6] = { 150, 223, 223, 21, 17, 5 };
+
 static int b43_txfifo_init_ht(struct b43_wldev *dev)
 {
-	/* 256-byte blocks starting at block 6,
-	 * BK/BE/VI/VO/BCMC/ATIM = 9/98/22/14/14/5 */
-	static const u16 definition[6][2] = {
-		{ 0x0e06, 0 }, { 0x700f, 0 }, { 0x8671, 0 },
-		{ 0x9487, 0 }, { 0xa295, 0 }, { 0xa7a3, 0 },
-	};
-	/* BE, VI, (VO << 8) | BK, (ATIM << 8) | BCMC */
-	static const u16 sizes[4] = { 98, 22, 0x0e09, 0x050e };
-	u16 old_definition[6][2], old_sizes[4], selector;
+	const u8 *blocks;
+	u16 definition[6][2], sizes[4];
+	u16 old_definition[6][2], old_sizes[4], selector, start = 6, end;
 	u32 shm_control;
 	bool valid = true;
 	int i;
 
-	if (!b43_nphy_ht_enabled(dev) || dev->dev->bus_type != B43_BUS_BCMA ||
-	    dev->use_pio)
+	if (dev->dev->bus_type != B43_BUS_BCMA || dev->use_pio)
 		return 0;
+	if (b43_nphy_ht_enabled(dev))
+		blocks = b43_txfifo_blocks_nphy;
+	else if (dev->phy.type == B43_PHYTYPE_HT)
+		blocks = b43_txfifo_blocks_htphy;
+	else
+		return 0;
+	for (i = 0; i < 6; i++) {
+		end = start + blocks[i] - 1;
+		definition[i][0] = (end & 0xff) << 8 | (start & 0xff);
+		definition[i][1] = (end >> 8) << 8 | start >> 8;
+		start = end + 1;
+	}
+	/* BE, VI, (VO << 8) | BK, (ATIM << 8) | BCMC */
+	sizes[0] = blocks[1];
+	sizes[1] = blocks[2];
+	sizes[2] = blocks[3] << 8 | blocks[0];
+	sizes[3] = blocks[5] << 8 | blocks[4];
 
 	lockdep_assert_held(&dev->wl->mutex);
 	/* Run only during core initialization, before allocating DMA rings.
