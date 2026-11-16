@@ -8328,13 +8328,10 @@ static int b43_setup_bands(struct b43_wldev *dev,
 
 		*band = *hw->wiphy->bands[NL80211_BAND_2GHZ];
 		ht->ht_supported = true;
-		/* Every RX chain stays awake. The HT-PHY: 20 MHz, the long
-		 * guard interval and BCC.
-		 */
-		ht->cap = IEEE80211_HT_CAP_SM_PS;
+		/* Every RX chain stays awake. The HT-PHY: 20 MHz and BCC. */
+		ht->cap = IEEE80211_HT_CAP_SM_PS | IEEE80211_HT_CAP_SGI_20;
 		if (dev->phy.nphy_ht)
-			ht->cap |= IEEE80211_HT_CAP_SGI_20 |
-				   IEEE80211_HT_CAP_MAX_AMSDU |
+			ht->cap |= IEEE80211_HT_CAP_MAX_AMSDU |
 				   IEEE80211_HT_CAP_SUP_WIDTH_20_40 |
 				   IEEE80211_HT_CAP_SGI_40 |
 				   IEEE80211_HT_CAP_DSSSCCK40 |
