@@ -194,6 +194,12 @@ struct b43_dmadesc_generic {
 					 sizeof(struct b43_plcp_hdr6) + 2 + \
 					 IEEE80211_MAX_MPDU_LEN_VHT_3895)
 
+/* MPDUs per A-MPDU on the BCM4331 after TX FIFO underflows: at least
+ * B43_AMPDU_TX_MIN_MPDUS, one more after each B43_AMPDU_TX_RECOVER clean
+ * A-MPDUs (b43_ampdu_tx_mpdus_adjust()), up to B43_AMPDU_TX_MAX_MPDUS. */
+#define B43_AMPDU_TX_MAX_MPDUS		32
+#define B43_AMPDU_TX_MIN_MPDUS		8
+#define B43_AMPDU_TX_RECOVER		1000
 /* A-MPDUs a ring holds before the next one is built */
 #define B43_AMPDU_TX_MAX_PENDING	2
 /* The bytes an A-MPDU loads into the TX FIFO before it is sent grow by
@@ -317,6 +323,10 @@ struct b43_dmaring {
 	u16 ampdu_preload;
 	u16 txfunfl;
 	u16 txfunfl_new;
+	/* MPDUs per A-MPDU, lowered on the BCM4331's underflows, and the
+	 * A-MPDUs since the last one (b43_ampdu_tx_mpdus_adjust()). */
+	u8 ampdu_max_mpdus;
+	u16 ampdu_clean;
 	/* The QOS priority assigned to this ring. Only used for TX rings.
 	 * This is the mac80211 "queue" value. */
 	u8 queue_prio;
