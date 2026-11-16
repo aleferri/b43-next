@@ -23,10 +23,14 @@
 #define B43_AMPDU_TX_RR_LIMIT		2
 #define B43_AMPDU_TX_MAX_MPDUS		32
 
-/* The cores whose A-MPDUs b43 builds. */
+/*
+ * The cores whose A-MPDUs b43 builds: the pre-AC ones with HT, as their
+ * stock drivers do, the BCM43227's and wl 7.14 on the BCM4331 (mmio
+ * txh-ch11).
+ */
 bool b43_ampdu_tx_host(struct b43_wldev *dev)
 {
-	return b43_nphy_ht_enabled(dev);
+	return b43_ht_enabled(dev);
 }
 
 /* Null delimiters after an MPDU so that the next one starts at least
