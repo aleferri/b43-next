@@ -22,6 +22,8 @@ enum b43_txpwr_result {
  * mirrors upstream so partial designated initialisers in phy_ac.c
  * (e.g. `.switch_analog = ...`) resolve to the correct slot.
  */
+struct b43_cal_entry;
+
 struct b43_phy_operations {
 	int  (*allocate)(struct b43_wldev *dev);
 	void (*free)(struct b43_wldev *dev);
@@ -56,6 +58,8 @@ struct b43_phy_operations {
 	bool (*radar_poll)(struct b43_wldev *dev);
 	void (*beacon_rate_set)(struct b43_wldev *dev, bool cck);
 	void (*cac_done)(struct b43_wldev *dev);
+	const struct b43_cal_entry *cal_entries;
+	unsigned int nr_cal_entries;
 };
 
 #endif

@@ -27,6 +27,7 @@
 #include "phy_common.h"
 #include "phy_ac.h"
 #include "radio_2069.h"
+#include "calstat.h"
 #include "rxiqcal_phy_ac.h"
 #include "test_harness.h"
 #include "readplan_0270.h"
@@ -36,7 +37,24 @@ extern enum nl80211_band b43_test_band;
 #include "../board_profile.h"
 #include "leds.h"
 
-int unit_calreport;
+/*
+ * The calibration statistics, with AC_CALSTAT set: calstat.c keeps them as in
+ * the driver, and they go to stderr at the exit, a slot a line in the order
+ * they were reported.
+ */
+static struct b43_calstat g_calstat;
+
+static void calstat_print(void)
+{
+	unsigned int entry, age;
+	char line[1024];
+	u32 seq = 0;
+
+	while (b43_cal_next(&g_calstat, &seq, &entry, &age)) {
+		b43_cal_format(&g_calstat, entry, age, 0, line, sizeof(line));
+		fprintf(stderr, "calstat: %s\n", line);
+	}
+}
 
 static struct b43_phy_ac       g_ac;
 /* Le ricariche del template beacon: quante fatte, e quante allo start_ap. */
@@ -177,11 +195,6 @@ static void mount_board(const struct board_profile *p)
 	}
 
 	board_profile_to_sprom(p, &g_sprom);
-	{
-		const char *e = getenv("AC_CALREPORT");
-
-		unit_calreport = e && *e ? atoi(e) : 0;
-	}
 	/*
 	 * phycal_tempdelta as the instance ran with, when it is not the NVRAM's:
 	 * `wl phycal_tempdelta` after the insmod. It decides whether a full
@@ -364,6 +377,20 @@ static void mount_board(const struct board_profile *p)
 	memset(&g_wldev, 0, sizeof(g_wldev));
 	g_wldev.dev = &g_bus_dev;
 	g_wldev.wl  = &g_wl;
+	{
+		const char *e = getenv("AC_CALSTAT");
+
+		if (e && *e && atoi(e)) {
+			b43_calstat_setup(&g_calstat, &g_wldev,
+					  b43_phyops_ac.cal_entries,
+					  b43_phyops_ac.nr_cal_entries,
+					  calloc(b43_phyops_ac.nr_cal_entries,
+						 sizeof(struct b43_cal_ring)));
+			b43_calstat_start(&g_calstat, calloc(1, g_calstat.size));
+			g_wldev.calstat = &g_calstat;
+			atexit(calstat_print);
+		}
+	}
 	g_wldev.phy.type       = B43_PHYTYPE_AC;
 	g_wldev.phy.rev        = p->phy_rev;
 	g_wldev.fw.layout      = *b43_fw_layout_get(

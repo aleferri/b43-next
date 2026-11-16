@@ -13,6 +13,7 @@
 #include "phy_ac.h"
 #include "radio_2069.h"
 #include "main.h"
+#include "calstat.h"
 
 static const struct b43_phy_ac_channeltab_e_radio2069
 b43_chantab_r2069[] = {
@@ -1295,6 +1296,8 @@ static void b43_r2069_rccal_apply_code(struct b43_wldev *dev)
 	u16 code = b43_radio_read_log(dev, R2069_RCCAL_G) & 0x001f;
 	unsigned int core;
 
+	b43_cal_report(dev, AC_CAL_RCCAL_CODE, code);
+
 	/*
 	 * Per silicon core: RC-time-constant trim applies to every powered core,
 	 * incl. the antenna-less core 2 (all three cores).
@@ -1362,25 +1365,29 @@ void b43_radio_2069_rccal(struct b43_wldev *dev)
 	/* Cal-block enable (EN1 bit 0x80, EN2 mode) is left armed by
 	 * b43_radio_2069_pwron, which always runs first; do not repeat it. */
 
+	b43_cal_begin(dev, B43_CAL_RCCAL);
+
 	/*
 	 * First two passes
 	 */
 	for (pass = 0; pass < 2; pass++) {
 		b43_r2069_rccal_setup(dev, pass);
-		if (b43_r2069_rccal_run(dev)) {
-			if (pass == 0) {
-				s16 e = b43_radio_read_log(dev, R2069_RCCAL_E);
-				s16 f = b43_radio_read_log(dev, R2069_RCCAL_F);
-				u8 cap = (u8)(((f - e) * 193) >> 8);
+		if (!b43_r2069_rccal_run(dev)) {
+			b43_cal_report(dev, AC_CAL_RCCAL_TIMEOUT, pass);
+		} else if (pass == 0) {
+			s16 e = b43_radio_read_log(dev, R2069_RCCAL_E);
+			s16 f = b43_radio_read_log(dev, R2069_RCCAL_F);
+			u8 cap = (u8)(((f - e) * 193) >> 8);
 
-				dev->phy.ac->lpf_cap0 = cap;
-				dev->phy.ac->lpf_cap1 = cap;
-				b43dbg(dev->wl,
-				       "radio 2069: rccal lpf cap 0x%02x (E=0x%04x F=0x%04x)\n",
-				       cap, (u16)e, (u16)f);
-			} else {
-				b43_r2069_rccal_apply_code(dev);
-			}
+			b43_cal_report(dev, AC_CAL_RCCAL_EF, (u16)e, (u16)f);
+			b43_cal_report(dev, AC_CAL_RCCAL_LPF_CAP, cap);
+			dev->phy.ac->lpf_cap0 = cap;
+			dev->phy.ac->lpf_cap1 = cap;
+			b43dbg(dev->wl,
+			       "radio 2069: rccal lpf cap 0x%02x (E=0x%04x F=0x%04x)\n",
+			       cap, (u16)e, (u16)f);
+		} else {
+			b43_r2069_rccal_apply_code(dev);
 		}
 		/* Stop: clear start after the result readout. */
 		r2069_mod(dev, R2069_RCCAL_CFG, 0x0001, 0x0000);
@@ -1392,8 +1399,10 @@ void b43_radio_2069_rccal(struct b43_wldev *dev)
 	 */
 	b43_r2069_rccal_setup(dev, pass);
 	b43_r2069_rccal_apply_fixed(dev);
-	b43_r2069_rccal_run(dev);
+	if (!b43_r2069_rccal_run(dev))
+		b43_cal_report(dev, AC_CAL_RCCAL_TIMEOUT, 2);
 	dev->phy.ac->dacbuf_cap = (b43_radio_read(dev, R2069_RCCAL_G) & 0x03e0) >> 5;
+	b43_cal_report(dev, AC_CAL_RCCAL_DACBUF_CAP, dev->phy.ac->dacbuf_cap);
 	b43_r2069_rccal_disarm_p2b(dev);
 
 	r2069_mod(dev, R2069_RCCAL_CFG, 0x0001, 0x0000);
@@ -1428,6 +1437,7 @@ void b43_radio_2069_afecal(struct b43_wldev *dev)
 	u16 gain_saved[B43_PHY_AC_MAX_CORES][3] = { { 0 } };
 	unsigned int core;
 
+	b43_cal_begin(dev, B43_CAL_AFE);
 	/* Enable the shared analog cal block (same gate rccal uses). */
 	r2069_mod(dev, R2069_RCCAL_EN1, 0x0080, 0x0080);
 
@@ -1482,6 +1492,7 @@ void b43_radio_2069_afecal(struct b43_wldev *dev)
 		b43dbg(dev->wl,
 		       "radio 2069: afecal core %u ctrl=0x%04x stat=0x%04x/0x%04x\n",
 		       core, ctrl, post[0], post[1]);
+		b43_cal_report(dev, AC_CAL_AFE_RADIO, core, ctrl, post[0], post[1]);
 
 		b43_radio_write(dev, R2069_AFE_CAL_CTRL | rbase, ctrl);
 

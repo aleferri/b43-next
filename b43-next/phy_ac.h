@@ -700,6 +700,36 @@ struct b43_phy_ac {
 
 extern const struct b43_phy_operations b43_phyops_ac;
 
+/* The entries of the calibration statistics, see b43_phy_ac_cal_entries[] */
+enum {
+	AC_CAL_RCCAL_TIMEOUT,
+	AC_CAL_RCCAL_EF,
+	AC_CAL_RCCAL_LPF_CAP,
+	AC_CAL_RCCAL_CODE,
+	AC_CAL_RCCAL_DACBUF_CAP,
+	AC_CAL_AFE_RADIO,
+	AC_CAL_AFE_RES,
+	AC_CAL_AFE_CAL,
+	AC_CAL_IDLE_TSSI_PASS,
+	AC_CAL_IDLE_TSSI_SUM,
+	AC_CAL_IDLE_TSSI_IDX,
+	AC_CAL_RPCAL,
+	AC_CAL_TXIQLO_GAINCURVE,
+	AC_CAL_TXIQLO_COEF,
+	AC_CAL_RXIQ_COMP,
+	AC_CAL_TEMP_SUMS,
+	AC_CAL_TEMP,
+	AC_CAL_TEMP_CAL,
+	AC_CAL_TXPWR_TARGET,
+	AC_CAL_TXPWR_CORE,
+	AC_CAL_TXPWR_PPR,
+	AC_CAL_TXPWR_RATE_PO,
+	AC_CAL_TXPWR_REGS,
+	AC_CAL_TXPWR_CORE_REGS,
+	AC_CAL_TXPWR_BOARD,
+	AC_CAL_TXPWR_PDOFF,
+};
+
 
 bool b43_phy_ac_force_rf_sequence(struct b43_wldev *dev, u16 rf_seq);
 

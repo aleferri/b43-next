@@ -279,6 +279,8 @@ struct b43_phy {
 	u8  rev;
 	u16 radio_ver;
 	u8  radio_rev;
+	/* Come in-tree: il canale, che le statistiche di calibrazione annotano. */
+	unsigned int channel;
 	struct b43_phy_ac *ac;
 	/* Some scratch code touches phy.dacbuf_cap / phy.lpf_cap directly. */
 	u8 dacbuf_cap;
@@ -301,6 +303,7 @@ struct b43_wl {
 
 struct b43_wldev {
 	struct b43_bus_dev *dev;
+	struct b43_calstat *calstat;
 	/* Come in-tree: profondita' di annidamento di b43_mac_suspend. */
 	int mac_suspended;
 	struct b43_wl *wl;
@@ -320,7 +323,6 @@ struct b43_wldev {
  * with the wl-diag trace on stdout.
  */
 #define b43dbg(wl, fmt, ...)  fprintf(stderr, "b43dbg: "  fmt, ##__VA_ARGS__)
-#define b43_calreport(dev, fmt, ...) fprintf(stderr, "calreport: " fmt, ##__VA_ARGS__)
 #define b43info(wl, fmt, ...) fprintf(stderr, "b43info: " fmt, ##__VA_ARGS__)
 #define b43warn(wl, fmt, ...) fprintf(stderr, "b43warn: " fmt, ##__VA_ARGS__)
 #define b43err(wl, fmt, ...)  fprintf(stderr, "b43err: "  fmt, ##__VA_ARGS__)

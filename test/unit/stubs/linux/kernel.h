@@ -62,6 +62,9 @@ static inline void __clear_bit(unsigned long nr, unsigned long *addr)
 #define __always_unused __attribute__((unused))
 #define __maybe_unused  __attribute__((unused))
 #define __must_check    __attribute__((warn_unused_result))
+#define __printf(a, b)  __attribute__((format(printf, a, b)))
+#define fallthrough     __attribute__((__fallthrough__))
+#define lockdep_assert_held(l) do { } while (0)
 
 /*
  * Real IS_ENABLED semantics: the driver uses it to select a debug-only

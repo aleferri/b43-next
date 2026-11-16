@@ -5,6 +5,9 @@
 /* Standard errno.h has most of these; add the kernel-specific ones. */
 #include <errno.h>
 
+#ifndef ENOENT
+#define ENOENT 2
+#endif
 #ifndef ENOMEM
 #define ENOMEM 12
 #endif
