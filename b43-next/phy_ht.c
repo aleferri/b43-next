@@ -1455,6 +1455,19 @@ static void b43_phy_ht_op_adjust_txpower(struct b43_wldev *dev)
 	b43_phy_ht_tx_power_ctl(dev, true);
 }
 
+/*
+ * The calibrations that close a channel switch, as wl runs them after the
+ * later init of its down and up (b43_phy_recycle()) when the BSS starts:
+ * the TX power twice; the calibrations are not ported yet. Then the MAC
+ * goes on.
+ */
+static void b43_phy_ht_op_channel_calibrate(struct b43_wldev *dev)
+{
+	b43_phy_ht_op_adjust_txpower(dev);
+	b43_phy_ht_op_adjust_txpower(dev);
+	b43_mac_enable(dev);
+}
+
 /**************************************************
  * PHY ops struct.
  **************************************************/
@@ -1491,5 +1504,6 @@ const struct b43_phy_operations b43_phyops_ht = {
 	.recalc_txpower		= b43_phy_ht_op_recalc_txpower,
 	.adjust_txpower		= b43_phy_ht_op_adjust_txpower,
 	.pwork_1sec		= b43_phy_ht_op_pwork_1sec,
+	.channel_calibrate	= b43_phy_ht_op_channel_calibrate,
     B43_CAL_OPS(b43_phy_ht_cal_entries)
 };
