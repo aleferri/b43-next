@@ -52,9 +52,6 @@ struct b43_dfsentry {
 	struct b43_dfs_file file_txpower_g;
 	struct b43_dfs_file file_restart;
 	struct b43_dfs_file file_loctls;
-#ifdef CONFIG_B43_NEXT_CALREPORT
-	struct b43_dfs_file file_calreport;
-#endif
 
 	struct b43_txstatus_log txstatlog;
 
@@ -75,12 +72,6 @@ struct b43_dfsentry {
 
 #ifdef CONFIG_B43_NEXT_CALSTAT
 	struct b43_dfs_cal *cal;
-#endif
-
-#ifdef CONFIG_B43_NEXT_CALREPORT
-	/* The calibration report's lines, while the report is on */
-	char *calreport;
-	size_t calreport_len;
 #endif
 };
 
@@ -118,24 +109,5 @@ static inline void b43_debugfs_log_txstat(struct b43_wldev *dev,
 }
 
 #endif /* CONFIG_B43_NEXT_DEBUG */
-
-/*
- * The calibration report: the PHY's calibration results and TX power
- * values, collected while 1 is written to the calreport file of the
- * device's debugfs directory, and read back from it.
- */
-#ifdef CONFIG_B43_NEXT_CALREPORT
-bool b43_calreport_on(struct b43_wldev *dev);
-__printf(2, 3) void b43_calreport(struct b43_wldev *dev, const char *fmt, ...);
-#else
-static inline bool b43_calreport_on(struct b43_wldev *dev)
-{
-	return false;
-}
-static inline __printf(2, 3)
-void b43_calreport(struct b43_wldev *dev, const char *fmt, ...)
-{
-}
-#endif
 
 #endif /* B43_DEBUGFS_H_ */

@@ -44,12 +44,6 @@ endif
 ifeq ($(B43_NEXT_DEBUG),y)
 b43n-opts += DEBUG
 endif
-ifeq ($(B43_NEXT_CALREPORT),y)
-ifneq ($(B43_NEXT_DEBUG),y)
-$(error b43-next: B43_NEXT_CALREPORT=y needs B43_NEXT_DEBUG=y)
-endif
-b43n-opts += CALREPORT
-endif
 ifeq ($(B43_NEXT_CALSTAT),y)
 ifneq ($(B43_NEXT_DEBUG),y)
 $(error b43-next: B43_NEXT_CALSTAT=y needs B43_NEXT_DEBUG=y)

@@ -22,9 +22,11 @@ library; MMC adds the SDIO host, MAC80211_LEDS with LEDS_CLASS the LEDs,
 HW_RANDOM the RNG, BMIPS_GENERIC with OF the host of the BCM6362's integrated
 WLAN, and BCM47XX_NVRAM, on the Broadcom routers, the board data of boards
 without a SROM. `B43_NEXT_DEBUG=y` builds debugfs and the debug
-messages, and `B43_NEXT_CALREPORT=y` on top of it the calibration report:
-`echo 1 > /sys/kernel/debug/b43_next/phy0/calreport` starts it, reading
-the file returns it. `B43_NEXT_DFS=y`, on a kernel with
+messages, and `B43_NEXT_CALSTAT=y` on top of it the calibration statistics:
+`echo 1 > /sys/kernel/debug/b43_next/phy0/cal/enable` starts them, then
+`cal/<calibration>/<entry>` holds what each calibration sampled, evaluated,
+computed and read back, its last value or a ring of the last ones, and
+`cal/all` every entry in the order it was reported. `B43_NEXT_DFS=y`, on a kernel with
 CFG80211_CERTIFICATION_ONUS, lets an AP on the AC-PHY run on radar
 channels (tested on the RT-AC66U B1 only, not a certified detector). What
 the kernel's Kconfig decided for b43, ssb and bcma is decided in
