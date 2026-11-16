@@ -10,7 +10,7 @@ from `cold-2g6-20`, window #189-#31089.
 `up` is 30901 of wl's operations, of which 27188 are the PHY's and the
 radio's; b43's `full` flow makes 7517 PHY and radio operations. `ssid`
 (#31090-#73468, about 42k) and `bss-up` are what wl does when the BSS
-starts; b43's N-PHY has no `bss_start` op, and they are not scored yet.
+starts; b43 runs none of it on the N-PHY, and they are not scored yet.
 
 ## `up`, PHY and radio, in order
 
@@ -198,4 +198,4 @@ with arg 3, at the end of the init) and the TX gain table they start from.
 7. The rest: inside the RX I/Q calibration (#24659-#25600, b43 writes
    table 27 at 0x14a where wl does other things), the TX I/Q-LO phases'
    inside, the small blocks (CRS #952, TX filter #3202, table 7 #3349, RX
-   gain block #3450), a `bss_start` flow against `ssid`, and 40 MHz.
+   gain block #3450), a flow against `ssid`, and 40 MHz.

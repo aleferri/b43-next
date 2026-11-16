@@ -2514,7 +2514,8 @@ static void b43_phy_ht_cal_pass(struct b43_wldev *dev)
  * the channel's target, the TX power twice, a calibration pass, the power
  * again and a second pass. Then the MAC goes on.
  */
-static void b43_phy_ht_op_channel_calibrate(struct b43_wldev *dev)
+static void b43_phy_ht_op_channel_calibrate(struct b43_wldev *dev,
+					     bool cac_done)
 {
 	b43_phy_ht_op_recalc_txpower(dev, true);
 	b43_phy_ht_op_adjust_txpower(dev);

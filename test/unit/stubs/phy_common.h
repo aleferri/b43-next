@@ -53,11 +53,10 @@ struct b43_phy_operations {
 	void (*pwork_1sec)(struct b43_wldev *dev);
 	void (*pwork_15sec)(struct b43_wldev *dev);
 	void (*pwork_60sec)(struct b43_wldev *dev);
-	void (*channel_calibrate)(struct b43_wldev *dev);
+	void (*channel_calibrate)(struct b43_wldev *dev, bool cac_done);
 	void (*noise_sample_done)(struct b43_wldev *dev);
 	bool (*radar_poll)(struct b43_wldev *dev);
 	void (*beacon_rate_set)(struct b43_wldev *dev, bool cck);
-	void (*cac_done)(struct b43_wldev *dev);
 	const struct b43_cal_entry *cal_entries;
 	unsigned int nr_cal_entries;
 };

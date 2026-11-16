@@ -6014,8 +6014,10 @@ static void b43_ac_cac_match_gate(struct b43_wldev *dev, bool open)
 	if (open) {
 		if (ap)
 			b43_macctl_maskset(dev, ~0, B43_MACCTL_AP);
-		if (dev->phy.ops->cac_done)
-			dev->phy.ops->cac_done(dev);
+		if (dev->phy.ops->channel_calibrate) {
+			b43_mac_suspend(dev);
+			dev->phy.ops->channel_calibrate(dev, true);
+		}
 		return;
 	}
 	/* The interface may have come up before the check started. */
@@ -6149,7 +6151,7 @@ static int b43_op_config(struct ieee80211_hw *hw, int radio_idx, u32 changed)
 
 out_mac_enable:
 	if (switched && phy->ops->channel_calibrate)
-		phy->ops->channel_calibrate(dev);
+		phy->ops->channel_calibrate(dev, false);
 	else
 		b43_mac_enable(dev);
 	mutex_unlock(&wl->mutex);

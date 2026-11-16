@@ -9532,7 +9532,8 @@ static int b43_nphy_op_switch_channel(struct b43_wldev *dev,
 	return 0;
 }
 
-static void b43_nphy_op_channel_calibrate(struct b43_wldev *dev)
+static void b43_nphy_op_channel_calibrate(struct b43_wldev *dev,
+					  bool cac_done)
 {
 	if (!(dev->wl->hw->conf.flags & IEEE80211_CONF_OFFCHANNEL) &&
 	    !b43_nphy_txiqlocal_on_channel(dev))

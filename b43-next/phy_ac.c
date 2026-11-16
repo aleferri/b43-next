@@ -6349,13 +6349,19 @@ static void b43_phy_ac_calibration_block(struct b43_wldev *dev)
  * comes 62.9-76.4 s after the arm, always between two watchdog turns, an
  * event of the stack. The measure block and latch that go with it belong
  * here too, not to the surrounding watchdog turn.
+ *
+ * op_channel_calibrate() with cac_done, entered with the MAC suspended.
+ * Nothing to do on a channel without the radar duty, where the switch
+ * already calibrated.
  */
-void b43_phy_ac_bss_up(struct b43_wldev *dev)
+static void b43_phy_ac_bss_up(struct b43_wldev *dev)
 {
 	struct b43_phy_ac *ac = dev->phy.ac;
 
-	if (!ac->cac_pending)
+	if (!ac->cac_pending) {
+		b43_mac_enable(dev);
 		return;
+	}
 
 	B43_AC_FN();
 	ac->cac_pending = false;
@@ -6365,11 +6371,9 @@ void b43_phy_ac_bss_up(struct b43_wldev *dev)
 	 * the MAC suspended, right after the AMT row restore. The watchdog's
 	 * reading has its own cadence; see b43_phy_ac_watchdog().
 	 */
-	if (b43_phy_ac_cal_reads_temp(dev)) {
-		b43_mac_suspend(dev);
+	if (b43_phy_ac_cal_reads_temp(dev))
 		b43_phy_ac_tempsense(dev);
-		b43_mac_enable(dev);
-	}
+	b43_mac_enable(dev);
 
 	b43_phy_ac_calibration_block(dev);
 
@@ -6747,8 +6751,13 @@ static bool b43_phy_ac_cal_reads_temp(struct b43_wldev *dev)
  * [capture-ref: router-data/d6220/hot-sweep.zip!segmenti/01-up-ch36-bw20.txt;
  *   9821-28591]
  */
-static void b43_phy_ac_op_channel_calibrate(struct b43_wldev *dev)
+static void b43_phy_ac_op_channel_calibrate(struct b43_wldev *dev,
+					    bool cac_done)
 {
+	if (cac_done) {
+		b43_phy_ac_bss_up(dev);
+		return;
+	}
 	B43_AC_FN();
 	if (b43_phy_ac_cal_reads_temp(dev)) {
 		B43_AC_BLOCK(dev, "tempsense");
@@ -11844,7 +11853,6 @@ const struct b43_phy_operations b43_phyops_ac = {
 	.noise_sample_done	= b43_phy_ac_noise_sample_done,
 	.radar_poll		= b43_phy_ac_radar_poll,
 	.beacon_rate_set	= b43_phy_ac_op_beacon_rate_set,
-	.cac_done		= b43_phy_ac_bss_up,
 	B43_CAL_OPS(b43_phy_ac_cal_entries)
 };
 

@@ -151,11 +151,13 @@ enum b43_txpwr_result {
  * 			Can be NULL, if not required.
  * @pwork_60sec:	Periodic work. Called every 60 seconds.
  * 			Can be NULL, if not required.
- * @channel_calibrate:	Calibrations that close a channel switch. Called by
- * 			b43_op_config() with the MAC suspended, in place of
- * 			its final b43_mac_enable(): the hook re-enables the
- * 			MAC itself at the point its calibration needs it
- * 			running, and must leave it enabled.
+ * @channel_calibrate:	Calibrations of the channel. Called by the core with
+ * 			the MAC suspended, in place of its b43_mac_enable():
+ * 			the hook re-enables the MAC itself at the point its
+ * 			calibration needs it running, and must leave it
+ * 			enabled. After a channel switch, and with @cac_done
+ * 			when the channel availability check has ended and
+ * 			the BSS beacons, for those the check held back.
  * 			Can be NULL, if not required.
  * @noise_sample_done:	A background noise sample requested with
  * 			B43_MACCMD_BGNOISE has completed. Called from the
@@ -168,10 +170,6 @@ enum b43_txpwr_result {
  * 			Can be NULL, if the PHY has no detector.
  * @beacon_rate_set:	The beacon goes out at a CCK rate or not, from the
  *			beacon template writer. Can be NULL.
- * @cac_done:		The channel availability check has ended and the BSS
- * 			beacons. Called by the core right after it releases the
- * 			MAC, for the PHY to run what the check held back.
- * 			Can be NULL, if not required.
  * @ofdm_tx:		OFDM or HT frames are about to be queued for
  * 			transmission. Called from the TX work with wl->mutex
  * 			held, at most once per run of it.
@@ -212,11 +210,10 @@ struct b43_phy_operations {
 	void (*pwork_1sec)(struct b43_wldev *dev);
 	void (*pwork_15sec)(struct b43_wldev *dev);
 	void (*pwork_60sec)(struct b43_wldev *dev);
-	void (*channel_calibrate)(struct b43_wldev *dev);
+	void (*channel_calibrate)(struct b43_wldev *dev, bool cac_done);
 	void (*noise_sample_done)(struct b43_wldev *dev);
 	bool (*radar_poll)(struct b43_wldev *dev);
 	void (*beacon_rate_set)(struct b43_wldev *dev, bool cck);
-	void (*cac_done)(struct b43_wldev *dev);
 	void (*ofdm_tx)(struct b43_wldev *dev);
 
 #ifdef CONFIG_B43_NEXT_CALSTAT
