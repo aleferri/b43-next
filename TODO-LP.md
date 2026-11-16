@@ -114,7 +114,9 @@ What the capture settles of the rest:
   rates, -24 for the eight OFDM ones, and PHY 0x4A7 (low byte) `0x24`.
   brcmsmac's rule for hardware control, the target of the rate less the
   lowest target, leaves one offset at 0, so it is not what wl computes
-  here. The board's maximum power (`maxpwr_bg`) is `0x4A`.
+  here. The board's table from the SROM (`maxpwr_bg` 0x4A, `cck2gpo` and
+  the upper word of `ofdm2gpo` unprogrammed) is 74 on every rate but
+  6 Mb/s, at 58: the two values of wl do not come from it.
 - after the idle TSSI read, wl reads 0x4A8 and writes back `0x000A`
   unchanged; the specs clear its low byte or set `0x0600`.
 

@@ -206,10 +206,21 @@ bool b43_ppr_band(const struct ieee80211_channel *chan, enum b43_band *band)
 	return true;
 }
 
+/*
+ * Nibble @i of a word of nibbles. A 16-bit SROM word of all ones is
+ * unprogrammed: wl reads its four nibbles as 0.
+ */
+static u8 b43_ppr_nibble(u32 po, unsigned int i)
+{
+	if (((po >> (16 * (i / 4))) & 0xffff) == 0xffff)
+		return 0;
+	return (po >> (4 * i)) & 0xf;
+}
+
 /* The offset of rate group @i in a word of nibbles, in half dB. */
 static u8 b43_ppr_off(u32 po, unsigned int i)
 {
-	return ((po >> (4 * i)) & 0xf) * 2;
+	return b43_ppr_nibble(po, i) * 2;
 }
 
 /* @maxp less @off, at zero rather than wrapping past it. */
@@ -428,8 +439,8 @@ u8 b43_ppr_load_sprom_r8(struct b43_ppr *ppr, const struct ssbn_sprom *sprom,
 		mcs[i] = ofdm[mcs_from_ofdm[i]];
 
 	if (cdd_stbc_po) {
-		cdd_po = (sprom->cddpo >> (4 * nib)) & 0xf;
-		stbc_po = (sprom->stbcpo >> (4 * nib)) & 0xf;
+		cdd_po = b43_ppr_nibble(sprom->cddpo, nib);
+		stbc_po = b43_ppr_nibble(sprom->stbcpo, nib);
 	}
 	b43_ppr_load_r8_mcs(ppr, B43_PPR_BW_20, B43_PPR_CDD, maxp, &mcs_po[0],
 			    cdd_po);
@@ -472,10 +483,10 @@ void b43_ppr_load_sprom_r8_40(struct b43_ppr *ppr,
 				    &mcs_po[band][4], 0);
 		b43_ppr_load_r8_mcs(ppr, B43_PPR_BW_40, B43_PPR_CDD, maxp,
 				    &mcs_po[band][4],
-				    (sprom->cddpo >> (4 * nib)) & 0xf);
+				    b43_ppr_nibble(sprom->cddpo, nib));
 		b43_ppr_load_r8_mcs(ppr, B43_PPR_BW_40, B43_PPR_STBC, maxp,
 				    &mcs_po[band][4],
-				    (sprom->stbcpo >> (4 * nib)) & 0xf);
+				    b43_ppr_nibble(sprom->stbcpo, nib));
 		b43_ppr_load_r8_mcs(ppr, B43_PPR_BW_40, B43_PPR_SDM, maxp,
 				    &mcs_po[band][6], 0);
 		for (mode = B43_PPR_SISO; mode < B43_PPR_OFDM_MODES; mode++) {
@@ -497,7 +508,7 @@ void b43_ppr_load_sprom_r8_40(struct b43_ppr *ppr,
 
 	if (!bw40po)
 		return;
-	po = ((sprom->bw40po >> (4 * nib)) & 0xf) * 2;
+	po = b43_ppr_off(sprom->bw40po, nib);
 	for (mode = B43_PPR_SISO; mode < B43_PPR_OFDM_MODES; mode++) {
 		ofdm = ppr->ofdm[B43_PPR_BW_40][mode];
 		for (i = 0; i < B43_PPR_OFDM_RATES; i++)
