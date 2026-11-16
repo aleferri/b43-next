@@ -1022,7 +1022,7 @@ static bool lpphy_rx_iq_est(struct b43_wldev *dev, u16 samples, u8 time,
 		msleep(1);
 	}
 
-	if ((b43_phy_read(dev, B43_LPPHY_IQ_ENABLE_WAIT_TIME_ADDR) & 0x200)) {
+	if (i == 500) {
 		b43_phy_set(dev, B43_LPPHY_CRSGAIN_CTL, 0x8);
 		return false;
 	}
