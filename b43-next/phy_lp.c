@@ -1806,7 +1806,7 @@ static void lpphy_run_samples(struct b43_wldev *dev, u16 samples, u16 loops,
 			0xFFC0, samples - 1);
 	if (loops != 0xFFFF)
 		loops--;
-	b43_phy_maskset(dev, B43_LPPHY_SMPL_PLAY_COUNT, 0xF000, loops);
+	b43_phy_maskset(dev, B43_LPPHY_SMPL_PLAY_COUNT, 0xF000, loops & 0x0FFF);
 	b43_phy_maskset(dev, B43_LPPHY_SMPL_PLAY_BUFFER_CTL, 0x3F, wait << 6);
 	b43_phy_set(dev, B43_LPPHY_A_PHY_CTL_ADDR, 0x1);
 }
