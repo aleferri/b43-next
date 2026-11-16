@@ -68,18 +68,18 @@ static int ssbn_pcihost_probe(struct pci_dev *dev,
 			     const struct pci_device_id *id)
 {
 	struct ssbn_bus *ssb;
-	int err = -ENOMEM;
+	int err;
 	u32 val;
 
-	ssb = kzalloc_obj(*ssb);
+	ssb = devm_kzalloc(&dev->dev, sizeof(*ssb), GFP_KERNEL);
 	if (!ssb)
-		goto out;
-	err = pci_enable_device(dev);
+		return -ENOMEM;
+	err = pcim_enable_device(dev);
 	if (err)
-		goto err_kfree_ssb;
-	err = pci_request_regions(dev, dev_driver_string(&dev->dev));
+		return err;
+	err = pcim_request_all_regions(dev, dev_driver_string(&dev->dev));
 	if (err)
-		goto err_pci_disable;
+		return err;
 	pci_set_master(dev);
 
 	/* Disable the RETRY_TIMEOUT register (0x41) to keep
@@ -90,20 +90,11 @@ static int ssbn_pcihost_probe(struct pci_dev *dev,
 
 	err = ssbn_bus_pcibus_register(ssb, dev);
 	if (err)
-		goto err_pci_release_regions;
+		return err;
 
 	pci_set_drvdata(dev, ssb);
 
-out:
-	return err;
-
-err_pci_release_regions:
-	pci_release_regions(dev);
-err_pci_disable:
-	pci_disable_device(dev);
-err_kfree_ssb:
-	kfree(ssb);
-	return err;
+	return 0;
 }
 
 static void ssbn_pcihost_remove(struct pci_dev *dev)
@@ -111,10 +102,6 @@ static void ssbn_pcihost_remove(struct pci_dev *dev)
 	struct ssbn_bus *ssb = pci_get_drvdata(dev);
 
 	ssbn_bus_unregister(ssb);
-	pci_release_regions(dev);
-	pci_disable_device(dev);
-	kfree(ssb);
-	pci_set_drvdata(dev, NULL);
 }
 
 int ssbn_pcihost_register(struct pci_driver *driver)
