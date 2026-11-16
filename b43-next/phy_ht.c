@@ -2087,6 +2087,13 @@ static void b43_phy_ht_txcal_setup(struct b43_wldev *dev,
 		sv->afe_over[c] = b43_phy_read(dev, afe[c][1]);
 		b43_phy_mask(dev, afe[c][0], ~0x0100);
 		b43_phy_mask(dev, afe[c][0], ~0x0400);
+		/*
+		 * The overridden bit 9 as wl has it: wl's AFE value is 0x0fcd,
+		 * b43's 0x00cd. Left clear, the engine returns zeros or
+		 * garbage on an Apple BCM4331, and the LO correction it applies
+		 * ruins every frame.
+		 */
+		b43_phy_set(dev, afe[c][0], 0x0200);
 		b43_phy_set(dev, afe[c][1], 0x0200);
 		b43_phy_set(dev, afe[c][1], 0x0400);
 		sv->t8[c] = b43_httab_read(dev, B43_HTTAB16(8, 3 + c * 0x10));
@@ -2226,6 +2233,10 @@ static void b43_phy_ht_cal_tx_iq_lo(struct b43_wldev *dev)
 		}
 	}
 
+	b43dbg(dev->wl, "HT-PHY TX I/Q LO cal ch %u: %04x/%04x lo %04x, %04x/%04x lo %04x, %04x/%04x lo %04x\n",
+	       dev->phy.channel, coef[0][0], coef[0][1], coef[0][2],
+	       coef[1][0], coef[1][1], coef[1][2],
+	       coef[2][0], coef[2][1], coef[2][2]);
 	for (c = 0; c < 3; c++) {
 		b43_httab_write_bulk(dev, B43_HTTAB16(13, 0x60 + c * 4), 2, coef[c]);
 		b43_httab_write_bulk(dev, B43_HTTAB16(13, 0x70 + c * 4), 2, coef[c]);
