@@ -2137,17 +2137,12 @@ static void lpphy_papd_cal_txpwr(struct b43_wldev *dev)
 	b43_phy_maskset(dev, B43_LPPHY_RF_PWR_OVERRIDE, 0xFF00, old_rf);
 }
 
-static int lpphy_rx_iq_cal(struct b43_wldev *dev, bool noise, bool tx,
-			    bool rx, bool pa, struct lpphy_tx_gains *gains)
+/* The RX I/Q compensation the board's table gives the channel */
+static bool lpphy_set_rx_iq_comp(struct b43_wldev *dev)
 {
 	struct b43_phy_lp *lpphy = dev->phy.lp;
 	const struct lpphy_rx_iq_comp *iqcomp = NULL;
-	struct lpphy_tx_gains nogains, oldgains;
-	u16 tmp;
-	int i, ret;
-
-	memset(&nogains, 0, sizeof(nogains));
-	memset(&oldgains, 0, sizeof(oldgains));
+	int i;
 
 	if (dev->dev->chip_id == 0x5354) {
 		for (i = 0; i < ARRAY_SIZE(lpphy_5354_iq_table); i++) {
@@ -2166,7 +2161,7 @@ static int lpphy_rx_iq_cal(struct b43_wldev *dev, bool noise, bool tx,
 	}
 
 	if (B43_WARN_ON(!iqcomp))
-		return 0;
+		return false;
 
 	b43_cal_begin(dev, B43_CAL_RXIQ);
 	b43_cal_report(dev, LP_CAL_RXIQ_SEED, (u8)iqcomp->c0, (u8)iqcomp->c1);
@@ -2174,6 +2169,21 @@ static int lpphy_rx_iq_cal(struct b43_wldev *dev, bool noise, bool tx,
 	b43_phy_maskset(dev, B43_LPPHY_RX_COMP_COEFF_S, 0xFF00, (u8)iqcomp->c1);
 	b43_phy_maskset(dev, B43_LPPHY_RX_COMP_COEFF_S,
 			0x00FF, iqcomp->c0 << 8);
+	return true;
+}
+
+static int lpphy_rx_iq_cal(struct b43_wldev *dev, bool noise, bool tx,
+			    bool rx, bool pa, struct lpphy_tx_gains *gains)
+{
+	struct lpphy_tx_gains nogains, oldgains;
+	u16 tmp;
+	int ret;
+
+	memset(&nogains, 0, sizeof(nogains));
+	memset(&oldgains, 0, sizeof(oldgains));
+
+	if (!lpphy_set_rx_iq_comp(dev))
+		return 0;
 
 	if (noise) {
 		tx = true;
@@ -2260,10 +2270,14 @@ static void lpphy_calibration(struct b43_wldev *dev)
 	if ((dev->phy.rev >= 2) && full_cal) {
 		lpphy_papd_cal_txpwr(dev);
 	}
-	lpphy_set_tx_power_control(dev, saved_pctl_mode);
 	if (dev->phy.rev >= 2)
 		lpphy_restore_dig_flt_state(dev);
-	lpphy_rx_iq_cal(dev, true, true, false, false, NULL);
+	/* wl on rev1 sets the table's compensation and measures none */
+	if (dev->phy.rev == 1)
+		lpphy_set_rx_iq_comp(dev);
+	else
+		lpphy_rx_iq_cal(dev, true, true, false, false, NULL);
+	lpphy_set_tx_power_control(dev, saved_pctl_mode);
 
 	b43_mac_enable(dev);
 }
