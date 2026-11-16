@@ -89,9 +89,7 @@ at 20 MHz, 1l-7l and 5u-11u at 40.
 A flow passes only if both streams are equal, no read goes past the capture
 and none of the capture's is left over, and b43 printed nothing.
 
-On 2026-11-16 all 37 differ from wl at the same place: wl reads table 8 at
-0x1b (0x96) and writes it as the TSSI delay of `TXPCTL_N`, where b43 writes
-0, and the idle TSSI written to 0x1e9 and 0x965 differ.
+All 37 windows pass.
 
 ## The start of the BSS
 
