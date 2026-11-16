@@ -96,6 +96,27 @@ static void b43_lpphy_op_free(struct b43_wldev *dev)
 }
 
 /* https://bcm-v4.sipsolutions.net/802.11/PHY/LP/ReadBandSrom */
+/*
+ * The 2 GHz rate limits. Without CCK offsets (cck2gpo 0 or unprogrammed),
+ * wl takes CCK at the maximum and every OFDM rate opo below it, as the specs
+ * have it (ReadBandSrom): on the BCM4312 its OFDM targets are all alike,
+ * which the nibbles of ofdm2gpo would not give.
+ */
+static void lpphy_load_ppr_2g(struct b43_wldev *dev)
+{
+	struct ssbn_sprom *sprom = dev->dev->bus_sprom;
+	struct b43_ppr *ppr = &dev->phy.lp->tx_max_ppr[B43_BAND_2G];
+	u8 maxp, *ofdm;
+	unsigned int i;
+
+	maxp = b43_ppr_load_sprom_legacy(ppr, sprom, B43_BAND_2G, false);
+	if (sprom->cck2gpo && sprom->cck2gpo != 0xFFFF)
+		return;
+	ofdm = ppr->ofdm[B43_PPR_BW_20][B43_PPR_SISO];
+	for (i = 0; i < B43_PPR_OFDM_RATES; i++)
+		ofdm[i] = sprom->opo > maxp ? 0 : maxp - sprom->opo;
+}
+
 static void lpphy_read_band_sprom(struct b43_wldev *dev)
 {
 	struct ssbn_sprom *sprom = dev->dev->bus_sprom;
@@ -112,8 +133,7 @@ static void lpphy_read_band_sprom(struct b43_wldev *dev)
 		lpphy->txpa[0] = sprom->pa0b0;
 		lpphy->txpa[1] = sprom->pa0b1;
 		lpphy->txpa[2] = sprom->pa0b2;
-		b43_ppr_load_sprom_legacy(&lpphy->tx_max_ppr[B43_BAND_2G],
-					  sprom, B43_BAND_2G, false);
+		lpphy_load_ppr_2g(dev);
 	} else { /* 5GHz */
 		lpphy->tx_isolation_low_band = sprom->tri5gl;
 		lpphy->tx_isolation_med_band = sprom->tri5g;
