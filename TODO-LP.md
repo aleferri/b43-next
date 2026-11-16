@@ -199,12 +199,6 @@ Check: by computation on `i_pwr`, `q_pwr`, `iq_prod` taken from a capture
 (PHY 0x483-0x488 after the estimate), comparing the coefficient wl writes to
 0x49E with the one the code would.
 
-### Loop count of the tone
-
-`lpphy_run_samples()` ORs `0xFFFF` into PHY 0x4A0 under a mask that keeps the
-top four bits, and `lpphy_stop_tx_tone()` clears the low twelve only. No tone
-is played today. RunSamples in the specs not read yet.
-
 ### CCK power offsets
 
 `lpphy_read_band_sprom()` fills the four CCK entries of `tx_max_rate` from
