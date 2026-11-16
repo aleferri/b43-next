@@ -1878,11 +1878,14 @@ static void b43_phy_ht_op_adjust_txpower(struct b43_wldev *dev)
 {
 	int i, c;
 
+	/* From the TX power work too, with the MAC running; nests in bss_start */
+	b43_mac_suspend(dev);
 	for (i = 0; i < 3; i++)
 		for (c = 0; c < 3; c++)
 			b43_httab_read(dev, B43_HTTAB8(26 + c, 2));
 	b43_phy_ht_tx_power_ctl_setup(dev);
 	b43_phy_ht_tx_power_ctl(dev, true);
+	b43_mac_enable(dev);
 }
 
 /**************************************************
