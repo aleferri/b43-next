@@ -6,14 +6,13 @@ the evidence and the check that closes it. Closed items are not kept.
 The evidence is the code itself, the reverse-engineered specs at
 bcm-v4.sipsolutions.net (an archive of 2016, partly updated to wl 5.10.56.46,
 partly older than the code and in places wrong) and brcmsmac's LCN-PHY, a
-sibling with the same register block. None of it is a capture: every item
-stands until a trace of wl says otherwise.
+sibling with the same register block, and one capture: wl's attach of the
+HP 550's BCM4312 (PHY rev 1, radio 2062 rev 2, boardflags `0x00060A01`,
+`rssisav2g` 0) in b43-next-traces, `bcm4312-rev1/hp-550`: init, tunes to 7
+and 1, scans of channels 1-11. `test/phy_lp` runs b43's init against it.
 
-Three captures cover almost everything:
+Two more captures would cover the rest:
 
-- BCM4312 (PHY rev 1, radio 2062): init, a channel switch to 1, 7 and 14, one
-  periodic calibration. Its SPROM (`rssisav2g`, boardflags) is needed to read
-  the result.
 - a rev 2 chip (BCM4325, radio 2063): init and a channel switch, with the
   crystal frequency.
 - BCM5354 (PHY rev 0): init only.
@@ -33,8 +32,9 @@ delete the entry when it agrees.
 Changed, to confirm: `gs` is written. The specs write
 `vf | vc << 4 | gs << 10 | 0xA000` (Rev0BasebandInit, steps 25-26).
 
-Check: the write to PHY 0x43D in the BCM4312 init. Only tells if
-`rssisav2g` is not 0.
+Check: the write to PHY 0x43D in an init on a board whose `rssisav2g` is
+not 0. The BCM4312's is 0: wl writes `0xA00F`, `vf` 0xF and `vc` 0, which
+confirms the rest of the layout.
 
 ### Mask of the second write to TR_LOOKUP_1
 
@@ -50,18 +50,9 @@ Check: PHY 0x44E after init on a rev 1 board with boardflags `0x00400000`
 Changed, to confirm: the copy is made on rev 1 without FEM_BT (`0x00400000`),
 as in the specs (step 38), and no longer with PAREF (`0x00040000`).
 
-Check: PHY 0x4C7-0x4CA in the BCM4312 init against 0x44E, 0x44F, 0x4BB,
-0x4BC, with the board's flags.
-
-### Which rev1 FEM boards get which TR lookup values
-
-Rev0BasebandInit gives steps 35 and 36 the same last condition (rev 1 and
-FEM), so step 36 cannot be reached as written. The code has rev 0 and FEM in
-the first, rev 1 or FEM in the second.
-
-Check: PHY 0x44E, 0x44F, 0x4BB, 0x4BC on a rev 1 board with boardflags
-`0x0800`, bits 0-5 and 8-13: `0x0401/0x0501/0x0802/0x0A02` is step 35,
-`0x0804/0x0C04/0x0102/0x0302` is step 36.
+Check: PHY 0x4C7-0x4CA against 0x44E, 0x44F, 0x4BB, 0x4BC on a rev 1 board
+whose PAREF and FEM_BT flags are both set or both clear. The BCM4312 has
+PAREF and not FEM_BT: wl copies, as both conditions do.
 
 ### Flag of the 5354 PR45960 workaround
 
@@ -76,8 +67,9 @@ Check: on a 5354 in the 4712S package, whether PHY 0x4BF = 5 and
 Changed, to confirm: the `+ 5` is skipped on rev 1 when the channel is 14, as
 in the specs (SetRCCap, step 3).
 
-Check: radio 0x4F (north) on the BCM4312 tuned to 14 and to another channel:
-the low nibble differs by 5 if channel 14 is left out.
+Check: radio 0x4F (north) on the BCM4312 tuned to 14. The capture has
+channels 1-11 only, where wl adds the 5: `rc_cap` 0x89 gives TX_CTL_A
+0x89.
 
 ### DDFS left running by a failed rev0/1 RC calibration
 
@@ -104,13 +96,17 @@ Check: which radio register gets `0x7D` after the second 0x5D/0x5E pair.
 Also open: the poll is 10000 times `msleep(1)`; the specs poll every 10 us
 for 10 s at most.
 
-### `tssi_npt` in TX_PWR_CTL_NNUM (unreachable)
+### Hardware TX power control on rev 1
 
-Changed, to confirm: mask `0xF8FF`, shift 8, from the specs (SetTXPwrCtrl)
-and from the LCN-PHY.
+wl runs it on the BCM4312: after the tune to channel 1 it runs the sequence
+of `lpphy_tx_pctl_init_hw()`, ends in mode `0xE000`, writes the power
+offsets of table 10 from offset 64 and, during the scans, raises bits 8-10
+of TX_PWR_CTL_NNUM (`tssi_npt`) from 0 up to 6. Besides the init, b43 lacks
+what keeps it running: the target power, the TSSI bookkeeping and the
+offsets.
 
-Check: the write to PHY 0x4A5 when wl enters hardware TX power control, if
-it does on this chip.
+Check: enabling it needs those first; the capture has wl's values for all
+of them on 2 GHz.
 
 ### Initial TX power index override (unreachable)
 
@@ -122,7 +118,9 @@ code. What wl starts from is not known and a capture does not show it.
 Changed, to confirm: Set PA Gain is called on rev2+, as in the specs
 (SetTXPwrbyIndex, step 14), and no longer on rev0/1.
 
-Check: PHY 0x4FB and 0x4FD written after 0x4B5 when wl sets a power index.
+Check: PHY 0x4FB and 0x4FD written after 0x4B5 when wl sets a power index
+on a rev 2 chip. On the BCM4312 (rev 1) wl never reaches either register,
+which agrees with the rev0/1 half.
 
 ### Layout of the PA gain in PHY 0x4FB
 
@@ -186,7 +184,8 @@ clears `0x800` in 0x43C, leaving 0x44C/0x44D as set; it clears bit 0 of
 (RXIQCal, steps 10-13 and 23-24).
 
 Check: the writes to 0x43B, 0x43C, 0x44C, 0x44D around a noise calibration
-(the 0x49E writes mark it), and 0x44C/0x44D after it.
+(the 0x49E writes mark it), and 0x44C/0x44D after it. wl runs none in the
+BCM4312 capture: it writes 0x49E = `0x0CC0`, the seed b43 starts from.
 
 ### Overflow in the RX IQ estimate
 
@@ -198,6 +197,15 @@ in 32 bits.
 Check: by computation on `i_pwr`, `q_pwr`, `iq_prod` taken from a capture
 (PHY 0x483-0x488 after the estimate), comparing the coefficient wl writes to
 0x49E with the one the code would.
+
+### TX I/Q-LO calibration
+
+`lpphy_calibration()` leaves it as a TODO. wl runs it twice in the BCM4312
+init, before the RC calibration and after the tune to channel 1: an 8-sample
+tone of amplitude 100 (table 5), the IQLO engine at PHY 0x451-0x453 and its
+results in table 0 from offset 0x40.
+
+Check: b43's version against those two runs, in `test/phy_lp`.
 
 ### CCK power offsets
 
@@ -236,27 +244,28 @@ quantity.
 ### Crystal entry of the 2062 init
 
 `lpphy_2062_init()` takes the first entry of `freqdata_tab` above the
-reference frequency. The table ends at 19200 kHz: the 20 MHz of the BCM4312
-and the 25 MHz of the 5354 match nothing and get the last entry from the
-fallback.
+reference frequency. The table ends at 19200 kHz: the 25 MHz of the 5354
+matches nothing and gets the last entry from the fallback. The 20 MHz of
+the BCM4312 gets it too, and there wl writes the same values.
 
 ### Width of the RX gain table read
 
 `lpphy_set_rx_gain_by_index()` reads table 12 as 16 bits;
 `lpphy_rev2plus_set_rx_gain()` uses bits 16-21 of the gain. Only the rev0/1
-RC calibration calls it today.
+RC calibration calls it today, and there wl reads 16 bits too.
 
 ### TR isolation below 26
 
 `lpphy_adjust_gain_table()` computes `(isolation - 26) / 12` and shifts it
 by 12 into a u16. An isolation under 26 goes negative; `0xFF` gives 19 and
-the shift drops its top bit.
+the shift drops its top bit. The BCM4312's 108 gives wl's `0x6000`.
 
 ### Arithmetic of the rev0/1 RC calibration
 
 The squared error is kept in 32 bits and wraps when a tone measures more than
 about 16 times the first. If the first tone measures 0, every cap scores the
-same and 128 is taken.
+same and 128 is taken. On wl's measurements of the BCM4312 the errors stay
+under 2^27 and the cap is wl's, 0x89.
 
 ### Values wider than their field, elsewhere
 
@@ -268,8 +277,11 @@ init. The values fit with the callers of today and a programmed SPROM.
 ## Not reviewed
 
 Not compared with the specs or with anything else: the rev2 baseband init,
-the 2062 and 2063 radio init, the rev0/1 RC calibration and the loopback
-search, `lpphy_disable_crs()` and its restore, the software rfkill,
-`lpphy_calibration()` and the digital filter save and restore around it,
-`lpphy_pr41573_workaround()`, `lpphy_tx_pctl_init_hw()`, and the tables in
-`tables_lpphy.c`.
+the 2063 radio init, the software rfkill, `lpphy_calibration()` and the
+digital filter save and restore around it, `lpphy_pr41573_workaround()`, and
+the rev2 tables in `tables_lpphy.c`.
+
+Compared with wl's bus on the BCM4312 only (`test/phy_lp`), where they agree
+but for the entries above: the 2062 radio init, the rev0/1 RC calibration and
+the loopback search, `lpphy_disable_crs()` and its restore,
+`lpphy_tx_pctl_init_hw()` and the rev0/1 tables.
