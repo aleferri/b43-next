@@ -11,6 +11,7 @@
 void txhdr_emit(const char *name, int ret, const u8 *hdr, unsigned int len,
 		const u8 *tail, unsigned int tail_len);
 void txhdr_value(const char *name, unsigned int value);
+void txhdr_text(const char *name, const char *text);
 
 struct dev_spec {
 	const char *name;
@@ -506,6 +507,43 @@ static void ampdu_limits(void)
 		}
 }
 
+/* Which pairs of a primary and a fallback rate b43_tx_rates_ok() takes. */
+static void rates_ok(void)
+{
+	static const struct tx_rate_spec set[] = {
+		{ 0, P }, { 11, P }, { 12, P },
+		{ 7, MCS }, { 15, MCS }, { 16, MCS | SGI }, { 23, MCS },
+		{ 24, MCS }, { 32, MCS | W40 },
+		{ 1 << 4 | 9, VHT }, { 2 << 4 | 9, VHT | W80 },
+		{ 3 << 4 | 7, VHT }, { 1 << 4 | 11, VHT },
+		{ 1 << 4 | 9, VHT | IEEE80211_TX_RC_160_MHZ_WIDTH },
+	};
+	struct ieee80211_tx_info *info = IEEE80211_SKB_CB(&skb);
+	char line[ARRAY_SIZE(set) + 2], name[48];
+	unsigned int i, j;
+
+	for (i = 0; i < ARRAY_SIZE(set); i++) {
+		for (j = 0; j <= ARRAY_SIZE(set); j++) {
+			struct ieee80211_tx_rate *r = info->control.rates;
+
+			memset(info, 0, sizeof(*info));
+			info->band = cur->band;
+			r[0].idx = set[i].idx;
+			r[0].flags = set[i].flags & ~P;
+			r[0].count = 2;
+			r[1].idx = j < ARRAY_SIZE(set) ? set[j].idx : -1;
+			r[1].flags = j < ARRAY_SIZE(set) ? set[j].flags & ~P : 0;
+			r[1].count = 2;
+			r[2].idx = -1;
+			line[j] = '0' + b43_tx_rates_ok(&dev, info);
+		}
+		line[j] = 0;
+		snprintf(name, sizeof(name), "%s rates_ok %d/%#x", cur->name,
+			 set[i].idx, set[i].flags & ~P);
+		txhdr_text(name, line);
+	}
+}
+
 void txhdr_run(void)
 {
 	unsigned int i;
@@ -521,5 +559,6 @@ void txhdr_run(void)
 			vht();
 		if (devs[i].ht && devs[i].phy_type != B43_PHYTYPE_AC)
 			ampdu_limits();
+		rates_ok();
 	}
 }

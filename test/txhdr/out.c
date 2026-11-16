@@ -49,6 +49,11 @@ void txhdr_value(const char *name, unsigned int value)
 	printf("%s: %u\n", name, value);
 }
 
+void txhdr_text(const char *name, const char *text)
+{
+	printf("%s: %s\n", name, text);
+}
+
 /* Reached from the header formats' other members, never from a header. */
 #define UNEXPECTED(sym) \
 	void sym(void) { fprintf(stderr, "unexpected: " #sym "\n"); abort(); }
