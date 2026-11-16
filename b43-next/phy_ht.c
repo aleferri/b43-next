@@ -1024,6 +1024,60 @@ static bool b43_phy_ht_home_changed(struct b43_wldev *dev)
  * captures show it on every 2.4 GHz channel at 20 and 40 MHz. The reads
  * are wl's; b43 has no use for their values yet.
  */
+/*
+ * The RX gain tables of a board without BFL_FEM or BFL_HGPA, per band: tables
+ * 0, 1 and 40 hold the gains of cores 1, 2 and 3, tables 2, 3 and 41 their
+ * gain codes. wl's values on an Apple BCM4331 card (external LNA and PA),
+ * which it writes on every band change; the R6400's (FEM and HGPA boards)
+ * give that card's receiver too little gain, at 5 GHz about 30 dB.
+ */
+static void b43_phy_ht_gain_tables(struct b43_wldev *dev,
+				   enum nl80211_band band)
+{
+	static const u8 gain_tbl[] = { 0, 1, 40 };
+	static const u8 code_tbl[] = { 2, 3, 41 };
+	static const u16 gain[2][3][4] = {
+		{ { 0x10, 0x10 }, { 0x0b, 0x11, 0x15, 0x1a },
+		  { 0xfd, 0x07, 0x07, 0x07 } },
+		{ { 0x0d, 0x0d }, { 0x0e, 0x14, 0x18, 0x1c },
+		  { 0xff, 0x07, 0x0b, 0x0b } },
+	};
+	static const u16 code[2][4] = {
+		{ 0, 1, 1, 1 }, { 0, 1, 2, 2 },
+	};
+	bool ghz5 = band == NL80211_BAND_5GHZ;
+	int core, i;
+
+	for (core = 0; core < ARRAY_SIZE(gain_tbl); core++) {
+		u8 g = gain_tbl[core], c = code_tbl[core];
+
+		for (i = 0; i < 2; i++)
+			b43_httab_write(dev, B43_HTTAB16(g, i),
+					gain[ghz5][0][i]);
+		for (i = 0; i < 4; i++) {
+			b43_httab_write(dev, B43_HTTAB16(g, 0x08 + i),
+					gain[ghz5][1][i]);
+			b43_httab_write(dev, B43_HTTAB16(g, 0x10 + i),
+					gain[ghz5][2][i]);
+			b43_httab_write(dev, B43_HTTAB16(c, 0x10 + i),
+					code[ghz5][i]);
+		}
+		for (i = 0; i <= 0xa; i++) {
+			if (ghz5) {
+				b43_httab_write(dev, B43_HTTAB16(g, 0x20 + i),
+						i < 2 ? 0xfa : 0xfd);
+				b43_httab_write(dev, B43_HTTAB16(c, 0x20 + i),
+						i < 2 ? 1 : 2);
+			} else {
+				b43_httab_write(dev, B43_HTTAB16(g, 0x20 + i),
+						i < 0xa ? 0x00 : 0xfd);
+				b43_httab_write(dev, B43_HTTAB16(c, 0x20 + i),
+						i < 0xa ? 1 : 2);
+			}
+		}
+	}
+}
+
 static void b43_phy_ht_gain_ctl_setup(struct b43_wldev *dev,
 				      struct ieee80211_channel *channel)
 {
@@ -1077,6 +1131,10 @@ static void b43_phy_ht_gain_ctl_setup(struct b43_wldev *dev,
 
 	b43_httab_write_few(dev, B43_HTTAB16(7, 0x106), 3,
 			    0x6136, 0x6136, 0x6136);
+	if (!(dev->dev->bus_sprom->boardflags_lo & (B43_BFL_FEM | B43_BFL_HGPA))) {
+		b43_phy_ht_gain_tables(dev, channel->band);
+		goto lna_done;
+	}
 	for (c = 0; c < 3; c++)
 		b43_httab_write_few(dev, B43_HTTAB16(lna[c], 0x00), 2, 0xd, 0xd);
 	for (c = 0; c < 3; c++)
@@ -1097,6 +1155,7 @@ static void b43_phy_ht_gain_ctl_setup(struct b43_wldev *dev,
 	for (c = 0; c < 3; c++)
 		b43_httab_write_bulk(dev, B43_HTTAB16(lna2[c], 0x20),
 				     ARRAY_SIZE(lna2_20), lna2_20);
+lna_done:
 
 	b43_httab_write_few(dev, B43_HTTAB16(8, 0x08), 3, 0x8e, 0x96, 0x96);
 	b43_httab_write_few(dev, B43_HTTAB16(8, 0x18), 3, 0x8f, 0x9f, 0x9f);
