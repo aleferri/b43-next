@@ -1553,6 +1553,8 @@ static void lpphy_tx_pctl_init_hw(struct b43_wldev *dev)
 	b43_phy_maskset(dev, B43_LPPHY_TX_PWR_CTL_NNUM, 0x8FFF, 0x6000);
 	b43_phy_maskset(dev, B43_LPPHY_TX_PWR_CTL_IDLETSSI, 0xFFC0, 0x1F);
 	if (dev->phy.rev < 2) {
+		if (dev->phy.rev == 1)
+			b43_phy_maskset(dev, B43_LPPHY_AFE_RSSI_SEL, 0xFFF8, 0x4);
 		b43_phy_mask(dev, B43_LPPHY_LP_PHY_CTL, 0xEFFF);
 		b43_phy_maskset(dev, B43_LPPHY_LP_PHY_CTL, 0xDFFF, 0x2000);
 	} else {
@@ -1564,9 +1566,7 @@ static void lpphy_tx_pctl_init_hw(struct b43_wldev *dev)
 	}
 	b43_phy_maskset(dev, B43_LPPHY_TX_PWR_CTL_IDLETSSI, 0x7FFF, 0x8000);
 	b43_phy_write(dev, B43_LPPHY_TX_PWR_CTL_DELTAPWR_LIMIT, 0xA);
-	b43_phy_maskset(dev, B43_LPPHY_TX_PWR_CTL_CMD,
-			~B43_LPPHY_TX_PWR_CTL_CMD_MODE & 0xFFFF,
-			B43_LPPHY_TX_PWR_CTL_CMD_MODE_OFF);
+	b43_phy_mask(dev, B43_LPPHY_TX_PWR_CTL_CMD, 0xFF80);
 	b43_phy_mask(dev, B43_LPPHY_TX_PWR_CTL_NNUM, 0xF8FF);
 	b43_phy_maskset(dev, B43_LPPHY_TX_PWR_CTL_CMD,
 			~B43_LPPHY_TX_PWR_CTL_CMD_MODE & 0xFFFF,
