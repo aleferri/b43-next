@@ -1388,6 +1388,227 @@ static void b43_phy_lcn_txpwrtbl_iqlo_cal(struct b43_wldev *dev)
 		b43_phy_lcn_set_tx_pwr_by_index(dev, save_idx);
 }
 
+/* The radio registers the RX I/Q calibration saves */
+static const u16 b43_phy_lcn_rxiq_cal_regs[] = {
+	0x098, 0x116, 0x12c, 0x06a, 0x00b, 0x01b, 0x113, 0x01d, 0x114, 0x02e,
+	0x12a,
+};
+
+/* wlc_lcnphy_clear_trsw_override */
+static void b43_phy_lcn_clear_trsw_override(struct b43_wldev *dev)
+{
+	b43_phy_mask(dev, 0x44c, ~0x3);
+}
+
+/* wlc_lcnphy_rx_gain_override_enable, rev 1 at 2.4 GHz */
+static void b43_phy_lcn_rx_gain_override(struct b43_wldev *dev, bool enable)
+{
+	b43_phy_maskset(dev, 0x4b0, ~0x100, enable << 8);
+	b43_phy_maskset(dev, 0x44c, ~0x1, enable);
+	b43_phy_maskset(dev, 0x44c, ~0x10, enable << 4);
+	b43_phy_maskset(dev, 0x44c, ~0x40, enable << 6);
+	b43_phy_maskset(dev, 0x4b0, ~0x20, enable << 5);
+	b43_phy_maskset(dev, 0x4b0, ~0x40, enable << 6);
+	b43_phy_maskset(dev, 0x4b0, ~0x400, enable << 10);
+	b43_phy_maskset(dev, 0x4e5, ~0x8, enable << 3);
+}
+
+/* wlc_lcnphy_set_rx_gain_by_distribution, rev 1, no TR switch nor LNA */
+static void b43_phy_lcn_set_rx_gain(struct b43_wldev *dev, u16 biq1,
+				    u16 tia, u16 lna2)
+{
+	b43_phy_maskset(dev, 0x4b6, 0, ((biq1 & 0xf) << 12) |
+			((tia & 0xf) << 8) | ((lna2 & 0x3) << 6) |
+			((lna2 & 0x3) << 4));
+	b43_phy_mask(dev, 0x4b7, ~0xf);
+	b43_phy_mask(dev, 0x4b1, ~0x1800);
+	b43_phy_mask(dev, 0x4b1, ~0x200);
+	b43_phy_mask(dev, 0x4b1, ~0x400);
+	b43_phy_set(dev, 0x44d, 0x1);
+}
+
+/* wlc_lcnphy_set_rx_iq_comp */
+static void b43_phy_lcn_set_rx_iq_comp(struct b43_wldev *dev, u16 a, u16 b)
+{
+	b43_phy_maskset(dev, 0x645, ~0x3ff, a);
+	b43_phy_maskset(dev, 0x646, ~0x3ff, b);
+	b43_phy_maskset(dev, 0x647, ~0x3ff, a);
+	b43_phy_maskset(dev, 0x648, ~0x3ff, b);
+	b43_phy_maskset(dev, 0x649, ~0x3ff, a);
+	b43_phy_maskset(dev, 0x64a, ~0x3ff, b);
+}
+
+/* wlc_lcnphy_rx_iq_est */
+static bool b43_phy_lcn_rx_iq_est(struct b43_wldev *dev, u16 samps, u8 wait,
+				  s32 *iq, u32 *ii, u32 *qq)
+{
+	bool done = false;
+	int i;
+
+	b43_phy_set(dev, 0x6da, 0x20);
+	b43_phy_mask(dev, 0x410, ~0x8);
+	b43_phy_maskset(dev, 0x482, 0, samps);
+	b43_phy_maskset(dev, 0x481, ~0xff, wait);
+	b43_phy_mask(dev, 0x481, ~0x100);
+	b43_phy_set(dev, 0x481, 0x200);
+	for (i = 0; i < 5000; i++) {
+		if (!(b43_phy_read(dev, 0x481) & 0x200)) {
+			done = true;
+			break;
+		}
+		udelay(100);
+	}
+	if (done) {
+		*iq = (b43_phy_read(dev, 0x483) << 16) |
+		      b43_phy_read(dev, 0x484);
+		*ii = (b43_phy_read(dev, 0x485) << 16) |
+		      b43_phy_read(dev, 0x486);
+		*qq = (b43_phy_read(dev, 0x487) << 16) |
+		      b43_phy_read(dev, 0x488);
+	}
+	b43_phy_set(dev, 0x410, 0x8);
+	b43_phy_mask(dev, 0x6da, ~0x20);
+	return done;
+}
+
+/* wlc_lcnphy_calc_rx_iq_comp */
+static bool b43_phy_lcn_calc_rx_iq_comp(struct b43_wldev *dev, u16 samps)
+{
+	u16 a0 = b43_phy_read(dev, 0x645) & 0x3ff;
+	u16 b0 = b43_phy_read(dev, 0x646) & 0x3ff;
+	bool ok = false;
+	s32 iq, a, b;
+	u32 ii, qq;
+
+	b43_phy_mask(dev, 0x6d1, ~0x4);
+	b43_phy_set(dev, 0x64b, 0x40);
+	b43_phy_lcn_set_rx_iq_comp(dev, 0, 0);
+	if (b43_phy_lcn_rx_iq_est(dev, samps, 32, &iq, &ii, &qq) &&
+	    b43_rx_iq_comp(iq, ii, qq, &a, &b) == B43_RX_IQ_COMP_OK) {
+		a0 = a & 0x3ff;
+		b0 = b & 0x3ff;
+		ok = true;
+	}
+	b43_phy_lcn_set_rx_iq_comp(dev, a0, b0);
+	b43_phy_set(dev, 0x64b, 0x1);
+	b43_phy_set(dev, 0x64b, 0x8);
+	return ok;
+}
+
+/*
+ * wlc_lcnphy_rx_iq_cal_gain: the loopback tone at half and at full
+ * amplitude, wl's 60 and 120 where brcmsmac has 20 and 40; the gain fits if
+ * the powers grow by 3 to 7 dB.
+ */
+static bool b43_phy_lcn_rx_iq_cal_gain(struct b43_wldev *dev, u16 biq1,
+				       u16 tia, u16 lna2)
+{
+	s32 iq;
+	u32 il, ql, ih, qh;
+
+	b43_phy_lcn_set_rx_gain(dev, biq1, tia, lna2);
+	b43_phy_lcn_rx_gain_override(dev, true);
+	b43_phy_lcn_start_tx_tone(dev, 2000, 60, false);
+	udelay(500);
+	b43_radio_write(dev, 0x112, 0);
+	if (!b43_phy_lcn_rx_iq_est(dev, 1024, 32, &iq, &il, &ql))
+		return false;
+	b43_phy_lcn_start_tx_tone(dev, 2000, 120, false);
+	udelay(500);
+	b43_radio_write(dev, 0x112, 0);
+	if (!b43_phy_lcn_rx_iq_est(dev, 1024, 32, &iq, &ih, &qh))
+		return false;
+
+	return ih > 2 * il && ih < 5 * il && qh > 2 * ql && qh < 5 * ql;
+}
+
+/* wlc_lcnphy_rx_iq_cal, on the loopback, with the TX gains of @tx_idx */
+static bool b43_phy_lcn_rx_iq_cal(struct b43_wldev *dev, u8 tx_idx)
+{
+	struct b43_phy_lcn *lcn = dev->phy.lcn;
+	u16 save_rf[ARRAY_SIZE(b43_phy_lcn_rxiq_cal_regs)];
+	static const u16 save_regs[] = {
+		0x631, 0x44c, 0x44d, 0x4b0, 0x4b1, 0x4f9, 0x4fa, 0x938,
+		0x939, 0x43b, 0x43c, 0x6da, 0x6db,
+	};
+	u16 save[ARRAY_SIZE(save_regs)];
+	u16 ctrl = b43_phy_lcn_get_tx_pwr_ctrl(dev);
+	int lna2, tia, biq1;
+	bool override, ok = false;
+	u8 old_idx = 0;
+	int i;
+
+	b43_phy_lcn_set_tx_pwr_ctrl(dev, B43_LCN_TX_PWR_CTRL_OFF);
+	for (i = 0; i < ARRAY_SIZE(b43_phy_lcn_rxiq_cal_regs); i++)
+		save_rf[i] = b43_radio_read(dev, b43_phy_lcn_rxiq_cal_regs[i]);
+	save[0] = b43_phy_read(dev, save_regs[0]);
+	b43_phy_set(dev, 0x631, 0x0015);
+	for (i = 1; i < ARRAY_SIZE(save_regs); i++)
+		save[i] = b43_phy_read(dev, save_regs[i]);
+
+	override = b43_phy_read(dev, 0x43b) & 0x40;
+	if (override)
+		old_idx = lcn->tx_pwr_curr_idx;
+	b43_phy_lcn_set_tx_pwr_by_index(dev, tx_idx);
+	b43_phy_set(dev, 0x4f9, 0x1);
+	b43_phy_mask(dev, 0x4fa, ~0x1);
+	b43_phy_set(dev, 0x43b, 0x2);
+	b43_phy_mask(dev, 0x43c, ~0x2);
+	b43_radio_write(dev, 0x116, 0x06);
+	b43_radio_write(dev, 0x12c, 0x07);
+	b43_radio_write(dev, 0x06a, 0xd3);
+	b43_radio_write(dev, 0x098, 0x03);
+	b43_radio_write(dev, 0x00b, 0x7);
+	b43_radio_set(dev, 0x113, 0x10);
+	b43_radio_write(dev, 0x01d, 0x01);
+	b43_radio_write(dev, 0x114, 0x01);
+	b43_radio_write(dev, 0x02e, 0x10);
+	b43_radio_write(dev, 0x12a, 0x08);
+	b43_phy_set(dev, 0x938, 0x1);
+	b43_phy_mask(dev, 0x939, ~0x1);
+	b43_phy_set(dev, 0x938, 0x2);
+	b43_phy_set(dev, 0x939, 0x2);
+	b43_phy_set(dev, 0x938, 0x4);
+	b43_phy_set(dev, 0x939, 0x4);
+	b43_phy_set(dev, 0x938, 0x8);
+	b43_phy_set(dev, 0x939, 0x8);
+	b43_phy_set(dev, 0x938, 0x20);
+	b43_phy_mask(dev, 0x939, ~0x20);
+	b43_phy_set(dev, 0x43b, 0x1);
+	b43_phy_mask(dev, 0x43c, ~0x1);
+	b43_phy_write(dev, 0x6da, 0xffff);
+	b43_phy_set(dev, 0x6db, 0x3);
+	b43_phy_lcn_set_trsw_override(dev, true, false);
+
+	for (lna2 = 3; lna2 >= 0; lna2--)
+		for (tia = 4; tia >= 0; tia--)
+			for (biq1 = 6; biq1 >= 0; biq1--)
+				if (b43_phy_lcn_rx_iq_cal_gain(dev, biq1, tia,
+							       lna2)) {
+					ok = b43_phy_lcn_calc_rx_iq_comp(dev,
+									 1024);
+					goto stop_tone;
+				}
+stop_tone:
+	b43_phy_lcn_stop_tx_tone(dev);
+	/* brcmsmac's: 0x44c gets 0x44d's old value too */
+	b43_phy_write(dev, 0x631, save[0]);
+	b43_phy_write(dev, 0x44c, save[2]);
+	for (i = 2; i < ARRAY_SIZE(save_regs); i++)
+		b43_phy_write(dev, save_regs[i], save[i]);
+	b43_phy_lcn_clear_trsw_override(dev);
+	b43_phy_mask(dev, 0x44c, ~0x4);
+	for (i = 0; i < ARRAY_SIZE(b43_phy_lcn_rxiq_cal_regs); i++)
+		b43_radio_write(dev, b43_phy_lcn_rxiq_cal_regs[i], save_rf[i]);
+	if (override)
+		b43_phy_lcn_set_tx_pwr_by_index(dev, old_idx);
+	else
+		b43_phy_lcn_set_tx_gain_override(dev, false);
+	b43_phy_lcn_set_tx_pwr_ctrl(dev, ctrl);
+	b43_phy_lcn_rx_gain_override(dev, false);
+	return ok;
+}
+
 /* wlc_lcnphy_periodic_cal, in wl's order */
 static void b43_phy_lcn_periodic_cal(struct b43_wldev *dev)
 {
@@ -1402,6 +1623,7 @@ static void b43_phy_lcn_periodic_cal(struct b43_wldev *dev)
 		b43_phy_lcn_load_tssi_pwr(dev);
 	}
 	b43_phy_lcn_txpwrtbl_iqlo_cal(dev);
+	b43_phy_lcn_rx_iq_cal(dev, 40);
 	b43_phy_lcn_set_tx_pwr_by_index(dev, index);
 	b43_phy_lcn_set_tx_pwr_ctrl(dev, save_ctrl);
 	b43_phy_lcn_deaf_mode(dev, false);
