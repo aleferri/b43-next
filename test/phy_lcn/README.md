@@ -44,7 +44,7 @@ On 2026-11-17, `--min-block 8 --gap-tol 2`:
 
 | capture | grezzo | PHY+radio |
 |---|---|---|
-| attach | 14746/19356 = 76.18% | 14840/16580 = 89.51% |
+| attach | 14932/20132 = 74.17% | 15026/16571 = 90.68% |
 
 The init follows wl's through the tables, the baseband and radio init, the
 hardware TX power control, the channel and the PMU, then the calibration of

@@ -1705,6 +1705,22 @@ stop_tone:
 	return ok;
 }
 
+/*
+ * The PAPD compensation of the TX path: wl turns it off before the
+ * calibrations, the periodic one's (#8272) and the PAPD's, as at #186871
+ * where it was on, and on after the PAPD's
+ */
+static void b43_phy_lcn_papd_comp(struct b43_wldev *dev, bool enable)
+{
+	int i;
+
+	b43_phy_maskset(dev, 0x676, ~0x80, enable ? 0x80 : 0);
+	b43_phy_maskset(dev, 0x6da, ~0x1, enable);
+	for (i = 0; i < 3; i++)
+		b43_phy_maskset(dev, 0x86c, ~(0xf << (4 * i)),
+				enable ? 0x4 << (4 * i) : 0);
+}
+
 /* wlc_lcnphy_periodic_cal, in wl's order */
 static void b43_phy_lcn_periodic_cal(struct b43_wldev *dev)
 {
@@ -1712,9 +1728,20 @@ static void b43_phy_lcn_periodic_cal(struct b43_wldev *dev)
 	u16 save_ctrl = b43_phy_lcn_get_tx_pwr_ctrl(dev);
 	/* The index the control is at, as wl (#8302); brcmsmac's cached one */
 	u8 index = b43_phy_lcn_get_current_tx_pwr_idx(dev);
+	int i;
 
 	b43_mac_suspend(dev);
 	b43_phy_lcn_deaf_mode(dev, true);
+	b43_phy_lcn_papd_comp(dev, false);
+	/*
+	 * The TX I/Q-LO coefficients cleared before they are calibrated
+	 * (#8282), every time: wlc_lcnphy_set_tx_iqlo_coeffs()' radio value
+	 * for 0 is 0x88
+	 */
+	for (i = 0; i < 4; i++)
+		b43_radio_write(dev, 0x089 + i, 0x88);
+	b43_phy_lcn_set_tx_locc(dev, 0);
+	b43_phy_lcn_set_tx_iqcc(dev, 0, 0);
 	if (lcn->hw_pwr_ctl_capable) {
 		b43_phy_lcn_idle_tssi_est(dev);
 		b43_phy_lcn_load_tssi_pwr(dev);
@@ -1743,21 +1770,6 @@ static void b43_phy_lcn_op_set_rx_antenna(struct b43_wldev *dev, int antenna)
 	b43_phy_maskset(dev, 0x410, ~0x2, div ? 0x2 : 0);
 	b43_phy_maskset(dev, 0x410, ~0x1, one);
 	b43_mac_enable(dev);
-}
-
-/*
- * The PAPD compensation of the TX path: wl turns it off before the
- * calibration, as at #186871 where it was on, and on after it
- */
-static void b43_phy_lcn_papd_comp(struct b43_wldev *dev, bool enable)
-{
-	int i;
-
-	b43_phy_maskset(dev, 0x676, ~0x80, enable ? 0x80 : 0);
-	b43_phy_maskset(dev, 0x6da, ~0x1, enable);
-	for (i = 0; i < 3; i++)
-		b43_phy_maskset(dev, 0x86c, ~(0xf << (4 * i)),
-				enable ? 0x4 << (4 * i) : 0);
 }
 
 /*
