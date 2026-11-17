@@ -304,6 +304,11 @@ void bcmn_chipco_regctl_maskset(struct bcmn_drv_cc *cc, u32 offset, u32 mask,
 	pmu_maskset(BCMN_CC_PMU_REGCTL_ADDR, BCMN_CC_PMU_REGCTL_DATA, offset,
 		    mask, set);
 }
+/* The crystal: the BCM4313's 20 MHz, as wl's RF PLL setup shows */
+u32 bcmn_chipco_get_alp_clock(struct bcmn_drv_cc *cc)
+{
+	return lcn_env("LCN_XTAL", 20000000);
+}
 void bcmn_core_pll_ctl(struct bcmn_device *c, u32 req, u32 status, bool on)
 {
 	lcn_core("bcmn_core_pll_ctl");
