@@ -111,8 +111,6 @@ register as it was, so their masks cannot be read off the capture.
 - The block after the TX filters (#8162-#8226): shared memory reads, RMW
   of 0x434 and 0x423, 0x550, a pulse of 0x44a, 0x6da = 0x2048, writes of
   0x5a6, 0x5a2, 0x5a5 and 0x583-0x586.
-- The calibration's preamble (#8272-#8289): RMW of 0x676, 0x6da and three
-  of 0x86c, radio 0x089-0x08c = 0x88, the LO and I/Q coefficients cleared.
 - RMW of 0x416 and 0x420 after 0x424/0x425 on the spur avoidance channels
   (5-8, 13).
 - Two RMW of 0x6d1 after the calibration's results on a channel switch.
@@ -301,6 +299,11 @@ are on channel 1.
 
 - **The periodic calibration starts from the control's index** (0x4a4,
   0x473, #8302), as wl; brcmsmac takes its cached index.
+- **The periodic calibration's preamble** (#8264-#8289), all 4 of the
+  capture: deaf, the PAPD compensation off, the TX I/Q-LO coefficients
+  cleared (radio 0x089-0x08c = 0x88, `wlc_lcnphy_set_tx_iqlo_coeffs()`'
+  value for 0, then LOCC and IQCC). Off, the compensation also keeps the
+  harness's reads of 0x676 in wl's order for the PAPD.
 - **The order of the init's calibration**: deaf, the idle TSSI estimate and
   the TSSI to power table, the TX I/Q-LO calibration, the RX I/Q one, as
   wl (#8262 on). brcmsmac's `wlc_lcnphy_periodic_cal()` runs the I/Q
