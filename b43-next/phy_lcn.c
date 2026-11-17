@@ -1511,6 +1511,9 @@ static void b43_phy_lcn_set_rx_gain(struct b43_wldev *dev, bool trsw,
 	b43_phy_mask(dev, 0x4b1, ~0x200);
 	b43_phy_mask(dev, 0x4b1, ~0x400);
 	b43_phy_maskset(dev, 0x44d, ~0x1, !trsw);
+	/* wl's, after brcmsmac's: lna1 again, as its set_rx_gain() does */
+	b43_phy_maskset(dev, 0x4e6, ~0x18, (lna1 & 0x3) << 3);
+	b43_phy_mask(dev, 0x4ae, (u16)~0xf000);
 }
 
 /* wlc_lcnphy_set_rx_iq_comp */
