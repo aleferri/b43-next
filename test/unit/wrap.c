@@ -1532,6 +1532,7 @@ void b43_rate_dirmap_read(struct b43_wldev *dev)
 	for (i = 0; i < 16; i++)
 		dev->dirmap_cck[i] = b43_shm_read16(dev, B43_SHM_SHARED,
 						    B43_SHM_SH_CCKDIRECT + 2 * i);
+	dev->dirmap_read = true;
 }
 
 /* ============ template RAM (TPL) ============

@@ -321,6 +321,7 @@ struct b43_wldev {
 	bool mhf_hold;
 	u16 dirmap_ofdm[16];
 	u16 dirmap_cck[16];
+	bool dirmap_read;
 };
 
 /*

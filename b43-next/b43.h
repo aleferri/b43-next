@@ -1145,11 +1145,12 @@ struct b43_wldev {
 	bool mhf_hold;
 	/*
 	 * The rate table's direct maps, OFDM and CCK, as wl reads them once at
-	 * the up (b43_rate_dirmap_read()): the AC-PHY's basic rate map takes
-	 * its pointers from here.
+	 * the up (b43_rate_dirmap_read()): the basic rate map takes its
+	 * pointers from here.
 	 */
 	u16 dirmap_ofdm[16];
 	u16 dirmap_cck[16];
+	bool dirmap_read;
 };
 
 /* Data structure for the WLAN parts (802.11 cores) of the b43 chip. */

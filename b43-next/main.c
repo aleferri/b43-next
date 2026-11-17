@@ -6257,6 +6257,7 @@ void b43_rate_dirmap_read(struct b43_wldev *dev)
 	for (i = 0; i < ARRAY_SIZE(dev->dirmap_cck); i++)
 		dev->dirmap_cck[i] = b43_shm_read16(dev, B43_SHM_SHARED,
 						    B43_SHM_SH_CCKDIRECT + 2 * i);
+	dev->dirmap_read = true;
 }
 
 static void b43_update_basic_rates(struct b43_wldev *dev, u32 brates)
@@ -6296,8 +6297,13 @@ static void b43_update_basic_rates(struct b43_wldev *dev, u32 brates)
 		 * Get the pointer that we need to point to
 		 * from the direct map
 		 */
-		rateptr = b43_shm_read16(dev, B43_SHM_SHARED,
-					 direct + 2 * basic_offset);
+		if (dev->dirmap_read)
+			rateptr = direct == B43_SHM_SH_CCKDIRECT ?
+				  dev->dirmap_cck[basic_offset] :
+				  dev->dirmap_ofdm[basic_offset];
+		else
+			rateptr = b43_shm_read16(dev, B43_SHM_SHARED,
+						 direct + 2 * basic_offset);
 		/* and write it to the basic map */
 		b43_shm_write16(dev, B43_SHM_SHARED, basic + 2 * offset,
 				rateptr);
@@ -7476,6 +7482,9 @@ static int b43_wireless_core_init(struct b43_wldev *dev)
 		b43_shm_write16(dev, B43_SHM_SHARED,
 				B43_SHM_SH_RFATT, 0x0480);
 	}
+	/* The AC-PHY scans them in b43_phy_ac_op_switch_channel() */
+	if (phy->type == B43_PHYTYPE_LCN)
+		b43_rate_dirmap_read(dev);
 	if (dev->dev->core_rev >= 42) {
 		b43_shm_write16(dev, B43_SHM_SHARED,
 				B43_SHM_SH_DEFAULTIV, 0x000a);
