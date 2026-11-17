@@ -9312,13 +9312,6 @@ static void meas_v2_gain_prog_poll(struct b43_wldev *dev, unsigned long others)
 #define B43_PHY_AC_LOOPBACK_IDX_MAX	7
 #define B43_PHY_AC_LOOPBACK_REG		0x0734
 
-/* Mean power per sample from the latest accumulator round. */
-static u32 b43_phy_ac_loopback_pwr(const struct b43_phy_ac_iq_acc *acc)
-{
-	/* rounded to 1024, not truncated */
-	return ((acc->ii[0] + 512) >> 10) + ((acc->qq[0] + 512) >> 10);
-}
-
 /* Doubling steps from @from up to at least @to: ceil(log2(to / from)). */
 static unsigned int b43_phy_ac_loopback_steps(u32 from, u32 to)
 {
@@ -9341,12 +9334,14 @@ static unsigned int b43_phy_ac_loopback_steps(u32 from, u32 to)
 static bool b43_phy_ac_loopback_step(struct b43_wldev *dev, unsigned int core,
 				     bool up, u8 *idx)
 {
+	const struct b43_phy_ac_iq_acc *acc;
 	unsigned int n;
 	u32 pwr;
 
 	if (core >= B43_PHY_AC_MAX_CORES)
 		return true;
-	pwr = b43_phy_ac_loopback_pwr(&dev->phy.ac->iq_acc[core]);
+	acc = &dev->phy.ac->iq_acc[core];
+	pwr = b43_tone_pwr(acc->ii[0], acc->qq[0], 1024);
 
 	if (!up && pwr > B43_PHY_AC_LOOPBACK_PWR_HI && *idx) {
 		n = b43_phy_ac_loopback_steps(B43_PHY_AC_LOOPBACK_PWR_HI, pwr);

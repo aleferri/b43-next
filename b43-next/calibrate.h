@@ -23,6 +23,9 @@ static inline u32 b43_tone_pack10(struct cordic_iq s)
 	return ((s.i & 0x3ff) << 10) | (s.q & 0x3ff);
 }
 
+/* A tone's power per sample, from the I and Q powers summed over @samps */
+u32 b43_tone_pwr(u32 ii, u32 qq, u32 samps);
+
 enum b43_rx_iq_comp {
 	B43_RX_IQ_COMP_OK,
 	B43_RX_IQ_COMP_LOW_PWR,		/* I and Q powers under 2 */

@@ -7165,7 +7165,7 @@ static void b43_nphy_rx_cal_gain_ctl(struct b43_wldev *dev, u8 rx_core,
 	struct b43_phy_n_iq_comp save_comp, zero_comp = { };
 	struct nphy_iq_est est;
 	struct b43_rxcal_gain g;
-	u32 i_pwr, q_pwr, curr_pwr;
+	u32 curr_pwr;
 	int delta_pwr;
 	u16 hpvga, lpf_biq1, lpf_biq0, lna2, lna1, rxgain, rxcal_txgain[2];
 	u16 num_samps = 1024;
@@ -7242,11 +7242,9 @@ static void b43_nphy_rx_cal_gain_ctl(struct b43_wldev *dev, u8 rx_core,
 				 false);
 
 		b43_nphy_rx_iq_est(dev, &est, num_samps, 32, false);
-		i_pwr = DIV_ROUND_CLOSEST(rx_core ? est.i1_pwr : est.i0_pwr,
-					  num_samps);
-		q_pwr = DIV_ROUND_CLOSEST(rx_core ? est.q1_pwr : est.q0_pwr,
-					  num_samps);
-		curr_pwr = i_pwr + q_pwr;
+		curr_pwr = b43_tone_pwr(rx_core ? est.i1_pwr : est.i0_pwr,
+					rx_core ? est.q1_pwr : est.q0_pwr,
+					num_samps);
 		b43_cal_report(dev, N_CAL_RXIQ_GAIN_PWR, rx_core, g.idx,
 			       curr_pwr);
 

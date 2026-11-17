@@ -2466,8 +2466,8 @@ static void b43_phy_ht_cal_rx_iq(struct b43_wldev *dev)
 			n = b43_phy_ht_load_tone(dev, rx_tone, 181);
 			b43_phy_ht_run_samples(dev, n, 0xffff, 0, false);
 			b43_phy_ht_rx_iq_est(dev, est, 0x400);
-			pwr = DIV_ROUND_CLOSEST(est[core].i_pwr, 0x400) +
-			      DIV_ROUND_CLOSEST(est[core].q_pwr, 0x400);
+			pwr = b43_tone_pwr(est[core].i_pwr, est[core].q_pwr,
+					   0x400);
 			done = b43_rxcal_gain_step(&g, pwr);
 			b43_phy_ht_stop_playback(dev);
 			b43_phy_ht_reset_cca(dev);

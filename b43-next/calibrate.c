@@ -19,6 +19,11 @@ struct cordic_iq b43_tone_sample(s32 angle, u16 amp)
 	return s;
 }
 
+u32 b43_tone_pwr(u32 ii, u32 qq, u32 samps)
+{
+	return DIV_ROUND_CLOSEST(ii, samps) + DIV_ROUND_CLOSEST(qq, samps);
+}
+
 /* Number of bits of the magnitude of a value, 0 for 0 */
 static u8 b43_nbits(s32 value)
 {
