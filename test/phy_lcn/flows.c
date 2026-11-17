@@ -200,6 +200,8 @@ int lcn_run_flow(const char *name)
 		lcn->rxiqcomp[1] = lcn_env("LCN_RXIQCOMP_B", 0);
 		lcn->cal_done = true;
 		b43_switch_channel(dev, chan.hw_value);
+		/* b43_op_config() closes the switch with it */
+		dev->phy.ops->channel_calibrate(dev, false);
 	} else
 		return -1;
 	return 0;
@@ -235,6 +237,9 @@ void mutex_unlock(struct mutex *lock) { }
 void ieee80211_queue_work(struct ieee80211_hw *h, struct work_struct *w)
 {
 	lcn_core("ieee80211_queue_work");
+	/* The only work the flows queue: b43_phy_txpower_adjust_work() */
+	if (w == &wl.txpower_adjust_work)
+		wldev.phy.ops->adjust_txpower(&wldev);
 }
 
 /* cfg80211's, for b43_phy_center_channel() */
