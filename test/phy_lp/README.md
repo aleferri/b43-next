@@ -37,7 +37,7 @@ On 2026-11-16, `--min-block 8 --gap-tol 2`:
 
 | capture | all | PHY+radio |
 |---|---|---|
-| attach | 21014/25651 = 81.92% | 20992/24374 = 86.12% |
+| attach | 21090/25723 = 81.99% | 21185/24329 = 87.08% |
 
 What is left:
 
@@ -50,10 +50,6 @@ What is left:
 - **The power control's split**: b43 writes the lowest target, 0x3c, to
   PHY 0x4a7 and -2 and 0 as the CCK and OFDM offsets; wl writes 0x24 and
   -26 and -24. The per-rate targets, 62 and 60, are the same.
-- **Reads served out of place**: b43 switches the analog on three times
-  before the init, wl once, so the reads of PHY 0x43b and the ones after
-  them are served from other points of wl's stream, in the TX I/Q-LO
-  calibration's save and restore and the RC calibration's.
 
 Every run prints, on stderr, the reads past the window (served from b43's
 own writes, or 0), the window's reads b43 did not take, b43's messages and
@@ -61,6 +57,10 @@ the calls into the core.
 
 ## How the harness differs from ../phy_n
 
+- **Reads**: a register the hardware does not change, one whose reads in
+  the window differ from wl's last write fewer than three times (its PHY
+  resets), is served from b43's own last write once b43 has written it; the
+  others, and every register before b43 writes it, from wl's reads in order.
 - **The table port** is PHY 0x455 (table id << 10 | offset), 0x457 (high
   half) and 0x456 (low half, which advances the offset); reads are served per
   cell, as `../phy_n` does.

@@ -49,6 +49,8 @@ struct queue {
 	char key[24];
 	unsigned int *vals;
 	int n, cap, pos;
+	/* reads of wl's that differ from its last write: the hardware's */
+	int changed;
 };
 /* Per register, and per table cell: thousands */
 static struct queue queues[16384];
@@ -59,8 +61,16 @@ struct cell {
 	char key[24];
 	unsigned int val;
 };
-static struct cell cells[16384];
-static int ncells;
+static struct cell cells[16384], wl_cells[16384];
+static int ncells, nwl_cells;
+
+/*
+ * A register the hardware changes: wl read something else than it last
+ * wrote more often than its resets of the PHY explain. The others are served
+ * from b43's own writes once it has written them, so that a driver reading
+ * back its state does not take wl's from another point of the stream.
+ */
+#define HW_CHANGED	3
 
 static unsigned int phy_addr, radio_addr;
 
@@ -139,44 +149,48 @@ static void push(const char *key, unsigned int v)
 	q->vals[q->n++] = v;
 }
 
-static void store(const char *key, unsigned int val)
+static struct cell *cell_of(struct cell *c, int *n, const char *key,
+			    int create)
 {
 	int i;
 
-	for (i = 0; i < ncells; i++)
-		if (!strcmp(cells[i].key, key))
-			break;
-	if (i == ncells) {
-		if (ncells == (int)(sizeof(cells) / sizeof(cells[0]))) {
-			fprintf(stderr, "too many cells\n");
-			exit(2);
-		}
-		snprintf(cells[ncells++].key, sizeof(cells[0].key), "%s", key);
+	for (i = 0; i < *n; i++)
+		if (!strcmp(c[i].key, key))
+			return &c[i];
+	if (!create)
+		return NULL;
+	if (*n == (int)(sizeof(cells) / sizeof(cells[0]))) {
+		fprintf(stderr, "too many cells\n");
+		exit(2);
 	}
-	cells[i].val = val;
+	snprintf(c[*n].key, sizeof(c[0].key), "%s", key);
+	return &c[(*n)++];
+}
+
+static void store(const char *key, unsigned int val)
+{
+	cell_of(cells, &ncells, key, 1)->val = val;
 }
 
 static unsigned int serve(const char *key)
 {
 	struct queue *q = queue(key, 0);
-	int i;
+	struct cell *c = cell_of(cells, &ncells, key, 0);
 
-	if (peek) {
-		for (i = 0; i < ncells; i++)
-			if (!strcmp(cells[i].key, key))
-				return cells[i].val;
-		return 0;
+	if (peek)
+		return c ? c->val : 0;
+
+	if (c && strncmp(key, "TBL", 3) && (!q || q->changed < HW_CHANGED)) {
+		if (q && q->pos < q->n)
+			q->pos++;
+		return c->val;
 	}
-
 	if (q && q->pos < q->n)
 		return q->vals[q->pos++];
 	exhausted++;
 	if (getenv("LP_DEBUG"))
 		fprintf(stderr, "read past the window: %s (op %d)\n", key, nout + 1);
-	for (i = 0; i < ncells; i++)
-		if (!strcmp(cells[i].key, key))
-			return cells[i].val;
-	return 0;
+	return c ? c->val : 0;
 }
 
 static void emit(const char *fmt, const char *cls, unsigned int a,
@@ -521,6 +535,13 @@ static int load(const char *path, long first, long last)
 			}
 			tbl_after(&wl_tbl, a, v, !rd);
 		}
+		if ((!strcmp(cls, "PHY.WR") || !strcmp(cls, "RAD.WR")) &&
+		    sscanf(args, "addr=0x%x val=0x%x", &a, &v) == 2) {
+			snprintf(key, sizeof(key), "%.3s %04x", cls,
+				 cls[0] == 'R' ? a | RADIO_READ : a);
+			cell_of(wl_cells, &nwl_cells, key, 1)->val = v;
+			continue;
+		}
 		if (strcmp(cls + strlen(cls) - 3, ".RD"))
 			continue;
 		if (sscanf(args, "addr=0x%x val=0x%x", &a, &v) == 2)
@@ -532,6 +553,14 @@ static int load(const char *path, long first, long last)
 		else
 			continue;
 		push(key, v);
+		{
+			struct cell *w = cell_of(wl_cells, &nwl_cells, key, 0);
+
+			if (w && w->val != v)
+				queue(key, 0)->changed++;
+			if (w)
+				w->val = v;
+		}
 	}
 	fclose(f);
 	regfree(&re);
