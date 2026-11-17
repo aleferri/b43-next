@@ -45,13 +45,20 @@ the attach window, cells b43 writes with other values:
 - **Host flags without a source**: HOSTF3 0x2000 and 0x0100, HOSTF4 0x0040,
   HOSTF5 0x0001 (brcmsmac's MHF5_4313_GPIOCTRL, set there only with
   BFL_FEM; the CQ57 has BFL_FEM_BT) and 0x0080.
-- **FIFO sizes** (0x0098-0x009e): wl 0x003a, 0x0016, 0x0e09, 0x050e.
-- **PHY TX control words** (0x0022, 0x0054, 0x0188): wl 0x0040, 0, 0; b43
-  0xfcc0 (`b43_set_phytxctl_defaults()`).
-- **The rate memory** (0x01f0-0x01fe) and the **EDCA parameters** of the
-  four queues (0x0242-0x02ae).
-- MIMO_MAXSYM (0x00ba) 0xffff, PRMAXTIME (0x0074) 0, the synth PU delay
-  (0x0094) 0x00c8 within the window.
+- **The rate memory** (0x01f0-0x01fe): wl leaves the initvals' values,
+  b43 writes its own with `b43_rate_memory_init()`.
+- **The synth PU delay** (0x0094): wl writes 200 during the up (#31216),
+  b43 the idle 500 until later.
+
+Settled: the TX FIFOs are brcmsmac's for core 24 (`b43_txfifo_fixup()`);
+the PHY TX control words keep the initvals' and get only their antenna, the
+LCN-PHY's automatic one being the last RX antenna (0, brcmsmac's
+PHY_TXC_LCNPHY_ANT_LAST). The EDCA parameters (0x0242-0x02ae) are the ones
+mac80211 hands b43 with `conf_tx` at the interface's add, where wl keeps the
+initvals' until it associates; PRMAXTIME stays b43's 1, its firmware never
+answering probes. MIMO_MAXSYM and the A-MPDU watchdog (0x00ba, 0x003c) wl
+raises to 0xffff and 10 for its 64K A-MPDUs (#32936), as
+`b43_chip_init_mac()` does with HT, which the LCN-PHY has not in b43.
 
 ## The whole of b43 on the virtual chip
 
