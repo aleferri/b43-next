@@ -130,6 +130,8 @@ struct board_profile {
 	const char *nvram_prefix;
 	/* A station, which mac80211 brings up as one, rather than an AP */
 	bool sta;
+	/* A SROM on the chip, which bcma reads before b43 probes */
+	bool srom;
 };
 
 /*
@@ -653,14 +655,13 @@ static const struct board_profile PROFILE_R6400V1 = {
 /*
  * The Compaq CQ57's BCM4313, `wl revinfo`: chip rev 1, corerev 24, an LCN-PHY
  * rev 1 with the radio 2064 rev 1, behind a PCIe core of the first
- * generation; a station. Its SROM (rev 8) is read through
- * ../sprom/decode_r8, an NVRAM without prefix.
+ * generation; a station. bcma reads its SROM (rev 8) off the chip.
  */
 static const struct board_profile PROFILE_CQ57 = {
 	.name = "cq57", .chip_id = 0x4313, .chip_rev = 0x1,
 	.pci_device = 0x4727, .radio_ver = 0x2064, .radio_rev = 1,
 	.phy_rev = 1, .core_rev = 24, .phy_type = 0x08,
-	.host_core = 0x820, .nvram_prefix = "", .sta = true,
+	.host_core = 0x820, .sta = true, .srom = true,
 };
 
 /* One-shot mock storage. Lives for the whole run. */

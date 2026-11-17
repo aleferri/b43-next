@@ -96,7 +96,7 @@ UPSTREAM := $(filter-out sysfs.c pio.c,$(b43n-core)) $(b43n-phy) \
 # La gestione del core di bcma, anche lei com'e': reset, clock e PLL del
 # core passano dal wrapper e da clk_ctl_st, che lo stub traccia.
 BCMA := core.c driver_chipcommon.c driver_chipcommon_pmu.c driver_pci.c \
-        driver_pcie2.c
+        driver_pcie2.c sprom.c
 
 # The SPROM of a board without one, from its NVRAM (B43_NVRAM), as on the
 # Broadcom routers.

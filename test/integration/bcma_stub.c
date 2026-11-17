@@ -390,6 +390,13 @@ static bool other_core_read(struct bcmn_device *core, u16 off, int width,
 
 	if (!regs)
 		return false;
+	if (core->id.id == BCMN_CORE_CHIPCOMMON && off >= BCMN_CC_SPROM) {
+		u16 word = (off - BCMN_CC_SPROM) / 2;
+
+		*val = b43_trace_read("SROM.RD", word, 16);
+		b43_trace_srom(word, *val);
+		return true;
+	}
 	snprintf(cls, sizeof(cls), "%s.RD", base);
 	if (b43_trace_has(cls, off))
 		regs[(off & 0xfff) / 4] = b43_trace_read(cls, off, width);
