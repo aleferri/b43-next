@@ -22,14 +22,27 @@ int srom_load(const char *path, u16 *buf, size_t buf_words)
 	int max_idx = -1;
 	char line[1024];
 	while (fgets(line, sizeof(line), f)) {
-		/* Find "srom[" — bail on anything that is not a data line. */
+		/* "srom[N]:" rows, or "0xBYTE:" rows of bare words */
 		const char *p = strstr(line, "srom[");
-		if (!p)
-			continue;
-		p += 5;
+		int bare = !p;
 		char *end;
-		long start = strtol(p, &end, 10);
-		if (end == p || *end != ']' || start < 0 || (size_t)start >= buf_words) {
+		long start;
+
+		if (p) {
+			p += 5;
+			start = strtol(p, &end, 10);
+			if (end == p || *end != ']')
+				start = -1;
+		} else {
+			if (strncmp(line, "0x", 2))
+				continue;
+			p = line;
+			start = strtol(p, &end, 16);
+			if (end == p || *end != ':' || start & 1)
+				start = -1;
+			start /= 2;
+		}
+		if (start < 0 || (size_t)start >= buf_words) {
 			fprintf(stderr, "srom_load: bad index in line: %s", line);
 			fclose(f);
 			return -1;
@@ -45,7 +58,7 @@ int srom_load(const char *path, u16 *buf, size_t buf_words)
 				p++;
 			if (!*p)
 				break;
-			if (p[0] != '0' || (p[1] != 'x' && p[1] != 'X')) {
+			if (!bare && (p[0] != '0' || (p[1] != 'x' && p[1] != 'X'))) {
 				fprintf(stderr,
 					"srom_load: expected 0xNNNN at offset %zd, got: %s",
 					p - line, line);

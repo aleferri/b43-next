@@ -106,11 +106,30 @@ The most useful boards have:
 - non-saturated rxgains;
 - a chip other than the BCM4352.
 
+## Rev 8 SROMs as an nvram
+
+`decode_r8` runs `bcmn_sprom_extract_r8()`, cut out of `bcma-next/sprom.c`
+the same way (`extract_r8_gen.c`), on a rev 8-10 SROM dump and prints what it
+extracts as an nvram, one `name=value` a line under the stock driver's names:
+the board values of a PHY harness for a board that has a SROM and no nvram.
+It reads `wl srdump`'s rows and rows of bare words after a byte offset
+(`0x0b0: 0000 7800 ...`).
+
+```
+$ make decode_r8
+$ ./decode_r8 $TRACES/bcm4313-rev1/compaq-cq57/srom.txt
+```
+
+The CQ57's `srom.txt` is the 220 words wl reads at the attach, from word 0x18
+of the OTP on.
+
 ## Files
 
 - `extract_r11.c`: `bcmn_sprom_extract_r11()` of `bcma-next/sprom.c`, with the
   SPOFF/SPEX macros and the rxgains helper, as the Makefile cuts them out
   (`extract_r11_gen.c`), behind a function `test.c` calls.
+- `extract_r8.c`, `decode_r8.c`: `bcmn_sprom_extract_r8()` the same way, and
+  its output as an nvram.
 - `synth_srom.{h,c}`: the encoder counterpart, used by `--synth`, at the
   offsets of `include/ssb-next/ssbn_regs.h`.
 - `kernel_shim.h`: typedefs, `cpu_to_be16`, `BUILD_BUG_ON`, `ARRAY_SIZE`.

@@ -47,6 +47,19 @@ extract_r11_gen.c: $(REPO)/bcma-next/sprom.c
 %.o: %.c
 	$(CC) $(CFLAGS) -c -o $@ $<
 
+# The rev 8 extractor, the same way, for decode_r8: a rev 8-10 SROM as an
+# nvram, for the PHY harnesses of boards without one.
+extract_r8_gen.c: $(REPO)/bcma-next/sprom.c
+	awk '/^#define SPOFF\(/ { p = 1 } /^static s8 sprom_extract_antgain\(/ { p = 0 } \
+	     /^static (s8 sprom_extract_antgain|void bcmn_sprom_extract_(po_r8|po_r9|r8))\(/ { p = 2 } \
+	     p { print } p == 2 && /^\}/ { p = 0; print "" }' $< > $@
+
+decode_r8: extract_r8.o data_load.o decode_r8.o
+	$(CC) $(LDFLAGS) -o $@ $^
+
+extract_r8.o: extract_r8.c extract_r8_gen.c kernel_shim.h ssbn_sprom.h ssbn_sprom_gen.h
+decode_r8.o:   decode_r8.c   data_load.h   ssbn_sprom.h ssbn_sprom_gen.h
+
 extract_r11.o: extract_r11.c extract_r11_gen.c kernel_shim.h ssbn_sprom.h ssbn_sprom_gen.h
 data_load.o:   data_load.c   data_load.h   kernel_shim.h
 synth_srom.o:  synth_srom.c  synth_srom.h  data_load.h kernel_shim.h
@@ -85,4 +98,5 @@ check-nvram: test_nvram
 	./test_nvram vectors/bcm4360usb.nvram
 
 clean:
-	rm -f $(OBJS) $(NVRAM_OBJS) ssbn_sprom_gen.h extract_r11_gen.c test test_nvram
+	rm -f $(OBJS) $(NVRAM_OBJS) ssbn_sprom_gen.h extract_r11_gen.c test test_nvram \
+	      extract_r8.o decode_r8.o extract_r8_gen.c decode_r8

@@ -3,3 +3,5 @@ test
 ssbn_sprom_gen.h
 test_nvram
 extract_r11_gen.c
+decode_r8
+extract_r8_gen.c

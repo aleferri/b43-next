@@ -13,8 +13,9 @@
  * shorter; the buffer is sized to cover any plausible rev-11 SROM. */
 #define SROM_MAX_WORDS 1024
 
-/* Parse a `wl srdump` text file into a u16 buffer.
- * Lines have the shape "  srom[NNN]:  0xWWWW 0xWWWW ...".
+/* Parse a SROM dump text file into a u16 buffer.
+ * Lines have the shape "  srom[NNN]:  0xWWWW 0xWWWW ..." (`wl srdump`)
+ * or "0xBBB: WWWW WWWW ...", BBB a byte offset.
  * Returns the highest word index touched + 1 (i.e. effective length),
  * or -1 on read/parse error. Words not covered by the file remain 0. */
 int srom_load(const char *path, u16 *buf, size_t buf_words);
