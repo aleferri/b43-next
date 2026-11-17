@@ -22,13 +22,28 @@ The scores are in `test/phy_lcn/README.md`.
 ## Firmware
 
 `b43trace fw-from-capture <attach.txt> --format mmiotrace --rev 24 -o DIR`
-rebuilds `ucode24_lcn.fw` (9962 words), `lcn0initvals24.fw` (562 writes)
-and `lcn0bsinitvals24.fw` (5) from the capture, the names `b43` asks for
-the BCM4313; wl's revinfo says ucode 0x340006e. To check: the initvals run
-ends with a write of OBJADDR (0x160 = 0x10026), the select of the read
-that follows it, not an initval; and whether the band group is the
-LCN-PHY's. The files come from the proprietary driver: keep them out of
+rebuilds `ucode24_lcn.fw` (9962 words), `lcn0initvals24.fw` (561 writes)
+and `lcn0bsinitvals24.fw` (35) from the capture, the names `b43` asks for
+the BCM4313; wl's revinfo says ucode 0x340006e (832.110). The bsinitvals are
+the band registers and 15 shared memory cells after them, written blind
+(#12049-#12068 of the `--no-bulk` decoding): the IFS registers, 0x000c,
+0x000e, the slot time, the beacon TSF offset, the synth PU delay,
+0x1670-0x1672 and the eight cells 0x0770-0x080a at stride 0x16. A run of
+blind writes ends before the OBJADDR select of the driver's access that
+follows it. The files come from the proprietary driver: keep them out of
 the tree.
+
+## The shared memory zeroed by b43
+
+`b43_upload_microcode()` zeroes 4 KiB of shared memory and the scratch
+space, which wl never does. With the whole bsinitvals, the MAC config block
+(`b43_shm_mac_config_block()`, base 0x00e4 on 832), the coreinit cells and
+the beacon listen interval, the one cell wl writes and b43 leaves to the
+zeroing is HOSTF5 (0x00d4 = 0x0081). The host flags are next: wl writes all
+five words at its bsinit (#12040-#12048: 0x0110, 0, 0x2100, 0x0040,
+0x0081, later HOSTF1 = 0x0111), b43 keeps three. HOSTF5 bit 0 is
+brcmsmac's MHF5_4313_GPIOCTRL, which brcmsmac sets only with BFL_FEM; the
+CQ57 has BFL_FEM_BT without it. Once they are written, the zeroing goes.
 
 ## The whole of b43 on the virtual chip
 

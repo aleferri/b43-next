@@ -776,31 +776,19 @@ void b43_mhf_maskset(struct b43_wldev *dev, unsigned int slot, u16 mask,
 		b43_mhf_write(dev, slot);
 }
 
-/* Read HostFlags */
+/* The first three words as one value, the B43_HF_* flags */
 u64 b43_hf_read(struct b43_wldev *dev)
 {
-	u64 ret;
-
-	ret = b43_shm_read16(dev, B43_SHM_SHARED, B43_SHM_SH_HOSTF3);
-	ret <<= 16;
-	ret |= b43_shm_read16(dev, B43_SHM_SHARED, B43_SHM_SH_HOSTF2);
-	ret <<= 16;
-	ret |= b43_shm_read16(dev, B43_SHM_SHARED, B43_SHM_SH_HOSTF1);
-
-	return ret;
+	return (u64)dev->mhfs[2] << 32 | (u64)dev->mhfs[1] << 16 |
+	       dev->mhfs[0];
 }
 
-/* Write HostFlags */
 void b43_hf_write(struct b43_wldev *dev, u64 value)
 {
-	u16 lo, mi, hi;
+	unsigned int slot;
 
-	lo = (value & 0x00000000FFFFULL);
-	mi = (value & 0x0000FFFF0000ULL) >> 16;
-	hi = (value & 0xFFFF00000000ULL) >> 32;
-	b43_shm_write16(dev, B43_SHM_SHARED, B43_SHM_SH_HOSTF1, lo);
-	b43_shm_write16(dev, B43_SHM_SHARED, B43_SHM_SH_HOSTF2, mi);
-	b43_shm_write16(dev, B43_SHM_SHARED, B43_SHM_SH_HOSTF3, hi);
+	for (slot = 0; slot < 3; slot++)
+		b43_mhf_maskset(dev, slot, 0, (u16)(value >> (16 * slot)));
 }
 
 /* Read the firmware capabilities bitmask (Opensource firmware only) */
@@ -4207,7 +4195,17 @@ static void b43_bsinit_ac(struct b43_wldev *dev)
 
 static int b43_bsinit(struct b43_wldev *dev)
 {
-	int err = b43_upload_initvals_band(dev);
+	unsigned int slot;
+	int err;
+
+	/*
+	 * brcms_c_ucode_bsinit(): the five words, then the band's initvals.
+	 * The AC-PHY writes its own slots, see b43_phy_ac_op_init().
+	 */
+	if (dev->phy.type != B43_PHYTYPE_AC && !dev->mhf_hold)
+		for (slot = 0; slot < ARRAY_SIZE(b43_hostf_regs); slot++)
+			b43_mhf_write(dev, slot);
+	err = b43_upload_initvals_band(dev);
 
 	if (!err && dev->phy.type == B43_PHYTYPE_AC)
 		b43_bsinit_ac(dev);

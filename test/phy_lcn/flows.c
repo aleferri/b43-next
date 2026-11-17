@@ -286,26 +286,27 @@ void b43_power_saving_ctl_bits(struct b43_wldev *dev, unsigned int ps_flags)
 {
 	lcn_core("b43_power_saving_ctl_bits");
 }
-/* The core's host flags (main.c): the three cells, read and written */
+/* The core's host flags (main.c): the shadow, never the cells */
 u64 b43_hf_read(struct b43_wldev *dev)
 {
-	u64 ret;
-
-	ret = b43_shm_read16(dev, B43_SHM_SHARED, B43_SHM_SH_HOSTF3);
-	ret <<= 16;
-	ret |= b43_shm_read16(dev, B43_SHM_SHARED, B43_SHM_SH_HOSTF2);
-	ret <<= 16;
-	ret |= b43_shm_read16(dev, B43_SHM_SHARED, B43_SHM_SH_HOSTF1);
-	return ret;
+	return (u64)dev->mhfs[2] << 32 | (u64)dev->mhfs[1] << 16 |
+	       dev->mhfs[0];
 }
 
 void b43_hf_write(struct b43_wldev *dev, u64 value)
 {
-	b43_shm_write16(dev, B43_SHM_SHARED, B43_SHM_SH_HOSTF1, (u16)value);
-	b43_shm_write16(dev, B43_SHM_SHARED, B43_SHM_SH_HOSTF2,
-			(u16)(value >> 16));
-	b43_shm_write16(dev, B43_SHM_SHARED, B43_SHM_SH_HOSTF3,
-			(u16)(value >> 32));
+	static const u16 cells[] = { B43_SHM_SH_HOSTF1, B43_SHM_SH_HOSTF2,
+				     B43_SHM_SH_HOSTF3 };
+	unsigned int slot;
+
+	for (slot = 0; slot < ARRAY_SIZE(cells); slot++) {
+		u16 word = value >> (16 * slot);
+
+		if (dev->mhfs[slot] == word)
+			continue;
+		dev->mhfs[slot] = word;
+		b43_shm_write16(dev, B43_SHM_SHARED, cells[slot], word);
+	}
 }
 u16 b43_shm_read16(struct b43_wldev *dev, u16 routing, u16 offset)
 {

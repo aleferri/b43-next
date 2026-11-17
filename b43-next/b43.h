@@ -1127,8 +1127,7 @@ struct b43_wldev {
 	unsigned int rx_count;
 #endif
 	/*
-	 * Shadow of the five HOSTFn shared-memory words (b43_mhf_maskset()),
-	 * the AC-PHY's: b43_hf_read() and b43_hf_write() go to the cells.
+	 * Shadow of the five HOSTFn shared-memory words (b43_mhf_maskset()).
 	 *
 	 * The stock driver keeps the same shadow and writes the cell only when
 	 * the word changes, with the clock up and on the current band, so an
@@ -1136,13 +1135,11 @@ struct b43_wldev {
 	 * cells, and the cell written on exactly the calls that change the word
 	 * (5 of 38 on the d6220, 4 of 56 on the DSL). It survives a down and up
 	 * as the stock driver's does: a warm cycle flushes what the previous one
-	 * accumulated (0x0060 in HOSTF4, 0x0088 in HOSTF5) where a cold one
-	 * flushes 0x0040 and 0x0080.
+	 * accumulated.
 	 *
-	 * @mhf_hold keeps the changes in the shadow: it stands for the clk term,
-	 * not b43's clock state but the point the captures put the transition
-	 * at, between the slot 4 and slot 0 writes of the front-end GPIO block.
-	 * Every call is on the operating band, so the band term does not appear.
+	 * @mhf_hold keeps the changes in the shadow: the AC-PHY's stands for the
+	 * clk term up to the point its captures put the transition at, between
+	 * the slot 4 and slot 0 writes of the front-end GPIO block.
 	 */
 	u16 mhfs[5];
 	bool mhf_hold;
