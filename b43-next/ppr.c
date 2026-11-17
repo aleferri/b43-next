@@ -310,6 +310,16 @@ u8 b43_ppr_sprom_r8_maxpwr(const struct ssbn_sprom *sprom, enum b43_band band,
 	return found ? maxp : 0;
 }
 
+int b43_ppr_est_pwr(s16 a1, s16 b0, s16 b1, unsigned int idx)
+{
+	s32 num = 32 * (16 * b0 + b1 * (s32)idx);
+	s32 den = 32768 + a1 * (s32)idx;
+
+	if (!den)
+		den = 1;
+	return max((num + den / 2) / den, -8);
+}
+
 const u16 *b43_ppr_sprom_r8_pa(const struct ssbn_sprom *sprom,
 			       unsigned int core, enum b43_band band)
 {

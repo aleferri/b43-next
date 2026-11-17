@@ -4460,7 +4460,7 @@ static void b43_nphy_tx_power_ctl_setup(struct b43_wldev *dev)
 	enum b43_band band;
 	u8 ppr_max;
 	s8 target[2];
-	s32 num, den, pwr;
+	s32 pwr;
 	u32 regval[64];
 
 	u16 tmp;
@@ -4584,9 +4584,7 @@ static void b43_nphy_tx_power_ctl_setup(struct b43_wldev *dev)
 
 	for (c = 0; c < 2; c++) {
 		for (i = 0; i < 64; i++) {
-			num = 8 * (16 * b0[c] + b1[c] * i);
-			den = 32768 + a1[c] * i;
-			pwr = max((4 * num + den / 2) / den, -8);
+			pwr = b43_ppr_est_pwr(a1[c], b0[c], b1[c], i);
 			if (dev->phy.rev < 3 && (i <= (31 - idle[c] + 1)))
 				pwr = max(pwr, target[c] + 1);
 			regval[i] = pwr;

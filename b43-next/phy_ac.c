@@ -2149,13 +2149,10 @@ static void b43_phy_ac_txpwr_target_write(struct b43_wldev *dev)
 }
 
 /*
- * est_pwr transfer function for one core, 128 entries.
- *
- * At step j: num = 512*b0 + 32*b1*j, den = 0x8000 + a1*j,
- * v = (den/2 + num)/den clamped to [-8, 0x7f]. The same formula as
- * b43_nphy_tx_power_ctl_setup() and brcmsmac, with 128 entries instead of
- * 64. The coefficients are the SPROM pa5ga[] triple of the current sub-band,
- * with a per-core default for boards whose triple is all zero.
+ * est_pwr transfer function for one core: b43_ppr_est_pwr() over 128
+ * entries instead of the N-PHY's 64, capped at 0x7f. The coefficients are
+ * the SPROM pa5ga[] triple of the current sub-band, with a per-core default
+ * for boards whose triple is all zero.
  *
  * On 2.4 GHz the triple is pa2ga[], one for the band; with the archer-t5e's
  * SROM this matches its tables 0x40 and 0x60 128/128 on both chains. No board
@@ -2174,7 +2171,6 @@ static void b43_phy_ac_est_pwr_lut(struct b43_wldev *dev, unsigned int core,
 	const u16 *pa = b43_current_band(dev->wl) == NL80211_BAND_2GHZ ?
 		pw->pa2ga : &pw->pa5ga[grp * 3];
 	s16 a1, b0, b1;
-	s32 num, den;
 	int j;
 
 	if (pa[0] || pa[1] || pa[2]) {
@@ -2187,20 +2183,8 @@ static void b43_phy_ac_est_pwr_lut(struct b43_wldev *dev, unsigned int core,
 		b1 = pwrdet_def[core].b1;
 	}
 
-	num = (s32)b0 << 9;
-	den = 0x8000;
-	for (j = 0; j < 128; j++) {
-		s32 d = den ? den : 1;	/* guard: a real pa keeps den > 0 */
-		s32 v = (d / 2 + num) / d;
-
-		num += (s32)b1 * 0x20;
-		if (v < -8)
-			v = -8;
-		if (v > 0x7f)
-			v = 0x7f;
-		lut[j] = (u16)(v & 0xff);
-		den += a1;
-	}
+	for (j = 0; j < 128; j++)
+		lut[j] = (u16)(min(b43_ppr_est_pwr(a1, b0, b1, j), 0x7f) & 0xff);
 }
 
 /*

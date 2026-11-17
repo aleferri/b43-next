@@ -123,6 +123,12 @@ u8 b43_ppr_load_sprom_legacy(struct b43_ppr *ppr,
 
 u8 b43_ppr_sprom_r8_maxpwr(const struct ssbn_sprom *sprom, enum b43_band band,
 			   u8 coremask);
+/*
+ * The power, in quarter dBm, of TSSI index @idx on a PA of parameters a1,
+ * b0, b1: brcmsmac's estimate, at least -8.
+ */
+int b43_ppr_est_pwr(s16 a1, s16 b0, s16 b1, unsigned int idx);
+
 /* The PA parameters a1, b0, b1 of @core on @band, from SROM rev 4 to 10 */
 const u16 *b43_ppr_sprom_r8_pa(const struct ssbn_sprom *sprom,
 			       unsigned int core, enum b43_band band);
