@@ -155,7 +155,7 @@ static void b43_radio_2064_channel_setup(struct b43_wldev *dev,
 	}
 	div_frac = b43_phy_lcn_qdiv_roundup(div_frac, fref3, 20);
 	b43_radio_maskset(dev, 0x045, ~0x1f, (div_int >> 4) & 0x1f);
-	b43_radio_maskset(dev, 0x046, ~0x1f0, (div_int << 4) & 0x1f0);
+	b43_radio_maskset(dev, 0x046, ~0x1f0, (u8)(div_int << 4));
 	b43_radio_maskset(dev, 0x046, ~0x0f, (div_frac >> 16) & 0x0f);
 	b43_radio_write(dev, 0x047, (div_frac >> 8) & 0xff);
 	b43_radio_write(dev, 0x048, div_frac & 0xff);
@@ -174,7 +174,8 @@ static void b43_radio_2064_channel_setup(struct b43_wldev *dev,
 	cp_current = (1250 * 100 / h28_ten) / h30_ten;
 	b43_radio_maskset(dev, 0x03c, ~0x3f, cp_current & 0x3f);
 	b43_radio_write(dev, 0x03c, channel <= 5 ? 0x8 : 0x7);
-	b43_radio_write(dev, 0x03d, 0xa);
+	/* wl's, by channel; brcmsmac's is 0x3 on every channel */
+	b43_radio_write(dev, 0x03d, channel <= 3 ? 0xa : channel <= 7 ? 0x9 : 0x8);
 	b43_radio_set(dev, 0x044, 0x0c);
 	udelay(1);
 	b43_radio_2064_vco_cal(dev);
@@ -1032,7 +1033,9 @@ static void b43_phy_lcn_txrx_spur_avoidance_mode(struct b43_wldev *dev,
 						 bool enable)
 {
 	if (enable) {
-		b43_phy_write(dev, 0x942, 0x7);
+		b43_phy_write(dev, 0x942, 0xf);
+		b43_phy_write(dev, 0x942, 0x0);
+		b43_phy_write(dev, 0x942, 0xf);
 		b43_phy_write(dev, 0x93b, ((1 << 13) + 23));
 		b43_phy_write(dev, 0x93c, ((1 << 13) + 1989));
 
@@ -1656,6 +1659,9 @@ static void b43_phy_lcn_set_channel_tweaks(struct b43_wldev *dev, int channel)
 {
 	struct bcmn_drv_cc *cc = &dev->dev->bdev->bus->drv_cc;
 
+	/* wl's, before brcmsmac's tweaks */
+	b43_phy_set(dev, 0x780, 0x400);
+	b43_phy_set(dev, 0x780, 0x200);
 	b43_phy_maskset(dev, 0x448, ~0x300, (channel == 14) ? 0x200 : 0x100);
 
 	if (channel == 1 || channel == 2 || channel == 3 || channel == 4 ||
@@ -1681,8 +1687,8 @@ static void b43_phy_lcn_set_channel_tweaks(struct b43_wldev *dev, int channel)
 		b43_phy_write(dev, 0x942, 0);
 
 		b43_phy_lcn_txrx_spur_avoidance_mode(dev, true);
-		b43_phy_maskset(dev, 0x424, (u16) ~0xff00, 0x1f00);
-		b43_phy_write(dev, 0x425, 0x590a);
+		b43_phy_maskset(dev, 0x424, (u16) ~0xff00, 0x2500);
+		b43_phy_write(dev, 0x425, 0x590f);
 	}
 
 	b43_phy_set(dev, 0x44a, 0x44);
