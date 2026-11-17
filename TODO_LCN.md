@@ -7,14 +7,20 @@ The scores are in `test/phy_lcn/README.md`.
 
 ## Missing from b43
 
-- **The watchdog's work**: brcmsmac's `calib_modes(PHY_PERICAL_WATCHDOG)`
-  (the temperature, the glacial calibration, the VCO calibration) and the
-  noise sample; what wl does while associated on channel 1 (from
-  #108038, between its scans) is not analysed yet. wl never writes MACCMD
-  in the capture, so no background noise request: brcmsmac's polled sample
-  (`wlc_lcnphy_rx_signal_power()` between deaf modes) would be the other
-  way, but where the capture turns the deaf mode off and on (#18967) it
-  reads nothing between.
+- **The rest of wl's 1 s watchdog** (the bulk decoding, from #110735 on):
+  b43's `pwork_1sec` makes only the PHY's estimate and sense values. wl's
+  turn on core rev 24 starts with 0x158, the shared memory at 0x15fa,
+  0x1630, 0x1632 and 0x1570, REG 0x6c2, the DMA channels and 0x224, not
+  `b43_watchdog_poll()`'s 0x4d0, which the LCN-PHY does not call; it reads
+  0x4a4 once more after the sense values, then the 32-bit counters at
+  0x06c0-0x06d4 (high, low, high), 0x010e, 0x010c and the TSF. It skips the
+  PHY's part on a few seconds around its scans. No noise sample: wl never
+  writes MACCMD, and nothing of brcmsmac's `calib_modes(PHY_PERICAL_WATCHDOG)`
+  (the temperature based recalibration) shows on this board.
+- **The block every 256 ms**: shared memory 0x008e, 0x0e50-0x0e54, a MAC
+  suspend, an RMW of 0x448, table 21 read from entry 0, then 0x6da,
+  0x5a6, 0x5a2, 0x5a5 and 0x583-0x586 written as in #8162-#8226 (#402429
+  on). Not identified.
 - **`agc_temp_init`**: wl reads 0x4df, table 17 at 59-60, 0x434, 0x424,
   0x425 and table 13 at 28-29 after the PMU (#8239-#8251); b43 neither
   reads nor keeps them, and nothing uses them yet.
@@ -208,8 +214,24 @@ the switch to channel 2). The values, in qdBm, on the CQ57:
   and a row of 52, give the same bytes on this board.
 - **The target is written every time**, unchanged or not (#22414, #87221);
   brcmsmac writes it only when it changes. When it changes, the control
-  starts again from index 180 and 1 packet, wl's 0x4a5 from #22419 on;
-  brcmsmac's `wlc_lcnphy_txpower_reset_npt()`.
+  starts again from 1 packet, wl's 0x4a5 from #22419 on, and from the index
+  it had: brcmsmac's `wlc_lcnphy_txpower_reset_npt()` resets both, but in
+  the scan at #450197-#482262 of the bulk decoding the target goes from 58
+  to 40 and back and every turn-on starts from 0x98, the watchdog's.
+- **The watchdog's estimate** (`b43_phy_lcn_tx_pwr_update_npt()`), every
+  second with the control on: once the frames since the last estimate or
+  turn-on exceed 2^npt, the npt read back goes up by one to at most 2, and
+  0x473 less its bit 0 becomes the start in 0x4a4 at once and at the next
+  turn-on. Every turn-on writes npt 1, never the watchdog's 2: wl keeps no
+  npt from it, where brcmsmac's keeps the one it read. brcmsmac neither
+  raises the npt nor writes the start there, and calls it only when the
+  control turns off. The capture's 156 turns fit; whether the 2 is a
+  ceiling or a value wl sets is not known.
+- **0x476 and 0x477**, read by the watchdog right after the estimate:
+  brcmsmac's tempsense registers, read without its setup as
+  `wlc_lcnphy_tempsense_new(pi, 0)` does. b43 keeps them in `lcn->sense`;
+  that they are a temperature on a board without the temperature based
+  control is not shown.
 - **The regulatory limit less the antenna gain, and the user's**, applied to
   both chains as the HT-PHY and brcmsmac (`channel.c`) do: not in the
   capture, whose channels have none in the harness. The CQ57's SROM has an
@@ -337,8 +359,8 @@ are on channel 1.
 
 ## The harness
 
-- `test/phy_lcn/gates.sh` scores the attach and the second scan's channel
-  switches; the first scan (#44938-#81737), the associations and the
-  watchdog are not scored.
+- `test/phy_lcn/gates.sh` scores the attach, the second scan's channel
+  switches and the PHY's part of every watchdog turn; the first scan
+  (#44938-#81737) and the associations are not scored.
 - The capture has no marks: the windows are found by patterns, see
   `gates.sh`.
