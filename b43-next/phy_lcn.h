@@ -19,10 +19,16 @@
 #define B43_PHY_LCN_RF_CTL7			B43_PHY_OFDM(0x0FA)
 
 
+#define B43_LCN_TX_PWR_CTRL_MASK		0xe000
+#define B43_LCN_TX_PWR_CTRL_OFF			0x0000
+#define B43_LCN_TX_PWR_CTRL_HW			0xe000
+
 struct b43_phy_lcn {
 	bool hw_pwr_ctl;
 	bool hw_pwr_ctl_capable;
+	bool temp_pwr_ctl_capable;
 	u8 tx_pwr_curr_idx;
+	s8 tx_pwr_idx_override;
 };
 
 

@@ -250,6 +250,108 @@ static void b43_phy_lcn_clear_tx_power_offsets(struct b43_wldev *dev)
 	}
 }
 
+/* wlc_lcnphy_set_tx_gain_override */
+static void b43_phy_lcn_set_tx_gain_override(struct b43_wldev *dev, bool enable)
+{
+	b43_phy_maskset(dev, 0x4b0, ~(0x1 << 7), enable << 7);
+	b43_phy_maskset(dev, 0x4b0, ~(0x1 << 14), enable << 14);
+	b43_phy_maskset(dev, 0x43b, ~(0x1 << 6), enable << 6);
+}
+
+/* wlc_lcnphy_set_tx_gain */
+static void b43_phy_lcn_set_tx_gain(struct b43_wldev *dev,
+				    struct lcn_tx_gains *target_gains)
+{
+	u16 pa_gain = b43_phy_lcn_get_pa_gain(dev);
+
+	b43_phy_maskset(dev, 0x4b5, 0,
+			target_gains->gm_gain | (target_gains->pga_gain << 8));
+	b43_phy_maskset(dev, 0x4fb, ~0x7fff,
+			(target_gains->pad_gain | (pa_gain << 8)));
+	b43_phy_maskset(dev, 0x4fc, 0,
+			target_gains->gm_gain | (target_gains->pga_gain << 8));
+	b43_phy_maskset(dev, 0x4fd, ~0x7fff,
+			(target_gains->pad_gain | (pa_gain << 8)));
+
+	b43_phy_lcn_set_dac_gain(dev, target_gains->dac_gain);
+	b43_phy_lcn_set_tx_gain_override(dev, true);
+}
+
+/* wlc_lcnphy_set_pa_gain */
+static void b43_phy_lcn_set_pa_gain(struct b43_wldev *dev, u16 gain)
+{
+	b43_phy_maskset(dev, 0x4fb, ~0x7f00, gain << 8);
+	b43_phy_maskset(dev, 0x4fd, ~0x7f00, gain << 8);
+}
+
+/* wlc_lcnphy_set_tx_iqcc */
+static void b43_phy_lcn_set_tx_iqcc(struct b43_wldev *dev, u16 a, u16 b)
+{
+	u16 iqcc[2] = { a, b };
+
+	b43_lcntab_write_bulk(dev, B43_LCNTAB16(0x0, 0x50), 2, iqcc);
+}
+
+/* wlc_lcnphy_set_tx_locc */
+static void b43_phy_lcn_set_tx_locc(struct b43_wldev *dev, u16 didq)
+{
+	b43_lcntab_write(dev, B43_LCNTAB16(0x0, 0x55), didq);
+}
+
+/* wlc_lcnphy_get_tx_pwr_ctrl */
+static u16 b43_phy_lcn_get_tx_pwr_ctrl(struct b43_wldev *dev)
+{
+	return b43_phy_read(dev, 0x4a4) & B43_LCN_TX_PWR_CTRL_MASK;
+}
+
+/* wlc_lcnphy_set_tx_pwr_ctrl, with the control off */
+static void b43_phy_lcn_tx_pwr_ctrl_off(struct b43_wldev *dev)
+{
+	u16 old_mode = b43_phy_lcn_get_tx_pwr_ctrl(dev);
+
+	b43_phy_mask(dev, 0x6da, ~0x40);
+	b43_phy_set(dev, 0x6a3, 0x10);
+	if (old_mode == B43_LCN_TX_PWR_CTRL_OFF)
+		return;
+	if (old_mode == B43_LCN_TX_PWR_CTRL_HW)
+		b43_phy_lcn_clear_tx_power_offsets(dev);
+	b43_phy_lcn_set_tx_gain_override(dev, true);
+	b43_phy_mask(dev, 0x4a4, (u16)~B43_LCN_TX_PWR_CTRL_MASK);
+}
+
+/* wlc_lcnphy_set_tx_pwr_by_index */
+static void b43_phy_lcn_set_tx_pwr_by_index(struct b43_wldev *dev, u8 index)
+{
+	struct b43_phy_lcn *lcn = dev->phy.lcn;
+	struct lcn_tx_gains gains;
+	u32 iq, gain;
+
+	lcn->tx_pwr_idx_override = index;
+	lcn->tx_pwr_curr_idx = index;
+
+	b43_phy_lcn_tx_pwr_ctrl_off(dev);
+
+	iq = b43_lcntab_read(dev, B43_LCNTAB32(0x7, 0x140 + index));
+	gain = b43_lcntab_read(dev, B43_LCNTAB32(0x7, 0xc0 + index));
+
+	gains.gm_gain = gain & 0xff;
+	gains.pga_gain = (gain >> 8) & 0xff;
+	gains.pad_gain = (gain >> 16) & 0xff;
+	gains.dac_gain = (iq >> 28) & 0x7;
+	b43_phy_lcn_set_tx_gain(dev, &gains);
+	b43_phy_lcn_set_pa_gain(dev, (gain >> 24) & 0x7f);
+	b43_phy_lcn_set_bbmult(dev, (iq >> 20) & 0xff);
+	b43_phy_lcn_set_tx_gain_override(dev, true);
+
+	if (lcn->temp_pwr_ctl_capable)
+		return;
+	b43_phy_lcn_set_tx_iqcc(dev, (iq >> 10) & 0x3ff, iq & 0x3ff);
+	b43_phy_lcn_set_tx_locc(dev,
+		b43_lcntab_read(dev, B43_LCNTAB32(0x7, 0x1c0 + index)));
+	b43_phy_maskset(dev, 0x6a6, ~0x1fff,
+		8 * b43_lcntab_read(dev, B43_LCNTAB32(0x7, 0x240 + index)));
+}
+
 /* wlc_lcnphy_rev0_baseband_init */
 static void b43_phy_lcn_rev0_baseband_init(struct b43_wldev *dev)
 {
@@ -270,7 +372,9 @@ static void b43_phy_lcn_rev0_baseband_init(struct b43_wldev *dev)
 	b43_phy_set(dev, 0x44a, 0x44);
 	b43_phy_write(dev, 0x44a, 0x80);
 
-	/* TODO: without a FEM, wl sets the TX gain by index here */
+	if (!(dev->dev->bus_sprom->boardflags_lo & B43_BFL_FEM))
+		b43_phy_lcn_set_tx_pwr_by_index(dev, 52);
+
 	b43_phy_maskset(dev, 0x634, ~0xff, 0xc);
 	if (dev->dev->bus_sprom->boardflags_lo & B43_BFL_FEM) {
 		b43_phy_maskset(dev, 0x634, ~0xff, 0xa);
@@ -526,33 +630,6 @@ static bool b43_phy_lcn_load_tx_iir_ofdm_filter(struct b43_wldev *dev,
 	return false;
 }
 
-/* wlc_lcnphy_set_tx_gain_override */
-static void b43_phy_lcn_set_tx_gain_override(struct b43_wldev *dev, bool enable)
-{
-	b43_phy_maskset(dev, 0x4b0, ~(0x1 << 7), enable << 7);
-	b43_phy_maskset(dev, 0x4b0, ~(0x1 << 14), enable << 14);
-	b43_phy_maskset(dev, 0x43b, ~(0x1 << 6), enable << 6);
-}
-
-/* wlc_lcnphy_set_tx_gain */
-static void b43_phy_lcn_set_tx_gain(struct b43_wldev *dev,
-				    struct lcn_tx_gains *target_gains)
-{
-	u16 pa_gain = b43_phy_lcn_get_pa_gain(dev);
-
-	b43_phy_write(dev, 0x4b5,
-		      (target_gains->gm_gain | (target_gains->pga_gain << 8)));
-	b43_phy_maskset(dev, 0x4fb, ~0x7fff,
-			(target_gains->pad_gain | (pa_gain << 8)));
-	b43_phy_write(dev, 0x4fc,
-		      (target_gains->gm_gain | (target_gains->pga_gain << 8)));
-	b43_phy_maskset(dev, 0x4fd, ~0x7fff,
-			(target_gains->pad_gain | (pa_gain << 8)));
-
-	b43_phy_lcn_set_dac_gain(dev, target_gains->dac_gain);
-	b43_phy_lcn_set_tx_gain_override(dev, true);
-}
-
 /* wlc_lcnphy_tx_pwr_ctrl_init */
 static void b43_phy_lcn_tx_pwr_ctl_init(struct b43_wldev *dev)
 {
@@ -719,6 +796,12 @@ static void b43_phy_lcn_op_prepare_structs(struct b43_wldev *dev)
 	struct b43_phy_lcn *phy_lcn = phy->lcn;
 
 	memset(phy_lcn, 0, sizeof(*phy_lcn));
+
+	/* wlc_phy_attach_lcnphy: rev 1 */
+	if (dev->dev->bus_sprom->tempsense_option == 3)
+		phy_lcn->hw_pwr_ctl_capable = true;
+	else
+		phy_lcn->temp_pwr_ctl_capable = true;
 }
 
 /* wlc_phy_init_lcnphy */
