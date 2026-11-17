@@ -334,7 +334,7 @@ def apply_skips(ops, rules, verbose=False):
     return out, skipped, used
 
 
-OP_HEAD = re.compile(r'^(\S+)\s+(?:addr|off)=(0x[0-9a-f]+)')
+OP_HEAD = re.compile(r'^(\S+)\s+(?:addr|off|word)=(0x[0-9a-f]+)')
 TBL_HEAD = re.compile(r'^TBL\.(?:WR|RD)\s+(id=\S+\s+off=\S+)')
 
 # Ops WITHOUT an identity of their own: they are ports, and the identity is
