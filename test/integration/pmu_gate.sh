@@ -26,7 +26,7 @@ xz -dc "$TRACES/macbookair6-1/wl-firstload-20260926-190438.trace.xz" \
 	> "$T/macbook.raw"
 unzip -p "$TRACES/archer-t5e/mmiotrace.zip" > "$T/archer.raw"
 for b in macbook archer; do
-	python3 "$TRACE_TOOLS/mmio2ops.py" "$T/$b.raw" --keep-flush \
+	python3 "$TRACE_TOOLS/mmio2ops.py" "$T/$b.raw" \
 		-o "$T/$b.ops" > /dev/null 2>&1
 done
 

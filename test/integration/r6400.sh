@@ -36,7 +36,7 @@ mkdir -p "$T"
 b43trace() { PYTHONPATH=$TRACE_TOOLS/src python3 -m "b43trace.$@"; }
 
 zcat "$BOARD/traces/mmio-cold/$CAP.bin.gz" > "$T/cap.bin"
-b43trace bus.mmio2ops "$T/cap.bin" --format wl-mmio-trap --keep-flush \
+b43trace bus.mmio2ops "$T/cap.bin" --format wl-mmio-trap \
 	--no-bulk -o "$T/cap.m2o" 2>/dev/null
 b43trace bus.fw_from_capture "$T/cap.bin" --rev 29 -o "$T/fw" 2>/dev/null
 b43trace pipeline.timeline "$T/cap.m2o" "$T/cap.tl" >/dev/null

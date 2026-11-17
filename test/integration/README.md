@@ -99,7 +99,7 @@ and every shared-memory space, and need no strip:
 
 ```sh
 python3 $TRACE_TOOLS/mmio2ops.py $TRACES/vd625-agcombo/ch36.bin \
-    --keep-flush -o /tmp/ch36.m2o
+    -o /tmp/ch36.m2o
 python3 $TRACE_TOOLS/timeline.py /tmp/ch36.m2o /tmp/ch36.tl
 B43_BOARD=agcombo B43_READ_ORACLE=/tmp/ch36.m2o B43_CHANNEL=36 B43_BW=80 \
     B43_TIMELINE=/tmp/ch36.tl B43_TRACE_OUT=/tmp/int36.trace ./b43-trace
