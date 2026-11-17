@@ -1363,7 +1363,7 @@ static int b43_generate_txhdr_fw4(struct b43_wldev *dev,
 
 	switch (b43_ieee80211_antenna_sanitize(dev, 0)) {
 	case 0: /* Default */
-		phy_ctl |= B43_TXH_PHY_ANT01AUTO;
+		phy_ctl |= b43_antenna_to_phyctl(dev, B43_ANTENNA_DEFAULT);
 		break;
 	case 1: /* Antenna 0 */
 		phy_ctl |= B43_TXH_PHY_ANT0;
