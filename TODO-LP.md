@@ -229,12 +229,6 @@ reproduces. Without evidence:
 
 Check: a rev0 or rev2 capture, and the periodic calibration after 60 s.
 
-### CCK power offsets
-
-`lpphy_read_band_sprom()` fills the four CCK entries of `tx_max_rate` from
-`ofdm2gpo`, as the specs do (ReadBandSrom); the LCN-PHY uses `cck2gpo`.
-Nothing reads the array.
-
 ## Hunches
 
 Noticed while reading, with nothing to weigh them against: no spec page read,
