@@ -498,6 +498,8 @@ static u16 b43_phy_lcn_set_tx_pwr_ctrl(struct b43_wldev *dev, u16 mode)
 		lcn->tssi_tx_cnt = b43_shm_read16(dev, B43_SHM_SHARED,
 						  B43_SHM_SH_TXALLFRM);
 		b43_phy_lcn_set_tx_gain_override(dev, false);
+		/* The index the software control sets, as brcmsmac's soft ctrl */
+		b43_phy_mask(dev, 0x4a9, (u16)~0x8000);
 		lcn->tx_pwr_idx_override = -1;
 		b43_phy_set(dev, 0x4a4, 0xc000);
 	} else {
