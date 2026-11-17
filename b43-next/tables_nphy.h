@@ -15,11 +15,6 @@ struct b43_phy_n_sfo_cfg {
 
 struct b43_wldev;
 
-struct nphy_txiqcal_ladder {
-	u8 percent;
-	u8 g_env;
-};
-
 struct nphy_rf_control_override_rev2 {
 	u8 addr0;
 	u8 addr1;
@@ -197,8 +192,6 @@ const s16 *b43_ntab_get_rf_pwr_offset_table(struct b43_wldev *dev);
 extern const s8 b43_ntab_papd_pga_gain_delta_ipa_2g[];
 
 extern const u16 tbl_iqcal_gainparams[2][9][8];
-extern const struct nphy_txiqcal_ladder ladder_lo[];
-extern const struct nphy_txiqcal_ladder ladder_iq[];
 extern const u16 loscale[];
 
 extern const u16 tbl_tx_iqlo_cal_loft_ladder_40[];

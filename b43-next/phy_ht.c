@@ -1985,31 +1985,15 @@ static u16 b43_phy_ht_load_tone(struct b43_wldev *dev, u32 freq, u16 max)
 	return len;
 }
 
-/* The N-PHY's ladders (ladder_lo, ladder_iq in tables_nphy.c) */
-static const u8 b43_phy_ht_ladder_lo[18][2] = {
-	{ 3, 0 }, { 4, 0 }, { 6, 0 }, { 9, 0 }, { 13, 0 }, { 18, 0 },
-	{ 25, 0 }, { 25, 1 }, { 25, 2 }, { 25, 3 }, { 25, 4 }, { 25, 5 },
-	{ 25, 6 }, { 25, 7 }, { 35, 7 }, { 50, 7 }, { 71, 7 }, { 100, 7 },
-};
-
-static const u8 b43_phy_ht_ladder_iq[18][2] = {
-	{ 3, 0 }, { 4, 0 }, { 6, 0 }, { 9, 0 }, { 13, 0 }, { 18, 0 },
-	{ 25, 0 }, { 35, 0 }, { 50, 0 }, { 71, 0 }, { 100, 0 }, { 100, 1 },
-	{ 100, 2 }, { 100, 3 }, { 100, 4 }, { 100, 5 }, { 100, 6 }, { 100, 7 },
-};
-
 static void b43_phy_ht_txcal_ladder(struct b43_wldev *dev, u16 bbmult)
 {
-	int i;
+	unsigned int i;
+	u16 lo, iq;
 
-	for (i = 0; i < 18; i++) {
-		u16 lo = (b43_phy_ht_ladder_lo[i][0] * bbmult) / 100;
-		u16 iq = (b43_phy_ht_ladder_iq[i][0] * bbmult) / 100;
-
-		b43_httab_write(dev, B43_HTTAB16(13, i),
-				(lo & 0xff) << 8 | b43_phy_ht_ladder_lo[i][1]);
-		b43_httab_write(dev, B43_HTTAB16(13, 0x20 + i),
-				(iq & 0xff) << 8 | b43_phy_ht_ladder_iq[i][1]);
+	for (i = 0; i < B43_TXCAL_LADDER_STEPS; i++) {
+		b43_txcal_ladder(i, bbmult, &lo, &iq);
+		b43_httab_write(dev, B43_HTTAB16(13, i), lo);
+		b43_httab_write(dev, B43_HTTAB16(13, 0x20 + i), iq);
 	}
 }
 

@@ -52,6 +52,15 @@ bool b43_rxcal_gain_step(struct b43_rxcal_gain *g, u32 pwr);
 int b43_rxcal_gain_delta(const struct b43_rxcal_gain *g);
 u16 b43_rxcal_gain_biq1(u16 biq0, u16 biq1, int delta);
 
+/*
+ * The gain ladders the TX I/Q and LO calibrations of N, HT and AC load before
+ * measuring a chain: step @i of the LO ladder and of the I/Q one at @bbmult,
+ * each a gain in the high byte and an index in the low one.
+ */
+#define B43_TXCAL_LADDER_STEPS	18
+
+void b43_txcal_ladder(unsigned int i, u16 bbmult, u16 *lo, u16 *iq);
+
 void b43_iq_mismatch(s32 iq, u32 ii, u32 qq, s32 *angle_out, u32 *mag_out);
 
 #endif /* B43_CALIBRATE_H_ */

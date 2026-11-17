@@ -134,6 +134,28 @@ u16 b43_rxcal_gain_biq1(u16 biq0, u16 biq1, int delta)
 	return max(fine, 0);
 }
 
+/* brcmsmac's ladders: percent of the bbmult, index */
+static const u8 b43_txcal_ladder_lo[B43_TXCAL_LADDER_STEPS][2] = {
+	{ 3, 0 }, { 4, 0 }, { 6, 0 }, { 9, 0 }, { 13, 0 }, { 18, 0 },
+	{ 25, 0 }, { 25, 1 }, { 25, 2 }, { 25, 3 }, { 25, 4 }, { 25, 5 },
+	{ 25, 6 }, { 25, 7 }, { 35, 7 }, { 50, 7 }, { 71, 7 }, { 100, 7 },
+};
+
+static const u8 b43_txcal_ladder_iq[B43_TXCAL_LADDER_STEPS][2] = {
+	{ 3, 0 }, { 4, 0 }, { 6, 0 }, { 9, 0 }, { 13, 0 }, { 18, 0 },
+	{ 25, 0 }, { 35, 0 }, { 50, 0 }, { 71, 0 }, { 100, 0 }, { 100, 1 },
+	{ 100, 2 }, { 100, 3 }, { 100, 4 }, { 100, 5 }, { 100, 6 }, { 100, 7 },
+};
+
+void b43_txcal_ladder(unsigned int i, u16 bbmult, u16 *lo, u16 *iq)
+{
+	u16 lo_gain = b43_txcal_ladder_lo[i][0] * bbmult / 100;
+	u16 iq_gain = b43_txcal_ladder_iq[i][0] * bbmult / 100;
+
+	*lo = (lo_gain & 0xff) << 8 | b43_txcal_ladder_lo[i][1];
+	*iq = (iq_gain & 0xff) << 8 | b43_txcal_ladder_iq[i][1];
+}
+
 /*
  * One tone's IQ mismatch in the stock driver's form: the angle in degrees
  * Q16 and the gain ratio 2^10 * sqrt(qq / ii), both from the three

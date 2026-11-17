@@ -7762,46 +7762,26 @@ void b43_phy_ac_rxiqcal_apply(struct b43_wldev *dev)
  *   after chain 0 of the frequency-dependent pass     chain 1
  *   before chain 2 of that pass                       chain 2
  *
- * The gains are the N-PHY ladder percentages scaled by the bbmult of the
- * chain's calibration TX gain, rounded down: 64 gives the ladder the 5 GHz
- * captures load for chain 0 and the 2.4 GHz end state of wl 7.14, 60 the
- * one they load for the chains calibrated at index 0x1e. A chain that is
- * not wired gets the bare index ramp (d6220).
+ * The bbmult of b43_txcal_ladder() is the one of the chain's calibration
+ * TX gain: 64 gives the ladder the 5 GHz captures load for chain 0 and the
+ * 2.4 GHz end state of wl 7.14, 60 the one they load for the chains
+ * calibrated at index 0x1e. A chain that is not wired gets the bare index
+ * ramp, a bbmult of 0 (d6220).
  * [capture-ref: router-data/d6220/cold-sweep.zip!cold01-ch36-bw20.txt;
  *   17999-18218, 18723-18942]
  */
-static const u8 b43_phy_ac_ladder_lo_pct[18] = {
-	3, 4, 6, 9, 13, 18, 25, 25, 25, 25, 25, 25, 25, 25, 35, 50, 71, 100,
-};
-static const u8 b43_phy_ac_ladder_lo_idx[18] = {
-	0, 0, 0, 0, 0, 0, 0, 1, 2, 3, 4, 5, 6, 7, 7, 7, 7, 7,
-};
-static const u8 b43_phy_ac_ladder_iq_pct[18] = {
-	3, 4, 6, 9, 13, 18, 25, 35, 50, 71, 100, 100, 100, 100, 100, 100, 100, 100,
-};
-static const u8 b43_phy_ac_ladder_iq_idx[18] = {
-	0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 2, 3, 4, 5, 6, 7,
-};
-
 static void b43_phy_ac_gain_ladder_write(struct b43_wldev *dev,
 					 unsigned int chain)
 {
 	struct b43_phy_ac *ac = dev->phy.ac;
-	bool wired = ac->coremask & BIT(chain);
-	unsigned int scale = ac->bbmult_cal[chain];
+	u16 bbmult = ac->coremask & BIT(chain) ? ac->bbmult_cal[chain] : 0;
 	unsigned int i;
-	u16 gate;
+	u16 gate, lo, iq;
 
 	B43_AC_FN();
 	gate = b43_phy_ac_tbl_write_lock(dev);
-	for (i = 0; i < ARRAY_SIZE(b43_phy_ac_ladder_lo_pct); i++) {
-		u16 lo = b43_phy_ac_ladder_lo_idx[i];
-		u16 iq = b43_phy_ac_ladder_iq_idx[i];
-
-		if (wired) {
-			lo |= (b43_phy_ac_ladder_lo_pct[i] * scale / 100) << 8;
-			iq |= (b43_phy_ac_ladder_iq_pct[i] * scale / 100) << 8;
-		}
+	for (i = 0; i < B43_TXCAL_LADDER_STEPS; i++) {
+		b43_txcal_ladder(i, bbmult, &lo, &iq);
 		b43_actab_write_bulk(dev, 0x000c, 0x00 + i, 16, 1, &lo);
 		b43_actab_write_bulk(dev, 0x000c, 0x20 + i, 16, 1, &iq);
 	}
