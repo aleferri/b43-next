@@ -4584,39 +4584,20 @@ static void b43_periodic_tasks_setup(struct b43_wldev *dev)
 	INIT_DELAYED_WORK(&dev->radar_work, b43_radar_work_handler);
 }
 
-/* Check if communication with the device works correctly. */
+/* Check if communication with the device works correctly, as brcmsmac's
+ * brcms_b_validate_chip_access() and wl do. */
 static int b43_validate_chipaccess(struct b43_wldev *dev)
 {
-	u32 v, expected, backup0, backup4;
+	u32 v, expected, backup;
 
-	backup0 = b43_shm_read32(dev, B43_SHM_SHARED, 0);
-	backup4 = b43_shm_read32(dev, B43_SHM_SHARED, 4);
-
-	/* Check for read/write and endianness problems. */
-	b43_shm_write32(dev, B43_SHM_SHARED, 0, 0x55AAAA55);
-	if (b43_shm_read32(dev, B43_SHM_SHARED, 0) != 0x55AAAA55)
-		goto error;
+	backup = b43_shm_read32(dev, B43_SHM_SHARED, 0);
 	b43_shm_write32(dev, B43_SHM_SHARED, 0, 0xAA5555AA);
 	if (b43_shm_read32(dev, B43_SHM_SHARED, 0) != 0xAA5555AA)
 		goto error;
-
-	/* Check if unaligned 32bit SHM_SHARED access works properly.
-	 * However, don't bail out on failure, because it's noncritical. */
-	b43_shm_write16(dev, B43_SHM_SHARED, 0, 0x1122);
-	b43_shm_write16(dev, B43_SHM_SHARED, 2, 0x3344);
-	b43_shm_write16(dev, B43_SHM_SHARED, 4, 0x5566);
-	b43_shm_write16(dev, B43_SHM_SHARED, 6, 0x7788);
-	if (b43_shm_read32(dev, B43_SHM_SHARED, 2) != 0x55663344)
-		b43warn(dev->wl, "Unaligned 32bit SHM read access is broken\n");
-	b43_shm_write32(dev, B43_SHM_SHARED, 2, 0xAABBCCDD);
-	if (b43_shm_read16(dev, B43_SHM_SHARED, 0) != 0x1122 ||
-	    b43_shm_read16(dev, B43_SHM_SHARED, 2) != 0xCCDD ||
-	    b43_shm_read16(dev, B43_SHM_SHARED, 4) != 0xAABB ||
-	    b43_shm_read16(dev, B43_SHM_SHARED, 6) != 0x7788)
-		b43warn(dev->wl, "Unaligned 32bit SHM write access is broken\n");
-
-	b43_shm_write32(dev, B43_SHM_SHARED, 0, backup0);
-	b43_shm_write32(dev, B43_SHM_SHARED, 4, backup4);
+	b43_shm_write32(dev, B43_SHM_SHARED, 0, 0x55AAAA55);
+	if (b43_shm_read32(dev, B43_SHM_SHARED, 0) != 0x55AAAA55)
+		goto error;
+	b43_shm_write32(dev, B43_SHM_SHARED, 0, backup);
 
 	if ((dev->dev->core_rev >= 3) && (dev->dev->core_rev <= 10)) {
 		/* The 32bit register shadows the two 16bit registers
