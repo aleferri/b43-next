@@ -54,13 +54,12 @@ static bool b43_ampdu_tx_member(struct sk_buff *skb)
 	       !ieee80211_has_morefrags(hdr->frame_control);
 }
 
-/* Returns a receiver, or NULL once it is gone.
- * Must be called under rcu_read_lock(). */
-static struct ieee80211_sta *b43_ampdu_tx_sta(struct b43_wl *wl, const u8 *ra)
+/* Returns the receiver of a frame we sent, on whichever of our interfaces
+ * sent it, or NULL once it is gone. Must be called under rcu_read_lock(). */
+static struct ieee80211_sta *b43_ampdu_tx_sta(struct b43_wl *wl,
+					      const struct ieee80211_hdr *hdr)
 {
-	if (!wl->vif)
-		return NULL;
-	return ieee80211_find_sta(wl->vif, ra);
+	return ieee80211_find_sta_by_ifaddr(wl->hw, hdr->addr1, hdr->addr2);
 }
 
 /* Returns the A-MPDU state of a TX queue whose frames go out in A-MPDUs,
@@ -455,13 +454,17 @@ void b43_ampdu_txstatus(struct b43_wldev *dev,
 		info = IEEE80211_SKB_CB(skb);
 		if (!n) {
 			/* Without the receiver, complete without retries. */
-			sta = b43_ampdu_tx_sta(wl, hdr->addr1);
+			sta = b43_ampdu_tx_sta(wl, hdr);
 			bsta = sta ? (struct b43_sta *)sta->drv_priv : NULL;
 			tid = ieee80211_get_tid(hdr);
 			t = bsta ? &bsta->ampdu_tx[tid] : NULL;
 			rate = info->control.rates[0];
 			rc.band = info->band;
 		}
+		/* b43_dma_ampdu_complete() gave it the first interface; a
+		 * retry goes out on the station's own. */
+		if (bsta && bsta->vif)
+			info->control.vif = bsta->vif;
 		n++;
 		if (b43_txstatus_mpdu_acked(status, skb)) {
 			acked++;
@@ -528,7 +531,10 @@ void b43_ampdu_txstatus(struct b43_wldev *dev,
  * a block ack request with a block ack of its own making, from no table a
  * driver fills (the AC: frame code 0x25, at 0x076C on 784), the BCM43227's
  * and the BCM4331's from the transmitter address in their template RAM
- * (b43_write_mac_bssid_templates()); mac80211 reorders. On TX the cores of
+ * (b43_write_mac_bssid_templates()); mac80211 reorders. A further AP of
+ * the BCM4331 (b43_mbss_match()) answers with its own address, so every
+ * AP takes sessions: a client that is refused one may go on asking and
+ * stop being acknowledged (an MT7981 does). On TX the cores of
  * b43_ampdu_tx_host() send A-MPDUs on BE (TIDs 0 and 3) and VI (TIDs 4
  * and 5), whose TX FIFOs b43_txfifo_init_ht() sizes.
  */
@@ -551,7 +557,6 @@ int b43_ampdu_action(struct ieee80211_hw *hw, struct ieee80211_vif *vif,
 		if (dev && (rx ? b43_ht_enabled(dev) :
 				 b43_ampdu_tx_host(dev)))
 			ok = b43_status(dev) >= B43_STAT_STARTED &&
-			     vif == wl->vif &&
 			     (vif->type == NL80211_IFTYPE_STATION ||
 			      vif->type == NL80211_IFTYPE_AP ||
 			      vif->type == NL80211_IFTYPE_ADHOC) &&

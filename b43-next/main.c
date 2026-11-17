@@ -7754,6 +7754,10 @@ static int b43_op_sta_state(struct ieee80211_hw *hw, struct ieee80211_vif *vif,
 	bool removed = old_state == IEEE80211_STA_NONE &&
 		       new_state == IEEE80211_STA_NOTEXIST;
 
+	if (old_state == IEEE80211_STA_NOTEXIST &&
+	    new_state == IEEE80211_STA_NONE)
+		((struct b43_sta *)sta->drv_priv)->vif = vif;
+
 	mutex_lock(&wl->mutex);
 	dev = wl->current_dev;
 	if (!dev || b43_status(dev) < B43_STAT_INITIALIZED)

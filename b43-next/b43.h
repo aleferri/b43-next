@@ -828,6 +828,8 @@ struct b43_sta {
 	/* A frame release for the dozing station that waits for the TX work
 	 * (b43_op_release_buffered_frames()), 0 for none. */
 	u32 ps_release;
+	/* The interface the station belongs to; an AP can have several. */
+	struct ieee80211_vif *vif;
 };
 
 /*
