@@ -110,7 +110,7 @@ static u32 rx_ringlo;
  * The TX FIFO definitions, which b43 reads back (b43_txfifo_set()) and wl
  * never reads: XMTFIFOCMD selects one by bits 8-10, XMTFIFODEF and
  * XMTFIFODEF1 read back the selected one's. The commit bit 15 does not read
- * back: b43_txfifo_init_ht() refuses a selector with it, and succeeds on
+ * back: b43_txfifo_fixup() refuses a selector with it, and succeeds on
  * the R6400 v2 after the core's own FIFO writes.
  */
 static u16 txfifo_cmd, txfifo_def[8][2];
