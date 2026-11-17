@@ -283,6 +283,8 @@ static void oracle_load(void)
 		if (sscanf(line, "%*s #%*u cpu%*u %31s addr=0x%x val=0x%x",
 			   cls, &addr, &val) != 3 &&
 		    sscanf(line, "%*s #%*u cpu%*u %31s off=0x%x val=0x%x",
+			   cls, &addr, &val) != 3 &&
+		    sscanf(line, "%*s #%*u cpu%*u %31s word=0x%x val=0x%x",
 			   cls, &addr, &val) != 3)
 			continue;
 		if (!strcmp(cls, "OBJ.RD")) {
@@ -528,6 +530,12 @@ void b43_trace_raw(const char *cls, u16 off, u32 val, int width)
 {
 	fprintf(stream(), "cpu%d %-8s off=0x%04x val=0x%0*x\n",
 		cpu, cls, off, width == 32 ? 8 : 4, val);
+}
+
+void b43_trace_srom(u16 word, u16 val)
+{
+	fprintf(stream(), "cpu%d %-8s word=0x%03x val=0x%04x\n",
+		cpu, "SROM.RD", word, val);
 }
 
 void b43_trace_block(const char *cls, u16 off, unsigned long count,

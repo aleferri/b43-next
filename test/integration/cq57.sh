@@ -4,7 +4,7 @@
 # attach and up: probe, up and the station's interface. The station's
 # events (scans, associations) are not replayed yet: pipeline.timeline reads
 # an AP's. The firmware is
-# wl's, from the same capture; the SROM is the board's, decoded as an NVRAM.
+# wl's, from the same capture; bcma reads the SROM off the chip, as wl does.
 #
 #   ./cq57.sh
 #
@@ -26,15 +26,13 @@ mkdir -p "$T"
 [ -n "${GATE_TMP:-}" ] || trap 'rm -rf "$T"' EXIT
 b43trace() { PYTHONPATH=$TRACE_TOOLS/src python3 -m "b43trace.$@"; }
 
-make -s -C ../sprom decode_r8
-../sprom/decode_r8 "$BOARD/srom.txt" > "$T/nvram.txt"
 zcat "$BOARD/traces/mmio-attach/attach.txt.gz" > "$T/cap.txt"
 b43trace bus.mmio2ops "$T/cap.txt" --no-bulk -o "$T/cap.m2o" 2>/dev/null
 b43trace bus.fw_from_capture "$T/cap.txt" --format mmiotrace --rev 24 \
 	-o "$T/fw" 2>/dev/null
 
 make -s BCM63XX=0 b43-trace >/dev/null 2>&1
-B43_BOARD=cq57 B43_NVRAM=$T/nvram.txt B43_FW_DIR=$T/fw \
+B43_BOARD=cq57 B43_FW_DIR=$T/fw \
 	B43_READ_ORACLE=$T/cap.m2o B43_CHANNEL=1 \
 	B43_TRACE_OUT=$T/b43.trace ./b43-trace 2>"$T/b43.log"
 
@@ -46,10 +44,10 @@ awk -v p="$papd" 'NR > p && / MAC\.MCTRL val=0x[0-9a-f]*[13579bdf] *$/ { exit }
 	{ print }' "$T/b43.trace" > "$T/b43.cut"
 echo "== attach, ops 1:$z"
 python3 ../unit/cmp_skip.py "$T/cap.m2o" "$T/b43.cut" "1:$z" \
-	--board compaq-cq57 --bus --rmw --min-block 8 --gap-tol 2 2>/dev/null |
+	--board compaq-cq57 --bus --rmw --anchor-values --min-block 8 --gap-tol 2 2>/dev/null |
 	grep -A2 '^grezzo'
 grep -E "$PHYSEL" "$T/cap.m2o" > "$T/cap.phy"
 grep -E "$PHYSEL" "$T/b43.cut" > "$T/b43.phy"
 python3 ../unit/cmp_skip.py "$T/cap.phy" "$T/b43.phy" "1:$z" \
-	--board compaq-cq57 --bus --rmw --min-block 8 --gap-tol 2 2>/dev/null |
+	--board compaq-cq57 --bus --rmw --anchor-values --min-block 8 --gap-tol 2 2>/dev/null |
 	grep -A2 '^grezzo' | sed '1s/^grezzo       /PHY+radio+MAC/'

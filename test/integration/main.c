@@ -207,7 +207,14 @@ struct bcmn_device *bcmn_find_core_unit(struct bcmn_bus *bus, u16 coreid,
  */
 static void test_bcma_bus_init(void)
 {
+	/* bcmn_bus_register()'s order: the SROM before the cores' init */
 	bcmn_core_chipcommon_early_init(&test_bus.drv_cc);
+	if (test_host_core.id.id == BCMN_CORE_PCIE) {
+		test_bus.drv_pci[0].core = &test_host_core;
+		bcmn_core_pci_early_init(&test_bus.drv_pci[0]);
+	}
+	if (board_profile_lookup(b43_test_env("B43_BOARD"))->srom)
+		bcmn_sprom_get(&test_bus);
 	bcmn_core_chipcommon_init(&test_bus.drv_cc);
 	/*
 	 * Without the capability words the PMU init does not run, and leaves
@@ -217,7 +224,6 @@ static void test_bcma_bus_init(void)
 	if (!test_bus.drv_cc.pmu.core)
 		test_bus.drv_cc.pmu.core = &test_cc_core;
 	if (test_host_core.id.id == BCMN_CORE_PCIE) {
-		test_bus.drv_pci[0].core = &test_host_core;
 		bcmn_core_pci_init(&test_bus.drv_pci[0]);
 	} else {
 		test_bus.drv_pcie2.core = &test_host_core;
