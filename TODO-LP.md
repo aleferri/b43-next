@@ -74,20 +74,6 @@ Check: radio 0x4F (north) on the BCM4312 tuned to 14. The capture has
 channels 1-11 only, where wl adds the 5: `rc_cap` 0x89 gives TX_CTL_A
 0x89.
 
-### DDFS left running by a failed rev0/1 RC calibration
-
-Changed, to confirm, on code reading only: the failure path runs
-`lpphy_stop_ddfs()` too.
-
-Check: RCCalRev0 in the specs, not read yet. A capture does not show a
-failure path.
-
-### Partial `rc_cap` after a failed rev0/1 RC calibration
-
-If the estimate fails after some caps were tried, the best so far is
-applied and kept until the next core init. Whether wl applies it or falls
-back to the init table is not known.
-
 ### Start of the rev2 TX RC calibration
 
 Changed, to confirm, against the letter of the specs: the TX half writes its
