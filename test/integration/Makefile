@@ -49,7 +49,8 @@ KFLAGS := -nostdinc -I$(REPO)/b43-next -I$(REPO) $(KINC) -D__KERNEL__ -DMODULE -
           -include $(K)/include/linux/kconfig.h \
           -include $(K)/include/linux/compiler_types.h \
           -DCONFIG_B43_NEXT_BCMA=1 -DCONFIG_B43_NEXT_PHY_AC=1 \
-          -DCONFIG_B43_NEXT_PHY_HT=1 -DCONFIG_B43_NEXT_LEDS=1 \
+          -DCONFIG_B43_NEXT_PHY_HT=1 -DCONFIG_B43_NEXT_PHY_LCN=1 \
+          -DCONFIG_B43_NEXT_LEDS=1 \
           -O2 -fno-strict-aliasing -fno-common -std=gnu11 \
           -Wno-address-of-packed-member \
           -mno-red-zone \
@@ -90,7 +91,7 @@ endif
 
 # I file di b43 che si compilano come sono. Tutti e tre a zero errori.
 UPSTREAM := $(filter-out sysfs.c pio.c,$(b43n-core)) $(b43n-phy) \
-            $(b43n-leds) $(b43n-phy-ac) $(b43n-phy-ht)
+            $(b43n-leds) $(b43n-phy-ac) $(b43n-phy-ht) $(b43n-phy-lcn)
 
 # La gestione del core di bcma, anche lei com'e': reset, clock e PLL del
 # core passano dal wrapper e da clk_ctl_st, che lo stub traccia.

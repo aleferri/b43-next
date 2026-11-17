@@ -278,7 +278,8 @@ static void test_ifup(void)
 
 	test_vif = kzalloc(sizeof(*test_vif) + b43_test_hw->vif_data_size,
 			   GFP_KERNEL);
-	test_vif->type = NL80211_IFTYPE_AP;
+	test_vif->type = board_profile_lookup(b43_test_env("B43_BOARD"))->sta ?
+			 NL80211_IFTYPE_STATION : NL80211_IFTYPE_AP;
 	memcpy(test_vif->addr, b43_test_hw->wiphy->perm_addr, ETH_ALEN);
 	b43_test_hw_ops->add_interface(b43_test_hw, test_vif);
 	test_config(~0);
@@ -477,7 +478,7 @@ int main(void)
 			test_ifup();
 			if (cac)
 				test_cac_start();
-			else
+			else if (test_vif->type == NL80211_IFTYPE_AP)
 				test_start_ap();
 			test_environment(cac);
 			b43_test_hw_ops->remove_interface(b43_test_hw, test_vif);
