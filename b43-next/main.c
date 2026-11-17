@@ -7248,6 +7248,8 @@ static int b43_wireless_core_init(struct b43_wldev *dev)
 		if (err)
 			goto err_busdown;
 	}
+	/* In the host flags before the bsinit writes them, as wl's attach */
+	b43_bluetooth_coext_enable(dev);
 	err = b43_chip_init(dev);
 	if (err)
 		goto err_busdown;
@@ -7425,7 +7427,6 @@ static int b43_wireless_core_init(struct b43_wldev *dev)
 	if (phy->type == B43_PHYTYPE_AC)
 		b43_write32(dev, B43_MMIO_UNK_3DC, 10000000);
 	b43_set_synth_pu_delay(dev, 1);
-	b43_bluetooth_coext_enable(dev);
 
 	b43_bus_powerup(dev, !(sprom->boardflags_lo & B43_BFL_XTAL_NOSLOW));
 	/*
