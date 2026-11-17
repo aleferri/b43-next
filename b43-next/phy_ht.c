@@ -1654,24 +1654,18 @@ static void b43_phy_ht_op_radio_write(struct b43_wldev *dev, u16 reg,
  * and 11u, both centred on 9, differ). A conducted limit, which cfg80211's
  * per channel EIRP cannot express. Only the rows that bind.
  */
-static const struct {
-	u8 first, last, limit;
-} b43_phy_ht_locale_2g[] = {
+static const struct b43_ppr_locale b43_phy_ht_locale_2g[] = {
 	{ 1, 1, 92 },
 	{ 11, 11, 92 },
 };
 
 static u8 b43_phy_ht_locale_ceiling(const struct ieee80211_channel *chan)
 {
-	unsigned int i;
-
 	if (chan->band != NL80211_BAND_2GHZ)
 		return 0;
-	for (i = 0; i < ARRAY_SIZE(b43_phy_ht_locale_2g); i++)
-		if (chan->hw_value >= b43_phy_ht_locale_2g[i].first &&
-		    chan->hw_value <= b43_phy_ht_locale_2g[i].last)
-			return b43_phy_ht_locale_2g[i].limit;
-	return 0;
+	return b43_ppr_locale_limit(b43_phy_ht_locale_2g,
+				    ARRAY_SIZE(b43_phy_ht_locale_2g),
+				    chan->hw_value);
 }
 
 /*

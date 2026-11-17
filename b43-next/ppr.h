@@ -86,6 +86,16 @@ u8 b43_ppr_get_ofdm(const struct b43_ppr *ppr, enum b43_ppr_bw bw,
 u8 b43_ppr_get_mcs(const struct b43_ppr *ppr, enum b43_ppr_bw bw,
 		   enum b43_ppr_mode mode, unsigned int mcs);
 
+/* A power limit in quarter dBm over a range of primary channels */
+struct b43_ppr_locale {
+	u8 first, last;
+	u8 limit;
+};
+
+/* The limit of the row of @rows that holds @chan, 0 where none does. */
+u8 b43_ppr_locale_limit(const struct b43_ppr_locale *rows, unsigned int n,
+			u16 chan);
+
 /* 80 and 40 MHz have their own rows, every other width the 20 MHz one. */
 enum b43_ppr_bw b43_ppr_bw(enum nl80211_chan_width width);
 /* The SROM band of a channel; false for one below 4900 MHz on 5 GHz. */

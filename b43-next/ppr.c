@@ -168,6 +168,17 @@ enum b43_ppr_bw b43_ppr_bw(enum nl80211_chan_width width)
 	}
 }
 
+u8 b43_ppr_locale_limit(const struct b43_ppr_locale *rows, unsigned int n,
+			u16 chan)
+{
+	unsigned int i;
+
+	for (i = 0; i < n; i++)
+		if (chan >= rows[i].first && chan <= rows[i].last)
+			return rows[i].limit;
+	return 0;
+}
+
 bool b43_ppr_band(const struct ieee80211_channel *chan, enum b43_band *band)
 {
 	u16 freq = chan->center_freq;
