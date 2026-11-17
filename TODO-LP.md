@@ -247,12 +247,6 @@ reference frequency. The table ends at 19200 kHz: the 25 MHz of the 5354
 matches nothing and gets the last entry from the fallback. The 20 MHz of
 the BCM4312 gets it too, and there wl writes the same values.
 
-### Width of the RX gain table read
-
-`lpphy_set_rx_gain_by_index()` reads table 12 as 16 bits;
-`lpphy_rev2plus_set_rx_gain()` uses bits 16-21 of the gain. Only the rev0/1
-RC calibration calls it today, and there wl reads 16 bits too.
-
 ### TR isolation below 26
 
 `lpphy_adjust_gain_table()` computes `(isolation - 26) / 12` and shifts it
