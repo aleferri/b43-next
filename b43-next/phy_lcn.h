@@ -22,6 +22,9 @@
 #define B43_LCN_TX_PWR_CTRL_MASK		0xe000
 #define B43_LCN_TX_PWR_CTRL_OFF			0x0000
 #define B43_LCN_TX_PWR_CTRL_HW			0xe000
+/* Where the hardware control starts from, as wl */
+#define B43_LCN_TX_PWR_CTRL_START_IDX		180
+#define B43_LCN_TX_PWR_CTRL_START_NPT		0
 
 struct b43_phy_lcn {
 	bool hw_pwr_ctl;
@@ -29,6 +32,11 @@ struct b43_phy_lcn {
 	bool temp_pwr_ctl_capable;
 	u8 tx_pwr_curr_idx;
 	s8 tx_pwr_idx_override;
+
+	/* The last estimate of the TX power control: index, packets, count */
+	u16 tssi_idx;
+	u8 tssi_npt;
+	u16 tssi_tx_cnt;
 };
 
 
