@@ -49,6 +49,7 @@ enum {
 	LCN_CAL_TXPWR,
 	LCN_CAL_PAPD_IDX,
 	LCN_CAL_PAPD,
+	LCN_CAL_PAPD_REGS,
 };
 
 struct lcn_tx_gains {
@@ -1725,6 +1726,21 @@ static void b43_phy_lcn_periodic_cal(struct b43_wldev *dev)
 }
 
 /*
+ * The PAPD compensation of the TX path: wl turns it off before the
+ * calibration, as at #186871 where it was on, and on after it
+ */
+static void b43_phy_lcn_papd_comp(struct b43_wldev *dev, bool enable)
+{
+	int i;
+
+	b43_phy_maskset(dev, 0x676, ~0x80, enable ? 0x80 : 0);
+	b43_phy_maskset(dev, 0x6da, ~0x1, enable);
+	for (i = 0; i < 3; i++)
+		b43_phy_maskset(dev, 0x86c, ~(0xf << (4 * i)),
+				enable ? 0x4 << (4 * i) : 0);
+}
+
+/*
  * wl's TX power warm-up: with the offsets cleared, the hardware control
  * brings a fixed number of dummy frames to the PAPD calibration's power.
  * There is no stop condition (50 in every warm-up of the CQ57's capture,
@@ -1854,9 +1870,7 @@ static void b43_phy_lcn_papd_cal(struct b43_wldev *dev, u8 index)
 	save_4d7 = b43_phy_read(dev, 0x4d7);
 	b43_phy_set(dev, 0x4d7, 0x8);
 	b43_phy_mask(dev, 0x4d7, (u16)~0x2000);
-	b43_phy_mask(dev, 0x676, ~0x1);
-	for (i = 0; i < 3; i++)
-		b43_phy_mask(dev, 0x86c, ~(0xf << (4 * i)));
+	b43_phy_lcn_papd_comp(dev, false);
 	for (i = 0; i < ARRAY_SIZE(b43_phy_lcn_papd_phy_regs); i++)
 		save_phy[i] = b43_phy_read(dev, b43_phy_lcn_papd_phy_regs[i]);
 
@@ -1869,7 +1883,9 @@ static void b43_phy_lcn_papd_cal(struct b43_wldev *dev, u8 index)
 	b43_phy_lcn_rx_gain_override(dev, true);
 	save_4ea = b43_phy_read(dev, 0x4ea);
 	save_4eb = b43_phy_read(dev, 0x4eb);
-	b43_phy_set(dev, 0x4eb, 0x10);
+	b43_phy_maskset(dev, 0x4eb, ~0x7,
+		(dev->dev->bus_sprom->boardflags_lo & B43_BFL_FEM) ? 2 : 3);
+	b43_phy_maskset(dev, 0x4eb, ~(0x7 << 3), 3 << 3);
 	b43_phy_lcn_set_tx_pwr_by_index(dev, index);
 
 	save_49c = b43_phy_read(dev, 0x49c);
@@ -1877,6 +1893,7 @@ static void b43_phy_lcn_papd_cal(struct b43_wldev *dev, u8 index)
 	save_6d6 = b43_phy_read(dev, 0x6d6);
 	save_6da = b43_phy_read(dev, 0x6da);
 	b43_phy_lcn_afe_clk_init(dev);
+	b43_phy_set(dev, 0x631, 0x15);
 	b43_phy_mask(dev, 0x6d6, ~0x1);
 	b43_phy_set(dev, 0x6da, 0x87);
 	b43_phy_write(dev, 0x671,
@@ -1891,6 +1908,8 @@ static void b43_phy_lcn_papd_cal(struct b43_wldev *dev, u8 index)
 		b43_radio_write(dev, b43_phy_lcn_papd_loopback[i].reg,
 				b43_phy_lcn_papd_loopback[i].val);
 	b43_radio_set(dev, 0x11f, 0x4);
+	b43_radio_mask(dev, 0x0ff, ~0x10);
+	b43_radio_mask(dev, 0x007, ~0x1);
 	b43_radio_mask(dev, 0x005, ~0x8);
 	b43_phy_write(dev, 0x49c, 1);
 
@@ -1918,9 +1937,17 @@ static void b43_phy_lcn_papd_cal(struct b43_wldev *dev, u8 index)
 	b43_lcntab_read_bulk(dev, B43_LCNTAB32(24, 0), B43_LCN_PAPD_ENTRIES,
 			     table);
 	b43_cal_report_values(dev, LCN_CAL_PAPD, table, B43_LCN_PAPD_ENTRIES);
+	/* What wl reads after the calibration and writes nowhere (#20516) */
+	B43_CAL_PEEK(dev, 1);
+	b43_cal_report(dev, LCN_CAL_PAPD_REGS, b43_phy_read(dev, 0x671),
+		       b43_phy_read(dev, 0x673), b43_phy_read(dev, 0x674),
+		       b43_phy_read(dev, 0x675), b43_phy_read(dev, 0x679),
+		       b43_phy_read(dev, 0x676), b43_phy_read(dev, 0x6da));
+	B43_CAL_PEEK(dev, 0);
 
 	b43_phy_write(dev, 0x4ea, save_4ea);
 	b43_phy_write(dev, 0x4eb, save_4eb);
+	b43_radio_set(dev, 0x0d7, 0x8);
 	b43_phy_write(dev, 0x49c, save_49c);
 	b43_phy_write(dev, 0x631, save_631);
 	b43_phy_write(dev, 0x6d6, save_6d6);
@@ -1940,9 +1967,7 @@ static void b43_phy_lcn_papd_cal(struct b43_wldev *dev, u8 index)
 	for (i = 0; i < ARRAY_SIZE(b43_phy_lcn_papd_phy_regs); i++)
 		b43_phy_write(dev, b43_phy_lcn_papd_phy_regs[i], save_phy[i]);
 	b43_phy_lcn_latch_tx_iir_filter(dev);
-	b43_phy_mask(dev, 0x676, ~0x1);
-	for (i = 0; i < 3; i++)
-		b43_phy_set(dev, 0x86c, 0x4 << (4 * i));
+	b43_phy_lcn_papd_comp(dev, true);
 	b43_phy_lcn_set_bbmult(dev, save_bbmult);
 	b43_phy_lcn_set_tx_pwr_ctrl(dev, B43_LCN_TX_PWR_CTRL_HW);
 }
@@ -2377,6 +2402,10 @@ B43_CAL_TABLE(b43_phy_lcn_cal_entries) = {
 		      B43_CAL_U(index)),
 	B43_CAL_ENTRY(LCN_CAL_PAPD, PAPD, "table", READBACK, 1,
 		      B43_CAL_XV(entry, 8, B43_LCN_PAPD_ENTRIES)),
+	B43_CAL_ENTRY(LCN_CAL_PAPD_REGS, PAPD, "regs", READBACK, 1,
+		      B43_CAL_X(r671, 4), B43_CAL_X(r673, 4), B43_CAL_X(r674, 4),
+		      B43_CAL_X(r675, 4), B43_CAL_X(r679, 4), B43_CAL_X(r676, 4),
+		      B43_CAL_X(r6da, 4)),
 };
 
 const struct b43_phy_operations b43_phyops_lcn = {
