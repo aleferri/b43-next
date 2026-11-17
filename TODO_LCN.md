@@ -48,8 +48,6 @@ the attach window, cells b43 writes with other values:
 - **The basic rate map's reads**: wl writes the map without reading the
   direct map (#32940-#32962), b43's `b43_update_basic_rates()` reads each
   pointer first.
-- **The synth PU delay** (0x0094): wl writes 200 during the up (#31216),
-  b43 the idle 500 until later.
 
 Settled: the basic rate map at the init is wl's (`brcms_c_set_ratetable()`
 with the mandatory rates, `b43_basic_rates_init()`), and 0x0480-0x04ff, no
