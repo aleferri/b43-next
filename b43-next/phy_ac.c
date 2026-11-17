@@ -47,6 +47,7 @@
 #include "radio_2069.h"
 #include "main.h"
 #include "calstat.h"
+#include "qmath.h"
 
 /*
  * Update one of the five HOSTFn slots.
@@ -9639,84 +9640,6 @@ void b43_phy_ac_rxiqcal_meas_post_dds_apply_v2(struct b43_wldev *dev)
 }
 
 /*
- * CORDIC in the stock driver's fixed point: the angle in degrees Q16, the
- * vector of 2^16 after 18 rotations (the start value 39797 is 2^16 over the
- * CORDIC gain), truncating shifts. It is lib/math/cordic.c, which takes
- * whole degrees only; the angles here are a few degrees with a fraction, so
- * the rotation is done here on the Q16 angle. The inverse is the same
- * rotation in vectoring mode on the same table: the vector, scaled by 16
- * first, is turned onto the axis and the angle it took is the result.
- */
-#define B43_PHY_AC_CORDIC_GAIN	39797
-#define B43_PHY_AC_CORDIC_ITER	18
-
-static const s32 b43_phy_ac_cordic_atan[B43_PHY_AC_CORDIC_ITER] = {
-	2949120, 1740967, 919879, 466945, 234379, 117304, 58666, 29335,
-	14668, 7334, 3667, 1833, 917, 458, 229, 115, 57, 29,
-};
-
-/* Angle in degrees Q16 -> (cos, sin) in Q16. |theta| stays well under 90. */
-static void b43_phy_ac_cordic(s32 theta, s32 *cos_out, s32 *sin_out)
-{
-	s32 i = B43_PHY_AC_CORDIC_GAIN, q = 0, angle = 0, t;
-	unsigned int k;
-
-	for (k = 0; k < B43_PHY_AC_CORDIC_ITER; k++) {
-		if (theta > angle) {
-			t = i - (q >> k);
-			q += i >> k;
-			angle += b43_phy_ac_cordic_atan[k];
-		} else {
-			t = i + (q >> k);
-			q -= i >> k;
-			angle -= b43_phy_ac_cordic_atan[k];
-		}
-		i = t;
-	}
-	*cos_out = i;
-	*sin_out = q;
-}
-
-/* Vector (x, y), x > 0, both under 2^27 -> its angle in degrees Q16. */
-static s32 b43_phy_ac_inv_cordic(s32 y, s32 x)
-{
-	s32 angle = 0, ty, tx;
-	unsigned int k;
-
-	y <<= 4;
-	x <<= 4;
-	for (k = 0; k < B43_PHY_AC_CORDIC_ITER; k++) {
-		ty = y >> k;
-		tx = x >> k;
-		if (y >= 0) {
-			angle += b43_phy_ac_cordic_atan[k];
-			y -= tx;
-			x += ty;
-		} else {
-			angle -= b43_phy_ac_cordic_atan[k];
-			y += tx;
-			x -= ty;
-		}
-	}
-	return angle;
-}
-
-/* Square root rounded to nearest. */
-static u32 b43_phy_ac_sqrt_near(u64 v)
-{
-	u32 r = int_sqrt64(v);
-
-	return v - (u64)r * r > r ? r + 1 : r;
-}
-
-/* Division rounded half away from zero, as a numerator biased by half the
- * denominator and then truncated. */
-static s32 b43_phy_ac_div_near(s64 num, s64 den)
-{
-	return (s32)div64_s64(num + (num > 0 ? den >> 1 : -(den >> 1)), den);
-}
-
-/*
  * One tone's IQ mismatch in the stock driver's form: the angle in degrees
  * Q16 and the gain ratio 2^10 * sqrt(qq / ii), both from the three
  * estimator accumulators and in its fixed point.
@@ -9739,27 +9662,27 @@ static void b43_phy_ac_iq_mismatch(s32 iq, u32 ii, u32 qq,
 	s32 sin_q16, half, cos_q16, d;
 
 	if (nb_max < 31)
-		prod = (s64)b43_phy_ac_sqrt_near((u64)qq << (30 - nb_max)) *
-		       b43_phy_ac_sqrt_near((u64)ii << (30 - nb_max));
+		prod = (s64)b43_sqrt_near((u64)qq << (30 - nb_max)) *
+		       b43_sqrt_near((u64)ii << (30 - nb_max));
 	else
-		prod = (s64)b43_phy_ac_sqrt_near(qq >> (nb_max - 30)) *
-		       b43_phy_ac_sqrt_near(ii >> (nb_max - 30));
+		prod = (s64)b43_sqrt_near(qq >> (nb_max - 30)) *
+		       b43_sqrt_near(ii >> (nb_max - 30));
 	num = (s64)-iq << (30 - nb_iq);
 	if (nb_iq + 16 < nb_max)
 		den = prod << (nb_max - nb_iq - 16);
 	else
 		den = prod >> (nb_iq + 16 - nb_max);
-	sin_q16 = den ? b43_phy_ac_div_near(num, den) : 0;
+	sin_q16 = den ? b43_div_near(num, den) : 0;
 	half = sin_q16 >> 1;
-	cos_q16 = b43_phy_ac_sqrt_near((1 << 30) - (s64)half * half) << 1;
-	*angle_out = b43_phy_ac_inv_cordic(sin_q16, cos_q16);
+	cos_q16 = b43_sqrt_near((1 << 30) - (s64)half * half) << 1;
+	*angle_out = b43_cordic_vector(sin_q16, cos_q16);
 
 	d = (s32)(qq - ii);
 	nb = fls(d < 0 ? -d : d);
 	nb += nb & 1;
 	num = (s64)d << (30 - nb);
 	den = nb >= 11 ? ii >> (nb - 10) : (u64)ii << (10 - nb);
-	*mag_out = den ? b43_phy_ac_sqrt_near(b43_phy_ac_div_near(num, den) +
+	*mag_out = den ? b43_sqrt_near(b43_div_near(num, den) +
 					      (1 << 20))
 		       : 1 << 10;
 }
@@ -9813,9 +9736,9 @@ static void b43_phy_ac_iq_solve(struct b43_phy_ac_iq_acc *acc,
 		mag_sum += tone_mag;
 	}
 
-	mag = b43_phy_ac_div_near(mag_sum, nr);
-	angle = b43_phy_ac_div_near(ang_sum, nr);
-	b43_phy_ac_cordic(angle, &cos_q16, &sin_q16);
+	mag = b43_div_near(mag_sum, nr);
+	angle = b43_div_near(ang_sum, nr);
+	b43_cordic_rotate(angle, &cos_q16, &sin_q16);
 
 	acc->a = (s16)(((s64)mag * sin_q16 + (1 << 15)) >> 16);
 	acc->b = (s16)((((s64)mag * cos_q16 + (1 << 15)) >> 16) - (1 << 10));

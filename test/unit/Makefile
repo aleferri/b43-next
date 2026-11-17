@@ -19,7 +19,7 @@ include $(B43)/files.mk
 SCRATCH := build/b43
 STUBS   := stubs
 AC_HDRS := $(addprefix $(SCRATCH)/,phy_ac.h tables_phy_ac.h radio_2069.h \
-            ppr.h radar_ac.h fw_layout.h calstat.h)
+            ppr.h radar_ac.h fw_layout.h calstat.h qmath.h)
 
 # We include our stubs FIRST (via -I) so kernel headers <linux/*.h> and
 # the b43 project headers resolve to our minimal versions. The copied AC-PHY
@@ -55,8 +55,8 @@ LDFLAGS := $(foreach s,$(WRAP_SYMS),-Wl,--wrap=$(s))
 # --- Source lists --------------------------------------------------------
 # The AC-PHY files of the driver, copied into $(SCRATCH).
 SCRATCH_SRCS_FULL := $(addprefix $(SCRATCH)/, \
-    $(filter-out phy_ac.c,$(b43n-phy-ac)) phy_ac_hostflags.c ppr.c \
-    fw_layout.c $(b43n-calstat))
+    $(filter-out phy_ac.c,$(b43n-phy-ac)) phy_ac_hostflags.c \
+    $(filter-out phy_common.c,$(b43n-phy)) fw_layout.c $(b43n-calstat))
 
 # phy_ac_test.c compiles the driver's phy_ac.c together with what only the
 # harness needs: its RX-IQ estimator (rxiqcal_phy_ac.c), which validates the
