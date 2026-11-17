@@ -226,14 +226,6 @@ the PA parameters and the maximum powers from the CIS. `tri2g`, `bxa2g`,
 init writes `0xFF` to the low byte of INPUT_PWRDB and `0xFFFF` to
 AFE_RSSI_CTL_1. Where wl takes them from there is not known.
 
-### Digital filter state saved twice
-
-`lpphy_save_dig_flt_state()` saves the nine filter registers and loads fixed
-coefficients over them. The rev2 init calls it; `lpphy_calibration()` calls
-it again and restores at the end. From the second call on, what is saved is
-the fixed coefficients: the restore changes nothing and the values of the
-init are gone. Whether wl's save loads anything is not known.
-
 ### RSSI of received frames
 
 `b43_rx()` sends LP-PHY frames through `b43_rssi_postprocess()`, the G-PHY
@@ -257,8 +249,7 @@ under 2^27 and the cap is wl's, 0x89.
 ## Not reviewed
 
 Not compared with the specs or with anything else: the rev2 baseband init,
-the 2063 radio init, the software rfkill, the digital filter save and
-restore around the periodic calibration, `lpphy_pr41573_workaround()`, and
+the 2063 radio init, the software rfkill, `lpphy_pr41573_workaround()`, and
 the rev2 tables in `tables_lpphy.c`.
 
 Compared with wl's bus on the BCM4312 only (`test/phy_lp`), where they agree
