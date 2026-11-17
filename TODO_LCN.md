@@ -7,41 +7,6 @@ The scores are in `test/phy_lcn/README.md`.
 
 ## Missing from b43
 
-- **The TX power control's warm-up** after the init's calibration, with the
-  control on (#17456-#18982, about 2000 operations, most of them the
-  core's). brcmsmac does not have it. In order: the offsets cleared without
-  a change of mode (`b43_phy_lcn_clear_tx_power_offsets()`), the target at
-  0x40, 0x4a5 rewritten, the MAC's 0x6b4/0x6b8/0x6f0, `deaf_mode(true)`, then
-  50 dummy frames, each `b43_dummy_transmission(dev, true, ...)` as b43 has
-  it, followed by brcmsmac's `wlc_lcnphy_get_current_tx_pwr_idx()` (0x4a4,
-  then 0x473); then `deaf_mode(false)` and `deaf_mode(true)` with nothing
-  between. There is no stop condition: all 7 warm-ups of the capture send
-  50, also the ones that settle after 3 frames (#183672). The index it
-  settles at is not the start of the control, which turns on again from
-  180. It leads into the PAPD calibration, which starts with the control
-  off (#18996): a warm-up without the PAPD sends 50 frames for nothing, so
-  the two go in together.
-- **The PAPD calibration** after it (#19403-#22546, about 1600 PHY
-  operations). brcmsmac has none for the LCN-PHY (it only clears table 24,
-  `wlc_lcnphy_clear_papd_comptable()`), so the capture is the only source.
-  What it shows: the AFE clock init again (0x6d0 = 0xf), 0x6d6 and 0x6da
-  set up, 0x671 = 0x630, a save of 18 radio registers (0x116, 0x12d, 0x12c,
-  0x06a, 0x098, 0x097, 0x12f, 0x00b, 0x113, 0x01d, 0x114, 0x02e, 0x12a,
-  0x009, 0x11f, 0x0ff, 0x007, 0x005) and their loopback values, an RX
-  gain override (0x4b6 = 0x0500), table 24 cleared to 0x80000; then the
-  PAPD engine's setup, written blind (0x689, 0x67a, 0x673, 0x679, 0x674,
-  0x675, 0x670, 0x68c, 0x6c8, 0x6c9, 0x680, 0x681, 0x67f, 0x6cb-0x6ce,
-  0x69d, 0x6a1-0x6a5, 0x67e, 0x687, the sample play 0x640/0x642 with 8
-  samples in table 21, 0x67b-0x67d, BB multiplier 0), the start
-  (0x676 = 0xb8a1) and a poll of 0x676 until bit 0 clears (#19747-#19910).
-  It runs twice: the first pass reads 0x6ba/0x6bb, the second 0x6b4-0x6b7;
-  then wl copies table 24's entry 5 into entries 0-4 and entry 0x3e into
-  0x3f, and reads the whole table back (#20348-#20490), for what is not
-  seen yet. The engine computes the table itself; what wl adds is the
-  setup's values, which depend on what (gain, board, channel) is not known
-  from one capture, and the post-processing. The 7 PAPD calibrations of the
-  capture, all on channel 1, write the same registers but for 18-35 values
-  of about 1000; the first, at the attach, has 42 writes fewer.
 - **The watchdog's work**: brcmsmac's `calib_modes(PHY_PERICAL_WATCHDOG)`
   (the temperature, the glacial calibration, the VCO calibration) and the
   noise sample; what wl does while associated on channel 1 (from
@@ -199,6 +164,43 @@ the switch to channel 2). The values, in qdBm, on the CQ57:
   capture, whose channels have none in the harness. The CQ57's SROM has an
   antenna gain of 8 dB (`ag0`): under a 20 dBm limit, 12 dBm, against wl's
   15 on channels 1-11.
+### Warm-up and PAPD calibration
+
+After the init's calibration, with the control on (#17456-#20678), as wl:
+brcmsmac has neither, so the capture is the only source, and all 7 of them
+are on channel 1.
+
+- **The warm-up**: the offsets cleared, the target at 0x40, 50 dummy frames
+  (`b43_dummy_transmission()`) each followed by the control's index
+  (`b43_phy_lcn_get_current_tx_pwr_idx()`), between deaf modes. 50 in every
+  warm-up of the capture, also when the index settles after 3 (#183672): no
+  stop condition. The PAPD loads the index it settles at (#19349, 0x44 from
+  0x473 = 0x88).
+- **The PAPD's helpers are b43's**: the RX gain override, `tx_pu`, the RX
+  gain by distribution (brcmsmac's, now with biq2, lna1 and the TR switch),
+  `set_tx_pwr_by_index`, the AFE clock init, the TR switch override, the TX
+  filter latch. 0x671 = the index's RF power times 8, as 0x6a6 in
+  `b43_phy_lcn_load_tx_pwr_index()`.
+- **The engine's setup is wl's on channel 1**, written as it is
+  (`b43_phy_lcn_papd_setup[]`, the 8 samples of table 21, the radio
+  loopback values): which values depend on the channel, the board or the
+  index is not known. A capture on another channel would tell.
+- **Table 24's bit 19** (0x80000) is set in every write and absent in the
+  reads back: taken as a write flag. The post-processing copies entry 5
+  into 0-4, 0x3e into 0x3f and 1 into 0, as wl.
+- **0x676 bit 0 cleared at the start and at the end**: wl's RMWs there leave
+  the register as it was (0x200, 0xb8a0); bit 0 is the start bit the poll
+  waits on. **0x86c**: three nibbles cleared at the start, set to 4 at the
+  end, one RMW each, as wl.
+- **Left out, of unknown purpose**: RMWs of 0x6da, 0x6d1, 0x631 and 0x6c9
+  that leave them as they are, a second read of 0x4d7, an RMW of 0x4eb
+  before its bit 4, the reads of the TX gains before the index is loaded
+  (nothing restores them), the reads of 0x671-0x679 and 0x6da after the
+  calibration, radio 0x0d7, 0x128 and 0x116 before the restore, radio 0x0ff
+  and 0x007 in the loopback, and wl's 0x4b1, 0x4e6 and 0x4ae after each RX
+  gain (0x4e6 = 0x18 with lna1 3, 0 otherwise; 0x4ae's top nibble cleared).
+  Each shifts the harness's reads of its register.
+
 ### Channel
 
 - **The 2064's 0x03d by channel**: 0xa on 1-3, 0x9 on 4-7, 0x8 on 8-13, as
@@ -226,6 +228,8 @@ the switch to channel 2). The values, in qdBm, on the CQ57:
 
 ### Calibrations
 
+- **The periodic calibration starts from the control's index** (0x4a4,
+  0x473, #8302), as wl; brcmsmac takes its cached index.
 - **The order of the init's calibration**: deaf, the idle TSSI estimate and
   the TSSI to power table, the TX I/Q-LO calibration, the RX I/Q one, as
   wl (#8262 on). brcmsmac's `wlc_lcnphy_periodic_cal()` runs the I/Q
