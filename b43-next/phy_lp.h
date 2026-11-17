@@ -2,6 +2,8 @@
 #ifndef LINUX_B43_PHY_LP_H_
 #define LINUX_B43_PHY_LP_H_
 
+#include "ppr.h"
+
 /* Definitions for the LP-PHY */
 
 
@@ -833,18 +835,8 @@ struct b43_phy_lp {
 	/* Transmit isolation high band */
 	u8 tx_isolation_hi_band;
 
-	/* Max transmit power medium band */
-	u16 max_tx_pwr_med_band;
-	/* Max transmit power low band */
-	u16 max_tx_pwr_low_band;
-	/* Max transmit power high band */
-	u16 max_tx_pwr_hi_band;
-
-	/* FIXME What are these used for? */
-	/* FIXME Is 15 the correct array size? */
-	u16 tx_max_rate[15];
-	u16 tx_max_ratel[15];
-	u16 tx_max_rateh[15];
+	/* Per-rate maximum transmit power: 2.4 GHz, or the 5 GHz sub-bands */
+	struct b43_ppr tx_max_ppr[B43_BAND_NUM];
 
 	/* Transmit power arrays */
 	s16 txpa[3], txpal[3], txpah[3];
