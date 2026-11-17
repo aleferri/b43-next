@@ -3,9 +3,13 @@
 # The LCN-PHY files of b43-next/, built as they are against the kernel
 # headers (as ../integration does, see its Makefile for KVER, K, KG and the
 # flags), with a bus that turns their accesses into mmio2ops ops.
+# ../phy_lcn40 includes it with PHY := lcn40, for its own flows.c.
 
 include ../paths.mk
 include $(REPO)/b43-next/files.mk
+
+PHY     ?= lcn
+LCN     := $(REPO)/test/phy_lcn
 
 KVER    ?= $(shell ls /usr/src/ | grep -oE '^linux-headers-[0-9.]+-[0-9]+$$' | head -1 | sed 's/linux-headers-//')
 K       ?= /usr/src/linux-headers-$(KVER)
@@ -22,7 +26,8 @@ KFLAGS := -nostdinc -I$(REPO)/b43-next -I$(REPO) $(KINC) -D__KERNEL__ -DMODULE \
           -DKBUILD_MODNAME=\"b43\" \
           -include $(K)/include/linux/kconfig.h \
           -include $(K)/include/linux/compiler_types.h \
-          -DCONFIG_B43_NEXT_BCMA=1 -DCONFIG_B43_NEXT_PHY_LCN=1 \
+          -DCONFIG_B43_NEXT_BCMA=1 \
+          -DCONFIG_B43_NEXT_PHY_$(shell echo $(PHY) | tr a-z A-Z)=1 \
           -O2 -fno-strict-aliasing -fno-common -std=gnu11 \
           -Wall -Werror -Wno-pointer-sign -Wno-unused-function \
           -Wno-address-of-packed-member \
@@ -37,13 +42,13 @@ KFLAGS += $(if $(shell grep -sw 'define kzalloc_flex' $(K)/include/linux/slab.h)
 
 UFLAGS := -O2 -g -Wall -Werror -std=gnu11
 
-# flows.c includes phy_lcn.c; the others are linked as they are.
-DRIVER := $(filter-out phy_lcn.c,$(b43n-phy-lcn)) $(b43n-phy)
+# flows.c includes phy_$(PHY).c; the others are linked as they are.
+DRIVER := $(filter-out phy_$(PHY).c,$(b43n-phy-$(PHY))) $(b43n-phy)
 
 OBJS := $(patsubst %.c,$(B)/%.o,$(DRIVER)) $(B)/cordic.o $(B)/int_sqrt.o \
-	$(B)/flows.o $(B)/trace.o
+	$(B)/flows.o $(B)/stubs.o $(B)/trace.o
 
-all: lcn-trace
+all: $(PHY)-trace
 
 $(B):
 	mkdir -p $(B)
@@ -58,16 +63,19 @@ $(B)/cordic.o: $(K)/lib/math/cordic.c | $(B)
 $(B)/int_sqrt.o: $(K)/lib/math/int_sqrt.c | $(B)
 	$(CC) -c $< -o $@ $(KFLAGS)
 
-$(B)/flows.o: flows.c lcn_trace.h $(REPO)/b43-next/phy_lcn.c | $(B)
-	$(CC) -c $< -o $@ $(KFLAGS) -I.
+$(B)/flows.o: flows.c $(LCN)/lcn_trace.h $(REPO)/b43-next/phy_$(PHY).c | $(B)
+	$(CC) -c $< -o $@ $(KFLAGS) -I$(LCN)
 
-$(B)/trace.o: trace.c lcn_trace.h | $(B)
+$(B)/stubs.o: $(LCN)/stubs.c $(LCN)/lcn_trace.h | $(B)
+	$(CC) -c $< -o $@ $(KFLAGS) -I$(LCN)
+
+$(B)/trace.o: $(LCN)/trace.c $(LCN)/lcn_trace.h | $(B)
 	$(CC) -c $< -o $@ $(UFLAGS)
 
-lcn-trace: $(OBJS)
+$(PHY)-trace: $(OBJS)
 	$(CC) -no-pie $^ -o $@
 
 clean:
-	rm -rf $(B) lcn-trace
+	rm -rf $(B) $(PHY)-trace
 
 .PHONY: all clean

@@ -27,5 +27,8 @@ void lcn_core(const char *fn);
 
 /* Driver side: run one flow; nonzero if the name is unknown. */
 int lcn_run_flow(const char *name);
+/* Driver side: the device the flow runs, for the stubs (stubs.c) */
+struct b43_wldev;
+extern struct b43_wldev *lcn_dev;
 
 #endif
