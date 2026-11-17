@@ -78,6 +78,7 @@ u8 b43_ppr_get_max(const struct b43_ppr *ppr);
 u8 b43_ppr_get_min(const struct b43_ppr *ppr);
 /* The same over the OFDM and MCS rates of one bandwidth, CCK left out. */
 u8 b43_ppr_get_bw_max(const struct b43_ppr *ppr, enum b43_ppr_bw bw);
+u8 b43_ppr_get_bw_min(const struct b43_ppr *ppr, enum b43_ppr_bw bw);
 
 /*
  * Each rate's distance under @target into @dist, in quarter dB, at least 0,

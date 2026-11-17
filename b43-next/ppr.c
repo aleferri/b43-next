@@ -136,6 +136,19 @@ void b43_ppr_dist(const struct b43_ppr *ppr, u8 target, struct b43_ppr *dist)
 	dist->mcs_num = ppr->mcs_num;
 }
 
+/* The lowest power of the rates loaded of @bw, CCK left out, 0 for none */
+u8 b43_ppr_get_bw_min(const struct b43_ppr *ppr, enum b43_ppr_bw bw)
+{
+	unsigned int g, i, n;
+	u8 res = U8_MAX;
+
+	ppr_for_each_entry(ppr, g, i, n)
+		if (b43_ppr_group_bw(g) == bw && ppr->__all[i])
+			res = min(ppr->__all[i], res);
+
+	return res == U8_MAX ? 0 : res;
+}
+
 bool b43_ppr_has_cck(const struct b43_ppr *ppr)
 {
 	return ppr->loaded & BIT(B43_PPR_G_CCK);
