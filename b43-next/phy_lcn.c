@@ -58,42 +58,125 @@ enum lcn_sense_type {
  * Radio 2064.
  **************************************************/
 
-/* wlc_lcnphy_radio_2064_channel_tune_4313 */
-static void b43_radio_2064_channel_setup(struct b43_wldev *dev)
+/* wlc_lcnphy_qdiv_roundup */
+static u32 b43_phy_lcn_qdiv_roundup(u32 dividend, u32 divisor, u8 precision)
 {
+	u32 quotient = dividend / divisor, remainder = dividend % divisor;
+	u32 rbit = divisor & 1, roundup = (divisor >> 1) + rbit;
+
+	while (precision--) {
+		quotient <<= 1;
+		if (remainder >= roundup) {
+			quotient++;
+			remainder = ((remainder - roundup) << 1) + rbit;
+		} else {
+			remainder <<= 1;
+		}
+	}
+	if (remainder >= roundup)
+		quotient++;
+	return quotient;
+}
+
+/* wlc_2064_vco_cal */
+static void b43_radio_2064_vco_cal(struct b43_wldev *dev)
+{
+	u8 calnrst;
+
+	b43_radio_set(dev, 0x057, 0x8);
+	calnrst = b43_radio_read(dev, 0x056) & 0xf8;
+	b43_radio_write(dev, 0x056, calnrst);
+	udelay(1);
+	b43_radio_write(dev, 0x056, calnrst | 0x03);
+	udelay(1);
+	b43_radio_write(dev, 0x056, calnrst | 0x07);
+	udelay(300);
+	b43_radio_mask(dev, 0x057, ~0x8);
+}
+
+/*
+ * wlc_lcnphy_radio_2064_channel_tune_4313: the RF PLL with the reference
+ * doubler, from the crystal's clock. The channel's tuning values are the
+ * same on every 2.4 GHz channel.
+ */
+static void b43_radio_2064_channel_setup(struct b43_wldev *dev,
+					 unsigned int channel, u16 freq)
+{
+	struct bcmn_drv_cc *cc = &dev->dev->bdev->bus->drv_cc;
+	u32 xtal = bcmn_chipco_get_alp_clock(cc);
+	u32 fpfd = 2 * xtal, fvco3 = 3 * freq, fref3 = 2 * fpfd;
+	u32 fcal_div, qfcal, div_int, div_frac;
+	u16 set_count, d28, g30;
+	u8 d15, d16, f16, h28_ten, h30_ten, e30, cp_current;
 	u16 save[2];
 
 	b43_radio_set(dev, 0x09d, 0x4);
 	b43_radio_write(dev, 0x09e, 0xf);
 
-	/* Channel specific values in theory, in practice always the same */
 	b43_radio_write(dev, 0x02a, 0xb);
-	b43_radio_maskset(dev, 0x030, ~0x3, 0xa);
-	b43_radio_maskset(dev, 0x091, ~0x3, 0);
+	b43_radio_maskset(dev, 0x030, ~0x3, 0xa & 0x3);
+	b43_radio_mask(dev, 0x091, ~0x3);
 	b43_radio_maskset(dev, 0x038, ~0xf, 0x7);
-	b43_radio_maskset(dev, 0x030, ~0xc, 0x8);
-	b43_radio_maskset(dev, 0x05e, ~0xf, 0x8);
-	b43_radio_maskset(dev, 0x05e, ~0xf0, 0x80);
+	b43_radio_maskset(dev, 0x030, ~0xc, 0xa << 2 & 0xc);
+	b43_radio_maskset(dev, 0x05e, ~0xf, 0x88 & 0xf);
+	b43_radio_maskset(dev, 0x05e, ~0xf0, 0x88 << 4 & 0xf0);
 	b43_radio_write(dev, 0x06c, 0x80);
 
 	save[0] = b43_radio_read(dev, 0x044);
 	save[1] = b43_radio_read(dev, 0x12b);
-
 	b43_radio_set(dev, 0x044, 0x7);
 	b43_radio_set(dev, 0x12b, 0xe);
 
-	/* TODO */
+	if (xtal > 52000000)
+		fcal_div = 4;
+	else if (xtal > 26000000)
+		fcal_div = 2;
+	else
+		fcal_div = 1;
+	qfcal = xtal * fcal_div / 1000000;
+	b43_radio_write(dev, 0x04f, 0x02);
+	d15 = (xtal * fcal_div * 4 / 5) / 1000000 - 1;
+	b43_radio_write(dev, 0x052, 0x07 & (d15 >> 2));
+	b43_radio_write(dev, 0x053, (d15 & 0x3) << 5);
+	d16 = (qfcal * 8 / (d15 + 1)) - 1;
+	b43_radio_write(dev, 0x051, d16);
+	f16 = ((d16 + 1) * (d15 + 1)) / qfcal;
+	set_count = f16 * 3 * freq / 32 - 1;
+	b43_radio_maskset(dev, 0x053, ~0x0f, (set_count >> 8) & 0x0f);
+	b43_radio_set(dev, 0x053, 0x10);
+	b43_radio_write(dev, 0x054, set_count & 0xff);
+
+	div_int = ((fvco3 * (1000000 >> 4)) / fref3) << 4;
+	div_frac = ((fvco3 * (1000000 >> 4)) % fref3) << 4;
+	while (div_frac >= fref3) {
+		div_int++;
+		div_frac -= fref3;
+	}
+	div_frac = b43_phy_lcn_qdiv_roundup(div_frac, fref3, 20);
+	b43_radio_maskset(dev, 0x045, ~0x1f, (div_int >> 4) & 0x1f);
+	b43_radio_maskset(dev, 0x046, ~0x1f0, (div_int << 4) & 0x1f0);
+	b43_radio_maskset(dev, 0x046, ~0x0f, (div_frac >> 16) & 0x0f);
+	b43_radio_write(dev, 0x047, (div_frac >> 8) & 0xff);
+	b43_radio_write(dev, 0x048, div_frac & 0xff);
 
 	b43_radio_write(dev, 0x040, 0xfb);
-
 	b43_radio_write(dev, 0x041, 0x9a);
 	b43_radio_write(dev, 0x042, 0xa3);
 	b43_radio_write(dev, 0x043, 0x0c);
 
-	/* TODO */
-
+	/* The charge pump, for the doubler's loop bandwidth and divider */
+	d28 = ((68 - 27) * (fvco3 / 2 - 3000)) / (4200 - 3000) + 27;
+	h28_ten = d28 * 10 / 30;
+	e30 = (10500 - 680) / 490;
+	g30 = 680 + e30 * 490;
+	h30_ten = g30 * 10 / 2640;
+	cp_current = (1250 * 100 / h28_ten) / h30_ten;
+	b43_radio_maskset(dev, 0x03c, ~0x3f, cp_current & 0x3f);
+	b43_radio_write(dev, 0x03c, channel <= 5 ? 0x8 : 0x7);
+	b43_radio_write(dev, 0x03d, 0xa);
 	b43_radio_set(dev, 0x044, 0x0c);
 	udelay(1);
+	b43_radio_2064_vco_cal(dev);
 
 	b43_radio_write(dev, 0x044, save[0]);
 	b43_radio_write(dev, 0x12b, save[1]);
@@ -102,6 +185,11 @@ static void b43_radio_2064_channel_setup(struct b43_wldev *dev)
 		/* brcmsmac uses outdated 0x3 for 0x038 */
 		b43_radio_write(dev, 0x038, 0x0);
 		b43_radio_write(dev, 0x091, 0x7);
+	}
+	if (!(dev->dev->bus_sprom->boardflags_lo & B43_BFL_FEM)) {
+		b43_radio_write(dev, 0x02a, 0xf);
+		b43_radio_write(dev, 0x091, 0x3);
+		b43_radio_write(dev, 0x038, 0x3);
 	}
 }
 
@@ -935,6 +1023,8 @@ static void b43_phy_lcn_txrx_spur_avoidance_mode(struct b43_wldev *dev,
 		b43_phy_write(dev, 0x6d3, 0x2220);
 	} else {
 		b43_phy_write(dev, 0x942, 0x0);
+		b43_phy_write(dev, 0x942, 0xf);
+		b43_phy_write(dev, 0x942, 0x0);
 		b43_phy_write(dev, 0x93b, ((0 << 13) + 23));
 		b43_phy_write(dev, 0x93c, ((0 << 13) + 1989));
 	}
@@ -999,7 +1089,8 @@ static int b43_phy_lcn_set_channel(struct b43_wldev *dev,
 	b43_phy_set(dev, 0x44a, 0x44);
 	b43_phy_write(dev, 0x44a, 0x80);
 
-	b43_radio_2064_channel_setup(dev);
+	b43_radio_2064_channel_setup(dev, channel->hw_value,
+				     channel->center_freq);
 	mdelay(1);
 
 	b43_phy_lcn_afe_set_unset(dev);
