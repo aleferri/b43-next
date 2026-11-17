@@ -45,12 +45,16 @@ the attach window, cells b43 writes with other values:
 - **Host flags without a source**: HOSTF3 0x2000 and 0x0100, HOSTF4 0x0040,
   HOSTF5 0x0001 (brcmsmac's MHF5_4313_GPIOCTRL, set there only with
   BFL_FEM; the CQ57 has BFL_FEM_BT) and 0x0080.
-- **The rate memory** (0x01f0-0x01fe): wl leaves the initvals' values,
-  b43 writes its own with `b43_rate_memory_init()`.
+- **The basic rate map's reads**: wl writes the map without reading the
+  direct map (#32940-#32962), b43's `b43_update_basic_rates()` reads each
+  pointer first.
 - **The synth PU delay** (0x0094): wl writes 200 during the up (#31216),
   b43 the idle 500 until later.
 
-Settled: the TX FIFOs are brcmsmac's for core 24 (`b43_txfifo_fixup()`);
+Settled: the basic rate map at the init is wl's (`brcms_c_set_ratetable()`
+with the mandatory rates, `b43_basic_rates_init()`), and 0x0480-0x04ff, no
+table of the 832 microcode, is left alone as on the AC-PHY; the TX FIFOs
+are brcmsmac's for core 24 (`b43_txfifo_fixup()`);
 the PHY TX control words keep the initvals' and get only their antenna, the
 LCN-PHY's automatic one being the last RX antenna (0, brcmsmac's
 PHY_TXC_LCNPHY_ANT_LAST). The EDCA parameters (0x0242-0x02ae) are the ones
