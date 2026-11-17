@@ -44,6 +44,7 @@ static inline void __clear_bit(unsigned long nr, unsigned long *addr)
 #define abs(x) ((x) < 0 ? -(x) : (x))
 
 #define INT_MAX		2147483647
+#define U8_MAX		255
 
 #define BUILD_BUG_ON(c)      _Static_assert(!(c), #c)
 
