@@ -25,8 +25,9 @@
 /* Where the hardware control starts from, as wl */
 #define B43_LCN_TX_PWR_CTRL_START_IDX		180
 #define B43_LCN_TX_PWR_CTRL_START_NPT		0
-/* and again from the index, with brcmsmac's packets, when the target changes */
+/* The packets from the first target on, and the most the watchdog sets */
 #define B43_LCN_TX_PWR_CTRL_RESET_NPT		1
+#define B43_LCN_TX_PWR_CTRL_MAX_NPT		2
 
 /* The offsets from the target of the 4 CCK, 8 OFDM and 8 MCS rates */
 #define B43_LCN_TX_PWR_CTRL_RATE_OFFSET		0x340
@@ -39,7 +40,7 @@ struct b43_phy_lcn {
 	u8 tx_pwr_curr_idx;
 	s8 tx_pwr_idx_override;
 
-	/* The last estimate of the TX power control: index, packets, count */
+	/* The next turn-on's index and npt; the frames at the last estimate */
 	u16 tssi_idx;
 	u8 tssi_npt;
 	u16 tssi_tx_cnt;
@@ -47,6 +48,9 @@ struct b43_phy_lcn {
 	/* The target, 0 until the first recalculation, and the rates' offsets */
 	u8 tx_pwr_target;
 	s8 tx_pwr_offset[B43_LCN_TX_PWR_RATES];
+
+	/* 0x476 and 0x477 at the last watchdog turn, 9 bits signed */
+	s16 sense[2];
 
 	/* The init's calibration, which a channel switch loads again */
 	bool cal_done;
