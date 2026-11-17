@@ -69,8 +69,11 @@ register as it was, so their masks cannot be read off the capture.
 - Three more accesses of 0x4eb after the 2064's 0x4eb setup (#5976).
 - Reads of 0x4a5, 0x40d and 0x4a2 and an RMW of 0x4a5 in the TSSI setup,
   after 0x4a8 (#6958).
-- RMW of 0x525 after every write of the TX power control's mode, and of
-  0x4a9 when the control turns on.
+- RMW of 0x525 after every write of the TX power control's mode.
+- A read of 0x4a4 in the TX I/Q-LO calibration, after 0x6da = 0xffff and
+  before the first command (#10844). The harness serves each register's
+  reads in wl's order, so every later read of 0x4a4 gets the value of the
+  one before it.
 - RMW of 0x448 after the tune, before the AFE toggle (#8096).
 - The block after the TX filters (#8162-#8226): shared memory reads, RMW
   of 0x434 and 0x423, 0x550, a pulse of 0x44a, 0x6da = 0x2048, writes of
@@ -129,9 +132,23 @@ what the capture shows, what b43 does with it, and what would tell.
   the capture fits: one transition and a load at #7289 (index 52, the idle
   TSSI's restore) and #10248 (index 30, the TX I/Q-LO calibration), one
   transition and no load at #8512 and in every recalculation.
+- **The idle TSSI's restore loads the index, then restores the mode**
+  (#7289, #7353); brcmsmac restores only the mode.
+- **The TX I/Q-LO calibration loads index 30 twice** (#10248, #10502), where
+  brcmsmac turns the control off and sets fixed target gains, then loads it.
+- **0x4a9 bit 15 off when the control turns on**, after the gain override
+  (#7975 and every turn-on, the register at 0): brcmsmac's
+  `wlc_lcnphy_set_tx_pwr_soft_ctrl()` sets it in the same place, for the
+  index the software control imposes.
 - **The target at the init is 0** (0x4a7, #7955): wl's; brcmsmac sets
   `LCN_TARGET_PWR` (60). The rate table is written, there and when the
   control turns on, only once a recalculation has computed it.
+
+- **0x4d0 bits 6-14 = 0x1f8 in the TSSI setup** (#7157): wl's; brcmsmac
+  writes 0.
+- **The TSSI mux after the PA**: brcmsmac's, with wl's write of radio 0x07f
+  = 0 after 0x11a and without the two 0x4d7 bits at its start, which wl sets
+  in the idle TSSI estimate instead (#6903-#6933).
 
 ### TX power recalculation
 
@@ -163,14 +180,10 @@ the switch to channel 2). The values, in qdBm, on the CQ57:
   starts again from index 180 and 1 packet, wl's 0x4a5 from #22419 on;
   brcmsmac's `wlc_lcnphy_txpower_reset_npt()`.
 - **The regulatory limit less the antenna gain, and the user's**, applied to
-  both chains as the HT-PHY does: not in the capture, whose channels have
-  none in the harness.
-- **0x4d0 bits 6-14 = 0x1f8 in the TSSI setup** (#7157): wl's; brcmsmac
-  writes 0.
-- **The TSSI mux after the PA**: brcmsmac's, with wl's write of radio 0x07f
-  = 0 after 0x11a and without the two 0x4d7 bits at its start, which wl sets
-  in the idle TSSI estimate instead (#6903-#6933).
-
+  both chains as the HT-PHY and brcmsmac (`channel.c`) do: not in the
+  capture, whose channels have none in the harness. The CQ57's SROM has an
+  antenna gain of 8 dB (`ag0`): under a 20 dBm limit, 12 dBm, against wl's
+  15 on channels 1-11.
 ### Channel
 
 - **The 2064's 0x03d by channel**: 0xa on 1-3, 0x9 on 4-7, 0x8 on 8-13, as
