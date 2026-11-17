@@ -4200,7 +4200,7 @@ static int b43_bsinit(struct b43_wldev *dev)
 
 	/*
 	 * brcms_c_ucode_bsinit(): the five words, then the band's initvals.
-	 * The AC-PHY writes its own slots, see b43_phy_ac_op_init().
+	 * The AC-PHY writes its own, see b43_phy_ac_op_switch_channel().
 	 */
 	if (dev->phy.type != B43_PHYTYPE_AC && !dev->mhf_hold)
 		for (slot = 0; slot < ARRAY_SIZE(b43_hostf_regs); slot++)
@@ -4363,6 +4363,12 @@ static int b43_chip_init(struct b43_wldev *dev)
 		goto err_gpio_clean;
 
 	b43dbg(dev->wl, "init: band initvals\n");
+	/*
+	 * EDCF too, once the microcode has decided it. The AC-PHY's goes in at
+	 * its bring-up point, see b43_phy_ac_cold_mac_preamble().
+	 */
+	if (dev->qos_enabled && phy->type != B43_PHYTYPE_AC)
+		b43_hf_write(dev, b43_hf_read(dev) | B43_HF_EDCF);
 	err = b43_bsinit(dev);
 	if (err)
 		goto err_gpio_clean;
