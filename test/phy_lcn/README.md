@@ -44,7 +44,7 @@ On 2026-11-17, `--min-block 8 --gap-tol 2`:
 
 | capture | grezzo | PHY+radio |
 |---|---|---|
-| attach | 12088/19837 = 60.94% | 12094/17149 = 70.52% |
+| attach | 12089/19838 = 60.94% | 12097/17148 = 70.54% |
 
 The init follows wl's through the tables, the baseband and radio init, the
 hardware TX power control, the channel and the PMU, then the calibration of
@@ -71,12 +71,13 @@ with the calibration's results wl holds there (`calres.py`). On 2026-11-17,
 
 | channels | PHY+radio |
 |---|---|
-| 2-4, 9-12 | 1305/1611 = 81.01% (2 and 3 one more) |
-| 5-8, 13 | 1296/1628 = 79.61% |
+| 2-4, 9-12 | 1309/1609 = 81.35% |
+| 5-8 | 1311/1617 = 81.08% |
+| 13 | 1311/1618 = 81.03% |
 
 What b43 does not make there is wl's TX power recalculation after the
 switch, the control off and on with a rate table and a target (#86970 on
-channel 2), and two read-modify-writes of 0x780 before it.
+channel 2).
 
 ## Flows
 
