@@ -553,29 +553,6 @@ SOLO_VENDOR = (
 #          traccia -- il d6220 e il DSL oggi, l'agcombo quando sara'
 #          ricatturato.
 #
-#   OBJ su 0x0004/0x0006 e le tre costanti su 0x0000/0x0002
-#          la meta' non allineata di b43_validate_chipaccess()
-#          (main.c:3612-3625). La meta' allineata, che il vendor esegue op per
-#          op a #511-#522 del segmento di riferimento, NON e' qui e va
-#          confrontata: sono 12 op e combaciano. Queste sono le 16 che
-#          restano -- il backup e il ripristino di 0x0004/0x0006, i quattro
-#          write16 del pattern, la read32 non allineata e la write32 che la
-#          segue.
-#
-#          Le due prove. Le celle 0x0004/0x0006: il vendor non le tocca in
-#          nessuna cattura -- zero occorrenze su tutti e 26 i segmenti a
-#          freddo, sul tick a regime e sulla cattura del DSL -- e il PHY non
-#          scrive SHM sotto 0x000c, quindi un'op la' non puo' essere del port
-#          nel senso che conta. Le costanti 0x1122/0x3344/0xccdd su
-#          0x0000/0x0002: non compaiono come valore OBJ su quelle celle in
-#          nessuna cattura, e in b43 esistono solo dentro quel self-test.
-#
-#          Il pattern e' legato ai valori di proposito: se le costanti di
-#          mainline cambiano smette di combaciare e le op tornano a pesare,
-#          che e' il verso giusto in cui sbagliare.
-#
-#          E' l'unica voce di questa lista che non si chiude con una
-#          ricattura: il vendor quel test non lo fa e non lo fara'.
 #   REG.WR 0x49c   GPIO_CONTROL del MAC, come b43 pilota i LED: leds.c fa
 #          read-modify-write della cella a ogni cambio di stato, in
 #          b43_leds_init(), b43_leds_exit() e dai trigger. Il vendor gli
@@ -584,10 +561,16 @@ SOLO_VENDOR = (
 #          e non ci sara': stessa funzione, registro diverso, per struttura.
 #          Compare solo con il profilo --bus (test/integration): l'harness
 #          di test/unit non compila leds.c.
+#   REG.RD 0x3e0   PHY_VER, che b43 mainline legge in tre punti fuori dal
+#          PHY: la versione alla probe (main.c), il commit di
+#          b43_radio_unlock(), e ogni B43_MAX_WRITES_IN_ROW scritture di
+#          b43_phy_write() e b43_radio_write() su un host PCI, per svuotare
+#          le scritture posticipate (phy_common.c). wl non la legge in nessun
+#          punto della cattura del CQ57; il PHY decide solo quante scritture
+#          fa.
 SOLO_PORT = (
-    r'^OBJ\.(RD|WR) addr=0x0*[46] ',
-    r'^OBJ\.(RD|WR) addr=0x0*[02] val=0x0*(1122|3344|ccdd)\b',
     r'^REG\.WR off=0x49c\b',
+    r'^REG\.RD off=0x3e0\b',
 )
 
 # Il secondo caso della lista sopra: la controparte esiste, ma la cattura non
