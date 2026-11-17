@@ -46,6 +46,10 @@ On 2026-11-17, `--min-block 8 --gap-tol 2`:
 |---|---|---|
 | attach | 14932/20132 = 74.17% | 15026/16571 = 90.68% |
 
+The grezzo counts wl's core operations, which this harness cannot emit:
+since the core reads the shared memory's address back as wl does, the 785
+reads of 0x160 in the window count among them.
+
 The init follows wl's through the tables, the baseband and radio init, the
 hardware TX power control, the channel and the PMU, then the calibration of
 the init: the idle TSSI, the TX I/Q-LO and the RX I/Q calibrations, the TX
