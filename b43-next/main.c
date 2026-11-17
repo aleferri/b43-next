@@ -604,7 +604,30 @@ static void b43_ram_seq_write(struct b43_wldev *dev, struct b43_ram_seq *seq,
 	seq->next = offset + sizeof(u32);
 }
 
-/* A template word: in sequence on the AC cores, one by one on the others. */
+/*
+ * Whether wl writes the template RAM of this core in sequence, the pointer
+ * once and then the words: the AC's and the LCN-PHY's, in their captures.
+ */
+bool b43_ram_in_sequence(struct b43_wldev *dev)
+{
+	return dev->phy.type == B43_PHYTYPE_AC ||
+	       dev->phy.type == B43_PHYTYPE_LCN;
+}
+
+/* brcms_b_write_template_ram(): the pointer, the byte order, the words */
+static void b43_ram_write_buf(struct b43_wldev *dev, u16 offset,
+			      const u32 *buf, unsigned int n)
+{
+	unsigned int i;
+	bool swap;
+
+	b43_write32(dev, B43_MMIO_RAM_CONTROL, offset);
+	swap = b43_read32(dev, B43_MMIO_MACCTL) & B43_MACCTL_BE;
+	for (i = 0; i < n; i++)
+		b43_write32(dev, B43_MMIO_RAM_DATA, swap ? swab32(buf[i]) : buf[i]);
+}
+
+/* A template word: in sequence where wl writes so, one by one elsewhere. */
 void b43_tpl_write(struct b43_wldev *dev, struct b43_ram_seq *seq,
 		   u16 offset, u32 val)
 {
@@ -1300,8 +1323,11 @@ void b43_dummy_transmission(struct b43_wldev *dev, bool ofdm, bool pa_on)
 		buffer[0] = 0x000B846E;
 	}
 
-	for (i = 0; i < 5; i++)
-		b43_ram_write(dev, i * 4, buffer[i]);
+	if (b43_ram_in_sequence(dev))
+		b43_ram_write_buf(dev, 0, buffer, ARRAY_SIZE(buffer));
+	else
+		for (i = 0; i < ARRAY_SIZE(buffer); i++)
+			b43_ram_write(dev, i * 4, buffer[i]);
 
 	b43_write16(dev, B43_MMIO_XMTSEL, 0x0000);
 

@@ -108,7 +108,7 @@ static void b43_write_template_common(struct b43_wldev *dev,
 	struct b43_ram_seq seq = { .next = U16_MAX }, *s = NULL;
 	struct b43_plcp_hdr4 plcp;
 
-	if (dev->phy.type == B43_PHYTYPE_AC) {
+	if (b43_ram_in_sequence(dev)) {
 		seq.swap = b43_read32(dev, B43_MMIO_MACCTL) & B43_MACCTL_BE;
 		s = &seq;
 	}
