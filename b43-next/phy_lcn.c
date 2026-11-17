@@ -973,10 +973,9 @@ static void b43_phy_lcn_idle_tssi_est(struct b43_wldev *dev)
 	b43_phy_lcn_set_bbmult(dev, save_bbmult);
 	b43_phy_lcn_set_tx_gain_override(dev, old_override);
 	b43_phy_lcn_set_tx_gain(dev, &old_gains);
-	if (save_ctrl != B43_LCN_TX_PWR_CTRL_OFF)
-		b43_phy_lcn_set_tx_pwr_ctrl(dev, save_ctrl);
-	else
-		b43_phy_lcn_set_tx_pwr_by_index(dev, save_idx);
+	/* wl loads the index, then restores the mode (#7289, #7353) */
+	b43_phy_lcn_set_tx_pwr_by_index(dev, save_idx);
+	b43_phy_lcn_set_tx_pwr_ctrl(dev, save_ctrl);
 
 	b43_radio_write(dev, 0x112, save_lpfgain);
 	b43_radio_maskset(dev, 0x007, ~0x1, save_afe_switch);
@@ -1418,7 +1417,11 @@ static void b43_phy_lcn_txpwrtbl_iqlo_cal(struct b43_wldev *dev)
 	b43_phy_lcn_get_tx_gain(dev, &old_gains);
 	save_pa_gain = b43_phy_lcn_get_pa_gain(dev);
 	save_bbmult = b43_phy_lcn_get_bbmult(dev);
-	b43_phy_lcn_set_tx_pwr_ctrl(dev, B43_LCN_TX_PWR_CTRL_OFF);
+	/*
+	 * Where brcmsmac turns the control off and sets the target gains, wl
+	 * loads index 30, then again before the calibration (#10248, #10502)
+	 */
+	b43_phy_lcn_set_tx_pwr_by_index(dev, 30);
 	b43_phy_lcn_set_tx_pwr_by_index(dev, 30);
 	b43_phy_lcn_tx_iqlo_cal(dev, &target);
 
