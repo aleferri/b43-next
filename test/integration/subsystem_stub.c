@@ -293,7 +293,9 @@ struct ieee80211_sta *ieee80211_find_sta(struct ieee80211_vif *vif,
 struct ieee80211_sta *ieee80211_find_sta_by_ifaddr(struct ieee80211_hw *hw,
 						   const u8 *addr,
 						   const u8 *localaddr)
-{ return NULL; }
+{
+	return NULL;
+}
 void ieee80211_stop_tx_ba_cb_irqsafe(struct ieee80211_vif *vif,
 				     const u8 *ra, u16 tid) { }
 void __rcu_read_lock(void) { }
