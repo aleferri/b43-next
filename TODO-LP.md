@@ -254,13 +254,6 @@ about 16 times the first. If the first tone measures 0, every cap scores the
 same and 128 is taken. On wl's measurements of the BCM4312 the errors stay
 under 2^27 and the cap is wl's, 0x89.
 
-### Values wider than their field, elsewhere
-
-The pattern of `lpphy_sync_stx()` (a value ORed in under a mask narrower
-than it) is also in `lpphy_run_ddfs()`, `lpphy_set_dac_gain()`,
-`lpphy_set_pa_gain()` and in the `bx_arch` write of the rev0/1 baseband
-init. The values fit with the callers of today and a programmed SPROM.
-
 ## Not reviewed
 
 Not compared with the specs or with anything else: the rev2 baseband init,
