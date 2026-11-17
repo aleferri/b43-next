@@ -76,3 +76,59 @@ enum b43_rx_iq_comp b43_rx_iq_comp(s32 iq, u32 ii, u32 qq, s32 *a_out,
 	*b_out = b;
 	return B43_RX_IQ_COMP_OK;
 }
+
+#define B43_RXCAL_GAIN_THRESH_PWR	10000
+
+void b43_rxcal_gain_init(struct b43_rxcal_gain *g, int idx, int max)
+{
+	*g = (struct b43_rxcal_gain){ .idx = idx, .max = max };
+}
+
+/* One measurement of gain g->idx: true when g->optim is found */
+bool b43_rxcal_gain_step(struct b43_rxcal_gain *g, u32 pwr)
+{
+	bool above = pwr > B43_RXCAL_GAIN_THRESH_PWR;
+	bool done = false;
+
+	if (!g->dirn) {
+		g->dirn = above ? -1 : 1;
+		g->prev = g->idx;
+		g->idx += g->dirn;
+	} else if (g->dirn > 0 && above) {
+		done = true;
+		g->optim_pwr = g->prev_pwr;
+		g->optim = g->prev;
+	} else if (g->dirn < 0 && !above) {
+		done = true;
+		g->optim_pwr = pwr;
+		g->optim = g->idx;
+	} else {
+		g->prev = g->idx;
+		g->idx += g->dirn;
+	}
+
+	if (g->idx < 0 || g->idx > g->max) {
+		done = true;
+		g->optim_pwr = pwr;
+		g->optim = g->prev;
+	} else {
+		g->prev_pwr = pwr;
+	}
+	return done;
+}
+
+/* How many doublings the power found misses 2^13 by */
+int b43_rxcal_gain_delta(const struct b43_rxcal_gain *g)
+{
+	return 13 - b43_nbits(g->optim_pwr);
+}
+
+/* The LPF's biq1 moved by @delta, biq0 and biq1 together at most 10 */
+u16 b43_rxcal_gain_biq1(u16 biq0, u16 biq1, int delta)
+{
+	int fine = biq1 + delta;
+
+	if (fine + biq0 > 10)
+		return 10 - biq0;
+	return max(fine, 0);
+}

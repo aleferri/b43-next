@@ -33,4 +33,23 @@ enum b43_rx_iq_comp {
 enum b43_rx_iq_comp b43_rx_iq_comp(s32 iq, u32 ii, u32 qq, s32 *a_out,
 				   s32 *b_out);
 
+/*
+ * brcmsmac's RX calibration gain control: from gain @idx of a table of
+ * @max + 1, the highest gain whose tone stays at or under a power of 10000.
+ */
+struct b43_rxcal_gain {
+	int idx;		/* the gain to measure next */
+	int prev;
+	int optim;		/* the gain found, once a step returns true */
+	int max;
+	int dirn;		/* 0 until measured, then -1 or 1 */
+	u32 prev_pwr;
+	u32 optim_pwr;
+};
+
+void b43_rxcal_gain_init(struct b43_rxcal_gain *g, int idx, int max);
+bool b43_rxcal_gain_step(struct b43_rxcal_gain *g, u32 pwr);
+int b43_rxcal_gain_delta(const struct b43_rxcal_gain *g);
+u16 b43_rxcal_gain_biq1(u16 biq0, u16 biq1, int delta);
+
 #endif /* B43_CALIBRATE_H_ */

@@ -4781,18 +4781,6 @@ static void b43_nphy_rx_iq_coeffs(struct b43_wldev *dev, bool write,
 	}
 }
 
-/* Number of bits of the magnitude of a value, 0 for 0 */
-static u8 b43_nphy_nbits(s32 value)
-{
-	s32 abs_val = abs(value);
-	u8 nbits = 0;
-
-	while ((abs_val >> nbits) > 0)
-		nbits++;
-
-	return nbits;
-}
-
 /*
  * https://bcm-v4.sipsolutions.net/802.11/PHY/N/CalcRxIqComp
  * As brcmsmac's wlc_phy_calc_rx_iq_comp_nphy(): the coefficients are worked
@@ -6662,12 +6650,6 @@ static const struct b43_nphy_rxcal_gain b43_nphy_rxcal_gain_2ghz_rev7[] = {
 	{ 0, 0, 6, 3, 0, 10 },
 };
 
-enum b43_nphy_rxcal_gain_dirn {
-	B43_NPHY_RXCAL_GAIN_INIT,
-	B43_NPHY_RXCAL_GAIN_UP,
-	B43_NPHY_RXCAL_GAIN_DOWN,
-};
-
 /*
  * Set a fixed TX power index on the cores of core_mask, or with a negative
  * index restore the TX gain saved when the first index was set.
@@ -7186,16 +7168,13 @@ static void b43_nphy_rx_cal_gain_ctl(struct b43_wldev *dev, u8 rx_core,
 	const struct b43_nphy_rxcal_gain *tbl;
 	struct b43_phy_n_iq_comp save_comp, zero_comp = { };
 	struct nphy_iq_est est;
-	enum b43_nphy_rxcal_gain_dirn dirn = B43_NPHY_RXCAL_GAIN_INIT;
-	u32 i_pwr, q_pwr, curr_pwr, optim_pwr = 0, prev_pwr = 0;
-	u32 thresh_pwr = 10000;
-	s16 desired_log2_pwr = 13, actual_log2_pwr, delta_pwr;
-	s8 optim_index = 0, prev_index = 0, curr_index = 3;
+	struct b43_rxcal_gain g;
+	u32 i_pwr, q_pwr, curr_pwr;
+	int delta_pwr;
 	u16 hpvga, lpf_biq1, lpf_biq0, lna2, lna1, rxgain, rxcal_txgain[2];
 	u16 num_samps = 1024;
 	u8 mix_tia_gain = 3;
-	bool done = false;
-	int fine_gain_idx;
+	bool done;
 	s8 txpwrindex;
 	u8 tx_core;
 
@@ -7225,13 +7204,14 @@ static void b43_nphy_rx_cal_gain_ctl(struct b43_wldev *dev, u8 rx_core,
 			tbl = b43_nphy_rxcal_gain_2ghz;
 	}
 
+	b43_rxcal_gain_init(&g, 3, B43_NPHY_RXCAL_MAXGAININDEX);
 	do {
-		hpvga = (phy->rev >= 7) ? 0 : tbl[curr_index].hpvga;
-		lpf_biq1 = tbl[curr_index].lpf_biq1;
-		lpf_biq0 = tbl[curr_index].lpf_biq0;
-		lna2 = tbl[curr_index].lna2;
-		lna1 = tbl[curr_index].lna1;
-		txpwrindex = tbl[curr_index].txpwrindex;
+		hpvga = (phy->rev >= 7) ? 0 : tbl[g.idx].hpvga;
+		lpf_biq1 = tbl[g.idx].lpf_biq1;
+		lpf_biq0 = tbl[g.idx].lpf_biq0;
+		lna2 = tbl[g.idx].lna2;
+		lna1 = tbl[g.idx].lna1;
+		txpwrindex = tbl[g.idx].txpwrindex;
 
 		if (phy->rev >= 7) {
 			rxgain = (lpf_biq1 << 12) | (lpf_biq0 << 8) |
@@ -7271,73 +7251,26 @@ static void b43_nphy_rx_cal_gain_ctl(struct b43_wldev *dev, u8 rx_core,
 		q_pwr = DIV_ROUND_CLOSEST(rx_core ? est.q1_pwr : est.q0_pwr,
 					  num_samps);
 		curr_pwr = i_pwr + q_pwr;
-		b43_cal_report(dev, N_CAL_RXIQ_GAIN_PWR, rx_core, curr_index,
+		b43_cal_report(dev, N_CAL_RXIQ_GAIN_PWR, rx_core, g.idx,
 			       curr_pwr);
 
-		switch (dirn) {
-		case B43_NPHY_RXCAL_GAIN_INIT:
-			if (curr_pwr > thresh_pwr) {
-				dirn = B43_NPHY_RXCAL_GAIN_DOWN;
-				prev_index = curr_index;
-				curr_index--;
-			} else {
-				dirn = B43_NPHY_RXCAL_GAIN_UP;
-				prev_index = curr_index;
-				curr_index++;
-			}
-			break;
-		case B43_NPHY_RXCAL_GAIN_UP:
-			if (curr_pwr > thresh_pwr) {
-				done = true;
-				optim_pwr = prev_pwr;
-				optim_index = prev_index;
-			} else {
-				prev_index = curr_index;
-				curr_index++;
-			}
-			break;
-		case B43_NPHY_RXCAL_GAIN_DOWN:
-			if (curr_pwr > thresh_pwr) {
-				prev_index = curr_index;
-				curr_index--;
-			} else {
-				done = true;
-				optim_pwr = curr_pwr;
-				optim_index = curr_index;
-			}
-			break;
-		}
-
-		if (curr_index < 0 ||
-		    curr_index > B43_NPHY_RXCAL_MAXGAININDEX) {
-			done = true;
-			optim_pwr = curr_pwr;
-			optim_index = prev_index;
-		} else {
-			prev_pwr = curr_pwr;
-		}
+		done = b43_rxcal_gain_step(&g, curr_pwr);
 
 		b43_nphy_stop_playback(dev);
 	} while (!done);
 
-	hpvga = tbl[optim_index].hpvga;
-	lpf_biq1 = tbl[optim_index].lpf_biq1;
-	lpf_biq0 = tbl[optim_index].lpf_biq0;
-	lna2 = tbl[optim_index].lna2;
-	lna1 = tbl[optim_index].lna1;
+	hpvga = tbl[g.optim].hpvga;
+	lpf_biq1 = tbl[g.optim].lpf_biq1;
+	lpf_biq0 = tbl[g.optim].lpf_biq0;
+	lna2 = tbl[g.optim].lna2;
+	lna1 = tbl[g.optim].lna1;
 
-	actual_log2_pwr = b43_nphy_nbits(optim_pwr);
-	delta_pwr = desired_log2_pwr - actual_log2_pwr;
-	b43_cal_report(dev, N_CAL_RXIQ_GAIN_PICK, rx_core, optim_index,
-		       optim_pwr, delta_pwr);
+	delta_pwr = b43_rxcal_gain_delta(&g);
+	b43_cal_report(dev, N_CAL_RXIQ_GAIN_PICK, rx_core, g.optim,
+		       g.optim_pwr, delta_pwr);
 
 	if (phy->rev >= 7) {
-		fine_gain_idx = (int)lpf_biq1 + delta_pwr;
-
-		if (fine_gain_idx + (int)lpf_biq0 > 10)
-			lpf_biq1 = 10 - lpf_biq0;
-		else
-			lpf_biq1 = (u16)max(fine_gain_idx, 0);
+		lpf_biq1 = b43_rxcal_gain_biq1(lpf_biq0, lpf_biq1, delta_pwr);
 
 		rxgain = (lpf_biq1 << 12) | (lpf_biq0 << 8) |
 			 (mix_tia_gain << 4) | (lna2 << 2) | lna1;

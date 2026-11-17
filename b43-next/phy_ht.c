@@ -2466,15 +2466,17 @@ static void b43_phy_ht_cal_rx_iq(struct b43_wldev *dev)
 		b43_phy_write(dev, 0x9a + c, 0);
 
 	for (core = 0; core < 3; core++) {
-		int idx = 3, prev = 3, optim = 3, dirn = 0;
-		u32 pwr, prev_pwr = 0, optim_pwr = 0;
+		struct b43_rxcal_gain g;
+		u32 pwr;
 		bool done = false;
-		int fine;
+		u16 biq1;
 		s32 a, b;
 
+		b43_rxcal_gain_init(&g, 3,
+				    ARRAY_SIZE(b43_phy_ht_rxcal_gain) - 1);
 		b43_phy_ht_rxcal_setup(dev, core, &sv);
-		b43_phy_ht_rxcal_gain_set(dev, core, idx, 0);
-		b43_phy_ht_tx_gain_fix(dev, b43_phy_ht_rxcal_gain[idx][2]);
+		b43_phy_ht_rxcal_gain_set(dev, core, g.idx, 0);
+		b43_phy_ht_tx_gain_fix(dev, b43_phy_ht_rxcal_gain[g.idx][2]);
 
 		while (!done) {
 			n = b43_phy_ht_load_tone(dev, rx_tone, 181);
@@ -2482,40 +2484,19 @@ static void b43_phy_ht_cal_rx_iq(struct b43_wldev *dev)
 			b43_phy_ht_rx_iq_est(dev, est, 0x400);
 			pwr = DIV_ROUND_CLOSEST(est[core].i_pwr, 0x400) +
 			      DIV_ROUND_CLOSEST(est[core].q_pwr, 0x400);
-			if (dirn == 0)
-				dirn = pwr > 10000 ? -1 : 1;
-			if (dirn > 0 && pwr > 10000 && idx != prev) {
-				done = true;
-				optim_pwr = prev_pwr;
-				optim = prev;
-			} else if (dirn < 0 && pwr <= 10000) {
-				done = true;
-				optim_pwr = pwr;
-				optim = idx;
-			} else {
-				prev = idx;
-				idx += dirn;
-			}
-			if (!done && (idx < 0 || idx > 5)) {
-				done = true;
-				optim_pwr = pwr;
-				optim = prev;
-			} else {
-				prev_pwr = pwr;
-			}
+			done = b43_rxcal_gain_step(&g, pwr);
 			b43_phy_ht_stop_playback(dev);
 			b43_phy_ht_reset_cca(dev);
 			if (!done) {
-				b43_phy_ht_rxcal_gain_set(dev, core, idx, 0);
+				b43_phy_ht_rxcal_gain_set(dev, core, g.idx, 0);
 				b43_phy_ht_tx_gain_fix(dev,
-					b43_phy_ht_rxcal_gain[idx][2]);
+					b43_phy_ht_rxcal_gain[g.idx][2]);
 			}
 		}
-		fine = 13 - fls(optim_pwr);
-		if (fine + b43_phy_ht_rxcal_gain[optim][0] > 10)
-			fine = 10 - b43_phy_ht_rxcal_gain[optim][0];
-		b43_phy_ht_rxcal_gain_set(dev, core, optim, max(fine, 0));
-		b43_phy_ht_tx_gain_fix(dev, b43_phy_ht_rxcal_gain[optim][2]);
+		biq1 = b43_rxcal_gain_biq1(b43_phy_ht_rxcal_gain[g.optim][0], 0,
+					   b43_rxcal_gain_delta(&g));
+		b43_phy_ht_rxcal_gain_set(dev, core, g.optim, biq1);
+		b43_phy_ht_tx_gain_fix(dev, b43_phy_ht_rxcal_gain[g.optim][2]);
 
 		n = b43_phy_ht_load_tone(dev, rx_tone, 181);
 		b43_phy_ht_run_samples(dev, n, 0xffff, 0, false);
