@@ -2150,7 +2150,7 @@ static void b43_jssi_write(struct b43_wldev *dev, u32 jssi)
 			(jssi & 0xFFFF0000) >> 16);
 }
 
-static void b43_generate_noise_sample(struct b43_wldev *dev)
+void b43_generate_noise_sample(struct b43_wldev *dev)
 {
 	int i;
 
@@ -2181,7 +2181,7 @@ static void b43_calculate_link_quality(struct b43_wldev *dev)
 
 /* The microcode leaves each core's power summed over 512 samples. Returns
  * the noisier core in dBm, or 0 if the sample is missing. */
-static int b43_noise_pwr_dbm(const u32 *pwr, unsigned int cores, int offset)
+int b43_noise_pwr_dbm(const u32 *pwr, unsigned int cores, int offset)
 {
 	int noise = INT_MIN;
 	unsigned int core;
@@ -2204,18 +2204,6 @@ static int b43_noise_pwr_dbm(const u32 *pwr, unsigned int cores, int offset)
 	return noise;
 }
 
-/* The offset is brcmsmac's, -103 dB from rev 3 and -99 dB before. */
-static int b43_nphy_noise_dbm(struct b43_wldev *dev)
-{
-	u32 pwr[2];
-	int core;
-
-	for (core = 0; core < 2; core++)
-		pwr[core] = b43_shm_read32(dev, B43_SHM_SHARED,
-					   B43_SHM_SH_NOISEPWR + 4 * core);
-	return b43_noise_pwr_dbm(pwr, 2, dev->phy.rev >= 3 ? -103 : -99);
-}
-
 /*
  * The noise sample of a PHY that requests and reads its own: the AC-PHY's,
  * at the same SHM 0x308, taken with the N-PHY's offset until a comparison
@@ -2233,37 +2221,6 @@ void b43_noise_pwr_report(struct b43_wldev *dev, const u32 *pwr,
 		dev->stats.link_noise = noise;
 }
 
-static void b43_nphy_handle_irq_noise(struct b43_wldev *dev)
-{
-	struct b43_noise_calculation *nc = &dev->noisecalc;
-	int i, noise, sum = 0;
-
-	if (!nc->calculation_running)
-		return;
-	/* Drop a round that a scan took off the operating channel; the next
-	 * one starts 30 s later. */
-	if ((dev->wl->hw->conf.flags & IEEE80211_CONF_OFFCHANNEL) ||
-	    (nc->nr_samples && dev->noise_channel != dev->phy.channel)) {
-		nc->calculation_running = false;
-		return;
-	}
-
-	noise = b43_nphy_noise_dbm(dev);
-	if (noise) {
-		if (!nc->nr_samples)
-			dev->noise_channel = dev->phy.channel;
-		nc->samples[nc->nr_samples++][0] = noise;
-		if (nc->nr_samples == ARRAY_SIZE(nc->samples)) {
-			for (i = 0; i < nc->nr_samples; i++)
-				sum += nc->samples[i][0];
-			dev->stats.link_noise = sum / nc->nr_samples;
-			nc->calculation_running = false;
-			return;
-		}
-	}
-	b43_generate_noise_sample(dev);
-}
-
 static void handle_irq_noise(struct b43_wldev *dev)
 {
 	struct b43_phy_g *phy = dev->phy.g;
@@ -2279,10 +2236,6 @@ static void handle_irq_noise(struct b43_wldev *dev)
 
 	/* Bottom half of Link Quality calculation. */
 
-	if (dev->phy.type == B43_PHYTYPE_N) {
-		b43_nphy_handle_irq_noise(dev);
-		return;
-	}
 	if (dev->phy.type != B43_PHYTYPE_G)
 		return;
 

@@ -389,6 +389,15 @@ void b43_shm_write32(struct b43_wldev *dev, u16 routing, u16 offset, u32 value)
 {
 	n_core("b43_shm_write32");
 }
+void b43_generate_noise_sample(struct b43_wldev *dev)
+{
+	UNREACHED("b43_generate_noise_sample");
+}
+int b43_noise_pwr_dbm(const u32 *pwr, unsigned int cores, int offset)
+{
+	UNREACHED("b43_noise_pwr_dbm");
+	return 0;
+}
 /* bcma-next's PMU chip control access, as driver_chipcommon_pmu.c makes it */
 void bcmn_chipco_chipctl_maskset(struct bcmn_drv_cc *cc, u32 offset, u32 mask,
 				 u32 set)

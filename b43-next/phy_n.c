@@ -9441,6 +9441,49 @@ static void b43_nphy_txpwr_papd_cal(struct b43_wldev *dev)
 	b43_mac_enable(dev);
 }
 
+/* The offset is brcmsmac's, -103 dB from rev 3 and -99 dB before. */
+static int b43_nphy_noise_dbm(struct b43_wldev *dev)
+{
+	u32 pwr[2];
+	int core;
+
+	for (core = 0; core < 2; core++)
+		pwr[core] = b43_shm_read32(dev, B43_SHM_SHARED,
+					   B43_SHM_SH_NOISEPWR + 4 * core);
+	return b43_noise_pwr_dbm(pwr, 2, dev->phy.rev >= 3 ? -103 : -99);
+}
+
+static void b43_nphy_op_noise_sample_done(struct b43_wldev *dev)
+{
+	struct b43_noise_calculation *nc = &dev->noisecalc;
+	int i, noise, sum = 0;
+
+	if (!nc->calculation_running)
+		return;
+	/* Drop a round that a scan took off the operating channel; the next
+	 * one starts 30 s later. */
+	if ((dev->wl->hw->conf.flags & IEEE80211_CONF_OFFCHANNEL) ||
+	    (nc->nr_samples && dev->noise_channel != dev->phy.channel)) {
+		nc->calculation_running = false;
+		return;
+	}
+
+	noise = b43_nphy_noise_dbm(dev);
+	if (noise) {
+		if (!nc->nr_samples)
+			dev->noise_channel = dev->phy.channel;
+		nc->samples[nc->nr_samples++][0] = noise;
+		if (nc->nr_samples == ARRAY_SIZE(nc->samples)) {
+			for (i = 0; i < nc->nr_samples; i++)
+				sum += nc->samples[i][0];
+			dev->stats.link_noise = sum / nc->nr_samples;
+			nc->calculation_running = false;
+			return;
+		}
+	}
+	b43_generate_noise_sample(dev);
+}
+
 static void b43_nphy_op_pwork_15sec(struct b43_wldev *dev)
 {
 	if (time_after_eq(jiffies, dev->phy.n->perical_last + 120 * HZ))
@@ -9586,6 +9629,7 @@ const struct b43_phy_operations b43_phyops_n = {
 	.get_default_chan	= b43_nphy_op_get_default_chan,
 	.recalc_txpower		= b43_nphy_op_recalc_txpower,
 	.pwork_15sec		= b43_nphy_op_pwork_15sec,
+	.noise_sample_done	= b43_nphy_op_noise_sample_done,
 	.channel_calibrate	= b43_nphy_op_channel_calibrate,
 	.ofdm_tx		= b43_nphy_op_ofdm_tx,
 	B43_CAL_OPS(b43_nphy_cal_entries)
