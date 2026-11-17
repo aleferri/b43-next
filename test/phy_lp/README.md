@@ -37,7 +37,7 @@ On 2026-11-16, `--min-block 8 --gap-tol 2`:
 
 | capture | all | PHY+radio |
 |---|---|---|
-| attach | 21090/25723 = 81.99% | 21185/24329 = 87.08% |
+| attach | 21074/25739 = 81.88% | 21169/24345 = 86.95% |
 
 What is left:
 
@@ -47,9 +47,6 @@ What is left:
   hardware TX power control. b43 initialises it at the end of
   `b43_lpphy_op_init()`, before its core tunes the channel again, and
   calibrates nothing after that tune.
-- **The power control's split**: b43 writes the lowest target, 0x3c, to
-  PHY 0x4a7 and -2 and 0 as the CCK and OFDM offsets; wl writes 0x24 and
-  -26 and -24. The per-rate targets, 62 and 60, are the same.
 
 ## The station
 
@@ -65,13 +62,12 @@ counts: the rest of the window is the MAC's traffic.
 
 | capture | PHY+radio |
 |---|---|
-| attach, station | 49160/66493 = 73.93% |
+| attach, station | 50347/65306 = 77.09% |
 
 Every switch lines up with wl's: the tune, the gain table, the TX power
 control left and taken again. So do the two downs and ups, where wl and b43
 apply the calibrations they keep instead of calibrating. What is left:
 
-- **The power control's split**, on every switch, as in the init.
 - **The tune after an up**: b43's core tunes the channel once more after
   `b43_lpphy_op_init()`, wl does not.
 - **wl's power control cycle after an up** (some 440 operations from #59298

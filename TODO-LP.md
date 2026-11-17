@@ -88,15 +88,16 @@ On boards without NOPA, as wl on the BCM4312 (the specs' TXPwrCtrlInit
 gives it to boards with NOPA). The per-rate targets are brcmsmac's chain
 over the board's PPR, as for the HT-PHY: wl's locale row for the CCK rates
 (17 dBm on channels 1-11), regulatory and user limits, less 1.5 dB, at
-least 10 dBm. On the HP 550 they are wl's, CCK 62 and OFDM 60,
-but b43 writes them as the lowest, 60, in PHY 0x4A7 and offsets 2 and 0
-above it, where wl writes 36 and offsets 26 and 24.
+least 9 dBm. The hardware takes wl's floor, 9 dBm, as its base and each
+rate's distance above it: on the HP 550, 0x24 in PHY 0x4A7 and 26 and 24
+above it, CCK 62 and OFDM 60, as wl.
 
 Open:
 
 - the CCK row is the one of the locale the capture was taken in; other
   locales, and channels 12-14, which have no row, are not captured.
-- wl's base of 36 comes from no rate b43 has.
+- the floor is wl's base on this capture, where every rate stands above
+  it; whether a target under 9 dBm moves the base is not captured.
 - rev2 (table 7, PHY 0x4D0) runs the same code without a capture.
 - 5 GHz takes the specs' PA coefficients per sub-band, a TSSI index of 64
   and no CCK limit; unreached while b43 keeps the band off.
