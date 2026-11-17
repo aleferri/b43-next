@@ -247,12 +247,6 @@ reference frequency. The table ends at 19200 kHz: the 25 MHz of the 5354
 matches nothing and gets the last entry from the fallback. The 20 MHz of
 the BCM4312 gets it too, and there wl writes the same values.
 
-### TR isolation below 26
-
-`lpphy_adjust_gain_table()` computes `(isolation - 26) / 12` and shifts it
-by 12 into a u16. An isolation under 26 goes negative; `0xFF` gives 19 and
-the shift drops its top bit. The BCM4312's 108 gives wl's `0x6000`.
-
 ### Arithmetic of the rev0/1 RC calibration
 
 The squared error is kept in 32 bits and wraps when a tone measures more than
