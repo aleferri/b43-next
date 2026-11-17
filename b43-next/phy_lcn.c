@@ -546,6 +546,30 @@ static u8 b43_phy_lcn_get_current_tx_pwr_idx(struct b43_wldev *dev)
 	return (b43_phy_read(dev, 0x473) & 0x1ff) / 2;
 }
 
+/*
+ * wlc_lcnphy_tx_pwr_update_npt, as wl's watchdog makes it: once the hardware
+ * control has seen more than its 2^npt frames since the last estimate, the
+ * index it reached becomes the start of the running loop and of the next
+ * turn-on, and the loop takes one frame more, up to 2^2. The next turn-on's
+ * npt stays the target's.
+ */
+static void b43_phy_lcn_tx_pwr_update_npt(struct b43_wldev *dev)
+{
+	struct b43_phy_lcn *lcn = dev->phy.lcn;
+	u16 tx_total, npt;
+
+	tx_total = b43_shm_read16(dev, B43_SHM_SHARED, B43_SHM_SH_TXALLFRM);
+	npt = (b43_phy_read(dev, 0x4a5) & 0x700) >> 8;
+	if ((u16)(tx_total - lcn->tssi_tx_cnt) <= 1 << npt)
+		return;
+
+	if (npt < B43_LCN_TX_PWR_CTRL_MAX_NPT)
+		b43_phy_lcn_set_tx_pwr_npt(dev, npt + 1);
+	lcn->tssi_tx_cnt = tx_total;
+	lcn->tssi_idx = b43_phy_lcn_get_current_tx_pwr_idx(dev) * 2;
+	b43_phy_maskset(dev, 0x4a4, ~0x1ff, lcn->tssi_idx);
+}
+
 /* wlc_lcnphy_rev0_baseband_init */
 static void b43_phy_lcn_rev0_baseband_init(struct b43_wldev *dev)
 {
@@ -2350,10 +2374,8 @@ b43_phy_lcn_op_recalc_txpower(struct b43_wldev *dev, bool ignore_tssi)
 	if (target == lcn->tx_pwr_target &&
 	    !memcmp(offset, lcn->tx_pwr_offset, sizeof(offset)))
 		return B43_TXPWR_RES_DONE;
-	if (target != lcn->tx_pwr_target) {
-		lcn->tssi_idx = B43_LCN_TX_PWR_CTRL_START_IDX;
+	if (target != lcn->tx_pwr_target)
 		lcn->tssi_npt = B43_LCN_TX_PWR_CTRL_RESET_NPT;
-	}
 	lcn->tx_pwr_target = target;
 	memcpy(lcn->tx_pwr_offset, offset, sizeof(offset));
 	return B43_TXPWR_RES_NEED_ADJUST;
@@ -2383,6 +2405,22 @@ static void b43_phy_lcn_op_channel_calibrate(struct b43_wldev *dev,
 	b43_phy_lcn_op_recalc_txpower(dev, true);
 	b43_phy_lcn_op_adjust_txpower(dev);
 	b43_mac_enable(dev);
+}
+
+/*
+ * The PHY's part of wl's 1 s watchdog: the hardware TX power control's
+ * estimate, then the two sense values, which brcmsmac's tempsense reads
+ * without its setup (wlc_lcnphy_tempsense_new(pi, 0))
+ */
+static void b43_phy_lcn_op_pwork_1sec(struct b43_wldev *dev)
+{
+	struct b43_phy_lcn *lcn = dev->phy.lcn;
+	int i;
+
+	if (b43_phy_lcn_get_tx_pwr_ctrl(dev) == B43_LCN_TX_PWR_CTRL_HW)
+		b43_phy_lcn_tx_pwr_update_npt(dev);
+	for (i = 0; i < ARRAY_SIZE(lcn->sense); i++)
+		lcn->sense[i] = sign_extend32(b43_phy_read(dev, 0x476 + i), 8);
 }
 
 /**************************************************
@@ -2454,6 +2492,7 @@ const struct b43_phy_operations b43_phyops_lcn = {
 	.get_default_chan	= b43_phy_lcn_op_get_default_chan,
 	.recalc_txpower		= b43_phy_lcn_op_recalc_txpower,
 	.adjust_txpower		= b43_phy_lcn_op_adjust_txpower,
+	.pwork_1sec		= b43_phy_lcn_op_pwork_1sec,
 	.channel_calibrate	= b43_phy_lcn_op_channel_calibrate,
 	.set_rx_antenna		= b43_phy_lcn_op_set_rx_antenna,
 	B43_CAL_OPS(b43_phy_lcn_cal_entries)
