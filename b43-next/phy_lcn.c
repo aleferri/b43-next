@@ -1706,7 +1706,8 @@ static void b43_phy_lcn_periodic_cal(struct b43_wldev *dev)
 {
 	struct b43_phy_lcn *lcn = dev->phy.lcn;
 	u16 save_ctrl = b43_phy_lcn_get_tx_pwr_ctrl(dev);
-	u8 index = lcn->tx_pwr_curr_idx;
+	/* The index the control is at, as wl (#8302); brcmsmac's cached one */
+	u8 index = b43_phy_lcn_get_current_tx_pwr_idx(dev);
 
 	b43_mac_suspend(dev);
 	b43_phy_lcn_deaf_mode(dev, true);
