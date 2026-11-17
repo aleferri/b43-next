@@ -37,7 +37,7 @@ On 2026-11-16, `--min-block 8 --gap-tol 2`:
 
 | capture | all | PHY+radio |
 |---|---|---|
-| attach | 21768/25186 = 86.43% | 21888/23762 = 92.11% |
+| attach | 19339/27876 = 69.38% | 21888/23762 = 92.11% |
 
 What is left: after its idle TSSI read wl enters the TX power control
 through mode 0xc000 and leaves it again, with the offsets cleared, before it
