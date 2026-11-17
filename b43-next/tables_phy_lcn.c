@@ -647,13 +647,11 @@ static void b43_phy_lcn_load_tx_gain_tab(struct b43_wldev *dev,
 /* wlc_lcnphy_load_rfpower */
 static void b43_phy_lcn_load_rfpower(struct b43_wldev *dev)
 {
-	u32 bbmult, rfgain;
 	u8 i;
 
 	for (i = 0; i < 128; i++) {
-		bbmult = b43_lcntab_read(dev, B43_LCNTAB32(0x7, 0x140 + i));
-		bbmult >>= 20;
-		rfgain = b43_lcntab_read(dev, B43_LCNTAB32(0x7, 0xc0 + i));
+		b43_lcntab_read(dev, B43_LCNTAB32(0x7, 0x140 + i));
+		b43_lcntab_read(dev, B43_LCNTAB32(0x7, 0xc0 + i));
 
 		/* TODO: calculate value for 0x240 + i table offset
 		 * b43_lcntab_write(dev, B43_LCNTAB32(0x7, 0x240 + i), val);
