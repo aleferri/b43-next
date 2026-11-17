@@ -4496,12 +4496,7 @@ static void b43_nphy_tx_power_ctl_setup(struct b43_wldev *dev)
 		b1[0] = b1[1] = -1393;
 	} else if (b43_ppr_band(phy->chandef->chan, &band)) {
 		for (c = 0; c < 2; c++) {
-			const struct ssbn_sprom_core_pwr_info *pi =
-				&sprom->core_pwr_info[c];
-			const u16 *pa = band == B43_BAND_2G ? pi->pa_2g :
-					band == B43_BAND_5G_LO ? pi->pa_5gl :
-					band == B43_BAND_5G_MI ? pi->pa_5g :
-					pi->pa_5gh;
+			const u16 *pa = b43_ppr_sprom_r8_pa(sprom, c, band);
 
 			idle[c] = band == B43_BAND_2G ?
 				  nphy->pwr_ctl_info[c].idle_tssi_2g :

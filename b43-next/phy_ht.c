@@ -802,33 +802,16 @@ static void b43_phy_ht_tx_power_ctl_setup(struct b43_wldev *dev)
 	u8 *idle = phy_ht->idle_tssi;
 	u8 target[3];
 	s16 a1[3], b0[3], b1[3];
-
-	u16 freq = dev->phy.chandef->chan->center_freq;
+	enum b43_band band;
 	int i, c;
 
-	if (b43_current_band(dev->wl) == NL80211_BAND_2GHZ) {
+	if (b43_ppr_band(dev->phy.chandef->chan, &band)) {
 		for (c = 0; c < 3; c++) {
-			a1[c] = sprom->core_pwr_info[c].pa_2g[0];
-			b0[c] = sprom->core_pwr_info[c].pa_2g[1];
-			b1[c] = sprom->core_pwr_info[c].pa_2g[2];
-		}
-	} else if (freq >= 4900 && freq < 5100) {
-		for (c = 0; c < 3; c++) {
-			a1[c] = sprom->core_pwr_info[c].pa_5gl[0];
-			b0[c] = sprom->core_pwr_info[c].pa_5gl[1];
-			b1[c] = sprom->core_pwr_info[c].pa_5gl[2];
-		}
-	} else if (freq >= 5100 && freq < 5500) {
-		for (c = 0; c < 3; c++) {
-			a1[c] = sprom->core_pwr_info[c].pa_5g[0];
-			b0[c] = sprom->core_pwr_info[c].pa_5g[1];
-			b1[c] = sprom->core_pwr_info[c].pa_5g[2];
-		}
-	} else if (freq >= 5500) {
-		for (c = 0; c < 3; c++) {
-			a1[c] = sprom->core_pwr_info[c].pa_5gh[0];
-			b0[c] = sprom->core_pwr_info[c].pa_5gh[1];
-			b1[c] = sprom->core_pwr_info[c].pa_5gh[2];
+			const u16 *pa = b43_ppr_sprom_r8_pa(sprom, c, band);
+
+			a1[c] = pa[0];
+			b0[c] = pa[1];
+			b1[c] = pa[2];
 		}
 	} else {
 		a1[0] = a1[1] = a1[2] = -424;

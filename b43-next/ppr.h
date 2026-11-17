@@ -123,6 +123,9 @@ u8 b43_ppr_load_sprom_legacy(struct b43_ppr *ppr,
 
 u8 b43_ppr_sprom_r8_maxpwr(const struct ssbn_sprom *sprom, enum b43_band band,
 			   u8 coremask);
+/* The PA parameters a1, b0, b1 of @core on @band, from SROM rev 4 to 10 */
+const u16 *b43_ppr_sprom_r8_pa(const struct ssbn_sprom *sprom,
+			       unsigned int core, enum b43_band band);
 u8 b43_ppr_load_sprom_r8(struct b43_ppr *ppr, const struct ssbn_sprom *sprom,
 			 enum b43_band band, u8 coremask, bool cdd_stbc_po);
 void b43_ppr_load_sprom_r8_40(struct b43_ppr *ppr,

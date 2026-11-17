@@ -310,6 +310,23 @@ u8 b43_ppr_sprom_r8_maxpwr(const struct ssbn_sprom *sprom, enum b43_band band,
 	return found ? maxp : 0;
 }
 
+const u16 *b43_ppr_sprom_r8_pa(const struct ssbn_sprom *sprom,
+			       unsigned int core, enum b43_band band)
+{
+	const struct ssbn_sprom_core_pwr_info *pi = &sprom->core_pwr_info[core];
+
+	switch (band) {
+	case B43_BAND_5G_LO:
+		return pi->pa_5gl;
+	case B43_BAND_5G_MI:
+		return pi->pa_5g;
+	case B43_BAND_5G_HI:
+		return pi->pa_5gh;
+	default:
+		return pi->pa_2g;
+	}
+}
+
 /*
  * One MCS mode at @bw from two words of mcs*po, MCS 0-3 and 4-7, less
  * @extra half dB on every rate.
