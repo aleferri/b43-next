@@ -82,6 +82,14 @@ with the calibration's results wl holds there (`calres.py`). On 2026-11-17,
 What b43 does not make there is the RMWs of unknown purpose of 0x6d1 and
 0x525 (`TODO_LCN.md`).
 
+## The watchdog
+
+`gates.sh` finds every turn of wl's 1 s watchdog with the TX power control
+on, 156 in the capture, and runs flow `watchdog` on each, from its read of
+0x4a4 to its read of 0x477, with the frame count wl holds before it: the
+shared memory's TXALLFRM at the control's last turn-on or estimate. The
+turn's PHY operations are compared value for value. On 2026-11-18: 156/156.
+
 ## Flows
 
 - `full`: above; the TX power check's adjust runs where b43 queues it.
@@ -89,8 +97,13 @@ What b43 does not make there is the RMWs of unknown purpose of 0x6d1 and
   `b43_op_config()` makes them, on `LCN_CHANNEL` after an init, the
   calibration's results from `LCN_TXIQCC_A`, `LCN_TXIQCC_B`, `LCN_TXDIDQ`,
   `LCN_LOFT0`-`3`, `LCN_RXIQCOMP_A` and `_B`.
+- `watchdog`: `pwork_1sec`, the frame count of the last estimate from
+  `LCN_TSSI_TX_CNT`.
 
 ## Environment
 
 `LCN_NVRAM` (the board's nvram), `LCN_CHANNEL` (1-14, default 1), `LCN_DEBUG=1`
 (each read past the window on stderr).
+
+The shared memory's reads are served from the window's `OBJ.RD`, without
+ops: they are the core's.

@@ -202,6 +202,10 @@ int lcn_run_flow(const char *name)
 		b43_switch_channel(dev, chan.hw_value);
 		/* b43_op_config() closes the switch with it */
 		dev->phy.ops->channel_calibrate(dev, false);
+	} else if (!strcmp(name, "watchdog")) {
+		/* A turn of the periodic work, with wl's frame count before it */
+		dev->phy.lcn->tssi_tx_cnt = lcn_env("LCN_TSSI_TX_CNT", 0);
+		dev->phy.ops->pwork_1sec(dev);
 	} else
 		return -1;
 	return 0;
@@ -305,7 +309,7 @@ void b43_hf_write(struct b43_wldev *dev, u64 value)
 u16 b43_shm_read16(struct b43_wldev *dev, u16 routing, u16 offset)
 {
 	lcn_core("b43_shm_read16");
-	return 0;
+	return routing == B43_SHM_SHARED ? lcn_shm_read16(offset) : 0;
 }
 u32 b43_shm_read32(struct b43_wldev *dev, u16 routing, u16 offset)
 {
