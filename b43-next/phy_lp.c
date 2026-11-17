@@ -348,20 +348,51 @@ static void lpphy_baseband_rev0_1_init(struct b43_wldev *dev)
 	}
 }
 
+/* The registers of the TX digital filter */
+static const u16 lpphy_dig_flt_addr[] = {
+	B43_PHY_OFDM(0xC1), B43_PHY_OFDM(0xC2), B43_PHY_OFDM(0xC3),
+	B43_PHY_OFDM(0xC4), B43_PHY_OFDM(0xC5), B43_PHY_OFDM(0xC6),
+	B43_PHY_OFDM(0xC7), B43_PHY_OFDM(0xC8), B43_PHY_OFDM(0xCF),
+};
+
+/* Rev2BasebandInit's filters: OFDM, and CCK for SM or for EVM */
+static const u16 lpphy_rev2_tx_dig_filt_ofdm[] = {
+	0xEC4D, 0xE831, 0xE330, 0x3018, 0x0018, 0xFA20, 0x0020, 0xC340, 0x0040,
+};
+
+static const u16 lpphy_rev2_tx_dig_filt_cck_sm[] = {
+	0xD75A, 0xEC2F, 0xEE30, 0xAA54, 0x0054, 0xF01A, 0x001A, 0x1610, 0x0010,
+};
+
+static const u16 lpphy_rev2_tx_dig_filt_cck_evm[] = {
+	0xD758, 0xEC2F, 0xEE30, 0xBD5E, 0x005E, 0xFB1A, 0x001A, 0x0F08, 0x0008,
+};
+
+static void lpphy_set_tx_dig_filt(struct b43_wldev *dev, const u16 *coefs)
+{
+	int i;
+
+	for (i = 0; i < ARRAY_SIZE(lpphy_dig_flt_addr); i++)
+		b43_phy_write(dev, lpphy_dig_flt_addr[i], coefs[i]);
+}
+
+/* The copy the microcode switches to for OFDM or CCK frames */
+static void lpphy_set_tx_dig_filt_ucode(struct b43_wldev *dev, bool cck,
+					const u16 *coefs)
+{
+	u16 addr = b43_shm_read16(dev, B43_SHM_SHARED, 0x7A);
+	int i;
+
+	if (!addr)
+		return;
+	if (cck)
+		addr += 0x12;
+	for (i = 0; i < ARRAY_SIZE(lpphy_dig_flt_addr); i++)
+		b43_shm_write16(dev, B43_SHM_SHARED, addr + 2 * i, coefs[i]);
+}
+
 static void lpphy_save_dig_flt_state(struct b43_wldev *dev)
 {
-	static const u16 addr[] = {
-		B43_PHY_OFDM(0xC1),
-		B43_PHY_OFDM(0xC2),
-		B43_PHY_OFDM(0xC3),
-		B43_PHY_OFDM(0xC4),
-		B43_PHY_OFDM(0xC5),
-		B43_PHY_OFDM(0xC6),
-		B43_PHY_OFDM(0xC7),
-		B43_PHY_OFDM(0xC8),
-		B43_PHY_OFDM(0xCF),
-	};
-
 	static const u16 coefs[] = {
 		0xDE5E, 0xE832, 0xE331, 0x4D26,
 		0x0026, 0x1420, 0x0020, 0xFE08,
@@ -371,31 +402,15 @@ static void lpphy_save_dig_flt_state(struct b43_wldev *dev)
 	struct b43_phy_lp *lpphy = dev->phy.lp;
 	int i;
 
-	for (i = 0; i < ARRAY_SIZE(addr); i++) {
-		lpphy->dig_flt_state[i] = b43_phy_read(dev, addr[i]);
-		b43_phy_write(dev, addr[i], coefs[i]);
-	}
+	for (i = 0; i < ARRAY_SIZE(lpphy_dig_flt_addr); i++)
+		lpphy->dig_flt_state[i] = b43_phy_read(dev,
+						       lpphy_dig_flt_addr[i]);
+	lpphy_set_tx_dig_filt(dev, coefs);
 }
 
 static void lpphy_restore_dig_flt_state(struct b43_wldev *dev)
 {
-	static const u16 addr[] = {
-		B43_PHY_OFDM(0xC1),
-		B43_PHY_OFDM(0xC2),
-		B43_PHY_OFDM(0xC3),
-		B43_PHY_OFDM(0xC4),
-		B43_PHY_OFDM(0xC5),
-		B43_PHY_OFDM(0xC6),
-		B43_PHY_OFDM(0xC7),
-		B43_PHY_OFDM(0xC8),
-		B43_PHY_OFDM(0xCF),
-	};
-
-	struct b43_phy_lp *lpphy = dev->phy.lp;
-	int i;
-
-	for (i = 0; i < ARRAY_SIZE(addr); i++)
-		b43_phy_write(dev, addr[i], lpphy->dig_flt_state[i]);
+	lpphy_set_tx_dig_filt(dev, dev->phy.lp->dig_flt_state);
 }
 
 static void lpphy_baseband_rev2plus_init(struct b43_wldev *dev)
@@ -485,7 +500,15 @@ static void lpphy_baseband_rev2plus_init(struct b43_wldev *dev)
 		b43_phy_maskset(dev, B43_LPPHY_AFE_ADC_CTL_1, 0xFC3C, 0x0400);
 	}
 
-	lpphy_save_dig_flt_state(dev);
+	lpphy_set_tx_dig_filt(dev, lpphy_rev2_tx_dig_filt_ofdm);
+	lpphy_set_tx_dig_filt_ucode(dev, false, lpphy_rev2_tx_dig_filt_ofdm);
+	/* boardflags 0x01000000 */
+	if (dev->dev->bus_sprom->boardflags_hi & 0x0100)
+		lpphy_set_tx_dig_filt_ucode(dev, true,
+					    lpphy_rev2_tx_dig_filt_cck_evm);
+	else
+		lpphy_set_tx_dig_filt_ucode(dev, true,
+					    lpphy_rev2_tx_dig_filt_cck_sm);
 }
 
 static void lpphy_baseband_init(struct b43_wldev *dev)
