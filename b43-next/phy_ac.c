@@ -48,6 +48,7 @@
 #include "main.h"
 #include "calstat.h"
 #include "qmath.h"
+#include "calibrate.h"
 
 /*
  * Update one of the five HOSTFn slots.
@@ -552,26 +553,25 @@ static u16 b43_phy_ac_rxiqcal_kick_len(struct b43_wldev *dev)
 }
 
 /*
- * Load a tone table into table 0x000e, the PHY sample-play buffer the RX-IQ
- * cal plays through the B43_PHY_AC_SAMP_PLAY_* block, in loopback.
+ * Load a tone into table 0x000e, the PHY sample-play buffer the RX-IQ cal
+ * plays through the B43_PHY_AC_SAMP_PLAY_* block, in loopback.
  *
- * Every tone has a period of 20 entries, and the table length is two
+ * Every tone of the stock driver turns by @step times 18 degrees per entry,
+ * a period of 20 entries, at amplitude @amp. The table length is two
  * entries per MHz of channel width: 40 at 20 MHz, 80 at 40, 160 at 80
  * (d6220 cold sweep, every segment of each width).
  *
- * The stock driver loads it as a single bulk write, so the tiled table goes
- * out in one call rather than one per period.
- *
- * Callers pass the 20-entry period; the tiling and the length belong here.
+ * The stock driver loads it as a single bulk write.
  */
 #define B43_PHY_AC_TONE_PERIOD		20
 #define B43_PHY_AC_TONE_MAX_ENTRIES	(B43_PHY_AC_TONE_PERIOD << 3)
 
-static void b43_phy_ac_tone_table_write(struct b43_wldev *dev,
-					const u32 *period, int step)
+static void b43_phy_ac_tone_table_write(struct b43_wldev *dev, u16 amp,
+					int step)
 {
 	u32 tone[B43_PHY_AC_TONE_MAX_ENTRIES];
 	unsigned int n, i;
+	s32 angle;
 
 	n = B43_PHY_AC_TONE_PERIOD << (b43_phy_ac_bw_step(dev) + 1);
 	if (B43_WARN_ON(n > ARRAY_SIZE(tone)))
@@ -582,28 +582,25 @@ static void b43_phy_ac_tone_table_write(struct b43_wldev *dev,
 
 		if (k < 0)
 			k += B43_PHY_AC_TONE_PERIOD;
-		tone[i] = period[k];
+		angle = CORDIC_FIXED(k * (360 / B43_PHY_AC_TONE_PERIOD));
+		tone[i] = b43_tone_pack10(b43_tone_sample(angle, amp));
 	}
 
 	b43_actab_write_bulk_scoped(dev, 0x000e, 0x0000, 32, n, tone);
 }
 
 /*
- * The tone period the RX-IQ measurement uses, and its steps.
+ * The tones of the RX-IQ measurement, and their steps.
  *
- * The stock driver's "second" and "third" tones are this period at steps +1
- * and -1; at 80 MHz it loads four more, at +3, -3, +4 and -4 (verified on
- * the eleven 160-entry loads of cold24).
+ * The stock driver's "second" and "third" tones are at steps +1 and -1; at
+ * 80 MHz it loads four more, at +3, -3, +4 and -4 (verified on the eleven
+ * 160-entry loads of cold24). The DDS seed is the +1 tone at 250.
  *
  * The step is the tone frequency in units of rate/20: one pair of tones
  * around the carrier at 20 and 40 MHz, three pairs at 80.
  */
-static const u32 b43_phy_ac_tone_period[B43_PHY_AC_TONE_PERIOD] = {
-	0x0002d400, 0x0002b038, 0x0002486a, 0x0001a892, 0x0000e0ac,
-	0x000000b5, 0x000f20ac, 0x000e5892, 0x000db86a, 0x000d5038,
-	0x000d2c00, 0x000d53c8, 0x000dbb96, 0x000e5b6e, 0x000f2354,
-	0x0000034b, 0x0000e354, 0x0001ab6e, 0x00024b96, 0x0002b3c8,
-};
+#define B43_PHY_AC_RXIQ_TONE_AMP	181
+#define B43_PHY_AC_DDS_TONE_AMP		250
 
 static const int b43_phy_ac_tone_steps[] = { 1, -1, 3, -3, 4, -4 };
 
@@ -834,7 +831,7 @@ void b43_phy_ac_rxiqcal_dds_seed_tone(struct b43_wldev *dev, int step)
 			   B43_PHY_AC_STATE_RX_CCK | B43_PHY_AC_STATE_RX_OFDM |
 			   B43_PHY_AC_STATE_CCA_RESET | B43_PHY_AC_STATE_MAC_EN);
 
-	b43_phy_ac_tone_table_write(dev, b43_phy_ac_tone_period, step);
+	b43_phy_ac_tone_table_write(dev, B43_PHY_AC_RXIQ_TONE_AMP, step);
 }
 
 /*
@@ -7861,22 +7858,8 @@ void b43_phy_ac_post_rxiqcal_stage2(struct b43_wldev *dev)
 		b43_actab_write_bulk_scoped(dev, 0x000c, base + 5, 16, 1, zero1);
 	}
 
-	/*
-	 * B4b: one period of the tone in table 0x000e, transcribed from the
-	 * d6220 ch36 capture; whether it depends on the channel or follows a
-	 * formula is not known. The length is b43_phy_ac_tone_table_write()'s.
-	 */
-	{
-		static const u32 b4b_tbl_data[B43_PHY_AC_TONE_PERIOD] = {
-			0x0003e800, 0x0003b84d, 0x00032893, 0x00024cca,
-			0x000134ee, 0x000000fa, 0x000eccee, 0x000db4ca,
-			0x000cd893, 0x000c484d, 0x000c1800, 0x000c4bb3,
-			0x000cdb6d, 0x000db736, 0x000ecf12, 0x00000306,
-			0x00013712, 0x00024f36, 0x00032b6d, 0x0003bbb3,
-		};
-
-		b43_phy_ac_tone_table_write(dev, b4b_tbl_data, 1);
-	}
+	/* B4b: the DDS seed's tone in table 0x000e */
+	b43_phy_ac_tone_table_write(dev, B43_PHY_AC_DDS_TONE_AMP, 1);
 
 	/*
 	 * B4c, 33 ops: one self-contained read of 0x000c per wired chain at
@@ -8609,17 +8592,6 @@ void b43_phy_ac_rxiqcal_dds_seed(struct b43_wldev *dev)
 			   B43_PHY_AC_STATE_RX_CCK | B43_PHY_AC_STATE_RX_OFDM |
 			   B43_PHY_AC_STATE_CCA_RESET | B43_PHY_AC_STATE_MAC_EN);
 
-	/*
-	 * One period of the DDS/NCO tone, transcribed from the d6220 ch36
-	 * capture; the table length follows the width, see
-	 * b43_phy_ac_tone_table_write().
-	 */
-	static const u32 dds_seed[B43_PHY_AC_TONE_PERIOD] = {
-		0x0003e800, 0x0003b84d, 0x00032893, 0x00024cca, 0x000134ee,
-		0x000000fa, 0x000eccee, 0x000db4ca, 0x000cd893, 0x000c484d,
-		0x000c1800, 0x000c4bb3, 0x000cdb6d, 0x000db736, 0x000ecf12,
-		0x00000306, 0x00013712, 0x00024f36, 0x00032b6d, 0x0003bbb3,
-	};
 	static const u16 zeros[2] = { 0, 0 };
 
 	/* Arm command, with the clock forced until the window closes. */
@@ -8631,7 +8603,7 @@ void b43_phy_ac_rxiqcal_dds_seed(struct b43_wldev *dev)
 	b43_actab_write_bulk_scoped(dev, 0x000c, 0x0048, 16, 2, zeros);
 	b43_actab_write_bulk_scoped(dev, 0x000c, 0x0050, 16, 2, zeros);
 
-	b43_phy_ac_tone_table_write(dev, dds_seed, 1);
+	b43_phy_ac_tone_table_write(dev, B43_PHY_AC_DDS_TONE_AMP, 1);
 }
 
 /*

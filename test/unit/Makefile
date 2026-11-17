@@ -19,7 +19,8 @@ include $(B43)/files.mk
 SCRATCH := build/b43
 STUBS   := stubs
 AC_HDRS := $(addprefix $(SCRATCH)/,phy_ac.h tables_phy_ac.h radio_2069.h \
-            ppr.h radar_ac.h fw_layout.h calstat.h qmath.h)
+            ppr.h radar_ac.h fw_layout.h calstat.h qmath.h \
+            calibrate.h)
 
 # We include our stubs FIRST (via -I) so kernel headers <linux/*.h> and
 # the b43 project headers resolve to our minimal versions. The copied AC-PHY

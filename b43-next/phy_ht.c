@@ -10,7 +10,6 @@
 */
 
 #include <linux/slab.h>
-#include <linux/cordic.h>
 
 #include "b43.h"
 #include "phy_ht.h"
@@ -18,6 +17,7 @@
 #include "radio_2059.h"
 #include "main.h"
 #include "calstat.h"
+#include "calibrate.h"
 
 /* The entries of the calibration statistics, see b43_phy_ht_cal_entries[] */
 enum {
@@ -1970,7 +1970,7 @@ static u16 b43_phy_ht_load_tone(struct b43_wldev *dev, u32 freq, u16 max)
 {
 	u16 bw = b43_is_40mhz(dev) ? 40 : 20;
 	u16 len = bw << 3;
-	s32 rot = (((freq * 36) / bw) << 16) / 100;
+	s32 rot = b43_tone_rot(freq, bw);
 	s32 angle = 0;
 	u32 *data;
 	int i;
@@ -1978,14 +1978,8 @@ static u16 b43_phy_ht_load_tone(struct b43_wldev *dev, u32 freq, u16 max)
 	data = kcalloc(len, sizeof(*data), GFP_KERNEL);
 	if (!data)
 		return 0;
-	for (i = 0; i < len; i++) {
-		struct cordic_iq iq = cordic_calc_iq(CORDIC_FLOAT(angle));
-		s32 si = CORDIC_FLOAT(iq.i * max);
-		s32 sq = CORDIC_FLOAT(iq.q * max);
-
-		angle += rot;
-		data[i] = ((si & 0x3ff) << 10) | (sq & 0x3ff);
-	}
+	for (i = 0; i < len; i++, angle += rot)
+		data[i] = b43_tone_pack10(b43_tone_sample(angle, max));
 	b43_httab_write_bulk(dev, B43_HTTAB32(0x11, 0), len, data);
 	kfree(data);
 	return len;

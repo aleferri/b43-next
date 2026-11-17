@@ -10,7 +10,6 @@
 
 */
 
-#include <linux/cordic.h>
 #include <linux/delay.h>
 #include <linux/iopoll.h>
 #include <linux/slab.h>
@@ -25,6 +24,7 @@
 #include "main.h"
 #include "ppr.h"
 #include "calstat.h"
+#include "calibrate.h"
 
 struct nphy_iqcal_params {
 	u16 tx_lpf;
@@ -1597,30 +1597,16 @@ static void b43_radio_init2055(struct b43_wldev *dev)
  **************************************************/
 
 /* https://bcm-v4.sipsolutions.net/802.11/PHY/N/LoadSampleTable */
-static int b43_nphy_load_samples(struct b43_wldev *dev,
-					struct cordic_iq *samples, u16 len) {
+static void b43_nphy_load_samples(struct b43_wldev *dev, const u32 *data,
+				  u16 len)
+{
 	struct b43_phy_n *nphy = dev->phy.n;
-	u16 i;
-	u32 *data;
 
-	data = kcalloc(len, sizeof(u32), GFP_KERNEL);
-	if (!data) {
-		b43err(dev->wl, "allocation for samples loading failed\n");
-		return -ENOMEM;
-	}
 	if (nphy->hang_avoid)
 		b43_nphy_stay_in_carrier_search(dev, 1);
-
-	for (i = 0; i < len; i++) {
-		data[i] = (samples[i].i & 0x3FF) << 10;
-		data[i] |= samples[i].q & 0x3FF;
-	}
 	b43_ntab_write_bulk(dev, B43_NTAB32(17, 0), len, data);
-
-	kfree(data);
 	if (nphy->hang_avoid)
 		b43_nphy_stay_in_carrier_search(dev, 0);
-	return 0;
 }
 
 /* https://bcm-v4.sipsolutions.net/802.11/PHY/N/GenLoadSamples */
@@ -1630,7 +1616,7 @@ static u16 b43_nphy_gen_load_samples(struct b43_wldev *dev, u32 freq, u16 max,
 	int i;
 	u16 bw, len;
 	s32 rot, angle;
-	struct cordic_iq *samples;
+	u32 *data;
 
 	bw = b43_is_40mhz(dev) ? 40 : 20;
 	len = bw << 3;
@@ -1647,24 +1633,18 @@ static u16 b43_nphy_gen_load_samples(struct b43_wldev *dev, u32 freq, u16 max,
 		len = bw << 1;
 	}
 
-	samples = kzalloc_objs(struct cordic_iq, len);
-	if (!samples) {
+	data = kzalloc_objs(u32, len);
+	if (!data) {
 		b43err(dev->wl, "allocation for samples generation failed\n");
 		return 0;
 	}
-	rot = (((freq * 36) / bw) << 16) / 100;
-	angle = 0;
+	rot = b43_tone_rot(freq, bw);
+	for (i = 0, angle = 0; i < len; i++, angle += rot)
+		data[i] = b43_tone_pack10(b43_tone_sample(angle, max));
 
-	for (i = 0; i < len; i++) {
-		samples[i] = cordic_calc_iq(CORDIC_FLOAT(angle));
-		angle += rot;
-		samples[i].q = CORDIC_FLOAT(samples[i].q * max);
-		samples[i].i = CORDIC_FLOAT(samples[i].i * max);
-	}
-
-	i = b43_nphy_load_samples(dev, samples, len);
-	kfree(samples);
-	return (i < 0) ? 0 : len;
+	b43_nphy_load_samples(dev, data, len);
+	kfree(data);
+	return len;
 }
 
 /* https://bcm-v4.sipsolutions.net/802.11/PHY/N/RunSamples */

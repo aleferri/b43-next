@@ -10,7 +10,6 @@
 
 */
 
-#include <linux/cordic.h>
 #include <linux/slab.h>
 
 #include "b43.h"
@@ -19,6 +18,7 @@
 #include "phy_common.h"
 #include "tables_lpphy.h"
 #include "calstat.h"
+#include "calibrate.h"
 
 static const char *const lpphy_cal_rccal_fails[] = {
 	"iq_est", "rx_timeout", "tx_timeout",
@@ -1819,7 +1819,7 @@ static void lpphy_start_tx_tone(struct b43_wldev *dev, s32 freq, u16 max)
 	u16 buf[64];
 	int i, samples = 0;
 	s32 theta = 0;
-	s32 rotation = (((36 * freq) / 20) << 16) / 100;
+	s32 rotation = b43_tone_rot(freq, 20);
 	struct cordic_iq sample;
 
 	lpphy->tx_tone_freq = freq;
@@ -1838,10 +1838,10 @@ static void lpphy_start_tx_tone(struct b43_wldev *dev, s32 freq, u16 max)
 	}
 
 	for (i = 0; i < samples; i++) {
-		sample = cordic_calc_iq(CORDIC_FLOAT(theta));
+		sample = b43_tone_sample(theta, max);
 		theta += rotation;
-		buf[i] = (CORDIC_FLOAT(sample.i * max) & 0xFF) << 8;
-		buf[i] |= CORDIC_FLOAT(sample.q * max) & 0xFF;
+		buf[i] = (sample.i & 0xFF) << 8;
+		buf[i] |= sample.q & 0xFF;
 	}
 
 	b43_lptab_write_bulk(dev, B43_LPTAB16(5, 0), samples, buf);
