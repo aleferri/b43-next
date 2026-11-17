@@ -882,6 +882,9 @@ struct b43_phy_lp {
 	bool tx_iqloc_best_coeffs_valid;
 	u16 tx_iqloc_best_coeffs[11];
 
+	/* The RX I/Q compensation last written, c0 << 8 | c1 */
+	u16 rx_iq_comp;
+
 	/* Used for "Save/Restore Dig Filt State" */
 	u16 dig_flt_state[9];
 

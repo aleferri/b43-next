@@ -191,6 +191,19 @@ Check: by computation on `i_pwr`, `q_pwr`, `iq_prod` taken from a capture
 (PHY 0x483-0x488 after the estimate), comparing the coefficient wl writes to
 0x49E with the one the code would.
 
+### Calibrations applied again at an up
+
+After the first init, `b43_lpphy_op_init()` on rev0/1 calibrates nothing:
+it sets the RC cap, tunes, and `lpphy_restore_calibration()` writes the TX
+I/Q and LO coefficients, the TX gain table's copies of them, the radio's LO
+offsets and the RX I/Q compensation, as wl at NetworkManager's down and up
+on the BCM4312. The radio LO offsets come from the best coefficients 7
+(ei, eq) and 9 (fi, fq) in the 2062's sign-magnitude form; the capture has
+one set of them, -2, -1, 2, 1, written 0xFF20, 0xFF10, 2, 1. Rev2 still
+calibrates at every init.
+
+Check: a capture whose LO offsets are positive in ei or eq, and a rev2 up.
+
 ### TX I/Q-LO calibration beyond the BCM4312
 
 `lpphy_tx_iqlo_cal()` follows wl's rev1 runs, whose coefficients it
