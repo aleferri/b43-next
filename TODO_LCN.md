@@ -20,9 +20,25 @@ The scores are in `test/phy_lcn/README.md`.
   index (0x473) after each, while it settles from 0xb2 to 0x86-0x88 (#17454,
   about 2000 operations, most of them the core's). The stop condition is not
   known. brcmsmac does not have it.
-- **The PAPD calibration** after it (#19403-#22546: the AFE clock in PAPD
-  mode, then about 1600 PHY operations). brcmsmac's `wlc_lcnphy_a1()` and
-  its callers are the reference.
+- **The PAPD calibration** after it (#19403-#22546, about 1600 PHY
+  operations). brcmsmac has none for the LCN-PHY (it only clears table 24,
+  `wlc_lcnphy_clear_papd_comptable()`), so the capture is the only source.
+  What it shows: the AFE clock init again (0x6d0 = 0xf), 0x6d6 and 0x6da
+  set up, 0x671 = 0x630, a save of 18 radio registers (0x116, 0x12d, 0x12c,
+  0x06a, 0x098, 0x097, 0x12f, 0x00b, 0x113, 0x01d, 0x114, 0x02e, 0x12a,
+  0x009, 0x11f, 0x0ff, 0x007, 0x005) and their loopback values, an RX
+  gain override (0x4b6 = 0x0500), table 24 cleared to 0x80000; then the
+  PAPD engine's setup, written blind (0x689, 0x67a, 0x673, 0x679, 0x674,
+  0x675, 0x670, 0x68c, 0x6c8, 0x6c9, 0x680, 0x681, 0x67f, 0x6cb-0x6ce,
+  0x69d, 0x6a1-0x6a5, 0x67e, 0x687, the sample play 0x640/0x642 with 8
+  samples in table 21, 0x67b-0x67d, BB multiplier 0), the start
+  (0x676 = 0xb8a1) and a poll of 0x676 until bit 0 clears (#19747-#19910).
+  It runs twice: the first pass reads 0x6ba/0x6bb, the second 0x6b4-0x6b7;
+  then wl copies table 24's entry 5 into entries 0-4 and entry 0x3e into
+  0x3f, and reads the whole table back (#20348-#20490), for what is not
+  seen yet. The engine computes the table itself; what wl adds is the
+  setup's values, which depend on what (gain, board, channel) is not known
+  from one capture, and the post-processing.
 - **The watchdog's work**: brcmsmac's `calib_modes(PHY_PERICAL_WATCHDOG)`
   (the temperature, the glacial calibration, the VCO calibration) and the
   noise sample; what wl does while associated on channel 1 (from
@@ -30,6 +46,25 @@ The scores are in `test/phy_lcn/README.md`.
 - **`agc_temp_init`**: wl reads 0x4df, table 17 at 59-60, 0x434, 0x424,
   0x425 and table 13 at 28-29 after the PMU (#8239-#8251); b43 neither
   reads nor keeps them, and nothing uses them yet.
+
+## Firmware
+
+`b43trace fw-from-capture <attach.txt> --format mmiotrace --rev 24 -o DIR`
+rebuilds `ucode24_lcn.fw` (9962 words), `lcn0initvals24.fw` (562 writes)
+and `lcn0bsinitvals24.fw` (5) from the capture, the names `b43` asks for
+the BCM4313; wl's revinfo says ucode 0x340006e. To check: the initvals run
+ends with a write of OBJADDR (0x160 = 0x10026), the select of the read
+that follows it, not an initval; and whether the band group is the
+LCN-PHY's. The files come from the proprietary driver: keep them out of
+the tree.
+
+## Not run yet
+
+- `test/integration` (the whole of b43 on a virtual chip, as `r6400.sh`
+  does for the HT-PHY) has no LCN board: a profile in
+  `test/board_profile.h` (BCM4313, chip rev 1, core rev 24, PCI 0x4727,
+  SROM rev 8), the core's reads of this capture as the oracle, and the
+  firmware above.
 
 ## Operations of unknown purpose
 
