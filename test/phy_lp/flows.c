@@ -201,10 +201,17 @@ int lp_run_flow(const char *name)
 		/*
 		 * The init, then mac80211's channel switches with the MAC up,
 		 * as b43_op_config() runs them: the MAC suspended, the
-		 * channel set, b43_switch_channel(), the MAC enabled.
+		 * channel set, b43_switch_channel(), the MAC enabled. A
+		 * channel 0 is the interface going down and up again.
 		 */
 		lp_init(dev);
 		for (i = 0; i < n; i++) {
+			/* An interface down and up: b43_wireless_core_init() */
+			if (!ch[i]) {
+				dev->phy.ops->prepare_structs(dev);
+				lp_init(dev);
+				continue;
+			}
 			b43_mac_suspend(dev);
 			chan.hw_value = ch[i];
 			chan.center_freq = ch[i] == 14 ? 2484 : 2407 + 5 * ch[i];
