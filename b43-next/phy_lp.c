@@ -80,12 +80,26 @@ static void b43_lpphy_op_prepare_structs(struct b43_wldev *dev)
 {
 	struct b43_phy *phy = &dev->phy;
 	struct b43_phy_lp *lpphy = phy->lp;
+	/*
+	 * The calibrations' results outlive a core init, as wl keeps them
+	 * across the interface's down and up: b43_lpphy_op_init() applies
+	 * them again instead of calibrating.
+	 */
+	u8 rc_cap = lpphy->rc_cap, calib_chan = lpphy->full_calib_chan;
+	bool iqlo_valid = lpphy->tx_iqloc_best_coeffs_valid;
+	u16 iqlo[ARRAY_SIZE(lpphy->tx_iqloc_best_coeffs)];
+	u16 rx_iq_comp = lpphy->rx_iq_comp;
 
+	memcpy(iqlo, lpphy->tx_iqloc_best_coeffs, sizeof(iqlo));
 	memset(lpphy, 0, sizeof(*lpphy));
 	lpphy->antenna = B43_ANTENNA_DEFAULT;
 	lpphy->tx_pwr_idx_over = -1;
 
-	//TODO
+	lpphy->rc_cap = rc_cap;
+	lpphy->full_calib_chan = calib_chan;
+	lpphy->tx_iqloc_best_coeffs_valid = iqlo_valid;
+	memcpy(lpphy->tx_iqloc_best_coeffs, iqlo, sizeof(iqlo));
+	lpphy->rx_iq_comp = rx_iq_comp;
 }
 
 static void b43_lpphy_op_free(struct b43_wldev *dev)
@@ -1966,6 +1980,7 @@ out:
 	b43_cal_report(dev, LP_CAL_RXIQ_COEF, (u8)c0, (u8)c1);
 	b43_phy_maskset(dev, B43_LPPHY_RX_COMP_COEFF_S, 0xFF00, c1);
 	b43_phy_maskset(dev, B43_LPPHY_RX_COMP_COEFF_S, 0x00FF, c0 << 8);
+	dev->phy.lp->rx_iq_comp = ((u8)c0 << 8) | (u8)c1;
 	return ret;
 }
 
@@ -2259,6 +2274,46 @@ static void lpphy_txpwrtbl_iqlo_cal(struct b43_wldev *dev, bool recal)
 	b43_phy_mask(dev, B43_LPPHY_RF_OVERRIDE_0, 0xFFD7);
 }
 
+/*
+ * A radio LO offset as the 2062 holds it, the magnitude of a negative one in
+ * the high nibble; the high byte is wl's.
+ */
+static u16 lpphy_loft_reg(s8 v)
+{
+	return v < 0 ? 0xFF00 | (-v << 4) : v;
+}
+
+/*
+ * The calibrations' results applied again after a core init, as wl does at
+ * the interface's up on the BCM4312: the TX I/Q and LO coefficients, also
+ * in every entry of the TX gain table (TXpwrtblIqloCal's loop), the radio's
+ * LO offsets from the best coefficients 7 and 9, and the RX I/Q
+ * compensation.
+ */
+static void lpphy_restore_calibration(struct b43_wldev *dev)
+{
+	struct b43_phy_lp *lpphy = dev->phy.lp;
+	const u16 *best = lpphy->tx_iqloc_best_coeffs;
+	u8 table = lpphy_tx_pwr_table(dev);
+	u32 val;
+	int i;
+
+	lpphy_set_tx_iqcc(dev, best[0], best[1]);
+	b43_lptab_write(dev, B43_LPTAB16(0, 85), best[5]);
+	for (i = 0; i < 128; i++) {
+		val = b43_lptab_read(dev, B43_LPTAB32(table, 0x140 + i));
+		val = (val & 0xFF00000) | ((best[0] & 0x3FF) << 10) |
+		      (best[1] & 0x3FF);
+		b43_lptab_write(dev, B43_LPTAB32(table, 0x140 + i), val);
+		b43_lptab_write(dev, B43_LPTAB32(table, 0x1C0 + i), best[5]);
+	}
+	b43_radio_write(dev, B2062_N_TX_CTL3, lpphy_loft_reg(best[7] >> 8));
+	b43_radio_write(dev, B2062_N_TX_CTL4, lpphy_loft_reg(best[7]));
+	b43_radio_write(dev, B2062_N_TX_CTL5, lpphy_loft_reg(best[9] >> 8));
+	b43_radio_write(dev, B2062_N_TX_CTL6, lpphy_loft_reg(best[9]));
+	b43_phy_write(dev, B43_LPPHY_RX_COMP_COEFF_S, lpphy->rx_iq_comp);
+}
+
 static void lpphy_papd_cal_txpwr(struct b43_wldev *dev)
 {
 	struct b43_phy_lp *lpphy = dev->phy.lp;
@@ -2314,6 +2369,7 @@ static bool lpphy_set_rx_iq_comp(struct b43_wldev *dev)
 	b43_phy_maskset(dev, B43_LPPHY_RX_COMP_COEFF_S, 0xFF00, (u8)iqcomp->c1);
 	b43_phy_maskset(dev, B43_LPPHY_RX_COMP_COEFF_S,
 			0x00FF, iqcomp->c0 << 8);
+	lpphy->rx_iq_comp = ((u8)iqcomp->c0 << 8) | (u8)iqcomp->c1;
 	return true;
 }
 
@@ -3109,6 +3165,7 @@ static int b43_lpphy_op_switch_channel(struct b43_wldev *dev,
 
 static int b43_lpphy_op_init(struct b43_wldev *dev)
 {
+	struct b43_phy_lp *lpphy = dev->phy.lp;
 	int err;
 
 	if (dev->dev->bus_type != B43_BUS_SSB) {
@@ -3119,6 +3176,19 @@ static int b43_lpphy_op_init(struct b43_wldev *dev)
 	lpphy_read_band_sprom(dev); //FIXME should this be in prepare_structs?
 	lpphy_baseband_init(dev);
 	lpphy_radio_init(dev);
+	/* An init after the first, as wl's at an up: no calibration */
+	if (dev->phy.rev < 2 && lpphy->rc_cap &&
+	    lpphy->tx_iqloc_best_coeffs_valid) {
+		lpphy_set_rc_cap(dev);
+		err = b43_lpphy_op_switch_channel(dev, dev->phy.channel);
+		if (err) {
+			b43dbg(dev->wl, "Switch to channel %u failed, error = %d.\n",
+			       dev->phy.channel, err);
+		}
+		lpphy_restore_calibration(dev);
+		lpphy_tx_pctl_init(dev);
+		return 0;
+	}
 	err = b43_lpphy_op_switch_channel(dev, 7);
 	if (err) {
 		b43dbg(dev->wl, "Switch to channel 7 failed, error = %d.\n",
