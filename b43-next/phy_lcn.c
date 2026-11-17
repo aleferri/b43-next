@@ -240,8 +240,7 @@ static void b43_phy_lcn_rev0_baseband_init(struct b43_wldev *dev)
 	b43_phy_set(dev, 0x44a, 0x44);
 	b43_phy_write(dev, 0x44a, 0x80);
 
-	if (!(dev->dev->bus_sprom->boardflags_lo & B43_BFL_FEM))
-		; /* TODO */
+	/* TODO: without a FEM, wl sets the TX gain by index here */
 	b43_phy_maskset(dev, 0x634, ~0xff, 0xc);
 	if (dev->dev->bus_sprom->boardflags_lo & B43_BFL_FEM) {
 		b43_phy_maskset(dev, 0x634, ~0xff, 0xa);
@@ -312,7 +311,6 @@ static void b43_phy_lcn_sense_setup(struct b43_wldev *dev,
 {
 	u8 auxpga_vmidcourse, auxpga_vmidfine, auxpga_gain;
 	u16 auxpga_vmid;
-	u8 tx_pwr_idx;
 	u8 i;
 
 	u16 save_radio_regs[6][2] = {
@@ -338,7 +336,6 @@ static void b43_phy_lcn_sense_setup(struct b43_wldev *dev,
 	b43_mac_suspend(dev);
 	save_radio_4a4 = b43_radio_read(dev, 0x4a4);
 	/* wlc_lcnphy_set_tx_pwr_ctrl(pi, LCNPHY_TX_PWR_CTRL_OFF); */
-	tx_pwr_idx = dev->phy.lcn->tx_pwr_curr_idx;
 
 	/* Setup */
 	/* TODO: wlc_lcnphy_set_tx_pwr_by_index(pi, 127); */
@@ -411,7 +408,7 @@ static void b43_phy_lcn_sense_setup(struct b43_wldev *dev,
 				save_radio_regs[i][1]);
 	for (i = 0; i < 14; i++)
 		b43_phy_write(dev, save_phy_regs[i][0], save_phy_regs[i][1]);
-	/* TODO: wlc_lcnphy_set_tx_pwr_by_index(tx_pwr_idx) */
+	/* TODO: wlc_lcnphy_set_tx_pwr_by_index(tx_pwr_curr_idx) */
 	b43_radio_write(dev, 0x4a4, save_radio_4a4);
 
 	b43_mac_enable(dev);
