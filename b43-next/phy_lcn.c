@@ -47,6 +47,8 @@ enum {
 	LCN_CAL_RXIQ_GAIN,
 	LCN_CAL_RXIQ_COMP,
 	LCN_CAL_TXPWR,
+	LCN_CAL_PAPD_IDX,
+	LCN_CAL_PAPD,
 };
 
 struct lcn_tx_gains {
@@ -309,6 +311,14 @@ static void b43_phy_lcn_afe_set_unset(struct b43_wldev *dev)
 }
 
 /* wlc_lcnphy_get_pa_gain */
+/* The AFE's clock, at the init and around the PAPD calibration */
+static void b43_phy_lcn_afe_clk_init(struct b43_wldev *dev)
+{
+	b43_phy_set(dev, 0x6d1, 0x80);
+	b43_phy_write(dev, 0x6d0, 0xf);
+	b43_phy_lcn_afe_set_unset(dev);
+}
+
 static u16 b43_phy_lcn_get_pa_gain(struct b43_wldev *dev)
 {
 	return (b43_phy_read(dev, 0x4fb) & 0x7f00) >> 8;
@@ -453,6 +463,12 @@ static void b43_phy_lcn_load_tx_pwr_index(struct b43_wldev *dev, u8 index)
 		8 * b43_lcntab_read(dev, B43_LCNTAB32(0x7, 0x240 + index)));
 }
 
+/* wlc_lcnphy_set_tx_pwr_npt */
+static void b43_phy_lcn_set_tx_pwr_npt(struct b43_wldev *dev, u8 npt)
+{
+	b43_phy_maskset(dev, 0x4a5, ~0x700, npt << 8);
+}
+
 /*
  * wlc_lcnphy_txpower_recalc_target: the rates' offsets, then the target, which
  * wl writes even when it is unchanged
@@ -493,7 +509,7 @@ static u16 b43_phy_lcn_set_tx_pwr_ctrl(struct b43_wldev *dev, u16 mode)
 		if (lcn->tx_pwr_target)
 			b43_phy_lcn_write_tx_pwr_target(dev);
 		b43_phy_maskset(dev, 0x4a4, ~0x1ff, lcn->tssi_idx);
-		b43_phy_maskset(dev, 0x4a5, ~0x700, lcn->tssi_npt << 8);
+		b43_phy_lcn_set_tx_pwr_npt(dev, lcn->tssi_npt);
 		b43_radio_mask(dev, 0x11f, ~0x4);
 		lcn->tssi_tx_cnt = b43_shm_read16(dev, B43_SHM_SHARED,
 						  B43_SHM_SH_TXALLFRM);
@@ -519,6 +535,14 @@ static void b43_phy_lcn_set_tx_pwr_by_index(struct b43_wldev *dev, u8 index)
 
 	b43_phy_lcn_set_tx_pwr_ctrl(dev, B43_LCN_TX_PWR_CTRL_OFF);
 	b43_phy_lcn_load_tx_pwr_index(dev, index);
+}
+
+/* wlc_lcnphy_get_current_tx_pwr_idx */
+static u8 b43_phy_lcn_get_current_tx_pwr_idx(struct b43_wldev *dev)
+{
+	if (b43_phy_lcn_get_tx_pwr_ctrl(dev) != B43_LCN_TX_PWR_CTRL_HW)
+		return dev->phy.lcn->tx_pwr_curr_idx;
+	return (b43_phy_read(dev, 0x473) & 0x1ff) / 2;
 }
 
 /* wlc_lcnphy_rev0_baseband_init */
@@ -1472,17 +1496,20 @@ static void b43_phy_lcn_rx_gain_override(struct b43_wldev *dev, bool enable)
 }
 
 /* wlc_lcnphy_set_rx_gain_by_distribution, rev 1, no TR switch nor LNA */
-static void b43_phy_lcn_set_rx_gain(struct b43_wldev *dev, u16 biq1,
-				    u16 tia, u16 lna2)
+/* wlc_lcnphy_set_rx_gain_by_distribution, without an external LNA */
+static void b43_phy_lcn_set_rx_gain(struct b43_wldev *dev, bool trsw,
+				    u16 biq2, u16 biq1, u16 tia, u16 lna2,
+				    u16 lna1)
 {
 	b43_phy_maskset(dev, 0x4b6, 0, ((biq1 & 0xf) << 12) |
 			((tia & 0xf) << 8) | ((lna2 & 0x3) << 6) |
-			((lna2 & 0x3) << 4));
-	b43_phy_mask(dev, 0x4b7, ~0xf);
-	b43_phy_mask(dev, 0x4b1, ~0x1800);
+			((lna2 & 0x3) << 4) | ((lna1 & 0x3) << 2) |
+			(lna1 & 0x3));
+	b43_phy_maskset(dev, 0x4b7, ~0xf, biq2 & 0xf);
+	b43_phy_maskset(dev, 0x4b1, ~0x1800, (lna1 & 0x3) << 11);
 	b43_phy_mask(dev, 0x4b1, ~0x200);
 	b43_phy_mask(dev, 0x4b1, ~0x400);
-	b43_phy_set(dev, 0x44d, 0x1);
+	b43_phy_maskset(dev, 0x44d, ~0x1, !trsw);
 }
 
 /* wlc_lcnphy_set_rx_iq_comp */
@@ -1568,7 +1595,7 @@ static bool b43_phy_lcn_rx_iq_cal_gain(struct b43_wldev *dev, u16 biq1,
 	s32 iq;
 	u32 il, ql, ih, qh;
 
-	b43_phy_lcn_set_rx_gain(dev, biq1, tia, lna2);
+	b43_phy_lcn_set_rx_gain(dev, false, 0, biq1, tia, lna2, 0);
 	b43_phy_lcn_rx_gain_override(dev, true);
 	b43_phy_lcn_start_tx_tone(dev, 2000, 60, false);
 	udelay(500);
@@ -1694,6 +1721,229 @@ static void b43_phy_lcn_periodic_cal(struct b43_wldev *dev)
 	b43_phy_lcn_set_tx_pwr_ctrl(dev, save_ctrl);
 	b43_phy_lcn_deaf_mode(dev, false);
 	b43_mac_enable(dev);
+}
+
+/*
+ * wl's TX power warm-up: with the offsets cleared, the hardware control
+ * brings a fixed number of dummy frames to the PAPD calibration's power.
+ * There is no stop condition (50 in every warm-up of the CQ57's capture,
+ * also when the index settles after 3). Returns the index it settles at.
+ */
+#define B43_LCN_PAPD_TARGET		0x40
+#define B43_LCN_PAPD_WARMUP_FRAMES	50
+
+static u8 b43_phy_lcn_tx_pwr_warmup(struct b43_wldev *dev)
+{
+	u8 index = 0;
+	int i;
+
+	b43_phy_lcn_clear_tx_power_offsets(dev);
+	b43_phy_maskset(dev, 0x4a7, ~0xff, B43_LCN_PAPD_TARGET);
+	b43_phy_lcn_set_tx_pwr_npt(dev, dev->phy.lcn->tssi_npt);
+	b43_phy_lcn_deaf_mode(dev, true);
+	for (i = 0; i < B43_LCN_PAPD_WARMUP_FRAMES; i++) {
+		b43_dummy_transmission(dev, true, true);
+		index = b43_phy_lcn_get_current_tx_pwr_idx(dev);
+	}
+	b43_phy_lcn_deaf_mode(dev, false);
+	return index;
+}
+
+/* The radio's loopback for the PAPD calibration, wl's (#19454) */
+static const u16 b43_phy_lcn_papd_radio_regs[] = {
+	0x116, 0x12d, 0x12c, 0x06a, 0x098, 0x097, 0x12f, 0x00b, 0x113,
+	0x01d, 0x114, 0x02e, 0x12a, 0x009, 0x11f, 0x007, 0x0ff, 0x005,
+};
+
+static const struct { u16 reg, val; } b43_phy_lcn_papd_loopback[] = {
+	{ 0x116, 0x07 }, { 0x12d, 0x01 }, { 0x12c, 0x07 }, { 0x06a, 0xc2 },
+	{ 0x098, 0x0c }, { 0x12f, 0x03 }, { 0x097, 0xfa }, { 0x00b, 0x07 },
+	{ 0x113, 0x10 }, { 0x01d, 0x01 }, { 0x114, 0x01 }, { 0x02e, 0x10 },
+	{ 0x12a, 0x08 }, { 0x009, 0x02 },
+};
+
+/* The PHY registers the calibration saves, in wl's order (#19219) */
+static const u16 b43_phy_lcn_papd_phy_regs[] = {
+	0x90f, 0x900, 0x901, 0x906, 0x907, 0x908, 0x902, 0x903,
+	0x909, 0x90a, 0x90b, 0x904, 0x905, 0x90c, 0x90d, 0x90e,
+};
+
+/*
+ * The PAPD engine's setup, written as wl writes it on the CQ57 on channel 1
+ * (#19693-#19747), the samples it plays in table 21 between 0x677 and
+ * 0x67b. What of it depends on the channel or the board is not known.
+ */
+static const struct { u16 reg, val; } b43_phy_lcn_papd_setup[] = {
+	{ 0x689, 0x0023 }, { 0x67a, 0x0003 }, { 0x673, 0x1770 },
+	{ 0x679, 0x00c8 }, { 0x674, 0x0444 }, { 0x675, 0x003f },
+	{ 0x670, 0x0681 }, { 0x68c, 0x0049 }, { 0x6c8, 0x0000 },
+	{ 0x6c9, 0x0600 }, { 0x680, 0x00ff }, { 0x681, 0x013f },
+	{ 0x680, 0x00ff }, { 0x681, 0x013f }, { 0x67f, 0x0034 },
+	{ 0x6ce, 0x0000 }, { 0x6cb, 0x0000 }, { 0x6cc, 0x0000 },
+	{ 0x6cd, 0x0000 }, { 0x69d, 0x07ff }, { 0x6a4, 0x0000 },
+	{ 0x6a5, 0x0000 }, { 0x6a1, 0x0080 }, { 0x6a2, 0x0000 },
+	{ 0x67e, 0x0292 }, { 0x687, 0x0060 }, { 0x642, 0x0007 },
+	{ 0x640, 0x337b }, { 0x677, 0x0000 },
+};
+
+static const u32 b43_phy_lcn_papd_samples[] = {
+	0x7fc00, 0x5a569, 0x001ff, 0xa5d69, 0x80400, 0xa5e97, 0x00201, 0x5a697,
+};
+
+#define B43_LCN_PAPD_ENTRIES		64
+/* Set in a write of table 24, read back without it */
+#define B43_LCN_PAPD_WRITE		0x80000
+
+/* One run of the PAPD engine, which fills table 24 */
+static bool b43_phy_lcn_papd_run(struct b43_wldev *dev)
+{
+	int i;
+
+	b43_phy_lcn_set_rx_gain(dev, true, 0, 0, 5, 0, 0);
+	b43_phy_set(dev, 0x6a3, 0x1);
+	b43_phy_mask(dev, 0x6a3, ~0x1);
+	for (i = 0; i < B43_LCN_PAPD_ENTRIES; i++)
+		b43_lcntab_write(dev, B43_LCNTAB32(24, i), B43_LCN_PAPD_WRITE);
+
+	for (i = 0; i < ARRAY_SIZE(b43_phy_lcn_papd_setup); i++)
+		b43_phy_write(dev, b43_phy_lcn_papd_setup[i].reg,
+			      b43_phy_lcn_papd_setup[i].val);
+	b43_lcntab_write_bulk(dev, B43_LCNTAB32(21, 0),
+			      ARRAY_SIZE(b43_phy_lcn_papd_samples),
+			      b43_phy_lcn_papd_samples);
+	b43_phy_write(dev, 0x67b, 0x578);
+	b43_phy_write(dev, 0x67c, 0x4100);
+	b43_phy_write(dev, 0x67d, 0);
+	b43_phy_lcn_set_bbmult(dev, 0);
+	b43_phy_write(dev, 0x68b, 0);
+
+	b43_phy_write(dev, 0x676, 0xb8a1);
+	for (i = 0; i < 1000; i++) {
+		if (!(b43_phy_read(dev, 0x676) & 0x1))
+			return true;
+		udelay(10);
+	}
+	return false;
+}
+
+/*
+ * wl's PAPD calibration, which brcmsmac does not have: the capture is the
+ * only source (#18975-#20678). At the index the warm-up settled at, with the
+ * TX looped back to the RX, the engine runs twice; wl then copies entry 5
+ * into entries 0-4 and entry 0x3e into 0x3f.
+ */
+static void b43_phy_lcn_papd_cal(struct b43_wldev *dev, u8 index)
+{
+	u16 save_phy[ARRAY_SIZE(b43_phy_lcn_papd_phy_regs)];
+	u16 save_rf[ARRAY_SIZE(b43_phy_lcn_papd_radio_regs)];
+	u16 save_4d7, save_4ea, save_4eb, save_49c, save_631, save_6d6;
+	u16 save_6da;
+	u32 table[B43_LCN_PAPD_ENTRIES];
+	u8 save_bbmult;
+	bool ok;
+	int i;
+
+	b43_cal_begin(dev, B43_CAL_PAPD);
+	b43_cal_report(dev, LCN_CAL_PAPD_IDX, index);
+
+	b43_phy_lcn_deaf_mode(dev, true);
+	b43_phy_lcn_set_tx_pwr_npt(dev, dev->phy.lcn->tssi_npt);
+	b43_phy_lcn_set_tx_pwr_ctrl(dev, B43_LCN_TX_PWR_CTRL_OFF);
+	save_bbmult = b43_phy_lcn_get_bbmult(dev);
+	save_4d7 = b43_phy_read(dev, 0x4d7);
+	b43_phy_set(dev, 0x4d7, 0x8);
+	b43_phy_mask(dev, 0x4d7, (u16)~0x2000);
+	b43_phy_mask(dev, 0x676, ~0x1);
+	for (i = 0; i < 3; i++)
+		b43_phy_mask(dev, 0x86c, ~(0xf << (4 * i)));
+	for (i = 0; i < ARRAY_SIZE(b43_phy_lcn_papd_phy_regs); i++)
+		save_phy[i] = b43_phy_read(dev, b43_phy_lcn_papd_phy_regs[i]);
+
+	b43_phy_lcn_deaf_mode(dev, true);
+	b43_phy_lcn_rx_gain_override(dev, true);
+	b43_phy_lcn_tx_pu(dev, true);
+	b43_phy_set(dev, 0x44c, 0x800);
+	b43_phy_set(dev, 0x44d, 0x2000);
+	b43_phy_lcn_set_rx_gain(dev, false, 4, 6, 4, 3, 3);
+	b43_phy_lcn_rx_gain_override(dev, true);
+	save_4ea = b43_phy_read(dev, 0x4ea);
+	save_4eb = b43_phy_read(dev, 0x4eb);
+	b43_phy_set(dev, 0x4eb, 0x10);
+	b43_phy_lcn_set_tx_pwr_by_index(dev, index);
+
+	save_49c = b43_phy_read(dev, 0x49c);
+	save_631 = b43_phy_read(dev, 0x631);
+	save_6d6 = b43_phy_read(dev, 0x6d6);
+	save_6da = b43_phy_read(dev, 0x6da);
+	b43_phy_lcn_afe_clk_init(dev);
+	b43_phy_mask(dev, 0x6d6, ~0x1);
+	b43_phy_set(dev, 0x6da, 0x87);
+	b43_phy_write(dev, 0x671,
+		8 * b43_lcntab_read(dev, B43_LCNTAB32(0x7, 0x240 + index)));
+	b43_phy_set(dev, 0x43b, 0x1);
+	b43_phy_mask(dev, 0x43c, ~0x1);
+	b43_phy_set(dev, 0x938, 0x800);
+
+	for (i = 0; i < ARRAY_SIZE(b43_phy_lcn_papd_radio_regs); i++)
+		save_rf[i] = b43_radio_read(dev, b43_phy_lcn_papd_radio_regs[i]);
+	for (i = 0; i < ARRAY_SIZE(b43_phy_lcn_papd_loopback); i++)
+		b43_radio_write(dev, b43_phy_lcn_papd_loopback[i].reg,
+				b43_phy_lcn_papd_loopback[i].val);
+	b43_radio_set(dev, 0x11f, 0x4);
+	b43_radio_mask(dev, 0x005, ~0x8);
+	b43_phy_write(dev, 0x49c, 1);
+
+	ok = b43_phy_lcn_papd_run(dev);
+	b43_phy_read(dev, 0x6ba);
+	b43_phy_read(dev, 0x6bb);
+	ok = ok && b43_phy_lcn_papd_run(dev);
+	for (i = 0; i < 4; i++)
+		b43_phy_read(dev, 0x6b7 - i);
+
+	if (ok) {
+		u32 v = b43_lcntab_read(dev, B43_LCNTAB32(24, 5));
+
+		b43_lcntab_read(dev, B43_LCNTAB32(24, 0x3f));
+		for (i = 0; i < 5; i++)
+			b43_lcntab_write(dev, B43_LCNTAB32(24, i),
+					 v | B43_LCN_PAPD_WRITE);
+		v = b43_lcntab_read(dev, B43_LCNTAB32(24, 0x3e));
+		b43_lcntab_write(dev, B43_LCNTAB32(24, 0x3f),
+				 v | B43_LCN_PAPD_WRITE);
+		v = b43_lcntab_read(dev, B43_LCNTAB32(24, 1));
+		b43_lcntab_write(dev, B43_LCNTAB32(24, 0),
+				 v | B43_LCN_PAPD_WRITE);
+	}
+	b43_lcntab_read_bulk(dev, B43_LCNTAB32(24, 0), B43_LCN_PAPD_ENTRIES,
+			     table);
+	b43_cal_report_values(dev, LCN_CAL_PAPD, table, B43_LCN_PAPD_ENTRIES);
+
+	b43_phy_write(dev, 0x4ea, save_4ea);
+	b43_phy_write(dev, 0x4eb, save_4eb);
+	b43_phy_write(dev, 0x49c, save_49c);
+	b43_phy_write(dev, 0x631, save_631);
+	b43_phy_write(dev, 0x6d6, save_6d6);
+	b43_phy_write(dev, 0x6da, save_6da);
+	b43_phy_lcn_afe_clk_init(dev);
+	b43_phy_maskset(dev, 0x4d7, ~0x8, save_4d7 & 0x8);
+	b43_phy_maskset(dev, 0x4d7, ~0x2000, save_4d7 & 0x2000);
+	b43_phy_lcn_clear_trsw_override(dev);
+	for (i = 0; i < ARRAY_SIZE(b43_phy_lcn_papd_radio_regs); i++)
+		b43_radio_write(dev, b43_phy_lcn_papd_radio_regs[i], save_rf[i]);
+	b43_phy_mask(dev, 0x44c, ~0x800);
+	b43_phy_lcn_tx_pu(dev, false);
+	b43_phy_lcn_rx_gain_override(dev, false);
+	b43_phy_mask(dev, 0x43b, ~0x1);
+	b43_phy_mask(dev, 0x938, ~0x800);
+	b43_phy_lcn_deaf_mode(dev, false);
+	for (i = 0; i < ARRAY_SIZE(b43_phy_lcn_papd_phy_regs); i++)
+		b43_phy_write(dev, b43_phy_lcn_papd_phy_regs[i], save_phy[i]);
+	b43_phy_lcn_latch_tx_iir_filter(dev);
+	b43_phy_mask(dev, 0x676, ~0x1);
+	for (i = 0; i < 3; i++)
+		b43_phy_set(dev, 0x86c, 0x4 << (4 * i));
+	b43_phy_lcn_set_bbmult(dev, save_bbmult);
+	b43_phy_lcn_set_tx_pwr_ctrl(dev, B43_LCN_TX_PWR_CTRL_HW);
 }
 
 /**************************************************
@@ -1862,10 +2112,7 @@ static int b43_phy_lcn_op_init(struct b43_wldev *dev)
 
 	b43_phy_set(dev, 0x44a, 0x80);
 	b43_phy_mask(dev, 0x44a, 0x7f);
-	b43_phy_set(dev, 0x6d1, 0x80);
-	b43_phy_write(dev, 0x6d0, 0xf);
-
-	b43_phy_lcn_afe_set_unset(dev);
+	b43_phy_lcn_afe_clk_init(dev);
 
 	b43_phy_write(dev, 0x60a, 0xa0);
 	b43_phy_write(dev, 0x46a, 0x19);
@@ -1896,6 +2143,8 @@ static int b43_phy_lcn_op_init(struct b43_wldev *dev)
 	if (dev->phy.lcn->hw_pwr_ctl_capable)
 		b43_phy_lcn_set_tx_pwr_ctrl(dev, B43_LCN_TX_PWR_CTRL_HW);
 	b43_phy_lcn_periodic_cal(dev);
+	if (dev->phy.lcn->hw_pwr_ctl_capable)
+		b43_phy_lcn_papd_cal(dev, b43_phy_lcn_tx_pwr_warmup(dev));
 
 	return 0;
 }
@@ -2123,6 +2372,10 @@ B43_CAL_TABLE(b43_phy_lcn_cal_entries) = {
 	B43_CAL_ENTRY(LCN_CAL_TXPWR, TXPWR, "target", COMPUTED, 3,
 		      B43_CAL_U(target),
 		      B43_CAL_SV(offset, B43_LCN_TX_PWR_RATES)),
+	B43_CAL_ENTRY(LCN_CAL_PAPD_IDX, PAPD, "index", EVALUATED, 3,
+		      B43_CAL_U(index)),
+	B43_CAL_ENTRY(LCN_CAL_PAPD, PAPD, "table", READBACK, 1,
+		      B43_CAL_XV(entry, 8, B43_LCN_PAPD_ENTRIES)),
 };
 
 const struct b43_phy_operations b43_phyops_lcn = {
