@@ -286,6 +286,22 @@ u64 b43_hf_read(struct b43_wldev *dev)
 	return (u64)dev->mhfs[2] << 32 | (u64)dev->mhfs[1] << 16 |
 	       dev->mhfs[0];
 }
+
+void b43_hf_write(struct b43_wldev *dev, u64 value)
+{
+	static const u16 cells[] = { B43_SHM_SH_HOSTF1, B43_SHM_SH_HOSTF2,
+				     B43_SHM_SH_HOSTF3 };
+	unsigned int slot;
+
+	for (slot = 0; slot < ARRAY_SIZE(cells); slot++) {
+		u16 word = value >> (16 * slot);
+
+		if (dev->mhfs[slot] == word)
+			continue;
+		dev->mhfs[slot] = word;
+		b43_shm_write16(dev, B43_SHM_SHARED, cells[slot], word);
+	}
+}
 u16 b43_shm_read16(struct b43_wldev *dev, u16 routing, u16 offset)
 {
 	lcn_core("b43_shm_read16");

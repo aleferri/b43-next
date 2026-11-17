@@ -1729,6 +1729,23 @@ static void b43_phy_lcn_periodic_cal(struct b43_wldev *dev)
 }
 
 /*
+ * wlc_phy_ant_rxdiv_set(): the microcode's diversity help, then which
+ * antenna the PHY uses or starts with
+ */
+static void b43_phy_lcn_op_set_rx_antenna(struct b43_wldev *dev, int antenna)
+{
+	bool div = antenna == B43_ANTENNA_AUTO0 || antenna == B43_ANTENNA_AUTO1;
+	bool one = antenna == B43_ANTENNA_AUTO1 || antenna == B43_ANTENNA1;
+
+	b43_hf_write(dev, (b43_hf_read(dev) & ~B43_HF_ANTDIVHELP) |
+		     (div ? B43_HF_ANTDIVHELP : 0));
+	b43_mac_suspend(dev);
+	b43_phy_maskset(dev, 0x410, ~0x2, div ? 0x2 : 0);
+	b43_phy_maskset(dev, 0x410, ~0x1, one);
+	b43_mac_enable(dev);
+}
+
+/*
  * The PAPD compensation of the TX path: wl turns it off before the
  * calibration, as at #186871 where it was on, and on after it
  */
@@ -2426,5 +2443,6 @@ const struct b43_phy_operations b43_phyops_lcn = {
 	.recalc_txpower		= b43_phy_lcn_op_recalc_txpower,
 	.adjust_txpower		= b43_phy_lcn_op_adjust_txpower,
 	.channel_calibrate	= b43_phy_lcn_op_channel_calibrate,
+	.set_rx_antenna		= b43_phy_lcn_op_set_rx_antenna,
 	B43_CAL_OPS(b43_phy_lcn_cal_entries)
 };
