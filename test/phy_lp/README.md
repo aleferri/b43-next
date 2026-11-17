@@ -37,7 +37,7 @@ On 2026-11-16, `--min-block 8 --gap-tol 2`:
 
 | capture | all | PHY+radio |
 |---|---|---|
-| attach | 21768/25185 = 86.43% | 21888/23761 = 92.12% |
+| attach | 21768/25186 = 86.43% | 21888/23762 = 92.11% |
 
 What is left: after its idle TSSI read wl enters the TX power control
 through mode 0xc000 and leaves it again, with the offsets cleared, before it
@@ -66,8 +66,8 @@ the step's own window (`LP_STEPS`, the #number where each begins).
 
 | capture | PHY+radio |
 |---|---|
-| switches, 22 windows | 9048/10186 = 88.83% |
-| up | 4232/4735 = 89.38% |
+| switches, 22 windows | 9862/9950 = 99.12% |
+| up | 4230/4739 = 89.26% |
 
 What wl does once the station is up is left out.
 

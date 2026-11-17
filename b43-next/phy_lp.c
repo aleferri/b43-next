@@ -1181,8 +1181,9 @@ static void lpphy_write_tx_pctl_mode_to_hardware(struct b43_wldev *dev)
 		ctl = 0;
 		B43_WARN_ON(1);
 	}
-	b43_phy_maskset(dev, B43_LPPHY_TX_PWR_CTL_CMD,
-			~B43_LPPHY_TX_PWR_CTL_CMD_MODE & 0xFFFF, ctl);
+	/* As wl: bit 13 first, then bits 14-15 */
+	b43_phy_maskset(dev, B43_LPPHY_TX_PWR_CTL_CMD, 0xDFFF, ctl & 0x2000);
+	b43_phy_maskset(dev, B43_LPPHY_TX_PWR_CTL_CMD, 0x3FFF, ctl & 0xC000);
 }
 
 /*
@@ -1312,7 +1313,6 @@ static void lpphy_tx_power_recalc_target(struct b43_wldev *dev)
 	u16 freq = dev->phy.chandef->chan->center_freq;
 	u8 table = lpphy_tx_pwr_table(dev);
 	u32 offset[ARRAY_SIZE(lpphy->tx_pwr_offset)];
-	bool reset = false;
 	const s16 *pa;
 	unsigned int i;
 
@@ -1333,18 +1333,18 @@ static void lpphy_tx_power_recalc_target(struct b43_wldev *dev)
 			b43_lptab_write(dev, B43_LPTAB32(table, i),
 					b43_ppr_est_pwr(pa[2], pa[0], pa[1], i));
 		lpphy->tgt_tx_freq = freq;
-		reset = true;
 	}
 
+	/*
+	 * The specs reset the TSSI index and npt on a new frequency too; wl
+	 * keeps them across its channel switches.
+	 */
 	if ((b43_phy_read(dev, B43_LPPHY_TX_PWR_CTL_TARGETPWR) & 0xFF) !=
 	    lpphy->tx_pwr_min) {
 		b43_phy_maskset(dev, B43_LPPHY_TX_PWR_CTL_TARGETPWR, 0xFF00,
 				lpphy->tx_pwr_min);
-		reset = true;
-	}
-
-	if (reset)
 		lpphy_tx_power_reset_npt(dev);
+	}
 }
 
 static void lpphy_set_tx_power_control(struct b43_wldev *dev,
@@ -3159,13 +3159,18 @@ static int b43_lpphy_op_switch_channel(struct b43_wldev *dev,
 		lpphy_set_analog_filter(dev, new_channel);
 		lpphy_adjust_gain_table(dev, channel2freq_lp(new_channel));
 	}
+	b43_write16(dev, B43_MMIO_CHANNEL, new_channel);
+
+	/*
+	 * As wl: out of hardware control, the new channel's targets written,
+	 * and hardware control taken again, which writes them once more.
+	 */
 	if (lpphy->txpctl_mode == B43_LPPHY_TXPCTL_HW) {
 		lpphy_set_tx_power_control(dev, B43_LPPHY_TXPCTL_OFF);
 		lpphy_tx_power_targets(dev);
+		lpphy_tx_power_recalc_target(dev);
 		lpphy_set_tx_power_control(dev, B43_LPPHY_TXPCTL_HW);
 	}
-
-	b43_write16(dev, B43_MMIO_CHANNEL, new_channel);
 
 	if (lpphy->init_tail != LPPHY_INIT_DONE) {
 		if (lpphy->init_tail == LPPHY_INIT_CALIBRATE)
