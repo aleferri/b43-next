@@ -7,11 +7,20 @@ The scores are in `test/phy_lcn/README.md`.
 
 ## Missing from b43
 
-- **The TX power control's warm-up** after the init's calibration: wl turns
-  the control off and on, then sends 50 dummy frames and reads the control's
-  index (0x473) after each, while it settles from 0xb2 to 0x86-0x88 (#17454,
-  about 2000 operations, most of them the core's). The stop condition is not
-  known. brcmsmac does not have it.
+- **The TX power control's warm-up** after the init's calibration, with the
+  control on (#17456-#18982, about 2000 operations, most of them the
+  core's). brcmsmac does not have it. In order: the offsets cleared without
+  a change of mode (`b43_phy_lcn_clear_tx_power_offsets()`), the target at
+  0x40, 0x4a5 rewritten, the MAC's 0x6b4/0x6b8/0x6f0, `deaf_mode(true)`, then
+  50 dummy frames, each `b43_dummy_transmission(dev, true, ...)` as b43 has
+  it, followed by brcmsmac's `wlc_lcnphy_get_current_tx_pwr_idx()` (0x4a4,
+  then 0x473); then `deaf_mode(false)` and `deaf_mode(true)` with nothing
+  between. There is no stop condition: all 7 warm-ups of the capture send
+  50, also the ones that settle after 3 frames (#183672). The index it
+  settles at is not the start of the control, which turns on again from
+  180. It leads into the PAPD calibration, which starts with the control
+  off (#18996): a warm-up without the PAPD sends 50 frames for nothing, so
+  the two go in together.
 - **The PAPD calibration** after it (#19403-#22546, about 1600 PHY
   operations). brcmsmac has none for the LCN-PHY (it only clears table 24,
   `wlc_lcnphy_clear_papd_comptable()`), so the capture is the only source.
@@ -30,11 +39,17 @@ The scores are in `test/phy_lcn/README.md`.
   0x3f, and reads the whole table back (#20348-#20490), for what is not
   seen yet. The engine computes the table itself; what wl adds is the
   setup's values, which depend on what (gain, board, channel) is not known
-  from one capture, and the post-processing.
+  from one capture, and the post-processing. The 7 PAPD calibrations of the
+  capture, all on channel 1, write the same registers but for 18-35 values
+  of about 1000; the first, at the attach, has 42 writes fewer.
 - **The watchdog's work**: brcmsmac's `calib_modes(PHY_PERICAL_WATCHDOG)`
   (the temperature, the glacial calibration, the VCO calibration) and the
   noise sample; what wl does while associated on channel 1 (from
-  #108038, between its scans) is not analysed yet.
+  #108038, between its scans) is not analysed yet. wl never writes MACCMD
+  in the capture, so no background noise request: brcmsmac's polled sample
+  (`wlc_lcnphy_rx_signal_power()` between deaf modes) would be the other
+  way, but where the capture turns the deaf mode off and on (#18967) it
+  reads nothing between.
 - **`agc_temp_init`**: wl reads 0x4df, table 17 at 59-60, 0x434, 0x424,
   0x425 and table 13 at 28-29 after the PMU (#8239-#8251); b43 neither
   reads nor keeps them, and nothing uses them yet.
