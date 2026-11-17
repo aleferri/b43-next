@@ -1,9 +1,10 @@
 // SPDX-License-Identifier: GPL-2.0
 /*
- * User side of the LCN-PHY harness, ../phy_n/trace.c on the LCN-PHY's table
- * port. It turns the driver's MMIO, agent and ChipCommon accesses into the
- * ops mmio2ops.py prints, serves every read from the capture's own reads,
- * and compares the flow's ops with the capture's, op by op.
+ * User side of the LCN-PHY harness and of ../phy_lcn40's, ../phy_n/trace.c
+ * on their table port. It turns the driver's MMIO, agent and ChipCommon
+ * accesses into the ops mmio2ops.py prints, serves every read from the
+ * capture's own reads, and compares the flow's ops with the capture's, op by
+ * op.
  *
  *   lcn-trace FLOW OPS FIRST LAST [-v]
  *   lcn-trace FLOW OPS FIRST LAST -o TRACE
@@ -200,6 +201,18 @@ unsigned short lcn_mmio_read16(unsigned short offset)
 	}
 }
 
+static void phy_write(unsigned short value)
+{
+	char key[24];
+
+	phy_data("PHY.WR", phy_last == 'W', value);
+	phy_last = 'W';
+	if (!tbl_key(&b43_tbl, phy_addr, key, sizeof(key)))
+		snprintf(key, sizeof(key), "PHY %04x", phy_addr);
+	store(key, value);
+	tbl_after(&b43_tbl, phy_addr, value, 1);
+}
+
 void lcn_mmio_write16(unsigned short offset, unsigned short value)
 {
 	char key[24];
@@ -210,12 +223,7 @@ void lcn_mmio_write16(unsigned short offset, unsigned short value)
 		phy_last = 0;
 		return;
 	case PHY_DATA:
-		phy_data("PHY.WR", phy_last == 'W', value);
-		phy_last = 'W';
-		if (!tbl_key(&b43_tbl, phy_addr, key, sizeof(key)))
-			snprintf(key, sizeof(key), "PHY %04x", phy_addr);
-		store(key, value);
-		tbl_after(&b43_tbl, phy_addr, value, 1);
+		phy_write(value);
 		return;
 	case RADIO_CTL:
 		radio_addr = value;
@@ -248,6 +256,13 @@ void lcn_mmio_write32(unsigned short offset, unsigned int value)
 {
 	char key[24];
 
+	/* The LCN40-PHY's write: the address and the data in one access */
+	if (offset == PHY_CTL) {
+		phy_addr = value & 0xffff;
+		phy_last = 0;
+		phy_write(value >> 16);
+		return;
+	}
 	if (offset == 0x120 && nout < MAX_OPS)
 		snprintf(out[nout++].text, LINE, "MAC.MCTRL val=0x%08x", value);
 	else if (offset != 0x120)
