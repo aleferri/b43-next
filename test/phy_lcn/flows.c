@@ -280,6 +280,12 @@ void b43_power_saving_ctl_bits(struct b43_wldev *dev, unsigned int ps_flags)
 {
 	lcn_core("b43_power_saving_ctl_bits");
 }
+/* The core's host flags (main.c): the shadow, never the cells */
+u64 b43_hf_read(struct b43_wldev *dev)
+{
+	return (u64)dev->mhfs[2] << 32 | (u64)dev->mhfs[1] << 16 |
+	       dev->mhfs[0];
+}
 u16 b43_shm_read16(struct b43_wldev *dev, u16 routing, u16 offset)
 {
 	lcn_core("b43_shm_read16");

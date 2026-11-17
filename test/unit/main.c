@@ -401,6 +401,8 @@ static void mount_board(const struct board_profile *p)
 	g_wldev.phy.dacbuf_cap = g_ac.dacbuf_cap;
 	g_wldev.phy.lpf_cap    = g_ac.lpf_cap0;
 	g_wldev.phy.ac         = &g_ac;
+	/* Come b43_phy_ac_op_allocate(): le host flag restano nello shadow. */
+	g_wldev.mhf_hold       = true;
 	g_wldev.cac_pending    = g_cac_pending;
 	/*
 	 * Come b43_phy_init(): il PHY guarda phy.chandef, non dentro hw->conf.

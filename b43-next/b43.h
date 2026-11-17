@@ -1109,6 +1109,23 @@ struct b43_wldev {
 	unsigned int tx_count;
 	unsigned int rx_count;
 #endif
+	/*
+	 * Shadow of the five HOSTFn shared-memory words (b43_mhf_maskset()).
+	 *
+	 * The stock driver keeps the same shadow and writes the cell only when
+	 * the word changes, with the clock up and on the current band, so an
+	 * unchanged word emits nothing. The captures agree: no read of the five
+	 * cells, and the cell written on exactly the calls that change the word
+	 * (5 of 38 on the d6220, 4 of 56 on the DSL). It survives a down and up
+	 * as the stock driver's does: a warm cycle flushes what the previous one
+	 * accumulated.
+	 *
+	 * @mhf_hold keeps the changes in the shadow: the AC-PHY's stands for the
+	 * clk term up to the point its captures put the transition at, between
+	 * the slot 4 and slot 0 writes of the front-end GPIO block.
+	 */
+	u16 mhfs[5];
+	bool mhf_hold;
 };
 
 /* Data structure for the WLAN parts (802.11 cores) of the b43 chip. */

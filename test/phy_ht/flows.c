@@ -51,6 +51,13 @@ static void agent_write32(struct bcmn_device *c, u16 offset, u32 value)
 	ht_wrap_write32(offset, value);
 }
 
+/* The core's host flags (main.c): the shadow, never the cells */
+u64 b43_hf_read(struct b43_wldev *dev)
+{
+	return (u64)dev->mhfs[2] << 32 | (u64)dev->mhfs[1] << 16 |
+	       dev->mhfs[0];
+}
+
 /* The core's 16-bit shared memory accessors, one op each on the bus */
 u16 b43_shm_read16(struct b43_wldev *dev, u16 routing, u16 offset)
 {

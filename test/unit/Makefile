@@ -44,7 +44,7 @@ WRAP_SYMS := \
     b43_read16 b43_write16 b43_write16f \
     b43_mac_enable b43_mac_suspend b43_mac_suspend_enable \
     b43_mac_bw_set \
-    b43_mac_phy_clock_set b43_phy_ac_mhf_maskset \
+    b43_mac_phy_clock_set \
     b43_phyop_switch_analog_generic \
     b43_current_band b43_phy_init \
     b43_actab_read_bulk b43_actab_write_bulk \
@@ -56,7 +56,7 @@ LDFLAGS := $(foreach s,$(WRAP_SYMS),-Wl,--wrap=$(s))
 # --- Source lists --------------------------------------------------------
 # The AC-PHY files of the driver, copied into $(SCRATCH).
 SCRATCH_SRCS_FULL := $(addprefix $(SCRATCH)/, \
-    $(filter-out phy_ac.c,$(b43n-phy-ac)) phy_ac_hostflags.c \
+    $(filter-out phy_ac.c,$(b43n-phy-ac)) \
     $(filter-out phy_common.c,$(b43n-phy)) fw_layout.c $(b43n-calstat))
 
 # phy_ac_test.c compiles the driver's phy_ac.c together with what only the
@@ -77,25 +77,6 @@ build:
 $(SCRATCH)/%: $(B43)/%
 	@mkdir -p $(SCRATCH)
 	cp $< $@
-
-# Every b43_phy_ac_mhf_maskset() call is a MAC.MHF of the capture, and
-# phy_ac.c calls it within its own object, where --wrap does not reach. The
-# copy of phy_ac.c leaves the host flag functions out, and
-# phy_ac_hostflags.c holds them, as they are but for `static`.
-HOSTFLAGS = /^static const u16 b43_phy_ac_hostf_regs\[/ { cut = 1 } \
-	$(1) { print } \
-	cut && /^static void b43_phy_ac_mhf_write\(/ { last = 1 } \
-	cut && last && /^\}/ { cut = 0 }
-
-$(SCRATCH)/phy_ac.c: $(B43)/phy_ac.c
-	@mkdir -p $(SCRATCH)
-	awk '$(call HOSTFLAGS,!cut)' $< > $@
-
-$(SCRATCH)/phy_ac_hostflags.c: $(B43)/phy_ac.c
-	@mkdir -p $(SCRATCH)
-	{ printf '#include "b43.h"\n#include "phy_ac.h"\n#include "main.h"\n\n'; \
-	  awk '$(call HOSTFLAGS,cut)' $< | \
-	  sed 's/^static void b43_phy_ac_mhf_/void b43_phy_ac_mhf_/'; } > $@
 
 # The copies are what the objects and gdb point at: not intermediates.
 .PRECIOUS: $(SCRATCH)/%
