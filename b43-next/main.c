@@ -147,6 +147,7 @@ static const struct bcmn_device_id b43_bcma_tbl[] = {
 	BCMN_CORE(BCMN_MANUF_BCM, BCMN_CORE_80211, 0x1C, BCMN_ANY_CLASS),
 	BCMN_CORE(BCMN_MANUF_BCM, BCMN_CORE_80211, 0x1D, BCMN_ANY_CLASS),
 	BCMN_CORE(BCMN_MANUF_BCM, BCMN_CORE_80211, 0x1E, BCMN_ANY_CLASS),
+	BCMN_CORE(BCMN_MANUF_BCM, BCMN_CORE_80211, 0x21, BCMN_ANY_CLASS),
 	BCMN_CORE(BCMN_MANUF_BCM, BCMN_CORE_80211, 0x28, BCMN_ANY_CLASS),
 	BCMN_CORE(BCMN_MANUF_BCM, BCMN_CORE_80211, 0x2A, BCMN_ANY_CLASS),
 	{},
@@ -3971,13 +3972,14 @@ static void b43_rate_memory_init(struct b43_wldev *dev)
 		break;
 	case B43_PHYTYPE_AC:
 	case B43_PHYTYPE_LCN:
+	case B43_PHYTYPE_LCN40:
 		/*
 		 * The AC and LCN microcodes reach their rate blocks through the
 		 * direct and basic maps at B43_SHM_SH_OFDMDIRECT and following,
 		 * and 0x480-0x4ff is no table of theirs: the BCM4313's wl
-		 * never touches it. Their basic maps are written at the init,
-		 * by b43_phy_ac_basic_rate_map() and b43_basic_rates_init(),
-		 * and by b43_update_basic_rates().
+		 * never touches it, nor does the BCM43142's. Their basic maps
+		 * are written at the init, by b43_phy_ac_basic_rate_map() and
+		 * b43_basic_rates_init(), and by b43_update_basic_rates().
 		 */
 		break;
 	default:
@@ -6824,6 +6826,12 @@ static int b43_phy_versioning(struct b43_wldev *dev)
 			unsupported = 1;
 		break;
 #endif
+#ifdef CONFIG_B43_NEXT_PHY_LCN40
+	case B43_PHYTYPE_LCN40:
+		if (phy_rev > 3)
+			unsupported = 1;
+		break;
+#endif
 #ifdef CONFIG_B43_NEXT_PHY_AC
 	case B43_PHYTYPE_AC:
 		if (phy_rev > 1)
@@ -6843,7 +6851,7 @@ static int b43_phy_versioning(struct b43_wldev *dev)
 		analog_type, phy_type, b43_phy_name(dev, phy_type), phy_rev);
 
 	/* Get RADIO versioning */
-	if (b43_is_ac_core(dev)) {
+	if (b43_is_ac_core(dev) || phy_type == B43_PHYTYPE_LCN40) {
 		radio_manuf = 0x17F;
 
 		b43_write16f(dev, B43_MMIO_RADIO24_CONTROL, 0);
@@ -6921,6 +6929,10 @@ static int b43_phy_versioning(struct b43_wldev *dev)
 		break;
 	case B43_PHYTYPE_LCN:
 		if (radio_id != 0x2064)
+			unsupported = 1;
+		break;
+	case B43_PHYTYPE_LCN40:
+		if (radio_id != 0x2065)
 			unsupported = 1;
 		break;
 	case B43_PHYTYPE_AC:
@@ -8584,6 +8596,7 @@ static void b43_supported_bands(struct b43_wldev *dev, bool *have_2ghz_phy,
 	case B43_PHYTYPE_LP:
 	case B43_PHYTYPE_HT:
 	case B43_PHYTYPE_LCN:
+	case B43_PHYTYPE_LCN40:
 		*have_2ghz_phy = true;
 		*have_5ghz_phy = false;
 		return;

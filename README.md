@@ -104,7 +104,8 @@ and their headers into this tree's names and paths.
   two buses that binds to the kernel's core device and leaves ChipCommon,
   PMU and GPIO to the kernel, as OpenWrt's `wl_glue` does for `wl`.
 - The LCN-PHY's init as wl's: it is built, and far from it
-  (`test/phy_lcn/README.md`). LCN40, which upstream does not have.
+  (`test/phy_lcn/README.md`). The LCN40-PHY's init: b43 takes the BCM43142
+  and stops at it.
 - The cores of `b43legacy` (revisions 2 and 4), and the ssb PCMCIA host.
 
 ## License
