@@ -1345,6 +1345,22 @@ cleanup:
 	b43_phy_write(dev, 0x6db, save_rxfe);
 }
 
+/* The TX I/Q and LO coefficients, for every index of the TX power table */
+static void b43_phy_lcn_load_tx_iqlo(struct b43_wldev *dev, u16 a, u16 b,
+				     u16 didq)
+{
+	u32 val;
+	int i;
+
+	for (i = 0; i < 128; i++) {
+		val = b43_lcntab_read(dev, B43_LCNTAB32(0x7, 0x140 + i));
+		val = (val & 0xfff00000) | ((u32)(a & 0x3ff) << 10) |
+		      (b & 0x3ff);
+		b43_lcntab_write(dev, B43_LCNTAB32(0x7, 0x140 + i), val);
+		b43_lcntab_write(dev, B43_LCNTAB32(0x7, 0x1c0 + i), didq);
+	}
+}
+
 /*
  * wlc_lcnphy_txpwrtbl_iqlo_cal: the I/Q and LO coefficients of index 30's
  * gains, for every index of the TX power table.
@@ -1359,7 +1375,6 @@ static void b43_phy_lcn_txpwrtbl_iqlo_cal(struct b43_wldev *dev)
 	u16 save_ctrl = b43_phy_lcn_get_tx_pwr_ctrl(dev);
 	u16 save_pa_gain, iqcc[2], didq;
 	u8 save_bbmult, save_idx = lcn->tx_pwr_curr_idx;
-	u32 val;
 	int i;
 
 	b43_phy_lcn_get_tx_gain(dev, &old_gains);
@@ -1371,13 +1386,12 @@ static void b43_phy_lcn_txpwrtbl_iqlo_cal(struct b43_wldev *dev)
 
 	b43_lcntab_read_bulk(dev, B43_LCNTAB16(0x0, 80), 2, iqcc);
 	didq = b43_lcntab_read(dev, B43_LCNTAB16(0x0, 85));
-	for (i = 0; i < 128; i++) {
-		val = b43_lcntab_read(dev, B43_LCNTAB32(0x7, 0x140 + i));
-		val = (val & 0xfff00000) | ((u32)(iqcc[0] & 0x3ff) << 10) |
-		      (iqcc[1] & 0x3ff);
-		b43_lcntab_write(dev, B43_LCNTAB32(0x7, 0x140 + i), val);
-		b43_lcntab_write(dev, B43_LCNTAB32(0x7, 0x1c0 + i), didq);
-	}
+	b43_phy_lcn_load_tx_iqlo(dev, iqcc[0], iqcc[1], didq);
+	lcn->txiqcc[0] = sign_extend32(iqcc[0], 9);
+	lcn->txiqcc[1] = sign_extend32(iqcc[1], 9);
+	lcn->txdidq = didq;
+	for (i = 0; i < 4; i++)
+		lcn->loft[i] = b43_radio_read(dev, 0x089 + i);
 
 	b43_phy_lcn_set_bbmult(dev, save_bbmult);
 	b43_phy_lcn_set_pa_gain(dev, save_pa_gain);
@@ -1492,6 +1506,8 @@ static bool b43_phy_lcn_calc_rx_iq_comp(struct b43_wldev *dev, u16 samps)
 	b43_phy_lcn_set_rx_iq_comp(dev, a0, b0);
 	b43_phy_set(dev, 0x64b, 0x1);
 	b43_phy_set(dev, 0x64b, 0x8);
+	dev->phy.lcn->rxiqcomp[0] = a0;
+	dev->phy.lcn->rxiqcomp[1] = b0;
 	return ok;
 }
 
@@ -1624,6 +1640,7 @@ static void b43_phy_lcn_periodic_cal(struct b43_wldev *dev)
 	}
 	b43_phy_lcn_txpwrtbl_iqlo_cal(dev);
 	b43_phy_lcn_rx_iq_cal(dev, 40);
+	lcn->cal_done = true;
 	b43_phy_lcn_set_tx_pwr_by_index(dev, index);
 	b43_phy_lcn_set_tx_pwr_ctrl(dev, save_ctrl);
 	b43_phy_lcn_deaf_mode(dev, false);
@@ -1672,6 +1689,30 @@ static void b43_phy_lcn_set_channel_tweaks(struct b43_wldev *dev, int channel)
 	b43_phy_write(dev, 0x44a, 0x80);
 }
 
+/* wl's pulse of an AFE override after a tune: on, its value on and off, off */
+static void b43_phy_lcn_afe_pulse(struct b43_wldev *dev, u16 bit)
+{
+	b43_phy_set(dev, B43_PHY_LCN_AFE_CTL1, bit);
+	b43_phy_set(dev, B43_PHY_LCN_AFE_CTL2, bit);
+	b43_phy_mask(dev, B43_PHY_LCN_AFE_CTL2, ~bit);
+	b43_phy_mask(dev, B43_PHY_LCN_AFE_CTL1, ~bit);
+}
+
+/* The calibration's results on a new channel, as wl loads them */
+static void b43_phy_lcn_load_cal(struct b43_wldev *dev)
+{
+	struct b43_phy_lcn *lcn = dev->phy.lcn;
+	int i;
+
+	b43_phy_lcn_set_tx_iqcc(dev, lcn->txiqcc[0], lcn->txiqcc[1]);
+	b43_phy_lcn_set_tx_locc(dev, lcn->txdidq);
+	b43_phy_lcn_load_tx_iqlo(dev, lcn->txiqcc[0], lcn->txiqcc[1],
+				 lcn->txdidq);
+	for (i = 0; i < 4; i++)
+		b43_radio_write(dev, 0x089 + i, lcn->loft[i]);
+	b43_phy_lcn_set_rx_iq_comp(dev, lcn->rxiqcomp[0], lcn->rxiqcomp[1]);
+}
+
 /* wlc_phy_chanspec_set_lcnphy */
 static int b43_phy_lcn_set_channel(struct b43_wldev *dev,
 				   struct ieee80211_channel *channel,
@@ -1712,6 +1753,11 @@ static int b43_phy_lcn_set_channel(struct b43_wldev *dev,
 		b43_phy_lcn_load_tx_iir_ofdm_filter(dev, 2);
 
 	b43_phy_maskset(dev, 0x4eb, ~(0x7 << 3), 0x1 << 3);
+	b43_phy_lcn_afe_pulse(dev, 0x1);
+	b43_phy_lcn_afe_pulse(dev, 0x2);
+
+	if (dev->phy.lcn->cal_done)
+		b43_phy_lcn_load_cal(dev);
 
 	return 0;
 }

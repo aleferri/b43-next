@@ -37,6 +37,13 @@ struct b43_phy_lcn {
 	u16 tssi_idx;
 	u8 tssi_npt;
 	u16 tssi_tx_cnt;
+
+	/* The init's calibration, which a channel switch loads again */
+	bool cal_done;
+	s16 txiqcc[2];
+	u16 txdidq;
+	u16 loft[4];
+	u16 rxiqcomp[2];
 };
 
 
