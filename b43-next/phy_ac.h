@@ -314,9 +314,6 @@ void b43_phy_ac_write_chanspec(struct b43_wldev *dev);
 #define B43_MAC_BW_40				0x1800
 #define B43_MAC_BW_80				0x2000
 
-/* Quarter-dBm conversion, brcmsmac's BRCMS_TXPWR_DB_FACTOR. */
-#define B43_PHY_AC_QDB(n)			((n) * 4)
-
 /*
  * Measurement field of PHY 0x0012, the idle-TSSI readback. Bit 11 is set on
  * every sample the captures contain; a sample whose measurement field is zero

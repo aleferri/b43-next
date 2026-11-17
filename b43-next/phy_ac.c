@@ -785,7 +785,7 @@ static u16 b43_phy_ac_cck_rate_po(struct b43_phy_ac *ac)
 
 	if (!ac->txpwr_maxp)
 		return 0x00f8;
-	return min_t(u16, b43_phy_ac_po_field(target - B43_PHY_AC_QDB(1)),
+	return min_t(u16, b43_phy_ac_po_field(target - INT_TO_Q52(1)),
 		     0xf8);
 }
 
@@ -1986,7 +1986,7 @@ static u16 b43_phy_ac_reg_ceiling(struct b43_wldev *dev)
 		if (!sub || sub->max_power <= 0)
 			continue;
 
-		lim = B43_PHY_AC_QDB(sub->max_power) - antgain;
+		lim = INT_TO_Q52(sub->max_power) - antgain;
 		if (lim < 0)
 			lim = 0;
 		if (lim < best)
@@ -1998,7 +1998,7 @@ static u16 b43_phy_ac_reg_ceiling(struct b43_wldev *dev)
 	 * channel's limit, so it is in the same units as max_power.
 	 */
 	if (dev->phy.desired_txpower > 0) {
-		int lim = B43_PHY_AC_QDB(dev->phy.desired_txpower) - antgain;
+		int lim = INT_TO_Q52(dev->phy.desired_txpower) - antgain;
 
 		if (lim < 0)
 			lim = 0;
@@ -2076,7 +2076,7 @@ bool b43_phy_ac_txpwr_recalc(struct b43_wldev *dev)
 			"the SROM declares no power, target at the floor\n",
 			ac->cal_channel);
 	b43_ppr_add(ppr, -6);
-	b43_ppr_apply_min(ppr, B43_PHY_AC_QDB(1));
+	b43_ppr_apply_min(ppr, INT_TO_Q52(1));
 	max = b43_ppr_get_max(ppr);
 
 	ac->txpwr_maxp = maxp;

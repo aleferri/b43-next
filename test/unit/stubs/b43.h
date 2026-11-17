@@ -68,6 +68,8 @@ enum nl80211_chan_width {
  */
 #define B43_WARN_ON(x) ({ int __b43_warn = !!(x); __b43_warn; })
 
+#define INT_TO_Q52(i)	((i) << 2)
+
 /*
  * Trimmed mock mac80211 chandef so scratch code can read chan/width.
  */
