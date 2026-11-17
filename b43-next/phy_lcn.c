@@ -37,6 +37,7 @@
 #include "tables_phy_lcn.h"
 #include "main.h"
 #include "calibrate.h"
+#include "ppr.h"
 
 struct lcn_tx_gains {
 	u16 gm_gain;
@@ -326,7 +327,8 @@ static void b43_phy_lcn_clear_tx_power_offsets(struct b43_wldev *dev)
 	u8 i;
 
 	if (1) { /* FIXME */
-		b43_phy_write(dev, B43_PHY_LCN_TABLE_ADDR, (0x7 << 10) | 0x340);
+		b43_phy_write(dev, B43_PHY_LCN_TABLE_ADDR,
+			      (0x7 << 10) | B43_LCN_TX_PWR_CTRL_RATE_OFFSET);
 		for (i = 0; i < 30; i++) {
 			b43_phy_write(dev, B43_PHY_LCN_TABLE_DATAHI, 0);
 			b43_phy_write(dev, B43_PHY_LCN_TABLE_DATALO, 0);
@@ -442,6 +444,24 @@ static void b43_phy_lcn_load_tx_pwr_index(struct b43_wldev *dev, u8 index)
 }
 
 /*
+ * wlc_lcnphy_txpower_recalc_target: the rates' offsets, then the target, which
+ * wl writes even when it is unchanged
+ */
+static void b43_phy_lcn_write_tx_pwr_target(struct b43_wldev *dev)
+{
+	struct b43_phy_lcn *lcn = dev->phy.lcn;
+	u32 offsets[B43_LCN_TX_PWR_RATES];
+	int i;
+
+	for (i = 0; i < B43_LCN_TX_PWR_RATES; i++)
+		offsets[i] = (s32)lcn->tx_pwr_offset[i];
+	b43_lcntab_write_bulk(dev, B43_LCNTAB32(0x7,
+					B43_LCN_TX_PWR_CTRL_RATE_OFFSET),
+			      B43_LCN_TX_PWR_RATES, offsets);
+	b43_phy_maskset(dev, 0x4a7, ~0xff, lcn->tx_pwr_target);
+}
+
+/*
  * wlc_lcnphy_set_tx_pwr_ctrl. Turned on, it starts from the index and the
  * number of packets of the last estimate. Returns the mode before.
  */
@@ -460,6 +480,8 @@ static u16 b43_phy_lcn_set_tx_pwr_ctrl(struct b43_wldev *dev, u16 mode)
 	if (old_mode == B43_LCN_TX_PWR_CTRL_HW)
 		b43_phy_lcn_clear_tx_power_offsets(dev);
 	if (mode == B43_LCN_TX_PWR_CTRL_HW) {
+		if (lcn->tx_pwr_target)
+			b43_phy_lcn_write_tx_pwr_target(dev);
 		b43_phy_maskset(dev, 0x4a4, ~0x1ff, lcn->tssi_idx);
 		b43_phy_maskset(dev, 0x4a5, ~0x700, lcn->tssi_npt << 8);
 		b43_radio_mask(dev, 0x11f, ~0x4);
@@ -1909,14 +1931,115 @@ static unsigned int b43_phy_lcn_op_get_default_chan(struct b43_wldev *dev)
 	return 36;
 }
 
+/*
+ * wl's locale for the CQ57's ccode, in qdBm before the backoff: measured, as
+ * the HT-PHY's, from the targets wl writes on the channels of its scans
+ * (58 on 1-11, 40 on 12-13). Only the rows that bind.
+ */
+static const struct b43_ppr_locale b43_phy_lcn_locale_ofdm[] = {
+	{ 1, 11, 64 },
+	{ 12, 13, 44 },
+};
+
+static const struct b43_ppr_locale b43_phy_lcn_locale_cck[] = {
+	{ 12, 13, 52 },
+};
+
+/* wl's backoff of the OFDM and MCS rates, where brcmsmac has 6 */
+#define B43_LCN_TX_PWR_BACKOFF		4
+/* The CCK offset of brcmsmac's wlc_lcnphy_set_tx_pwr_soft_ctrl() */
+#define B43_LCN_TX_PWR_CCK_OFFSET	22
+
+/*
+ * The target is the lowest power of the OFDM and MCS rates, the loop holding
+ * each frame at its rate's offset from it. The CCK rates have their own
+ * chain, without the backoff and with their own locale, and an offset of the
+ * hardware: an approximation of wl's, which on the CQ57 gives its offsets.
+ */
 static enum b43_txpwr_result
 b43_phy_lcn_op_recalc_txpower(struct b43_wldev *dev, bool ignore_tssi)
 {
-	return B43_TXPWR_RES_DONE;
+	struct b43_phy *phy = &dev->phy;
+	struct b43_phy_lcn *lcn = phy->lcn;
+	const struct ssbn_sprom *sprom = dev->dev->bus_sprom;
+	struct ieee80211_channel *chan = phy->chandef->chan;
+	s8 offset[B43_LCN_TX_PWR_RATES];
+	u8 cck[B43_PPR_CCK_RATES], limit, target;
+	struct b43_ppr ppr;
+	unsigned int i;
+
+	if (!lcn->hw_pwr_ctl_capable || chan->band != NL80211_BAND_2GHZ)
+		return B43_TXPWR_RES_DONE;
+
+	b43_ppr_load_sprom_legacy(&ppr, sprom, B43_BAND_2G, true);
+	if (chan->max_power)
+		b43_ppr_apply_max(&ppr, max_t(int, INT_TO_Q52(chan->max_power) -
+					     sprom->antenna_gain.a0, 0));
+	if (phy->desired_txpower)
+		b43_ppr_apply_max(&ppr, INT_TO_Q52(phy->desired_txpower));
+
+	limit = b43_ppr_locale_limit(b43_phy_lcn_locale_cck,
+				     ARRAY_SIZE(b43_phy_lcn_locale_cck),
+				     chan->hw_value);
+	for (i = 0; i < B43_PPR_CCK_RATES; i++) {
+		cck[i] = b43_ppr_get_cck(&ppr, i);
+		if (limit)
+			cck[i] = min(cck[i], limit);
+	}
+
+	limit = b43_ppr_locale_limit(b43_phy_lcn_locale_ofdm,
+				     ARRAY_SIZE(b43_phy_lcn_locale_ofdm),
+				     chan->hw_value);
+	if (limit)
+		b43_ppr_apply_max(&ppr, limit);
+	b43_ppr_add(&ppr, -B43_LCN_TX_PWR_BACKOFF);
+	target = b43_ppr_get_bw_min(&ppr, B43_PPR_BW_20);
+
+	for (i = 0; i < B43_PPR_CCK_RATES; i++)
+		offset[i] = target - cck[i] + B43_LCN_TX_PWR_CCK_OFFSET;
+	for (i = 0; i < B43_PPR_OFDM_RATES; i++)
+		offset[B43_PPR_CCK_RATES + i] = target -
+			b43_ppr_get_ofdm(&ppr, B43_PPR_BW_20, B43_PPR_SISO, i);
+	for (i = 0; i < 8; i++)
+		offset[B43_PPR_CCK_RATES + B43_PPR_OFDM_RATES + i] = target -
+			b43_ppr_get_mcs(&ppr, B43_PPR_BW_20, B43_PPR_SISO, i);
+
+	if (target == lcn->tx_pwr_target &&
+	    !memcmp(offset, lcn->tx_pwr_offset, sizeof(offset)))
+		return B43_TXPWR_RES_DONE;
+	if (target != lcn->tx_pwr_target) {
+		lcn->tssi_idx = B43_LCN_TX_PWR_CTRL_START_IDX;
+		lcn->tssi_npt = B43_LCN_TX_PWR_CTRL_RESET_NPT;
+	}
+	lcn->tx_pwr_target = target;
+	memcpy(lcn->tx_pwr_offset, offset, sizeof(offset));
+	return B43_TXPWR_RES_NEED_ADJUST;
 }
 
+/* wlc_phy_txpower_recalc_target_lcnphy, with the hardware control */
 static void b43_phy_lcn_op_adjust_txpower(struct b43_wldev *dev)
 {
+	struct b43_phy_lcn *lcn = dev->phy.lcn;
+	u16 mode;
+
+	if (!lcn->tx_pwr_target)
+		return;
+
+	b43_mac_suspend(dev);
+	mode = b43_phy_lcn_get_tx_pwr_ctrl(dev);
+	b43_phy_lcn_set_tx_pwr_ctrl(dev, B43_LCN_TX_PWR_CTRL_OFF);
+	b43_phy_lcn_write_tx_pwr_target(dev);
+	b43_phy_lcn_set_tx_pwr_ctrl(dev, mode);
+	b43_mac_enable(dev);
+}
+
+/* After every channel switch wl writes the TX power again, changed or not */
+static void b43_phy_lcn_op_channel_calibrate(struct b43_wldev *dev,
+					     bool cac_done)
+{
+	b43_phy_lcn_op_recalc_txpower(dev, true);
+	b43_phy_lcn_op_adjust_txpower(dev);
+	b43_mac_enable(dev);
 }
 
 /**************************************************
@@ -1965,4 +2088,5 @@ const struct b43_phy_operations b43_phyops_lcn = {
 	.get_default_chan	= b43_phy_lcn_op_get_default_chan,
 	.recalc_txpower		= b43_phy_lcn_op_recalc_txpower,
 	.adjust_txpower		= b43_phy_lcn_op_adjust_txpower,
+	.channel_calibrate	= b43_phy_lcn_op_channel_calibrate,
 };

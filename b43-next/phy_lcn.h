@@ -25,6 +25,12 @@
 /* Where the hardware control starts from, as wl */
 #define B43_LCN_TX_PWR_CTRL_START_IDX		180
 #define B43_LCN_TX_PWR_CTRL_START_NPT		0
+/* and again from the index, with brcmsmac's packets, when the target changes */
+#define B43_LCN_TX_PWR_CTRL_RESET_NPT		1
+
+/* The offsets from the target of the 4 CCK, 8 OFDM and 8 MCS rates */
+#define B43_LCN_TX_PWR_CTRL_RATE_OFFSET		0x340
+#define B43_LCN_TX_PWR_RATES			20
 
 struct b43_phy_lcn {
 	bool hw_pwr_ctl;
@@ -37,6 +43,10 @@ struct b43_phy_lcn {
 	u16 tssi_idx;
 	u8 tssi_npt;
 	u16 tssi_tx_cnt;
+
+	/* The target, 0 until the first recalculation, and the rates' offsets */
+	u8 tx_pwr_target;
+	s8 tx_pwr_offset[B43_LCN_TX_PWR_RATES];
 
 	/* The init's calibration, which a channel switch loads again */
 	bool cal_done;
