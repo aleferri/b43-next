@@ -7453,7 +7453,9 @@ static int b43_wireless_core_init(struct b43_wldev *dev)
 	 * The values are the same on a BCM4352 and a BCM4360, on every channel
 	 * and both driver versions, so none is board data; most are known only
 	 * by their b43.h names. The burst size and the antenna count are
-	 * brcms_b_coreinit()'s; those four the BCM4313's wl writes as well. A cell the stock driver writes more than once
+	 * brcms_b_coreinit()'s; the BCM4313's wl writes them and RFATT as
+	 * well, and 0x003c, the A-MPDU watchdog, only with HT (as
+	 * b43_chip_init_mac() does). A cell the stock driver writes more than once
 	 * (host flags 4 and 5 gain bits as it goes) takes its final value: the
 	 * end state matches, not the order. The beacon TSF offset depends on
 	 * the mode, see b43_adjust_opmode().
@@ -7470,11 +7472,11 @@ static int b43_wireless_core_init(struct b43_wldev *dev)
 		b43_shm_write16(dev, B43_SHM_SHARED,
 				B43_SHM_SH_ANTSWAP, 0x000a);
 		b43_shm_write16(dev, B43_SHM_SHARED,
-				B43_SHM_SH_DEFAULTIV, 0x000a);
-		b43_shm_write16(dev, B43_SHM_SHARED,
 				B43_SHM_SH_RFATT, 0x0480);
 	}
 	if (dev->dev->core_rev >= 42) {
+		b43_shm_write16(dev, B43_SHM_SHARED,
+				B43_SHM_SH_DEFAULTIV, 0x000a);
 		b43_shm_write16(dev, B43_SHM_SHARED,
 				B43_SHM_SH_HOSTF4, 0x0060);
 		b43_shm_write16(dev, B43_SHM_SHARED,
