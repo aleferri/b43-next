@@ -44,23 +44,20 @@ On 2026-11-17, `--min-block 8 --gap-tol 2`:
 
 | capture | grezzo | PHY+radio |
 |---|---|---|
-| attach | 2304/20375 = 11.31% | 2299/17688 = 13.00% |
+| attach | 9281/19606 = 47.34% | 9296/16898 = 55.01% |
 
-b43 prints two messages, the TX gain table and the switch control table it
-has none of for a board without a FEM, and makes 4191 operations to wl's
-20375. In wl's order, what b43 does not make:
+The init follows wl's through the tables, the baseband and radio init, the
+hardware TX power control, the channel and the PMU, then the calibration of
+the init: the idle TSSI and the TX I/Q-LO calibration. What b43 does not make
+yet, in wl's order:
 
-- after the static tables, which are wl's to the value: the RF sequencer
-  entries, the TX gain table of the internal PA, the switch control table
-  and the RF power table (#3260-#5247);
-- in the baseband init, a TX gain set by index (#5647-#5702);
-- sixteen radio writes at the end of the 2064's init (#6016-#6031), and
-  what wl does between it and the channel setup (#6032-#7992);
-- in the channel setup, the 2064's PLL steps b43 leaves as TODO
-  (#8054-#8095), and the CCK and OFDM filters, whose coefficients differ
-  from b43's;
-- everything after the channel setup: 11169 PHY and radio operations from
-  #8206.
+- the RX I/Q calibration after the TX one: about 6300 PHY and radio
+  operations from #13065;
+- a few operations of unknown purpose here and there, which no source
+  explains: an RMW of 0x4d0 and 0x478 at the start, of 0x55d before the
+  2064's init, of 0x4eb after it, of 0x525 after the TX power control's mode;
+- wl polls the I/Q-LO calibration's status (0x451) more often than b43,
+  which offsets the reads around each command.
 
 ## Flows
 
