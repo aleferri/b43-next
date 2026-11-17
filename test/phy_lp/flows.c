@@ -212,6 +212,11 @@ void msleep(unsigned int msecs) { }
 void usleep_range_state(unsigned long min, unsigned long max,
 			unsigned int state) { }
 unsigned long volatile jiffies;
+/* read_poll_timeout() */
+ktime_t ktime_get(void) { return 0; }
+int __cond_resched(void) { return 0; }
+long __static_call_return0(void) { return 0; }
+DEFINE_STATIC_CALL_RET0(might_resched, __cond_resched);
 unsigned long round_jiffies(unsigned long j) { return j; }
 /* Allocations from a static arena, never freed: a run is short */
 static u8 arena[1 << 18] __aligned(8);
