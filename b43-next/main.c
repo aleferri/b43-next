@@ -1300,11 +1300,12 @@ static void b43_set_slot_time(struct b43_wldev *dev, u16 slot_time)
 	 * is still left alone on those cores. From revision 42 both are
 	 * written on either band, the IFS slot register first: the bus
 	 * captures of the agcombo (7.14) and of the MacBookAir6,1 (6.30) write
-	 * 0x0207 and then 9 on 5 GHz.
+	 * 0x0207 and then 9 on 5 GHz. The BCM43227 takes both too: without it
+	 * the shared-memory slot time stays 20 us in a short-slot BSS. The
+	 * BCM4313's wl writes both, as brcms_b_update_slot_timing().
 	 */
-	/* The BCM43227 takes both too: without it the shared-memory slot time
-	 * stays 20 us in a short-slot BSS. */
-	if (dev->dev->core_rev >= 42 || dev->phy.nphy_ht) {
+	if (dev->dev->core_rev >= 42 || dev->phy.nphy_ht ||
+	    dev->phy.type == B43_PHYTYPE_LCN) {
 		b43_write16(dev, B43_MMIO_IFSSLOT, 510 + slot_time);
 		b43_shm_write16(dev, B43_SHM_SHARED, B43_SHM_SH_SLOTT,
 				slot_time);
@@ -7084,8 +7085,14 @@ static void b43_set_synth_pu_delay(struct b43_wldev *dev, bool idle)
 	u16 pu_delay;
 
 	/* The time value is in microseconds. The AC cores' stock driver ends
-	 * at 512, the value the AC-PHY writes, with wl 6.30 and 7.14. */
-	pu_delay = dev->phy.type == B43_PHYTYPE_AC ? 512 : 1050;
+	 * at 512, the value the AC-PHY writes, with wl 6.30 and 7.14; the
+	 * BCM4313's at 200 (brcmsmac has 300 for the LCN-PHY). */
+	if (dev->phy.type == B43_PHYTYPE_AC)
+		pu_delay = 512;
+	else if (dev->phy.type == B43_PHYTYPE_LCN)
+		pu_delay = 200;
+	else
+		pu_delay = 1050;
 	if (b43_is_mode(dev->wl, NL80211_IFTYPE_ADHOC) || idle)
 		pu_delay = 500;
 	if ((dev->phy.radio_ver == 0x2050) && (dev->phy.radio_rev == 8))
@@ -7422,7 +7429,8 @@ static int b43_wireless_core_init(struct b43_wldev *dev)
 	 * Cells the stock driver always writes over the microcode's defaults.
 	 * The values are the same on a BCM4352 and a BCM4360, on every channel
 	 * and both driver versions, so none is board data; most are known only
-	 * by their b43.h names. A cell the stock driver writes more than once
+	 * by their b43.h names. The burst size and the antenna count are
+	 * brcms_b_coreinit()'s; those four the BCM4313's wl writes as well. A cell the stock driver writes more than once
 	 * (host flags 4 and 5 gain bits as it goes) takes its final value: the
 	 * end state matches, not the order. The beacon TSF offset depends on
 	 * the mode, see b43_adjust_opmode().
@@ -7433,7 +7441,7 @@ static int b43_wireless_core_init(struct b43_wldev *dev)
 	 * and so is HOSTF5 bit 15, with which the microcode keeps probe
 	 * requests for itself.
 	 */
-	if (dev->dev->core_rev >= 42) {
+	if (dev->dev->core_rev >= 42 || dev->phy.type == B43_PHYTYPE_LCN) {
 		b43_shm_write16(dev, B43_SHM_SHARED,
 				B43_SHM_SH_MAXBFRAMES, 8);
 		b43_shm_write16(dev, B43_SHM_SHARED,
@@ -7442,6 +7450,8 @@ static int b43_wireless_core_init(struct b43_wldev *dev)
 				B43_SHM_SH_DEFAULTIV, 0x000a);
 		b43_shm_write16(dev, B43_SHM_SHARED,
 				B43_SHM_SH_RFATT, 0x0480);
+	}
+	if (dev->dev->core_rev >= 42) {
 		b43_shm_write16(dev, B43_SHM_SHARED,
 				B43_SHM_SH_HOSTF4, 0x0060);
 		b43_shm_write16(dev, B43_SHM_SHARED,
@@ -7456,6 +7466,9 @@ static int b43_wireless_core_init(struct b43_wldev *dev)
 	 */
 	if (b43_current_band(dev->wl) == NL80211_BAND_5GHZ)
 		b43_short_slot_timing_enable(dev);
+	else
+		/* Unassociated, as brcmsmac's brcms_c_switch_shortslot() */
+		b43_short_slot_timing_disable(dev);
 
 	/* Disable sending probe responses from firmware.
 	 * Setting the MaxTime to one usec will always trigger
