@@ -3346,11 +3346,17 @@ static int b43_upload_microcode(struct b43_wldev *dev)
 	B43_WARN_ON(macctl & B43_MACCTL_PSM_RUN);
 	macctl |= B43_MACCTL_PSM_JMP0;
 	b43_macctl_write(dev, macctl);
-	/* Zero out all microcode PSM registers and shared memory. */
-	for (i = 0; i < 64; i++)
-		b43_shm_write16(dev, B43_SHM_SCRATCH, i, 0);
-	for (i = 0; i < 4096; i += 2)
-		b43_shm_write16(dev, B43_SHM_SHARED, i, 0);
+	/*
+	 * Zero out all microcode PSM registers and shared memory. The
+	 * BCM4313's wl does not: every cell it gives the microcode is in the
+	 * initvals, the bsinitvals, the MAC config block or the host flags.
+	 */
+	if (dev->phy.type != B43_PHYTYPE_LCN) {
+		for (i = 0; i < 64; i++)
+			b43_shm_write16(dev, B43_SHM_SCRATCH, i, 0);
+		for (i = 0; i < 4096; i += 2)
+			b43_shm_write16(dev, B43_SHM_SHARED, i, 0);
+	}
 
 	/* Upload Microcode. */
 	data = (__be32 *) (dev->fw.ucode.data->data + hdr_len);
