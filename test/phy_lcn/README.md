@@ -44,7 +44,7 @@ On 2026-11-17, `--min-block 8 --gap-tol 2`:
 
 | capture | grezzo | PHY+radio |
 |---|---|---|
-| attach | 12756/19538 = 65.29% | 12792/16820 = 76.05% |
+| attach | 13058/19157 = 68.16% | 13055/16478 = 79.23% |
 
 The init follows wl's through the tables, the baseband and radio init, the
 hardware TX power control, the channel and the PMU, then the calibration of
@@ -60,7 +60,9 @@ yet, in wl's order:
   explains: an RMW of 0x4d0 and 0x478 at the start, of 0x55d before the
   2064's init, of 0x4eb after it, of 0x525 after the TX power control's mode;
 - wl polls the I/Q-LO calibration's status (0x451) more often than b43,
-  which offsets the reads around each command.
+  which offsets the reads around each command;
+- wl reads 0x4a4 once in the I/Q-LO calibration (#10844): every later read
+  of 0x4a4 b43 makes is served the value of the one before it.
 
 ## The channel switches
 
@@ -73,12 +75,12 @@ with the calibration's results wl holds there (`calres.py`). On 2026-11-17,
 
 | channels | PHY+radio |
 |---|---|
-| 2-4, 9-12 | 1603/1609 = 99.63% |
-| 5-8 | 1605/1617 = 99.26% |
-| 13 | 1605/1618 = 99.20% |
+| 2-4, 9-12 | 1604/1609 = 99.69% |
+| 5-8 | 1606/1617 = 99.32% |
+| 13 | 1606/1618 = 99.26% |
 
-What b43 does not make there is the RMWs of unknown purpose of 0x6d1, 0x525
-and 0x4a9 (`TODO_LCN.md`).
+What b43 does not make there is the RMWs of unknown purpose of 0x6d1 and
+0x525 (`TODO_LCN.md`).
 
 ## Flows
 
