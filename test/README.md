@@ -17,6 +17,8 @@ replaces the other.
 
 **`phy_ht/`** compiles the HT-PHY files and compares the TX power control
 init with the R6400 v1's `wl-mmio-trap` captures; see `phy_ht/README.md`.
+**`phy_lcn/`** does the same for the LCN-PHY against the BCM4313 attach
+capture of the Compaq CQ57; see `phy_lcn/README.md`.
 
 Three smaller ones check one piece each: **`radar/`** replays recorded and
 synthetic radar FIFO reads through `b43-next/radar_ac.c`, **`sprom/`**
