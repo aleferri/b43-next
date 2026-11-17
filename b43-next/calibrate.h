@@ -23,4 +23,14 @@ static inline u32 b43_tone_pack10(struct cordic_iq s)
 	return ((s.i & 0x3ff) << 10) | (s.q & 0x3ff);
 }
 
+enum b43_rx_iq_comp {
+	B43_RX_IQ_COMP_OK,
+	B43_RX_IQ_COMP_LOW_PWR,		/* I and Q powers under 2 */
+	B43_RX_IQ_COMP_NO_A,		/* no divisor for a */
+	B43_RX_IQ_COMP_NO_B,		/* no divisor for b */
+};
+
+enum b43_rx_iq_comp b43_rx_iq_comp(s32 iq, u32 ii, u32 qq, s32 *a_out,
+				   s32 *b_out);
+
 #endif /* B43_CALIBRATE_H_ */

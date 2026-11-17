@@ -2296,43 +2296,6 @@ static void b43_phy_ht_rx_iq_est(struct b43_wldev *dev,
 	}
 }
 
-/*
- * brcmsmac's wlc_phy_calc_rx_iq_comp_nphy() for one core, with the root
- * rounded as wl's results show
- */
-static bool b43_phy_ht_rx_iq_comp(const struct b43_phy_ht_iq_est *est,
-				  u16 *a_out, u16 *b_out)
-{
-	s32 iq = est->iq_prod, a, b, tmp;
-	u32 ii = est->i_pwr, qq = est->q_pwr;
-	int iq_nbits = fls(abs(iq)), qq_nbits = fls(qq);
-	int arsh = 10 - (30 - iq_nbits), brsh = qq_nbits - 31 + 20;
-
-	if (ii + qq < 2)
-		return false;
-	if (arsh >= 0) {
-		a = -(iq << (30 - iq_nbits)) + (ii >> (1 + arsh));
-		tmp = ii >> arsh;
-	} else {
-		a = -(iq << (30 - iq_nbits)) + (ii << (-1 - arsh));
-		tmp = ii << -arsh;
-	}
-	if (!tmp)
-		return false;
-	a /= tmp;
-	b = qq << (31 - qq_nbits);
-	tmp = brsh >= 0 ? ii >> brsh : ii << -brsh;
-	if (!tmp)
-		return false;
-	b /= tmp;
-	b -= a * a;
-	/* wl rounds the root where brcmsmac truncates it */
-	b = (int_sqrt(4 * (unsigned long)b) + 1) / 2 - (1 << 10);
-	*a_out = a & 0x3ff;
-	*b_out = b & 0x3ff;
-	return true;
-}
-
 /* brcmsmac's nphy_ipa_rxcal_gaintbl_2GHz_rev7: lpf_biq0, lna2, txpwrindex */
 static const u8 b43_phy_ht_rxcal_gain[6][3] = {
 	{ 0, 0, 10 }, { 0, 1, 10 }, { 1, 2, 10 },
@@ -2507,7 +2470,7 @@ static void b43_phy_ht_cal_rx_iq(struct b43_wldev *dev)
 		u32 pwr, prev_pwr = 0, optim_pwr = 0;
 		bool done = false;
 		int fine;
-		u16 a, b;
+		s32 a, b;
 
 		b43_phy_ht_rxcal_setup(dev, core, &sv);
 		b43_phy_ht_rxcal_gain_set(dev, core, idx, 0);
@@ -2561,9 +2524,10 @@ static void b43_phy_ht_cal_rx_iq(struct b43_wldev *dev)
 		b43_phy_ht_rx_iq_est(dev, est, 0x4000);
 		b43_phy_write(dev, 0x9a + core * 2, 0);
 		b43_phy_write(dev, 0x9b + core * 2, 0);
-		if (b43_phy_ht_rx_iq_comp(&est[core], &a, &b)) {
-			comp[core * 2] = a;
-			comp[core * 2 + 1] = b;
+		if (b43_rx_iq_comp(est[core].iq_prod, est[core].i_pwr,
+				   est[core].q_pwr, &a, &b) == B43_RX_IQ_COMP_OK) {
+			comp[core * 2] = a & 0x3ff;
+			comp[core * 2 + 1] = b & 0x3ff;
 		}
 		for (c = 0; c < 6; c++)
 			b43_phy_write(dev, 0x9a + c, comp[c]);

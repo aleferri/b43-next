@@ -17,3 +17,62 @@ struct cordic_iq b43_tone_sample(s32 angle, u16 amp)
 	s.q = CORDIC_FLOAT(s.q * amp);
 	return s;
 }
+
+/* Number of bits of the magnitude of a value, 0 for 0 */
+static u8 b43_nbits(s32 value)
+{
+	s32 abs_val = abs(value);
+	u8 nbits = 0;
+
+	while ((abs_val >> nbits) > 0)
+		nbits++;
+
+	return nbits;
+}
+
+/*
+ * brcmsmac's wlc_phy_calc_rx_iq_comp_nphy() for one estimate: @iq the I/Q
+ * product, @ii and @qq the I and Q powers. wl rounds the root of b where
+ * brcmsmac truncates it. a and b come out unmasked.
+ */
+enum b43_rx_iq_comp b43_rx_iq_comp(s32 iq, u32 ii, u32 qq, s32 *a_out,
+				   s32 *b_out)
+{
+	int iq_nbits, qq_nbits, arsh, brsh;
+	s32 a, b, tmp;
+
+	if (ii + qq < 2)
+		return B43_RX_IQ_COMP_LOW_PWR;
+
+	iq_nbits = b43_nbits(iq);
+	qq_nbits = b43_nbits(qq);
+
+	arsh = 10 - (30 - iq_nbits);
+	if (arsh >= 0) {
+		a = (-(iq << (30 - iq_nbits)) + (ii >> (1 + arsh)));
+		tmp = (s32)(ii >> arsh);
+	} else {
+		a = (-(iq << (30 - iq_nbits)) + (ii << (-1 - arsh)));
+		tmp = (s32)(ii << -arsh);
+	}
+	if (tmp == 0)
+		return B43_RX_IQ_COMP_NO_A;
+	a /= tmp;
+
+	brsh = qq_nbits - 31 + 20;
+	b = (qq << (31 - qq_nbits));
+	if (brsh >= 0)
+		tmp = (s32)(ii >> brsh);
+	else
+		tmp = (s32)(ii << -brsh);
+	if (tmp == 0)
+		return B43_RX_IQ_COMP_NO_B;
+	b /= tmp;
+	b -= a * a;
+	b = ((s32)int_sqrt(4 * (unsigned long)b) + 1) / 2;
+	b -= (1 << 10);
+
+	*a_out = a;
+	*b_out = b;
+	return B43_RX_IQ_COMP_OK;
+}

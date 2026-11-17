@@ -4798,15 +4798,14 @@ static u8 b43_nphy_nbits(s32 value)
  * As brcmsmac's wlc_phy_calc_rx_iq_comp_nphy(): the coefficients are worked
  * out in 32 bits, and a failed estimate is repeated twice.
  */
-#define B43_NPHY_MIN_RXIQ_PWR	2
 #define B43_NPHY_RXIQ_CAL_RETRIES	2
 static void b43_nphy_calc_rx_iq_comp(struct b43_wldev *dev, u8 mask)
 {
 	int i;
 	s32 iq = 0;
 	u32 ii = 0, qq = 0;
-	s16 iq_nbits, qq_nbits, arsh, brsh;
-	s32 a, b, tmp;
+	s32 a, b;
+	enum b43_rx_iq_comp fail;
 	unsigned int retry = 0;
 
 	struct nphy_iq_est est;
@@ -4847,61 +4846,23 @@ again:
 			continue;
 		}
 
-		if (ii + qq < B43_NPHY_MIN_RXIQ_PWR) {
-			b43_cal_report(dev, N_CAL_RXIQ_FAIL, i, retry, 0);
-			error = true;
-			break;
-		}
-
 		/*
 		 * On rev 17 the coefficients are normalised by the Q power,
 		 * not the I power: for every estimate in traces of wl 7.14 on
-		 * a BCM43217, the arithmetic below with ii and qq swapped
-		 * gives the a and b wl writes, and the brcmsmac form does
-		 * not (b off by 3 to 28, a by 0 to 3).
+		 * a BCM43217, b43_rx_iq_comp() with ii and qq swapped gives
+		 * the a and b wl writes, and the brcmsmac form does not (b
+		 * off by 3 to 28, a by 0 to 3).
 		 */
 		if (dev->phy.rev == 17)
 			swap(ii, qq);
 
-		iq_nbits = b43_nphy_nbits(iq);
-		qq_nbits = b43_nphy_nbits(qq);
-
-		arsh = 10 - (30 - iq_nbits);
-		if (arsh >= 0) {
-			a = (-(iq << (30 - iq_nbits)) + (ii >> (1 + arsh)));
-			tmp = (s32)(ii >> arsh);
-		} else {
-			a = (-(iq << (30 - iq_nbits)) + (ii << (-1 - arsh)));
-			tmp = (s32)(ii << -arsh);
-		}
-		if (tmp == 0) {
-			b43_cal_report(dev, N_CAL_RXIQ_FAIL, i, retry, 1);
+		fail = b43_rx_iq_comp(iq, ii, qq, &a, &b);
+		if (fail != B43_RX_IQ_COMP_OK) {
+			b43_cal_report(dev, N_CAL_RXIQ_FAIL, i, retry,
+				       fail - B43_RX_IQ_COMP_LOW_PWR);
 			error = true;
 			break;
 		}
-		a /= tmp;
-
-		brsh = qq_nbits - 31 + 20;
-		b = (qq << (31 - qq_nbits));
-		if (brsh >= 0)
-			tmp = (s32)(ii >> brsh);
-		else
-			tmp = (s32)(ii << -brsh);
-		if (tmp == 0) {
-			b43_cal_report(dev, N_CAL_RXIQ_FAIL, i, retry, 2);
-			error = true;
-			break;
-		}
-		b /= tmp;
-		b -= a * a;
-		/*
-		 * wl 7.14.164.18 rounds the square root to the nearest integer:
-		 * that gives its a and b for all 136 RX I/Q compensations it
-		 * writes in the RT-AC56U's captures (BCM43217), the floor of
-		 * int_sqrt() for 67.
-		 */
-		b = ((s32)int_sqrt(4 * (unsigned long)b) + 1) / 2;
-		b -= (1 << 10);
 
 		if (i == 0 && (mask & 0x1)) {
 			if (dev->phy.rev >= 3) {
