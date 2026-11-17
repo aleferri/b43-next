@@ -1826,82 +1826,11 @@ static void b43_phy_ac_op_beacon_rate_set(struct b43_wldev *dev, bool cck)
 						B43_PHY_AC_CHAIN_TXPWR));
 }
 
-/*
- * The invariant part of the MAC config block, right after the two zeroings.
- *
- * Every value is the same on every segment of the d6220 cold sweep, and the
- * tg789vac writes the same ones except for the chain-count cells. They are
- * transcribed; their purpose is not known.
- *
- * The cells are at fixed distances from the block's first one, which each
- * microcode keeps at its own offset (struct b43_shm_layout): 0x08ec on 928,
- * 0x08f4 on 832, 0x0894 on 784. Their drivers write them in the same order
- * and with the same values, but 0x0020 only on 928 and the block at +0x16
- * not on 784 (router-data/dsl3580l/cold01-ch36-bw20.txt, 9248-9292;
- * router-data/archer-t5e/mmiotrace.zip, #13998-14054). With no layout
- * nothing is written: at another microcode's offsets the block can land on
- * live cells, as 928's does on 784's CTS-to-self.
- *
- * Not here yet: the fifteen cells at stride 0x14 that follow the width, the
- * twelve at stride 0x1c that follow the centre frequency, the read of 0x00b0
- * (the core's EXTNPHYCTL in b43.h) and 0x05dc (coremask, in KEYIDXBLOCK).
- * Who should emit the last two is not settled.
- * [capture-ref: router-data/d6220/cold-sweep.zip!cold01-ch36-bw20.txt;
- *   12860-12892]
- * [capture-ref: router-data/d6220/hot-sweep.zip!segmenti/01-up-ch36-bw20.txt;
- *   8547-8579]
- */
 static void b43_phy_ac_shm_mac_config_block(struct b43_wldev *dev)
 {
 	B43_AC_FN();
-	/* Sixteen consecutive words from +0x40. */
-	static const u16 words_40[] = {
-		0x3475, 0x3475, 0x3475, 0x217c, 0x237b, 0x217c, 0x217c, 0x217c,
-		0x3276, 0x3276, 0x3475, 0x187e, 0x217c, 0x167e, 0x1d7d, 0x1f7c,
-	};
-	/* Seven consecutive words from +0x16. */
-	static const u16 words_16[] = {
-		0x41c2, 0x0000, 0x0017, 0x024b, 0x0097, 0x0500, 0x0000,
-	};
-	const struct b43_shm_layout *shm = dev->fw.layout.shm;
-	u16 base;
-	unsigned int i;
-
-	if (!shm)
-		return;
-	base = shm->mac_cfg;
-
-	if (shm->mac_cfg_0020)
-		b43_shm_write16(dev, B43_SHM_SHARED, B43_SHM_SH_MAXRXFRMLEN, 0x0800);
-	b43_shm_write16(dev, B43_SHM_SHARED, base, 0x186a);
-	/*
-	 * The d6220, with one of its three cores unwired, writes +0x24 and +0x08
-	 * and then +0x04 = 1; the agcombo and the tg789vac, all three wired,
-	 * skip the pair and write +0x04 = 2. Two boards cannot tell "a core is
-	 * unwired" from "two chains".
-	 */
-	if (hweight8((u8)dev->phy.ac->coremask) != dev->phy.ac->num_cores) {
-		b43_shm_write16(dev, B43_SHM_SHARED, base + 0x24, 0x80c3);
-		b43_shm_write16(dev, B43_SHM_SHARED, base + 0x08, 0x80c2);
-	}
-	b43_shm_write16(dev, B43_SHM_SHARED, base + 0x04,
-			(u16)(hweight8((u8)dev->phy.ac->coremask) - 1));
-
-	/*
-	 * Read and written back: the value is zero in the capture, and the
-	 * read-rewrite form avoids inventing it.
-	 */
-	b43_shm_write16(dev, B43_SHM_SHARED, base + 0x600,
-			b43_shm_read16(dev, B43_SHM_SHARED, base + 0x600));
-
-	for (i = 0; i < ARRAY_SIZE(words_40); i++)
-		b43_shm_write16(dev, B43_SHM_SHARED,
-				(u16)(base + 0x40 + i * 2), words_40[i]);
-	if (!shm->mac_cfg_16)
-		return;
-	for (i = 0; i < ARRAY_SIZE(words_16); i++)
-		b43_shm_write16(dev, B43_SHM_SHARED,
-				(u16)(base + 0x16 + i * 2), words_16[i]);
+	b43_shm_mac_config_block(dev, dev->phy.ac->num_cores,
+				 dev->phy.ac->coremask);
 }
 
 /*

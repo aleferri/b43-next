@@ -477,15 +477,6 @@ PHY_ALSO = [
 #            COMING'/'mod GOING'). There is no register behind it, so no code
 #            can emit it. It enters the window only since the cold segments
 #            reach 'mod GOING'.
-#   REG.RD 0x0160
-#            the reread of objaddr in a capture taken at the bus: the stock
-#            driver rereads the address after writing it, at every shared
-#            memory access (brcmsmac's brcms_b_read_objmem() and
-#            brcms_b_write_objmem()), and mmio2ops.py leaves it as an op of
-#            its own. b43 writes the control word with b43_shm_control_word()
-#            without rereading it, even where b43_flush_writes() is true, so
-#            it has nothing to emit; the OBJ that follows is on both sides and
-#            is compared.
 #   IOCTL, IOVAR.SET
 #            the userspace commands, from the hook on wlc_ioctl(): `wl up`,
 #            `wl chanspec`, `wl phycal_tempdelta`. They are the driver's
@@ -522,7 +513,6 @@ PHY_ALSO = [
 #            VAL_BITS_OUTSIDE_PERIMETER.
 VENDOR_ONLY = (
     r"^MARK\b",
-    r'^REG\.RD off=0x160 ',
     r"^IOCTL\b",
     r"^IOVAR\.SET\b",
     r'^OBJ\.WR addr=0x(?:48|4a|18[0246])(?: |$)',

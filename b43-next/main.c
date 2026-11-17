@@ -655,6 +655,8 @@ static inline void b43_shm_control_word(struct b43_wldev *dev,
 	control <<= 16;
 	control |= offset;
 	b43_write32(dev, B43_MMIO_SHM_CONTROL, control);
+	/* Read back, as brcms_b_read_objmem() and wl */
+	b43_read32(dev, B43_MMIO_SHM_CONTROL);
 }
 
 u32 b43_shm_read32(struct b43_wldev *dev, u16 routing, u16 offset)
@@ -7546,6 +7548,9 @@ static int b43_wireless_core_init(struct b43_wldev *dev)
 	b43dbg(dev->wl, "init: address match and keys\n");
 	b43_upload_card_macaddress(dev);
 	b43_security_init(dev);
+	/* The AC's comes with its PHY's init, see b43_phy_ac_shm_mac_config_block() */
+	if (phy->type != B43_PHYTYPE_AC)
+		b43_shm_mac_config_block(dev, 1, 1);
 	b43_txbf_init(dev);
 
 	/* The AC PHY comes up after the MAC is set up, see b43_chip_init(). */

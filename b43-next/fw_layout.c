@@ -2,6 +2,7 @@
 
 #include "b43.h"
 #include "fw_layout.h"
+#include "main.h"
 
 #define B43_SHM_SH_KEYIDXBLOCK		0x05D4	/* Key index/algorithm block (v4 firmware) */
 #define B43_SHM_SH_KEYIDXBLOCK_AC	0x05E0	/* the same, AC microcode */
@@ -16,6 +17,7 @@
 #define B43_SHM_SH_MACCFG_AC784		0x0894	/* AC ucode 784 */
 #define B43_SHM_SH_MACCFG_AC832		0x08F4	/* AC ucode 832 */
 #define B43_SHM_SH_MACCFG_AC928		0x08EC	/* AC ucode 928 */
+#define B43_SHM_SH_MACCFG_LCN832	0x00E4	/* LCN ucode 832 */
 
 static const struct b43_tpl_layout b43_tpl_layout_legacy = {
 	.bcn_base	= { B43_SHM_SH_BT_BASE0, B43_SHM_SH_BT_BASE1 },
@@ -50,6 +52,7 @@ static const struct b43_tpl_layout b43_tpl_layout_ac_832 = {
  */
 static const struct b43_shm_layout b43_shm_layout_ac_784 = {
 	.mac_cfg	= B43_SHM_SH_MACCFG_AC784,
+	.mac_cfg_val	= 0x186a,
 	.cts_duration	= 4400,
 	.cts_suspended	= true,
 	.txerr		= B43_SHM_SH_TXERR_AC784,
@@ -57,6 +60,7 @@ static const struct b43_shm_layout b43_shm_layout_ac_784 = {
 
 static const struct b43_shm_layout b43_shm_layout_ac_832 = {
 	.mac_cfg	= B43_SHM_SH_MACCFG_AC832,
+	.mac_cfg_val	= 0x186a,
 	.mac_cfg_16	= true,
 	.cts_duration	= 29000,
 	.txerr		= B43_SHM_SH_TXERR_AC928,
@@ -64,10 +68,20 @@ static const struct b43_shm_layout b43_shm_layout_ac_832 = {
 
 static const struct b43_shm_layout b43_shm_layout_ac_928 = {
 	.mac_cfg	= B43_SHM_SH_MACCFG_AC928,
+	.mac_cfg_val	= 0x186a,
 	.mac_cfg_0020	= true,
 	.mac_cfg_16	= true,
 	.cts_duration	= 29000,
 	.txerr		= B43_SHM_SH_TXERR_AC928,
+};
+
+/*
+ * 832 on the LCN-PHY, the BCM4313's of the x86 hybrid 6.30 (router-data
+ * bcm4313-rev1/compaq-cq57): the AC 832's MAC config block, at its own base.
+ */
+static const struct b43_shm_layout b43_shm_layout_lcn_832 = {
+	.mac_cfg	= B43_SHM_SH_MACCFG_LCN832,
+	.mac_cfg_16	= true,
 };
 
 #define B43_FW_PRE_AC					\
@@ -94,6 +108,22 @@ static const struct b43_fw_range b43_fw_revs_pre_ac[] = {
 		      .new_kidx_api = true, .g_chanid_number = true } },
 	{ 598, 0xffff, { B43_FW_PRE_AC, .hdr = &b43_hdr_598,
 			 .new_kidx_api = true, .g_chanid_number = true } },
+};
+
+static const struct b43_fw_range b43_fw_revs_ucode24_lcn[] = {
+	{ 0, 350, { B43_FW_PRE_AC, .hdr = &b43_hdr_351,
+		      .deprecated = true } },
+	{ 351, 409, { B43_FW_PRE_AC, .hdr = &b43_hdr_351,
+		      .new_kidx_api = true, .deprecated = true } },
+	{ 410, 507, { B43_FW_PRE_AC, .hdr = &b43_hdr_410,
+		      .new_kidx_api = true } },
+	{ 508, 597, { B43_FW_PRE_AC, .hdr = &b43_hdr_410,
+		      .new_kidx_api = true, .g_chanid_number = true } },
+	{ 598, 831, { B43_FW_PRE_AC, .hdr = &b43_hdr_598,
+		      .new_kidx_api = true, .g_chanid_number = true } },
+	{ 832, 0xffff, { B43_FW_PRE_AC, .hdr = &b43_hdr_598,
+			 .new_kidx_api = true, .g_chanid_number = true,
+			 .shm = &b43_shm_layout_lcn_832 } },
 };
 
 /* edcrs: firmware 784.2 uploads slower with it. */
@@ -159,7 +189,7 @@ B43_FW_FAMILY(ucode15, b43_fw_revs_pre_ac);
 B43_FW_FAMILY(ucode16_lp, b43_fw_revs_pre_ac);
 B43_FW_FAMILY(ucode16_mimo, b43_fw_revs_pre_ac);
 B43_FW_FAMILY(ucode22_mimo, b43_fw_revs_pre_ac);
-B43_FW_FAMILY(ucode24_lcn, b43_fw_revs_pre_ac);
+B43_FW_FAMILY(ucode24_lcn, b43_fw_revs_ucode24_lcn);
 B43_FW_FAMILY(ucode25_lcn, b43_fw_revs_pre_ac);
 B43_FW_FAMILY(ucode25_mimo, b43_fw_revs_pre_ac);
 B43_FW_FAMILY(ucode26_mimo, b43_fw_revs_pre_ac);
@@ -247,4 +277,85 @@ const struct b43_fw_layout *b43_fw_layout_get(const struct b43_fw_family *family
 		if (fw_rev >= r->first && fw_rev <= r->last)
 			break;
 	return &r->layout;
+}
+
+/*
+ * The invariant part of the MAC config block, right after the two zeroings
+ * on the AC, after the key table's clear on the LCN-PHY (compaq-cq57,
+ * #32475-#32529, at 0x00e4 with 0 in the first cell, one chain).
+ *
+ * Every value is the same on every segment of the d6220 cold sweep, and the
+ * tg789vac writes the same ones except for the chain-count cells; the
+ * BCM4313's 832 writes them too. They are transcribed; their purpose is not
+ * known.
+ *
+ * The cells are at fixed distances from the block's first one, which each
+ * microcode keeps at its own offset (struct b43_shm_layout): 0x08ec on 928,
+ * 0x08f4 on 832, 0x0894 on 784. Their drivers write them in the same order
+ * and with the same values, but 0x0020 only on 928 and the block at +0x16
+ * not on 784 (router-data/dsl3580l/cold01-ch36-bw20.txt, 9248-9292;
+ * router-data/archer-t5e/mmiotrace.zip, #13998-14054). With no layout
+ * nothing is written: at another microcode's offsets the block can land on
+ * live cells, as 928's does on 784's CTS-to-self.
+ *
+ * Not here yet: the fifteen cells at stride 0x14 that follow the width, the
+ * twelve at stride 0x1c that follow the centre frequency, the read of 0x00b0
+ * (the core's EXTNPHYCTL in b43.h) and 0x05dc (coremask, in KEYIDXBLOCK).
+ * Who should emit the last two is not settled.
+ * [capture-ref: router-data/d6220/cold-sweep.zip!cold01-ch36-bw20.txt;
+ *   12860-12892]
+ * [capture-ref: router-data/d6220/hot-sweep.zip!segmenti/01-up-ch36-bw20.txt;
+ *   8547-8579]
+ */
+void b43_shm_mac_config_block(struct b43_wldev *dev, unsigned int cores,
+			      unsigned long coremask)
+{
+	/* Sixteen consecutive words from +0x40. */
+	static const u16 words_40[] = {
+		0x3475, 0x3475, 0x3475, 0x217c, 0x237b, 0x217c, 0x217c, 0x217c,
+		0x3276, 0x3276, 0x3475, 0x187e, 0x217c, 0x167e, 0x1d7d, 0x1f7c,
+	};
+	/* Seven consecutive words from +0x16. */
+	static const u16 words_16[] = {
+		0x41c2, 0x0000, 0x0017, 0x024b, 0x0097, 0x0500, 0x0000,
+	};
+	const struct b43_shm_layout *shm = dev->fw.layout.shm;
+	u16 base;
+	unsigned int i;
+
+	if (!shm || !shm->mac_cfg)
+		return;
+	base = shm->mac_cfg;
+
+	if (shm->mac_cfg_0020)
+		b43_shm_write16(dev, B43_SHM_SHARED, B43_SHM_SH_MAXRXFRMLEN, 0x0800);
+	b43_shm_write16(dev, B43_SHM_SHARED, base, shm->mac_cfg_val);
+	/*
+	 * The d6220, with one of its three cores unwired, writes +0x24 and +0x08
+	 * and then +0x04 = 1; the agcombo and the tg789vac, all three wired,
+	 * skip the pair and write +0x04 = 2. Two boards cannot tell "a core is
+	 * unwired" from "two chains".
+	 */
+	if (hweight8((u8)coremask) != cores) {
+		b43_shm_write16(dev, B43_SHM_SHARED, base + 0x24, 0x80c3);
+		b43_shm_write16(dev, B43_SHM_SHARED, base + 0x08, 0x80c2);
+	}
+	b43_shm_write16(dev, B43_SHM_SHARED, base + 0x04,
+			(u16)(hweight8((u8)coremask) - 1));
+
+	/*
+	 * Read and written back: the value is zero in the capture, and the
+	 * read-rewrite form avoids inventing it.
+	 */
+	b43_shm_write16(dev, B43_SHM_SHARED, base + 0x600,
+			b43_shm_read16(dev, B43_SHM_SHARED, base + 0x600));
+
+	for (i = 0; i < ARRAY_SIZE(words_40); i++)
+		b43_shm_write16(dev, B43_SHM_SHARED,
+				(u16)(base + 0x40 + i * 2), words_40[i]);
+	if (!shm->mac_cfg_16)
+		return;
+	for (i = 0; i < ARRAY_SIZE(words_16); i++)
+		b43_shm_write16(dev, B43_SHM_SHARED,
+				(u16)(base + 0x16 + i * 2), words_16[i]);
 }
