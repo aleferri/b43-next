@@ -67,7 +67,7 @@ the step's own window (`LP_STEPS`, the #number where each begins).
 | capture | PHY+radio |
 |---|---|
 | switches, 22 windows | 9048/10186 = 88.83% |
-| up | 3849/5118 = 75.21% |
+| up | 4232/4735 = 89.38% |
 
 What wl does once the station is up is left out.
 
