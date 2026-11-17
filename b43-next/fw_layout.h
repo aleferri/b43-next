@@ -48,6 +48,7 @@ struct b43_tpl_layout {
  */
 struct b43_shm_layout {
 	u16 mac_cfg;		/* first cell of the MAC config block */
+	u16 mac_cfg_val;	/* and what goes in it */
 	bool mac_cfg_0020;	/* 0x0020 = 0x0800 before the block */
 	bool mac_cfg_16;	/* the seven words from mac_cfg + 0x16 */
 	u16 cts_duration;	/* us, of the CTS-to-self of the RX-cal suspend */
@@ -137,5 +138,9 @@ struct b43_fw_family {
 const struct b43_fw_family *b43_fw_family_find(u8 core_rev, u8 phy_type);
 const struct b43_fw_layout *b43_fw_layout_get(const struct b43_fw_family *family,
 					      u16 fw_rev);
+
+/* The MAC config block of the layout, for a PHY of @cores, @coremask wired */
+void b43_shm_mac_config_block(struct b43_wldev *dev, unsigned int cores,
+			      unsigned long coremask);
 
 #endif /* B43_FW_LAYOUT_H_ */
