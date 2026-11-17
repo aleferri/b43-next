@@ -34,7 +34,7 @@ endif
 else
 b43n-opts := SSB BCMA PCI_AUTOSELECT
 endif
-b43n-opts += PHY_G PHY_N PHY_LP PHY_HT PHY_AC
+b43n-opts += PHY_G PHY_N PHY_LP PHY_HT PHY_LCN40 PHY_AC
 # The LP-PHY is on SSB only (as b43's B43_PHY_LP depends on B43_SSB).
 ifeq ($(filter SSB,$(b43n-opts)),)
 b43n-opts := $(filter-out PHY_LP,$(b43n-opts))
@@ -126,6 +126,7 @@ b43-next-$(CONFIG_B43_NEXT_PHY_N) += $(call b43n-obj,$(b43n-phy-n))
 b43-next-$(CONFIG_B43_NEXT_PHY_LP) += $(call b43n-obj,$(b43n-phy-lp))
 b43-next-$(CONFIG_B43_NEXT_PHY_HT) += $(call b43n-obj,$(b43n-phy-ht))
 b43-next-$(CONFIG_B43_NEXT_PHY_LCN) += $(call b43n-obj,$(b43n-phy-lcn))
+b43-next-$(CONFIG_B43_NEXT_PHY_LCN40) += $(call b43n-obj,$(b43n-phy-lcn40))
 b43-next-$(CONFIG_B43_NEXT_PHY_AC) += $(call b43n-obj,$(b43n-phy-ac))
 b43-next-$(CONFIG_B43_NEXT_LEDS) += $(call b43n-obj,$(b43n-leds))
 b43-next-$(CONFIG_B43_NEXT_SDIO) += $(call b43n-obj,$(b43n-sdio))
