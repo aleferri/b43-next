@@ -7559,6 +7559,8 @@ static int b43_wireless_core_init(struct b43_wldev *dev)
 	}
 
 	b43dbg(dev->wl, "init: address match and keys\n");
+	/* Wake for every DTIM until mac80211 says otherwise, as brcms_c_init() */
+	b43_set_beacon_listen_interval(dev, 0);
 	b43_upload_card_macaddress(dev);
 	b43_security_init(dev);
 	/* The AC's comes with its PHY's init, see b43_phy_ac_shm_mac_config_block() */
