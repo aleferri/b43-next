@@ -52,4 +52,6 @@ bool b43_rxcal_gain_step(struct b43_rxcal_gain *g, u32 pwr);
 int b43_rxcal_gain_delta(const struct b43_rxcal_gain *g);
 u16 b43_rxcal_gain_biq1(u16 biq0, u16 biq1, int delta);
 
+void b43_iq_mismatch(s32 iq, u32 ii, u32 qq, s32 *angle_out, u32 *mag_out);
+
 #endif /* B43_CALIBRATE_H_ */

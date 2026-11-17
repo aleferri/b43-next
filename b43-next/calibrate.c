@@ -7,6 +7,7 @@
  */
 
 #include <linux/kernel.h>
+#include "qmath.h"
 #include "calibrate.h"
 
 struct cordic_iq b43_tone_sample(s32 angle, u16 amp)
@@ -131,4 +132,51 @@ u16 b43_rxcal_gain_biq1(u16 biq0, u16 biq1, int delta)
 	if (fine + biq0 > 10)
 		return 10 - biq0;
 	return max(fine, 0);
+}
+
+/*
+ * One tone's IQ mismatch in the stock driver's form: the angle in degrees
+ * Q16 and the gain ratio 2^10 * sqrt(qq / ii), both from the three
+ * estimator accumulators and in its fixed point.
+ *
+ * sin(angle) = -iq / sqrt(ii * qq) in Q16, the root as the product of the
+ * two roots taken on the accumulators brought to 30 bits; cos from
+ * 1 - sin^2 in Q30; the angle is the inverse CORDIC of (sin, cos). The
+ * gain ratio is sqrt(2^20 + 2^20 * (qq - ii) / ii), the quotient taken on
+ * qq - ii brought to 30 bits over ii cut by the same even shift: that cut
+ * of the denominator is what the per-tone ratio carries into the rounding
+ * of the magnitude, a few hundredths at most, which decided the last
+ * handful of coefficients.
+ */
+void b43_iq_mismatch(s32 iq, u32 ii, u32 qq, s32 *angle_out, u32 *mag_out)
+{
+	unsigned int nb_iq = fls(iq < 0 ? -iq : iq), nb_max = fls(ii | qq);
+	unsigned int nb;
+	s64 num, den, prod;
+	s32 sin_q16, half, cos_q16, d;
+
+	if (nb_max < 31)
+		prod = (s64)b43_sqrt_near((u64)qq << (30 - nb_max)) *
+		       b43_sqrt_near((u64)ii << (30 - nb_max));
+	else
+		prod = (s64)b43_sqrt_near(qq >> (nb_max - 30)) *
+		       b43_sqrt_near(ii >> (nb_max - 30));
+	num = (s64)-iq << (30 - nb_iq);
+	if (nb_iq + 16 < nb_max)
+		den = prod << (nb_max - nb_iq - 16);
+	else
+		den = prod >> (nb_iq + 16 - nb_max);
+	sin_q16 = den ? b43_div_near(num, den) : 0;
+	half = sin_q16 >> 1;
+	cos_q16 = b43_sqrt_near((1 << 30) - (s64)half * half) << 1;
+	*angle_out = b43_cordic_vector(sin_q16, cos_q16);
+
+	d = (s32)(qq - ii);
+	nb = fls(d < 0 ? -d : d);
+	nb += nb & 1;
+	num = (s64)d << (30 - nb);
+	den = nb >= 11 ? ii >> (nb - 10) : (u64)ii << (10 - nb);
+	*mag_out = den ? b43_sqrt_near(b43_div_near(num, den) +
+					      (1 << 20))
+		       : 1 << 10;
 }
