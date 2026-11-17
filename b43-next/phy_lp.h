@@ -885,6 +885,17 @@ struct b43_phy_lp {
 	/* The RX I/Q compensation last written, c0 << 8 | c1 */
 	u16 rx_iq_comp;
 
+	/*
+	 * What b43_lpphy_op_init() leaves to the tune b43_phy_init() runs
+	 * after it: a calibration (the first init) or applying the kept ones
+	 * (an up), then the TX power control.
+	 */
+	enum {
+		LPPHY_INIT_DONE,
+		LPPHY_INIT_CALIBRATE,
+		LPPHY_INIT_RESTORE,
+	} init_tail;
+
 	/* Used for "Save/Restore Dig Filt State" */
 	u16 dig_flt_state[9];
 
