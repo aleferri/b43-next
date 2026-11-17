@@ -179,6 +179,27 @@ int lcn_run_flow(const char *name)
 		/* mac80211's first config sets the power: the check */
 		b43_phy_txpower_check(dev, B43_TXPWR_IGNORE_TIME |
 				      B43_TXPWR_IGNORE_TSSI);
+	} else if (!strcmp(name, "switch")) {
+		/*
+		 * A channel switch after the init, with the init's
+		 * calibration results the capture holds (calres.py)
+		 */
+		struct b43_phy_lcn *lcn = dev->phy.lcn;
+		int i;
+
+		lcn->txiqcc[0] = lcn_env("LCN_TXIQCC_A", 0);
+		lcn->txiqcc[1] = lcn_env("LCN_TXIQCC_B", 0);
+		lcn->txdidq = lcn_env("LCN_TXDIDQ", 0);
+		for (i = 0; i < 4; i++) {
+			char v[16];
+
+			snprintf(v, sizeof(v), "LCN_LOFT%d", i);
+			lcn->loft[i] = lcn_env(v, 0);
+		}
+		lcn->rxiqcomp[0] = lcn_env("LCN_RXIQCOMP_A", 0);
+		lcn->rxiqcomp[1] = lcn_env("LCN_RXIQCOMP_B", 0);
+		lcn->cal_done = true;
+		b43_switch_channel(dev, chan.hw_value);
 	} else
 		return -1;
 	return 0;

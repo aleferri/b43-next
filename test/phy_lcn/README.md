@@ -44,24 +44,46 @@ On 2026-11-17, `--min-block 8 --gap-tol 2`:
 
 | capture | grezzo | PHY+radio |
 |---|---|---|
-| attach | 9281/19606 = 47.34% | 9296/16898 = 55.01% |
+| attach | 12088/19837 = 60.94% | 12094/17149 = 70.52% |
 
 The init follows wl's through the tables, the baseband and radio init, the
 hardware TX power control, the channel and the PMU, then the calibration of
-the init: the idle TSSI and the TX I/Q-LO calibration. What b43 does not make
-yet, in wl's order:
+the init: the idle TSSI, the TX I/Q-LO and the RX I/Q calibrations. What b43
+does not make yet, in wl's order:
 
-- the RX I/Q calibration after the TX one: about 6300 PHY and radio
-  operations from #13065;
+- after the calibration, wl turns the TX power control off and on and sends
+  50 dummy frames, reading the control's index (0x473) after each, until it
+  settles: about 2000 operations from #17454, most of them the core's;
 - a few operations of unknown purpose here and there, which no source
   explains: an RMW of 0x4d0 and 0x478 at the start, of 0x55d before the
   2064's init, of 0x4eb after it, of 0x525 after the TX power control's mode;
 - wl polls the I/Q-LO calibration's status (0x451) more often than b43,
   which offsets the reads around each command.
 
+## The channel switches
+
+The capture holds wl's scans over channels 1-13 and its associations, all
+on channel 1. `gates.sh` scores every switch of the second scan, where wl
+has its calibration from the init and loads it again on each channel:
+from the switch's first PHY operation to the MAC's enable, flow `switch`,
+with the calibration's results wl holds there (`calres.py`). On 2026-11-17,
+`--min-block 8 --gap-tol 2`, PHY and radio:
+
+| channels | PHY+radio |
+|---|---|
+| 2-4, 9-12 | 1305/1611 = 81.01% (2 and 3 one more) |
+| 5-8, 13 | 1296/1628 = 79.61% |
+
+What b43 does not make there is wl's TX power recalculation after the
+switch, the control off and on with a rate table and a target (#86970 on
+channel 2), and two read-modify-writes of 0x780 before it.
+
 ## Flows
 
 - `full`: above.
+- `switch`: `b43_switch_channel()` on `LCN_CHANNEL` after an init, the
+  calibration's results from `LCN_TXIQCC_A`, `LCN_TXIQCC_B`, `LCN_TXDIDQ`,
+  `LCN_LOFT0`-`3`, `LCN_RXIQCOMP_A` and `_B`.
 
 ## Environment
 
