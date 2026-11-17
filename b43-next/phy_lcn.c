@@ -37,7 +37,17 @@
 #include "tables_phy_lcn.h"
 #include "main.h"
 #include "calibrate.h"
+#include "calstat.h"
 #include "ppr.h"
+
+/* The entries of the calibration statistics, see b43_phy_lcn_cal_entries[] */
+enum {
+	LCN_CAL_IDLE_TSSI,
+	LCN_CAL_TXIQLO,
+	LCN_CAL_RXIQ_GAIN,
+	LCN_CAL_RXIQ_COMP,
+	LCN_CAL_TXPWR,
+};
 
 struct lcn_tx_gains {
 	u16 gm_gain;
@@ -927,6 +937,7 @@ static void b43_phy_lcn_idle_tssi_est(struct b43_wldev *dev)
 	u16 tssi;
 	u8 save_bbmult;
 
+	b43_cal_begin(dev, B43_CAL_IDLE_TSSI);
 	b43_phy_lcn_get_tx_pwr_ctrl(dev);
 	save_lpfgain = b43_radio_read(dev, 0x112);
 	save_afe_switch = b43_radio_read(dev, 0x007) & 0x1;
@@ -953,6 +964,7 @@ static void b43_phy_lcn_idle_tssi_est(struct b43_wldev *dev)
 
 	/* The idle TSSI, two's complement both ways: the same 9 bits */
 	tssi = b43_phy_read(dev, 0x63e) & 0x1ff;
+	b43_cal_report(dev, LCN_CAL_IDLE_TSSI, sign_extend32(tssi, 8));
 	b43_phy_maskset(dev, 0x4a6, ~0x1ff, tssi);
 	b43_phy_mask(dev, 0x44c, ~0x1000);
 
@@ -1400,6 +1412,7 @@ static void b43_phy_lcn_txpwrtbl_iqlo_cal(struct b43_wldev *dev)
 	u8 save_bbmult, save_idx = lcn->tx_pwr_curr_idx;
 	int i;
 
+	b43_cal_begin(dev, B43_CAL_TXIQLO);
 	b43_phy_lcn_get_tx_gain(dev, &old_gains);
 	save_pa_gain = b43_phy_lcn_get_pa_gain(dev);
 	save_bbmult = b43_phy_lcn_get_bbmult(dev);
@@ -1415,6 +1428,9 @@ static void b43_phy_lcn_txpwrtbl_iqlo_cal(struct b43_wldev *dev)
 	lcn->txdidq = didq;
 	for (i = 0; i < 4; i++)
 		lcn->loft[i] = b43_radio_read(dev, 0x089 + i);
+	b43_cal_report(dev, LCN_CAL_TXIQLO, lcn->txiqcc[0], lcn->txiqcc[1],
+		       lcn->txdidq, lcn->loft[0], lcn->loft[1], lcn->loft[2],
+		       lcn->loft[3]);
 
 	b43_phy_lcn_set_bbmult(dev, save_bbmult);
 	b43_phy_lcn_set_pa_gain(dev, save_pa_gain);
@@ -1529,6 +1545,8 @@ static bool b43_phy_lcn_calc_rx_iq_comp(struct b43_wldev *dev, u16 samps)
 	b43_phy_lcn_set_rx_iq_comp(dev, a0, b0);
 	b43_phy_set(dev, 0x64b, 0x1);
 	b43_phy_set(dev, 0x64b, 0x8);
+	b43_cal_report(dev, LCN_CAL_RXIQ_COMP, ok, sign_extend32(a0, 9),
+		       sign_extend32(b0, 9));
 	dev->phy.lcn->rxiqcomp[0] = a0;
 	dev->phy.lcn->rxiqcomp[1] = b0;
 	return ok;
@@ -1577,6 +1595,7 @@ static bool b43_phy_lcn_rx_iq_cal(struct b43_wldev *dev, u8 tx_idx)
 	u8 old_idx = 0;
 	int i;
 
+	b43_cal_begin(dev, B43_CAL_RXIQ);
 	b43_phy_lcn_set_tx_pwr_ctrl(dev, B43_LCN_TX_PWR_CTRL_OFF);
 	for (i = 0; i < ARRAY_SIZE(b43_phy_lcn_rxiq_cal_regs); i++)
 		save_rf[i] = b43_radio_read(dev, b43_phy_lcn_rxiq_cal_regs[i]);
@@ -1624,6 +1643,8 @@ static bool b43_phy_lcn_rx_iq_cal(struct b43_wldev *dev, u8 tx_idx)
 			for (biq1 = 6; biq1 >= 0; biq1--)
 				if (b43_phy_lcn_rx_iq_cal_gain(dev, biq1, tia,
 							       lna2)) {
+					b43_cal_report(dev, LCN_CAL_RXIQ_GAIN,
+						       lna2, tia, biq1);
 					ok = b43_phy_lcn_calc_rx_iq_comp(dev,
 									 1024);
 					goto stop_tone;
@@ -2004,6 +2025,16 @@ b43_phy_lcn_op_recalc_txpower(struct b43_wldev *dev, bool ignore_tssi)
 		offset[B43_PPR_CCK_RATES + B43_PPR_OFDM_RATES + i] = target -
 			b43_ppr_get_mcs(&ppr, B43_PPR_BW_20, B43_PPR_SISO, i);
 
+	b43_cal_begin(dev, B43_CAL_TXPWR);
+	if (b43_cal_on(dev)) {
+		u32 v[1 + B43_LCN_TX_PWR_RATES];
+
+		v[0] = target;
+		for (i = 0; i < B43_LCN_TX_PWR_RATES; i++)
+			v[1 + i] = offset[i];
+		b43_cal_report_values(dev, LCN_CAL_TXPWR, v, ARRAY_SIZE(v));
+	}
+
 	if (target == lcn->tx_pwr_target &&
 	    !memcmp(offset, lcn->tx_pwr_offset, sizeof(offset)))
 		return B43_TXPWR_RES_DONE;
@@ -2074,6 +2105,21 @@ static void b43_phy_lcn_op_radio_write(struct b43_wldev *dev, u16 reg,
  * PHY ops struct.
  **************************************************/
 
+B43_CAL_TABLE(b43_phy_lcn_cal_entries) = {
+	B43_CAL_ENTRY(LCN_CAL_IDLE_TSSI, IDLE_TSSI, "idle", COMPUTED, 3,
+		      B43_CAL_S(tssi)),
+	B43_CAL_ENTRY(LCN_CAL_TXIQLO, TXIQLO, "coef", COMPUTED, 3,
+		      B43_CAL_SV(iqcc, 2), B43_CAL_X(didq, 4),
+		      B43_CAL_XV(loft, 2, 4)),
+	B43_CAL_ENTRY(LCN_CAL_RXIQ_GAIN, RXIQ, "gain", EVALUATED, 3,
+		      B43_CAL_U(lna2), B43_CAL_U(tia), B43_CAL_U(biq1)),
+	B43_CAL_ENTRY(LCN_CAL_RXIQ_COMP, RXIQ, "comp", COMPUTED, 3,
+		      B43_CAL_U(ok), B43_CAL_SV(comp, 2)),
+	B43_CAL_ENTRY(LCN_CAL_TXPWR, TXPWR, "target", COMPUTED, 3,
+		      B43_CAL_U(target),
+		      B43_CAL_SV(offset, B43_LCN_TX_PWR_RATES)),
+};
+
 const struct b43_phy_operations b43_phyops_lcn = {
 	.allocate		= b43_phy_lcn_op_allocate,
 	.free			= b43_phy_lcn_op_free,
@@ -2089,4 +2135,5 @@ const struct b43_phy_operations b43_phyops_lcn = {
 	.recalc_txpower		= b43_phy_lcn_op_recalc_txpower,
 	.adjust_txpower		= b43_phy_lcn_op_adjust_txpower,
 	.channel_calibrate	= b43_phy_lcn_op_channel_calibrate,
+	B43_CAL_OPS(b43_phy_lcn_cal_entries)
 };
