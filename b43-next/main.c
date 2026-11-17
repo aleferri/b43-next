@@ -3954,7 +3954,6 @@ static void b43_rate_memory_init(struct b43_wldev *dev)
 	case B43_PHYTYPE_N:
 	case B43_PHYTYPE_LP:
 	case B43_PHYTYPE_HT:
-	case B43_PHYTYPE_LCN:
 		b43_rate_memory_write(dev, B43_OFDM_RATE_6MB, 1);
 		b43_rate_memory_write(dev, B43_OFDM_RATE_9MB, 1);
 		b43_rate_memory_write(dev, B43_OFDM_RATE_12MB, 1);
@@ -3971,12 +3970,14 @@ static void b43_rate_memory_init(struct b43_wldev *dev)
 		b43_rate_memory_write(dev, B43_CCK_RATE_11MB, 0);
 		break;
 	case B43_PHYTYPE_AC:
+	case B43_PHYTYPE_LCN:
 		/*
-		 * The AC microcode reaches its rate blocks through the direct
-		 * and basic maps at B43_SHM_SH_OFDMDIRECT and following, and
-		 * 0x480-0x4ff is no table of it. Its basic maps are written by
-		 * the PHY init (b43_phy_ac_basic_rate_map()) and by
-		 * b43_update_basic_rates().
+		 * The AC and LCN microcodes reach their rate blocks through the
+		 * direct and basic maps at B43_SHM_SH_OFDMDIRECT and following,
+		 * and 0x480-0x4ff is no table of theirs: the BCM4313's wl
+		 * never touches it. Their basic maps are written at the init,
+		 * by b43_phy_ac_basic_rate_map() and b43_basic_rates_init(),
+		 * and by b43_update_basic_rates().
 		 */
 		break;
 	default:
@@ -6276,6 +6277,28 @@ static void b43_update_basic_rates(struct b43_wldev *dev, u32 brates)
 	}
 }
 
+/*
+ * brcms_c_set_ratetable() at the init: the basic rate map of the mandatory
+ * rates, the set wl starts with (1, 2, 5.5 and 11 Mb/s with 6, 12 and 24,
+ * the compaq-cq57's #32940-#32962), until mac80211 hands its own.
+ */
+static void b43_basic_rates_init(struct b43_wldev *dev)
+{
+	struct ieee80211_supported_band *sband =
+		dev->wl->hw->wiphy->bands[b43_current_band(dev->wl)];
+	u32 brates = 0;
+	int i;
+
+	for (i = 0; i < sband->n_bitrates; i++) {
+		switch (sband->bitrates[i].bitrate) {
+		case 10: case 20: case 55: case 110:
+		case 60: case 120: case 240:
+			brates |= BIT(i);
+		}
+	}
+	b43_update_basic_rates(dev, brates);
+}
+
 static void b43_op_bss_info_changed(struct ieee80211_hw *hw,
 				    struct ieee80211_vif *vif,
 				    struct ieee80211_bss_conf *conf,
@@ -7432,6 +7455,8 @@ static int b43_wireless_core_init(struct b43_wldev *dev)
 	b43_shm_write16(dev, B43_SHM_SHARED, B43_SHM_SH_PRMAXTIME, 1);
 
 	b43_rate_memory_init(dev);
+	if (phy->type == B43_PHYTYPE_LCN)
+		b43_basic_rates_init(dev);
 	b43_set_phytxctl_defaults(dev);
 
 	/* Minimum Contention Window */
