@@ -33,46 +33,56 @@ blind writes ends before the OBJADDR select of the driver's access that
 follows it. The files come from the proprietary driver: keep them out of
 the tree.
 
-## The shared memory zeroed by b43
+## The shared memory
 
-`b43_upload_microcode()` zeroes 4 KiB of shared memory and the scratch
-space, which wl never does. With the whole bsinitvals, the MAC config block
-(`b43_shm_mac_config_block()`, base 0x00e4 on 832), the coreinit cells and
-the beacon listen interval, the one cell wl writes and b43 leaves to the
-zeroing is HOSTF5 (0x00d4 = 0x0081). The host flags are next: wl writes all
-five words at its bsinit (#12040-#12048: 0x0110, 0, 0x2100, 0x0040,
-0x0081, later HOSTF1 = 0x0111), b43 keeps three. HOSTF5 bit 0 is
-brcmsmac's MHF5_4313_GPIOCTRL, which brcmsmac sets only with BFL_FEM; the
-CQ57 has BFL_FEM_BT without it. Once they are written, the zeroing goes.
+b43 no longer zeroes it on the LCN-PHY, as wl: every cell wl writes, b43
+writes too (the whole bsinitvals, the MAC config block, the coreinit cells,
+the beacon listen interval, the five host flag words at the bsinit). The
+host flags are the core's shadow, BTCOEX and EDCF in it before the bsinit
+as in wl, ANTDIV from `set_rx_antenna`. What still differs at the end of
+the attach window, cells b43 writes with other values:
+
+- **Host flags without a source**: HOSTF3 0x2000 and 0x0100, HOSTF4 0x0040,
+  HOSTF5 0x0001 (brcmsmac's MHF5_4313_GPIOCTRL, set there only with
+  BFL_FEM; the CQ57 has BFL_FEM_BT) and 0x0080.
+- **FIFO sizes** (0x0098-0x009e): wl 0x003a, 0x0016, 0x0e09, 0x050e.
+- **PHY TX control words** (0x0022, 0x0054, 0x0188): wl 0x0040, 0, 0; b43
+  0xfcc0 (`b43_set_phytxctl_defaults()`).
+- **The rate memory** (0x01f0-0x01fe) and the **EDCA parameters** of the
+  four queues (0x0242-0x02ae).
+- MIMO_MAXSYM (0x00ba) 0xffff, PRMAXTIME (0x0074) 0, the synth PU delay
+  (0x0094) 0x00c8 within the window.
 
 ## The whole of b43 on the virtual chip
 
 `test/integration/cq57.sh` runs b43, its core included, against the attach
-capture (profile `cq57`, the SROM through `decode_r8`, the firmware rebuilt
-from the capture): probe 0, start 0, the station's interface up. On
-2026-11-17, `--min-block 8 --gap-tol 2`, ops #1-#22546:
+capture (profile `cq57`; bcma reads the SROM off the chip, in
+`bcmn_bus_register()`'s order; the firmware rebuilt from the capture), and
+scores the window from the capture's start to the op before wl's first MAC
+enable (#1-#32969 of the `--no-bulk` decoding) against b43's trace cut at
+its own first enable after the PAPD. On 2026-11-17, `--min-block 8
+--gap-tol 2 --anchor-values`:
 
 | ops | score |
 |---|---|
-| all | 14279/40015 = 35.68% |
-| PHY, radio, MACCTL, I/O control | 13947/20542 = 67.90% |
+| all | 26897/33733 = 79.73% |
+| PHY, radio, MACCTL, I/O control | 13745/17700 = 77.66% |
 
-What is left:
+What is left in the control operations, in the order they come:
 
-- **b43's trace runs to stop and remove**: it is to be cut where the
-  capture's window ends, wl's first MAC enable after the calibrations;
-  most of the 18331 operations b43 has in excess are past it.
-- **The firmware's version**: b43 reads 43605.21930 (0xaa55, 0x55aa), the
-  integration README's known effect of `b43_validate_chipaccess()` writing
-  its two patterns in the order opposite to wl's; wl's revinfo has
-  0x340006e.
+- **The bus scan** (#1-#69): wl reads the chip id and the EROM; the harness
+  builds the cores by hand.
+- **The OTP** (#105-#117): wl reads words 0 and 0x14 of the SROM and the OTP
+  registers before the SROM.
+- **The PMU and the core resets**: wl's PMU and PLL sequences on chipcommon
+  differ, and it cycles the core's wrapper more often; it sets the PCIe
+  MDIO up again after the resets.
+- **After the up**: wl's block on 0x49e and chipcommon (about 1245 ops).
 - **The station's events**: `pipeline.timeline` reads an AP's (watchdog,
   templates, BSS up) and finds none here. The scans (channels 1-13, 15 of
-  them), the three associations (#289597, #739814, #1052874) and wl's
-  watchdog while associated need their markers and their mac80211 calls
-  (`config` with the channel, `bss_info_changed` with the association).
-- **The control operations in wl's order**: the core's own (MAC, shared
-  memory, templates, PMU) compared op by op once the window is cut.
+  them), the three associations (#289597, #739814, #1052874 of the bulk
+  decoding) and wl's watchdog while associated need their markers and
+  their mac80211 calls.
 
 ## Operations of unknown purpose
 
