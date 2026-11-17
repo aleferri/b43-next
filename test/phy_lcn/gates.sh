@@ -97,3 +97,43 @@ while read first last ch; do
 		--board compaq-cq57 --bus --rmw $B | sed -n 's/^grezzo *: //p' |
 		cut -d' ' -f1-3)"
 done < "$T/switches"
+
+# The PHY's part of wl's 1 s watchdog, every turn of the capture: from its
+# read of 0x4a4 to the second sense value (0x477), flow watchdog, with the
+# frame count wl holds before the turn, from its last turn-on of the TX power
+# control or estimate. Each turn's ops go to a file of their own, and its
+# PHY and radio operations are compared value for value.
+mkdir -p "$T/wd"
+python3 - "$ops" "$T/wd" > "$T/watchdogs" <<'PY'
+import re, sys
+op = re.compile(r'#(\d+)\s+cpu\d+ (\S+) (?:addr|off)=0x([0-9a-f]+) val=0x([0-9a-f]+)')
+lines, ops = [], []
+for line in open(sys.argv[1]):
+    m = op.search(line)
+    if m and not (m[2] == 'REG.RD' and m[3] == '0160'):
+        lines.append(line)
+        ops.append((int(m[1]), m[2], int(m[3], 16), int(m[4], 16)))
+cnt = 0
+for i, (n, cls, a, v) in enumerate(ops[:-2]):
+    shm = ops[i + 1][1:3] == ('OBJ.RD', 0xe0)
+    if cls == 'RAD.WR' and a == 0x11f and shm:
+        cnt = ops[i + 1][3]
+    if (cls, a) == ('PHY.RD', 0x4a4) and shm and \
+            ops[i + 2][1:3] == ('PHY.RD', 0x4a5):
+        j = next(k for k in range(i, len(ops)) if ops[k][1:3] == ('PHY.RD', 0x477))
+        open('%s/%d.ops' % (sys.argv[2], n), 'w').writelines(lines[i:j + 1])
+        print(n, ops[j][0], cnt)
+        if any(o[1:3] == ('PHY.WR', 0x4a4) for o in ops[i:j]):
+            cnt = ops[i + 1][3]
+PY
+pass=0 all=0
+while read first last cnt; do
+	all=$((all + 1))
+	LCN_TSSI_TX_CNT=$cnt ./lcn-trace watchdog "$T/wd/$first.ops" "$first" \
+		"$last" -o "$T/wd.trace" 2>/dev/null
+	grep -E ' (PHY|RAD)\.' "$T/wd.trace" | cut -d' ' -f2- > "$T/wd.b43"
+	grep -E ' (PHY|RAD)\.' "$T/wd/$first.ops" |
+		sed 's/.* cpu[0-9]* //' > "$T/wd.wl"
+	cmp -s "$T/wd.b43" "$T/wd.wl" && pass=$((pass + 1))
+done < "$T/watchdogs"
+printf '\nwatchdog turns identical: %d/%d\n' "$pass" "$all"

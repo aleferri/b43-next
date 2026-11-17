@@ -300,6 +300,14 @@ void lcn_cc_write32(unsigned short offset, unsigned int value)
 	store(key, value);
 }
 
+unsigned short lcn_shm_read16(unsigned short offset)
+{
+	char key[24];
+
+	snprintf(key, sizeof(key), "OBJ %04x", offset);
+	return serve(key);
+}
+
 void lcn_log(const char *what)
 {
 	nlog++;
