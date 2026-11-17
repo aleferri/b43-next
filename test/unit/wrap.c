@@ -1456,6 +1456,20 @@ void b43_mhf_write(struct b43_wldev *dev, unsigned int slot)
 	b43_shm_write16(dev, B43_SHM_SHARED, hostf_regs[slot], dev->mhfs[slot]);
 }
 
+/* Come main.c: le due direct map, OFDM poi CCK, sedici voci ciascuna. */
+void b43_rate_dirmap_read(struct b43_wldev *dev)
+{
+	unsigned int i;
+
+	for (i = 0; i < 16; i++)
+		dev->dirmap_ofdm[i] = b43_shm_read16(dev, B43_SHM_SHARED,
+						     0x01c0 + 2 * i);
+	for (i = 0; i < 16; i++)
+		dev->dirmap_cck[i] = b43_shm_read16(dev, B43_SHM_SHARED,
+						    0x0200 + 2 * i);
+	dev->dirmap_read = true;
+}
+
 void b43_mhf_maskset(struct b43_wldev *dev, unsigned int slot, u16 mask,
 		     u16 set)
 {

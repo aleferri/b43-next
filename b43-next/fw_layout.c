@@ -77,7 +77,8 @@ static const struct b43_shm_layout b43_shm_layout_ac_928 = {
 
 /*
  * 832 on the LCN-PHY, the BCM4313's of the x86 hybrid 6.30 (router-data
- * bcm4313-rev1/compaq-cq57): the AC 832's MAC config block, at its own base.
+ * bcm4313-rev1/compaq-cq57): the AC 832's MAC config block, at its own base;
+ * its empty key index slots are zero too (#32168 of the --no-bulk decoding).
  */
 static const struct b43_shm_layout b43_shm_layout_lcn_832 = {
 	.mac_cfg	= B43_SHM_SH_MACCFG_LCN832,
@@ -123,6 +124,7 @@ static const struct b43_fw_range b43_fw_revs_ucode24_lcn[] = {
 		      .new_kidx_api = true, .g_chanid_number = true } },
 	{ 832, 0xffff, { B43_FW_PRE_AC, .hdr = &b43_hdr_598,
 			 .new_kidx_api = true, .g_chanid_number = true,
+			 .kidx_empty_zero = true,
 			 .shm = &b43_shm_layout_lcn_832 } },
 };
 

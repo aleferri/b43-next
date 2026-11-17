@@ -73,6 +73,7 @@ struct b43_ram_seq {
 };
 
 bool b43_ram_in_sequence(struct b43_wldev *dev);
+void b43_rate_dirmap_read(struct b43_wldev *dev);
 void b43_tpl_write(struct b43_wldev *dev, struct b43_ram_seq *seq,
 		   u16 offset, u32 val);
 

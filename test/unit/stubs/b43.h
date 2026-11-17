@@ -321,6 +321,10 @@ struct b43_wldev {
 	/* Come in-tree: lo shadow delle cinque word HOSTFn. */
 	u16 mhfs[5];
 	bool mhf_hold;
+	/* Come in-tree: le direct map della tabella dei rate. */
+	u16 dirmap_ofdm[16];
+	u16 dirmap_cck[16];
+	bool dirmap_read;
 };
 
 /*
@@ -381,6 +385,8 @@ void b43_mac_phy_clock_set(struct b43_wldev *dev, bool on);
 void b43_mhf_maskset(struct b43_wldev *dev, unsigned int slot, u16 mask,
 		     u16 set);
 void b43_mhf_write(struct b43_wldev *dev, unsigned int slot);
+/* La scansione delle due direct map del core (main.c). */
+void b43_rate_dirmap_read(struct b43_wldev *dev);
 
 /* Generic switch-analog helper called by ops. */
 void b43_phyop_switch_analog_generic(struct b43_wldev *dev, bool on);

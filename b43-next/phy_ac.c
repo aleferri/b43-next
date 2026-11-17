@@ -1327,7 +1327,7 @@ static void b43_phy_ac_basic_rate_map(struct b43_wldev *dev)
 		b43_shm_write16(dev, B43_SHM_SHARED,
 				B43_AC_RT_BBRSMAP_A +
 				b43_phy_ac_ofdm_dirmap[i] * 2,
-				dev->phy.ac->rate_ptr[basic_of[i]]);
+				dev->dirmap_ofdm[b43_phy_ac_ofdm_dirmap[basic_of[i]]]);
 }
 
 /*
@@ -10871,10 +10871,10 @@ static int b43_phy_ac_op_switch_channel(struct b43_wldev *dev, unsigned int new_
 	b43_shm_write16(dev, B43_SHM_SHARED, B43_SHM_SH_RFATT, 0x0480);
 	/*
 	 * Read-only scan of the two direct-map tables, sixteen entries each,
-	 * closed by the read of 0x0056. The OFDM pointers are kept for
-	 * b43_phy_ac_basic_rate_map(); the rest is read because the stock
-	 * driver reads it.
+	 * closed by the read of 0x0056; b43_phy_ac_basic_rate_map() takes its
+	 * pointers from it.
 	 */
+<<<<<<< HEAD
 	for (off = B43_AC_RT_DIRMAP_A; off <= B43_AC_RT_DIRMAP_A + 0x1e; off += 2) {
 		u16 v = b43_shm_read16(dev, B43_SHM_SHARED, off);
 		unsigned int k;
@@ -10887,6 +10887,10 @@ static int b43_phy_ac_op_switch_channel(struct b43_wldev *dev, unsigned int new_
 	for (off = B43_AC_RT_DIRMAP_B; off <= B43_AC_RT_DIRMAP_B + 0x1e; off += 2)
 		b43_shm_read16(dev, B43_SHM_SHARED, off);
 	b43_shm_read16(dev, B43_SHM_SHARED, B43_SHM_SH_KTP);
+=======
+	b43_rate_dirmap_read(dev);
+	b43_shm_read16(dev, B43_SHM_SHARED, 0x0056);
+>>>>>>> 7db64b0 (b43: the rate table's direct maps scanned once in the core, the AC-PHY's included)
 	/*
 	 * 0x0056 is the key table pointer, B43_SHM_SH_KTP: 0x087a, the key
 	 * material at 0x10f4. Here the stock driver zeroes it (480 words up to
@@ -11003,11 +11007,7 @@ static int b43_phy_ac_op_switch_channel(struct b43_wldev *dev, unsigned int new_
 	b43_mac_suspend(dev);
 	/* Invariant across all 26 cold segments; purpose unknown. */
 	b43_shm_write16(dev, B43_SHM_SHARED, 0x007c, 0x0320);
-<<<<<<< HEAD
-	b43_phy_ac_mhf_maskset(dev, 3, (u16)~0x0020, 0x0020);
-=======
 	b43_mhf_maskset(dev, 3, (u16)~0x0020, 0x0020);    /* MHF3 set bit 5 */
->>>>>>> 057204e (b43: the host flags' shadow in the core, the AC-PHY's included)
 	b43_mac_enable(dev);
 	/*
 	 * Here the stock driver stops forcing the HT clock, which it holds
