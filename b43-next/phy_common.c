@@ -111,9 +111,10 @@ int b43_phy_init(struct b43_wldev *dev)
 
 	/*
 	 * The HT-PHY tuned the channel when its radio came on, before the
-	 * init; its stock driver does not tune it again.
+	 * init, and the LCN-PHY in it, before its calibration; their stock
+	 * drivers do not tune it again.
 	 */
-	if (phy->type != B43_PHYTYPE_HT) {
+	if (phy->type != B43_PHYTYPE_HT && phy->type != B43_PHYTYPE_LCN) {
 		err = b43_switch_channel(dev, phy->channel);
 		if (err) {
 			b43err_restart(dev->wl,
