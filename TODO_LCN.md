@@ -30,13 +30,34 @@ that follows it, not an initval; and whether the band group is the
 LCN-PHY's. The files come from the proprietary driver: keep them out of
 the tree.
 
-## Not run yet
+## The whole of b43 on the virtual chip
 
-- `test/integration` (the whole of b43 on a virtual chip, as `r6400.sh`
-  does for the HT-PHY) has no LCN board: a profile in
-  `test/board_profile.h` (BCM4313, chip rev 1, core rev 24, PCI 0x4727,
-  SROM rev 8), the core's reads of this capture as the oracle, and the
-  firmware above.
+`test/integration/cq57.sh` runs b43, its core included, against the attach
+capture (profile `cq57`, the SROM through `decode_r8`, the firmware rebuilt
+from the capture): probe 0, start 0, the station's interface up. On
+2026-11-17, `--min-block 8 --gap-tol 2`, ops #1-#22546:
+
+| ops | score |
+|---|---|
+| all | 14279/40015 = 35.68% |
+| PHY, radio, MACCTL, I/O control | 13947/20542 = 67.90% |
+
+What is left:
+
+- **b43's trace runs to stop and remove**: it is to be cut where the
+  capture's window ends, wl's first MAC enable after the calibrations;
+  most of the 18331 operations b43 has in excess are past it.
+- **The firmware's version**: b43 reads 43605.21930 (0xaa55, 0x55aa), the
+  integration README's known effect of `b43_validate_chipaccess()` writing
+  its two patterns in the order opposite to wl's; wl's revinfo has
+  0x340006e.
+- **The station's events**: `pipeline.timeline` reads an AP's (watchdog,
+  templates, BSS up) and finds none here. The scans (channels 1-13, 15 of
+  them), the three associations (#289597, #739814, #1052874) and wl's
+  watchdog while associated need their markers and their mac80211 calls
+  (`config` with the channel, `bss_info_changed` with the association).
+- **The control operations in wl's order**: the core's own (MAC, shared
+  memory, templates, PMU) compared op by op once the window is cut.
 
 ## Operations of unknown purpose
 
