@@ -44,18 +44,14 @@ On 2026-11-17, `--min-block 8 --gap-tol 2`:
 
 | capture | grezzo | PHY+radio |
 |---|---|---|
-| attach | 13058/19157 = 68.16% | 13055/16478 = 79.23% |
+| attach | 14688/19370 = 75.83% | 14782/16594 = 89.08% |
 
 The init follows wl's through the tables, the baseband and radio init, the
 hardware TX power control, the channel and the PMU, then the calibration of
-the init: the idle TSSI, the TX I/Q-LO and the RX I/Q calibrations, and the
-TX power recalculation of mac80211's first config. What b43 does not make
-yet, in wl's order:
+the init: the idle TSSI, the TX I/Q-LO and the RX I/Q calibrations, the TX
+power warm-up and the PAPD calibration, and the TX power recalculation of
+mac80211's first config. What b43 does not make yet, in wl's order:
 
-- after the calibration, wl turns the TX power control off and on and sends
-  50 dummy frames, reading the control's index (0x473) after each, until it
-  settles: about 2000 operations from #17454, most of them the core's; then
-  the PAPD calibration (#19403 on);
 - a few operations of unknown purpose here and there, which no source
   explains: an RMW of 0x4d0 and 0x478 at the start, of 0x55d before the
   2064's init, of 0x4eb after it, of 0x525 after the TX power control's mode;
