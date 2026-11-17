@@ -304,6 +304,7 @@ enum {
 #define B43_SHM_SH_JSSIAUX		0x008C	/* Measure JSSI AUX */
 #define B43_SHM_SH_NOISEPWR		0x0308	/* N-PHY noise power per core */
 /* SHM_SHARED microcode statistics */
+#define B43_SHM_SH_TXALLFRM		0x00E0	/* Frames transmitted */
 #define B43_SHM_SH_TXRTSFRM		0x00E2	/* RTS frames transmitted */
 #define B43_SHM_SH_TXFUNFL		0x00EC	/* Underflows of each TX FIFO */
 #define B43_SHM_SH_RXBADFCS		0x010A	/* RX frames with a bad FCS */
