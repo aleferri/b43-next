@@ -558,28 +558,6 @@ VENDOR_ONLY = (
 #          off against one that does -- the d6220 and the DSL today, the
 #          agcombo once recaptured.
 #
-#   OBJ on 0x0004/0x0006 and the three constants on 0x0000/0x0002
-#          the unaligned half of b43_validate_chipaccess(). The aligned half,
-#          which the vendor executes op by op at #511-#522 of the reference
-#          segment, is NOT here and is compared: 12 ops, and they match.
-#          These are the 16 that remain -- the backup and restore of
-#          0x0004/0x0006, the four write16 of the pattern, the unaligned
-#          read32 and the write32 that follows it.
-#
-#          The two pieces of evidence. The cells 0x0004/0x0006: the vendor
-#          touches them in no capture -- zero occurrences on all 26 cold
-#          segments, on the steady-state tick and on the DSL capture -- and
-#          the PHY writes no SHM below 0x000c, so an op there cannot be the
-#          port's in the sense that matters. The constants 0x1122/0x3344/
-#          0xccdd on 0x0000/0x0002: they appear as an OBJ value on those cells
-#          in no capture, and in b43 they exist only inside that self-test.
-#
-#          The pattern is tied to the values on purpose: if mainline's
-#          constants change it stops matching and the ops count again, the
-#          right way to be wrong.
-#
-#          It is the only entry of this list that no recapture closes: the
-#          vendor does not run that test and never will.
 #   REG.WR 0x49c   the MAC's GPIO_CONTROL, how b43 drives the LEDs: leds.c
 #          read-modify-writes the cell at every state change, in
 #          b43_leds_init(), b43_leds_exit() and from the triggers. The vendor
@@ -588,10 +566,15 @@ VENDOR_ONLY = (
 #          there and never will be: same function, different register, by
 #          structure. It appears only with the --bus profile
 #          (test/integration): test/unit's harness does not compile leds.c.
+#   REG.RD 0x3e0   PHY_VER, which mainline b43 reads at three points outside
+#          the PHY: the version at the probe (main.c), the commit of
+#          b43_radio_unlock(), and every B43_MAX_WRITES_IN_ROW writes of
+#          b43_phy_write() and b43_radio_write() on a PCI host, to flush the
+#          posted writes (phy_common.c). wl reads it nowhere in the CQ57's
+#          capture; the PHY decides only how many writes it makes.
 PORT_ONLY = (
-    r'^OBJ\.(RD|WR) addr=0x0*[46] ',
-    r'^OBJ\.(RD|WR) addr=0x0*[02] val=0x0*(1122|3344|ccdd)\b',
     r'^REG\.WR off=0x49c\b',
+    r'^REG\.RD off=0x3e0\b',
 )
 
 # The second case of the list above: the counterpart exists, but the capture
