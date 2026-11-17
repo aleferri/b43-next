@@ -87,6 +87,14 @@ Every run prints, on stderr:
 ## Flows
 
 - `full`: above.
+- `noise`: a link quality round of the core over the noise samples of the
+  window, as `b43_calculate_link_quality()` starts it: the PHY's
+  `noise_sample_done()` once per sample, until the round has its eight or
+  `N_NOISE_TURNS` (12) have run. `b43_shm_read32()` is served as wl reads
+  the cell, two 16-bit `OBJ.RD`; the request of the next sample is a core
+  call. The result goes to stderr. `gates.sh` runs it from `bss-up` to
+  `done`, where wl samples once a second, and checks that its reads are
+  wl's; on 2026-11-17 they are on all six captures, at -83 to -88 dBm.
 - `N_PERICAL=0` (any flow) overrides `nphy->perical`, which
   `b43_nphy_op_prepare_structs()` sets to 2: with 2, `b43_phy_initn()` runs
   neither the TX I/Q-LO nor the RX I/Q calibration. An experiment, not
@@ -128,7 +136,8 @@ hardware. Three keys are not b43's in the harness:
 
 `N_NVRAM` (the board's nvram file), `N_CHANNEL` (1-14, default 6),
 `N_PERICAL`, `N_MAXPWR` (the channel's regulatory limit, 30 dBm), `N_HWPCTL`
-(the hwpctl module parameter), `N_CALSTAT=1` (above), `N_DEBUG=1` (each
+(the hwpctl module parameter), `N_NOISE_TURNS` (flow `noise`), `N_CALSTAT=1`
+(above), `N_DEBUG=1` (each
 read past the window on stderr), `N_FN=1`
 (function markers, `----FN:name----` and `----/FN:name----`, in the trace;
 the binary must be built with `make N_FN=1`, which instruments the

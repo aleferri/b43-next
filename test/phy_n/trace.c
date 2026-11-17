@@ -338,6 +338,21 @@ void n_cc_write32(unsigned short offset, unsigned int value)
 	store(key, value);
 }
 
+/* The shared memory as mmio2ops prints wl's reads, the routing in the select */
+unsigned short n_shm_read16(unsigned short routing, unsigned short offset)
+{
+	char key[24];
+	unsigned int v;
+
+	snprintf(key, sizeof(key), "OBJ %04x", offset);
+	v = serve(key);
+	if (!peek && nout < MAX_OPS)
+		snprintf(out[nout++].text, LINE,
+			 "OBJ.RD addr=0x%04x val=0x%04x sel=0x%x", offset, v,
+			 routing << 16);
+	return v;
+}
+
 /* The binary's own symbols, for the markers */
 static struct sym {
 	unsigned long addr;

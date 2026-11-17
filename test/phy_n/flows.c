@@ -243,6 +243,25 @@ int n_run_flow(const char *name)
 		/* mac80211's first config sets the power: the check */
 		b43_phy_txpower_check(dev, B43_TXPWR_IGNORE_TIME |
 				      B43_TXPWR_IGNORE_TSSI);
+	} else if (!strcmp(name, "noise")) {
+		/*
+		 * A link quality round of the core
+		 * (b43_calculate_link_quality()) over the noise samples of the
+		 * window: each one the PHY's noise_sample_done() takes, until
+		 * the round ends or N_NOISE_TURNS samples have come.
+		 */
+		struct b43_noise_calculation *nc = &dev->noisecalc;
+		long turns = n_env("N_NOISE_TURNS", 12);
+		char line[64];
+
+		nc->calculation_running = true;
+		nc->nr_samples = 0;
+		while (nc->calculation_running && turns--)
+			dev->phy.ops->noise_sample_done(dev);
+		snprintf(line, sizeof(line), "noise: %d dBm, %u samples%s\n",
+			 dev->stats.link_noise, nc->nr_samples,
+			 nc->calculation_running ? ", round open" : "");
+		n_report(line);
 	} else
 		return -1;
 	calstat_print();
@@ -376,10 +395,11 @@ u16 b43_shm_read16(struct b43_wldev *dev, u16 routing, u16 offset)
 	n_core("b43_shm_read16");
 	return 0;
 }
+/* As wl reads it: the low half, then the high one */
 u32 b43_shm_read32(struct b43_wldev *dev, u16 routing, u16 offset)
 {
-	n_core("b43_shm_read32");
-	return 0;
+	return n_shm_read16(routing, offset) |
+	       (u32)n_shm_read16(routing, offset + 2) << 16;
 }
 void b43_shm_write16(struct b43_wldev *dev, u16 routing, u16 offset, u16 value)
 {
@@ -391,7 +411,7 @@ void b43_shm_write32(struct b43_wldev *dev, u16 routing, u16 offset, u32 value)
 }
 void b43_generate_noise_sample(struct b43_wldev *dev)
 {
-	UNREACHED("b43_generate_noise_sample");
+	n_core("b43_generate_noise_sample");
 }
 /* bcma-next's PMU chip control access, as driver_chipcommon_pmu.c makes it */
 void bcmn_chipco_chipctl_maskset(struct bcmn_drv_cc *cc, u32 offset, u32 mask,

@@ -13,7 +13,7 @@
 # flow at 40 MHz on their control channel and sideband. GATE_TMP keeps the
 # window's trace and b43's. Each capture gets two rows: all the operations,
 # and the PHY's and radio's only, the perimeter of this harness, which
-# compiles no core.
+# compiles no core; then the noise samples after the BSS start (flow noise).
 set -u
 REPO=$(cd "$(dirname "$0")/../.." && pwd)
 . "$REPO/test/paths.sh"
@@ -56,4 +56,14 @@ for c in "$@"; do
 	python3 ../unit/cmp_skip.py "$T/$c.phy.ops" "$T/$c.phy.trace" \
 		"$first:$last" --board rt-ac56u --bus --rmw $B | grep -A2 '^grezzo' |
 		sed '1s/^grezzo   /PHY+radio/'
+	# The noise samples wl takes after the BSS start, through the flow noise
+	first=$(awk "/MARK 'bss-up'/ { print substr(\$2, 2) + 1; exit }" "$ops")
+	last=$(awk "/MARK 'done'/ { print substr(\$2, 2) - 1; exit }" "$ops")
+	res=$(N_CHANNEL=$ch N_BW=$bw N_SB=$sb ./n-trace noise "$ops" "$first" \
+		"$last" -o "$T/$c.noise" 2>&1 | grep '^noise:')
+	awk -v f="$first" -v l="$last" '{ n = substr($2, 2) + 0 }
+		n >= f && n <= l && /OBJ\.RD addr=0x030[8ace]/ { print "cpu0", $4, $5, $6, $7 }' \
+		"$ops" | head -n "$(wc -l < "$T/$c.noise")" > "$T/$c.noise.wl"
+	if cmp -s "$T/$c.noise" "$T/$c.noise.wl"; then same="wl's"; else same="not wl's"; fi
+	echo "$res; reads $same"
 done
