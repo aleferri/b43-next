@@ -10,6 +10,7 @@
 
 */
 
+#include <linux/iopoll.h>
 #include <linux/slab.h>
 
 #include "b43.h"
@@ -1473,7 +1474,7 @@ static void lpphy_rev2plus_rc_calib(struct b43_wldev *dev)
 	struct ssbn_bus *bus = dev->dev->sdev->bus;
 	u32 crystal_freq = bus->chipco.pmu.crystalfreq * 1000;
 	u8 tmp = b43_radio_read(dev, B2063_RX_BB_SP8) & 0xFF;
-	int i;
+	u16 done;
 
 	b43_cal_begin(dev, B43_CAL_RCCAL);
 	b43_radio_write(dev, B2063_RX_BB_SP8, 0x0);
@@ -1486,13 +1487,9 @@ static void lpphy_rev2plus_rc_calib(struct b43_wldev *dev)
 	b43_radio_write(dev, B2063_RC_CALIB_CTL5, 0x1);
 	b43_radio_write(dev, B2063_RC_CALIB_CTL1, 0x7D);
 
-	for (i = 0; i < 10000; i++) {
-		if (b43_radio_read(dev, B2063_RC_CALIB_CTL6) & 0x2)
-			break;
-		msleep(1);
-	}
-
-	if (!(b43_radio_read(dev, B2063_RC_CALIB_CTL6) & 0x2)) {
+	if (read_poll_timeout(b43_radio_read, done, done & 0x2, 10,
+			      10 * USEC_PER_SEC, false, dev,
+			      B2063_RC_CALIB_CTL6)) {
 		b43_cal_report(dev, LP_CAL_RCCAL_FAIL, 1, -1, -1);
 		b43_radio_write(dev, B2063_RX_BB_SP8, tmp);
 	}
@@ -1515,13 +1512,9 @@ static void lpphy_rev2plus_rc_calib(struct b43_wldev *dev)
 
 	b43_radio_write(dev, B2063_RC_CALIB_CTL1, 0x7D);
 
-	for (i = 0; i < 10000; i++) {
-		if (b43_radio_read(dev, B2063_RC_CALIB_CTL6) & 0x2)
-			break;
-		msleep(1);
-	}
-
-	if (!(b43_radio_read(dev, B2063_RC_CALIB_CTL6) & 0x2)) {
+	if (read_poll_timeout(b43_radio_read, done, done & 0x2, 10,
+			      10 * USEC_PER_SEC, false, dev,
+			      B2063_RC_CALIB_CTL6)) {
 		b43_cal_report(dev, LP_CAL_RCCAL_FAIL, 2, -1, -1);
 		b43_radio_write(dev, B2063_TX_BB_SP3, tmp);
 	}

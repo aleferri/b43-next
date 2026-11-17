@@ -82,9 +82,6 @@ step 21).
 
 Check: which radio register gets `0x7D` after the second 0x5D/0x5E pair.
 
-Also open: the poll is 10000 times `msleep(1)`; the specs poll every 10 us
-for 10 s at most.
-
 ### Hardware TX power control
 
 On boards without NOPA, as wl on the BCM4312 (the specs' TXPwrCtrlInit
