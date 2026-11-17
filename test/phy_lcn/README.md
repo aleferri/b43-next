@@ -44,16 +44,18 @@ On 2026-11-17, `--min-block 8 --gap-tol 2`:
 
 | capture | grezzo | PHY+radio |
 |---|---|---|
-| attach | 12089/19838 = 60.94% | 12097/17148 = 70.54% |
+| attach | 12756/19538 = 65.29% | 12792/16820 = 76.05% |
 
 The init follows wl's through the tables, the baseband and radio init, the
 hardware TX power control, the channel and the PMU, then the calibration of
-the init: the idle TSSI, the TX I/Q-LO and the RX I/Q calibrations. What b43
-does not make yet, in wl's order:
+the init: the idle TSSI, the TX I/Q-LO and the RX I/Q calibrations, and the
+TX power recalculation of mac80211's first config. What b43 does not make
+yet, in wl's order:
 
 - after the calibration, wl turns the TX power control off and on and sends
   50 dummy frames, reading the control's index (0x473) after each, until it
-  settles: about 2000 operations from #17454, most of them the core's;
+  settles: about 2000 operations from #17454, most of them the core's; then
+  the PAPD calibration (#19403 on);
 - a few operations of unknown purpose here and there, which no source
   explains: an RMW of 0x4d0 and 0x478 at the start, of 0x55d before the
   2064's init, of 0x4eb after it, of 0x525 after the TX power control's mode;
@@ -71,18 +73,18 @@ with the calibration's results wl holds there (`calres.py`). On 2026-11-17,
 
 | channels | PHY+radio |
 |---|---|
-| 2-4, 9-12 | 1309/1609 = 81.35% |
-| 5-8 | 1311/1617 = 81.08% |
-| 13 | 1311/1618 = 81.03% |
+| 2-4, 9-12 | 1603/1609 = 99.63% |
+| 5-8 | 1605/1617 = 99.26% |
+| 13 | 1605/1618 = 99.20% |
 
-What b43 does not make there is wl's TX power recalculation after the
-switch, the control off and on with a rate table and a target (#86970 on
-channel 2).
+What b43 does not make there is the RMWs of unknown purpose of 0x6d1, 0x525
+and 0x4a9 (`TODO_LCN.md`).
 
 ## Flows
 
-- `full`: above.
-- `switch`: `b43_switch_channel()` on `LCN_CHANNEL` after an init, the
+- `full`: above; the TX power check's adjust runs where b43 queues it.
+- `switch`: `b43_switch_channel()` and `channel_calibrate`, as
+  `b43_op_config()` makes them, on `LCN_CHANNEL` after an init, the
   calibration's results from `LCN_TXIQCC_A`, `LCN_TXIQCC_B`, `LCN_TXDIDQ`,
   `LCN_LOFT0`-`3`, `LCN_RXIQCOMP_A` and `_B`.
 
