@@ -13,8 +13,14 @@ void lp_mmio_write32(unsigned short offset, unsigned int value);
 /* ChipCommon, at its own window of the BAR: CC.RD/CC.WR ops */
 unsigned int lp_cc_read32(unsigned short offset);
 void lp_cc_write32(unsigned short offset, unsigned int value);
+/* Shared memory, as OBJ.RD/OBJ.WR ops (routing << 16 in sel) */
+unsigned short lp_shm_read16(unsigned short routing, unsigned short offset);
+void lp_shm_write16(unsigned short routing, unsigned short offset,
+		    unsigned short value);
 /* A function marker, ----FN:name---- or ----/FN:name----, if LP_FN is set */
 void lp_marker(void *fn, int leave);
+/* A ----WHAT---- line in the trace, where a step of the flow begins */
+void lp_mark(const char *what);
 /* The driver's calibration report: peek mode on and off */
 void lp_peek(int on);
 void lp_log(const char *what);

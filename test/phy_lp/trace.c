@@ -64,6 +64,7 @@ static char *op_slot(struct ops *l)
 struct queue {
 	char key[24];
 	unsigned int *vals;
+	long *nums;	/* the #number of each read in the capture */
 	int n, cap, pos;
 	/* reads of wl's that differ from its last write: the hardware's */
 	int changed;
@@ -152,17 +153,19 @@ static struct queue *queue(const char *key, int create)
 	return &queues[nqueues++];
 }
 
-static void push(const char *key, unsigned int v)
+static void push(const char *key, unsigned int v, long n)
 {
 	struct queue *q = queue(key, 1);
 
 	if (q->n == q->cap) {
 		q->cap = q->cap ? 2 * q->cap : 16;
 		q->vals = realloc(q->vals, q->cap * sizeof(*q->vals));
-		if (!q->vals)
+		q->nums = realloc(q->nums, q->cap * sizeof(*q->nums));
+		if (!q->vals || !q->nums)
 			exit(2);
 	}
-	q->vals[q->n++] = v;
+	q->vals[q->n] = v;
+	q->nums[q->n++] = n;
 }
 
 static struct cell *cell_of(struct cell *c, int *n, const char *key,
@@ -319,6 +322,33 @@ void lp_mmio_write32(unsigned short offset, unsigned int value)
 	store(key, value);
 }
 
+unsigned short lp_shm_read16(unsigned short routing, unsigned short offset)
+{
+	char key[24];
+	unsigned int v;
+
+	snprintf(key, sizeof(key), "OBJ %04x", offset);
+	v = serve(key);
+	if (!peek)
+		snprintf(op_slot(&out), LINE,
+			 "OBJ.RD addr=0x%04x val=0x%04x sel=0x%x", offset, v,
+			 routing << 16);
+	return v;
+}
+
+void lp_shm_write16(unsigned short routing, unsigned short offset,
+		    unsigned short value)
+{
+	char key[24];
+
+	if (!peek)
+		snprintf(op_slot(&out), LINE,
+			 "OBJ.WR addr=0x%04x val=0x%04x sel=0x%x", offset, value,
+			 routing << 16);
+	snprintf(key, sizeof(key), "OBJ %04x", offset);
+	store(key, value);
+}
+
 unsigned int lp_cc_read32(unsigned short offset)
 {
 	char key[24];
@@ -388,6 +418,34 @@ void lp_marker(void *fn, int leave)
 		if (syms[i].addr == (unsigned long)fn)
 			name = syms[i].name;
 	snprintf(op_slot(&out), LINE, "----%sFN:%s----", leave ? "/" : "", name);
+}
+
+/*
+ * LP_STEPS lists, comma separated, the #number where wl's window of each
+ * marked step begins: its reads are served from there on, the reads wl made
+ * before it are skipped, so that every step reads its own window.
+ */
+void lp_mark(const char *what)
+{
+	static const char *steps;
+	static int started;
+	char *end;
+	long first;
+	int i;
+
+	snprintf(op_slot(&out), LINE, "----%s----", what);
+	if (!started) {
+		steps = getenv("LP_STEPS");
+		started = 1;
+	}
+	if (!steps || !*steps)
+		return;
+	first = strtol(steps, &end, 10);
+	steps = *end ? end + 1 : end;
+	for (i = 0; i < nqueues; i++)
+		while (queues[i].pos < queues[i].n &&
+		       queues[i].nums[queues[i].pos] < first)
+			queues[i].pos++;
 }
 
 void lp_peek(int on)
@@ -555,7 +613,7 @@ static int load(const char *path, long first, long last)
 			int rd = !strcmp(cls, "PHY.RD");
 
 			if (rd && tbl_key(&wl_tbl, a, key, sizeof(key))) {
-				push(key, v);
+				push(key, v, n);
 				tbl_after(&wl_tbl, a, v, 0);
 				continue;
 			}
@@ -578,7 +636,7 @@ static int load(const char *path, long first, long last)
 				 (int)(strchr(cls, '.') - cls), cls, a);
 		else
 			continue;
-		push(key, v);
+		push(key, v, n);
 		{
 			struct cell *w = cell_of(wl_cells, &nwl_cells, key, 0);
 
