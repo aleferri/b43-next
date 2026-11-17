@@ -207,3 +207,17 @@ void b43_iq_mismatch(s32 iq, u32 ii, u32 qq, s32 *angle_out, u32 *mag_out)
 					      (1 << 20))
 		       : 1 << 10;
 }
+
+/*
+ * The RX I/Q compensation of a mismatch in b43_iq_mismatch()'s form: a is
+ * the magnitude times the sine of the angle, b + 2^10 the magnitude times
+ * its cosine, each rounded to nearest.
+ */
+void b43_rx_iq_comp_mismatch(s32 angle, u32 mag, s16 *a_out, s16 *b_out)
+{
+	s32 cos_q16, sin_q16;
+
+	b43_cordic_rotate(angle, &cos_q16, &sin_q16);
+	*a_out = (s16)(((s64)mag * sin_q16 + (1 << 15)) >> 16);
+	*b_out = (s16)((((s64)mag * cos_q16 + (1 << 15)) >> 16) - (1 << 10));
+}

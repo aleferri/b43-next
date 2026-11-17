@@ -9593,9 +9593,8 @@ void b43_phy_ac_rxiqcal_meas_post_dds_apply_v2(struct b43_wldev *dev)
  * The stock driver's RX IQ calibration on the AC-PHY is the
  * frequency-dependent one (wlc_phy_cal_rx_fdiqi_acphy): per tone the
  * mismatch of b43_iq_mismatch(), the angle and the magnitude averaged over
- * the tones half away from zero, and the mean angle through the CORDIC: a
- * is the magnitude times the sine, b + 2^10 the magnitude times the cosine,
- * each rounded to nearest. On the 316 writes of 0x?a1 of reverse-tools/rxiq_points.py
+ * the tones half away from zero, and b43_rx_iq_comp_mismatch() of the
+ * means. On the 316 writes of 0x?a1 of reverse-tools/rxiq_points.py
  * (cold d6220, agcombo and tg789vac, d6220 and agcombo hot up) this gives
  * a and b exact on all 316; the plain mean of per-tone (a, b) gave 299
  * and 257.
@@ -9605,7 +9604,7 @@ static void b43_phy_ac_iq_solve(struct b43_phy_ac_iq_acc *acc,
 {
 	unsigned int r, nr;
 	s64 mag_sum = 0, ang_sum = 0;
-	s32 mag, angle, cos_q16, sin_q16;
+	s32 mag, angle;
 
 	if (acc->solved) {
 		*a_out = acc->a;
@@ -9637,10 +9636,7 @@ static void b43_phy_ac_iq_solve(struct b43_phy_ac_iq_acc *acc,
 
 	mag = b43_div_near(mag_sum, nr);
 	angle = b43_div_near(ang_sum, nr);
-	b43_cordic_rotate(angle, &cos_q16, &sin_q16);
-
-	acc->a = (s16)(((s64)mag * sin_q16 + (1 << 15)) >> 16);
-	acc->b = (s16)((((s64)mag * cos_q16 + (1 << 15)) >> 16) - (1 << 10));
+	b43_rx_iq_comp_mismatch(angle, mag, &acc->a, &acc->b);
 	acc->solved = true;
 	*a_out = acc->a;
 	*b_out = acc->b;
