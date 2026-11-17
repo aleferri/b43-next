@@ -38,12 +38,22 @@ fail:
  * R/W ops.
  **************************************************/
 
+/* As wl: each word once the SROM controller, from ChipCommon rev 31, is idle */
 static void bcmn_sprom_read(struct bcmn_bus *bus, u16 offset, u16 *sprom,
 			    size_t words)
 {
-	int i;
-	for (i = 0; i < words; i++)
-		sprom[i] = bcmn_read16(bus->drv_cc.core, offset + (i * 2));
+	struct bcmn_device *cc = bus->drv_cc.core;
+	int i, j;
+
+	for (i = 0; i < words; i++) {
+		for (j = 0; cc->id.rev >= 31 && j < 1000; j++) {
+			if (!(bcmn_read32(cc, BCMN_CC_SROM_CONTROL) &
+			      BCMN_CC_SROM_CONTROL_BUSY))
+				break;
+			udelay(1);
+		}
+		sprom[i] = bcmn_read16(cc, offset + (i * 2));
+	}
 }
 
 /**************************************************
