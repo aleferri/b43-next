@@ -538,7 +538,7 @@ void b43_ampdu_txstatus(struct b43_wldev *dev,
  * AP takes sessions: a client that is refused one may go on asking and
  * stop being acknowledged (an MT7981 does). On TX the cores of
  * b43_ampdu_tx_host() send A-MPDUs on BE (TIDs 0 and 3) and VI (TIDs 4
- * and 5), whose TX FIFOs b43_txfifo_init_ht() sizes.
+ * and 5), whose TX FIFOs b43_txfifo_fixup() sizes.
  */
 int b43_ampdu_action(struct ieee80211_hw *hw, struct ieee80211_vif *vif,
 		     struct ieee80211_ampdu_params *params)

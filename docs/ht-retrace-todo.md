@@ -158,7 +158,7 @@ not:
 - one TX status per A-MPDU, the first member's cookie with 0x20, then the
   bitmap package; the status's sequence is the last member's less 63.
 
-The TX FIFOs are wl's (`b43_txfifo_init_ht()`): BK/BE/VI/VO/BCMC/ATIM
+The TX FIFOs are wl's (`b43_txfifo_fixup()`): BK/BE/VI/VO/BCMC/ATIM
 150/223/223/21/17/5 blocks.
 
 Open, from the same capture:

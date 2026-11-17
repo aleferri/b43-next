@@ -7124,14 +7124,16 @@ static bool b43_txfifo_set(struct b43_wldev *dev,
 }
 
 /*
- * The TX FIFOs of the pre-AC cores with HT, in 256-byte blocks from block 6,
- * BK/BE/VI/VO/BCMC/ATIM: the BCM43227's, and the BCM4331's as wl 7.14 sizes
- * them on the R6400 v1 (mmio-cold).
+ * brcms_b_corerev_fifofixup(): the TX FIFOs of the pre-AC cores, in 256-byte
+ * blocks from block 6, BK/BE/VI/VO/BCMC/ATIM: the BCM43227's, the BCM4331's
+ * as wl 7.14 sizes them on the R6400 v1 (mmio-cold), and the BCM4313's,
+ * brcmsmac's for core 24 as wl 6.30 writes them on the compaq-cq57.
  */
 static const u8 b43_txfifo_blocks_nphy[6] = { 9, 98, 22, 14, 14, 5 };
 static const u8 b43_txfifo_blocks_htphy[6] = { 150, 223, 223, 21, 17, 5 };
+static const u8 b43_txfifo_blocks_lcnphy[6] = { 9, 58, 22, 14, 14, 5 };
 
-static int b43_txfifo_init_ht(struct b43_wldev *dev)
+static int b43_txfifo_fixup(struct b43_wldev *dev)
 {
 	const u8 *blocks;
 	u16 definition[6][2], sizes[4];
@@ -7146,6 +7148,8 @@ static int b43_txfifo_init_ht(struct b43_wldev *dev)
 		blocks = b43_txfifo_blocks_nphy;
 	else if (dev->phy.type == B43_PHYTYPE_HT)
 		blocks = b43_txfifo_blocks_htphy;
+	else if (dev->phy.type == B43_PHYTYPE_LCN)
+		blocks = b43_txfifo_blocks_lcnphy;
 	else
 		return 0;
 	for (i = 0; i < 6; i++) {
@@ -7391,7 +7395,7 @@ static int b43_wireless_core_init(struct b43_wldev *dev)
 	b43_shm_write16(dev, B43_SHM_SHARED, B43_SHM_SH_PHYTYPE, phy->type);
 	b43_shm_write16(dev, B43_SHM_SHARED, B43_SHM_SH_PHYVER, phy->rev);
 
-	err = b43_txfifo_init_ht(dev);
+	err = b43_txfifo_fixup(dev);
 	if (err) {
 		b43err(dev->wl, "Cannot initialize the TX FIFOs (%d)\n", err);
 		goto err_chip_exit;
