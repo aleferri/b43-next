@@ -217,9 +217,6 @@ reproduces. Without evidence:
   the specs'.
 - rev2 has no TX I/Q-LO calibration: its branch of TXIqloCal (PHY 0x43E,
   0x4D0, 0x503, radio 0x121) is not written.
-- wl runs a third calibration, with the recalibration steps, after its
-  second tune to channel 1; b43's own tune after `b43_lpphy_op_init()`
-  calibrates nothing until the periodic work.
 
 Check: a rev0 or rev2 capture, and the periodic calibration after 60 s.
 

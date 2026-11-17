@@ -37,16 +37,12 @@ On 2026-11-16, `--min-block 8 --gap-tol 2`:
 
 | capture | all | PHY+radio |
 |---|---|---|
-| attach | 21074/25739 = 81.88% | 21169/24345 = 86.95% |
+| attach | 21703/25247 = 85.96% | 21888/23761 = 92.12% |
 
-What is left:
-
-- **The third calibration and the order of the power control** (wl's 1370
-  PHY and radio operations from #36075): wl tunes to channel 1 a second
-  time, recalibrates the TX I/Q and LO there and only then initialises the
-  hardware TX power control. b43 initialises it at the end of
-  `b43_lpphy_op_init()`, before its core tunes the channel again, and
-  calibrates nothing after that tune.
+What is left: after its idle TSSI read wl enters the TX power control
+through mode 0xc000 and leaves it again, with the offsets cleared, before it
+takes hardware control (354 PHY operations from #37063); b43 takes it
+straight away.
 
 ## The station
 
@@ -62,17 +58,15 @@ counts: the rest of the window is the MAC's traffic.
 
 | capture | PHY+radio |
 |---|---|
-| attach, station | 50347/65306 = 77.09% |
+| attach, station | 53869/61463 = 87.64% |
 
 Every switch lines up with wl's: the tune, the gain table, the TX power
 control left and taken again. So do the two downs and ups, where wl and b43
 apply the calibrations they keep instead of calibrating. What is left:
 
-- **The tune after an up**: b43's core tunes the channel once more after
-  `b43_lpphy_op_init()`, wl does not.
-- **wl's power control cycle after an up** (some 440 operations from #59298
-  and #74414): wl leaves hardware control and takes it again once more, with
-  the offsets cleared and written back.
+- **wl's power control cycle after an up** (438 and 682 operations from
+  #59298 and #74208): wl leaves hardware control and takes it again once
+  more, with the offsets cleared and written back.
 
 Every run prints, on stderr, the reads past the window (served from b43's
 own writes, or 0), the window's reads b43 did not take, b43's messages and

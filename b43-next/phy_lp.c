@@ -3167,6 +3167,15 @@ static int b43_lpphy_op_switch_channel(struct b43_wldev *dev,
 
 	b43_write16(dev, B43_MMIO_CHANNEL, new_channel);
 
+	if (lpphy->init_tail != LPPHY_INIT_DONE) {
+		if (lpphy->init_tail == LPPHY_INIT_CALIBRATE)
+			lpphy_calibration(dev);
+		else
+			lpphy_restore_calibration(dev);
+		lpphy->init_tail = LPPHY_INIT_DONE;
+		lpphy_tx_pctl_init(dev);
+	}
+
 	return 0;
 }
 
@@ -3183,17 +3192,14 @@ static int b43_lpphy_op_init(struct b43_wldev *dev)
 	lpphy_read_band_sprom(dev); //FIXME should this be in prepare_structs?
 	lpphy_baseband_init(dev);
 	lpphy_radio_init(dev);
-	/* An init after the first, as wl's at an up: no calibration */
+	/*
+	 * As wl's: an up after the first init calibrates nothing, and the
+	 * rest comes after b43_phy_init()'s tune, which is wl's last.
+	 */
 	if (dev->phy.rev < 2 && lpphy->rc_cap &&
 	    lpphy->tx_iqloc_best_coeffs_valid) {
 		lpphy_set_rc_cap(dev);
-		err = b43_lpphy_op_switch_channel(dev, dev->phy.channel);
-		if (err) {
-			b43dbg(dev->wl, "Switch to channel %u failed, error = %d.\n",
-			       dev->phy.channel, err);
-		}
-		lpphy_restore_calibration(dev);
-		lpphy_tx_pctl_init(dev);
+		lpphy->init_tail = LPPHY_INIT_RESTORE;
 		return 0;
 	}
 	err = b43_lpphy_op_switch_channel(dev, 7);
@@ -3209,7 +3215,7 @@ static int b43_lpphy_op_init(struct b43_wldev *dev)
 		       dev->phy.channel, err);
 	}
 	lpphy_calibration(dev);
-	lpphy_tx_pctl_init(dev);
+	lpphy->init_tail = LPPHY_INIT_CALIBRATE;
 	//TODO ACI init
 
 	return 0;
