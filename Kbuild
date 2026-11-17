@@ -34,7 +34,7 @@ endif
 else
 b43n-opts := SSB BCMA PCI_AUTOSELECT
 endif
-b43n-opts += PHY_G PHY_N PHY_LP PHY_HT PHY_AC
+b43n-opts += PHY_G PHY_N PHY_LP PHY_HT PHY_LCN PHY_AC
 # The LP-PHY is on SSB only (as b43's B43_PHY_LP depends on B43_SSB).
 ifeq ($(filter SSB,$(b43n-opts)),)
 b43n-opts := $(filter-out PHY_LP,$(b43n-opts))
