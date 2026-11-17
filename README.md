@@ -103,7 +103,8 @@ and their headers into this tree's names and paths.
   BCM5357/5358): their bus is the kernel's, built in. They need a host in the
   two buses that binds to the kernel's core device and leaves ChipCommon,
   PMU and GPIO to the kernel, as OpenWrt's `wl_glue` does for `wl`.
-- LCN, which upstream does not build, and LCN40, which upstream does not have.
+- The LCN-PHY's init as wl's: it is built, and far from it
+  (`test/phy_lcn/README.md`). LCN40, which upstream does not have.
 - The cores of `b43legacy` (revisions 2 and 4), and the ssb PCMCIA host.
 
 ## License
