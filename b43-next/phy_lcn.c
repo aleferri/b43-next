@@ -442,9 +442,8 @@ static void b43_phy_lcn_load_tx_pwr_index(struct b43_wldev *dev, u8 index)
 }
 
 /*
- * wlc_lcnphy_set_tx_pwr_ctrl. Turned off from another mode, wl loads the
- * gains of the current index again; turned on, it starts from the index and
- * the number of packets of the last estimate. Returns the mode before.
+ * wlc_lcnphy_set_tx_pwr_ctrl. Turned on, it starts from the index and the
+ * number of packets of the last estimate. Returns the mode before.
  */
 static u16 b43_phy_lcn_set_tx_pwr_ctrl(struct b43_wldev *dev, u16 mode)
 {
@@ -473,8 +472,6 @@ static u16 b43_phy_lcn_set_tx_pwr_ctrl(struct b43_wldev *dev, u16 mode)
 		b43_phy_lcn_set_tx_gain_override(dev, true);
 	}
 	b43_phy_maskset(dev, 0x4a4, (u16)~B43_LCN_TX_PWR_CTRL_MASK, mode);
-	if (mode == B43_LCN_TX_PWR_CTRL_OFF)
-		b43_phy_lcn_load_tx_pwr_index(dev, lcn->tx_pwr_curr_idx);
 	return old_mode;
 }
 
@@ -486,9 +483,8 @@ static void b43_phy_lcn_set_tx_pwr_by_index(struct b43_wldev *dev, u8 index)
 	lcn->tx_pwr_idx_override = index;
 	lcn->tx_pwr_curr_idx = index;
 
-	if (b43_phy_lcn_set_tx_pwr_ctrl(dev, B43_LCN_TX_PWR_CTRL_OFF) ==
-	    B43_LCN_TX_PWR_CTRL_OFF)
-		b43_phy_lcn_load_tx_pwr_index(dev, index);
+	b43_phy_lcn_set_tx_pwr_ctrl(dev, B43_LCN_TX_PWR_CTRL_OFF);
+	b43_phy_lcn_load_tx_pwr_index(dev, index);
 }
 
 /* wlc_lcnphy_rev0_baseband_init */
@@ -941,8 +937,10 @@ static void b43_phy_lcn_idle_tssi_est(struct b43_wldev *dev)
 	b43_phy_lcn_set_bbmult(dev, save_bbmult);
 	b43_phy_lcn_set_tx_gain_override(dev, old_override);
 	b43_phy_lcn_set_tx_gain(dev, &old_gains);
-	lcn->tx_pwr_curr_idx = save_idx;
-	b43_phy_lcn_set_tx_pwr_ctrl(dev, save_ctrl);
+	if (save_ctrl != B43_LCN_TX_PWR_CTRL_OFF)
+		b43_phy_lcn_set_tx_pwr_ctrl(dev, save_ctrl);
+	else
+		b43_phy_lcn_set_tx_pwr_by_index(dev, save_idx);
 
 	b43_radio_write(dev, 0x112, save_lpfgain);
 	b43_radio_maskset(dev, 0x007, ~0x1, save_afe_switch);
