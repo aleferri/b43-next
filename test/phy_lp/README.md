@@ -57,23 +57,26 @@ The rest of the capture, to 155 s: wl with the MAC up scans channels 1-11
 again and again and stays on channel 1, the BSS's. Flow `station` runs the
 init and then each of wl's channel switches, the channels its writes to MMIO
 0x3f0 give (`LP_SCAN`), as `b43_op_config()` runs them: the MAC suspended,
-the channel set, `b43_switch_channel()`, the MAC enabled. Only the PHY and
-radio row counts: the rest of the window is the MAC's traffic.
+the channel set, `b43_switch_channel()`, the MAC enabled. NetworkManager
+takes the interface down and up at each connection change: where wl's core
+resets are followed by a PHY init, the flow runs `op_prepare_structs()` and
+the init again, as `b43_wireless_core_init()`. Only the PHY and radio row
+counts: the rest of the window is the MAC's traffic.
 
 | capture | PHY+radio |
 |---|---|
-| attach, station | 44563/62534 = 71.26% |
+| attach, station | 49160/66493 = 73.93% |
 
 Every switch lines up with wl's: the tune, the gain table, the TX power
-control left and taken again. What is left:
+control left and taken again. So do the two downs and ups, where wl and b43
+apply the calibrations they keep instead of calibrating. What is left:
 
-- **wl's PHY init, again** (some 4300 operations from #52999 and from
-  #68294, 931 from #128935): back on channel 1 after a scan, wl runs its
-  init again, tables, baseband, radio and the TX power control, without the
-  RC calibration, and applies its stored TX I/Q coefficients to the 128
-  entries of the TX gain table from 320 (TXpwrtblIqloCal). b43 has no such
-  path.
 - **The power control's split**, on every switch, as in the init.
+- **The tune after an up**: b43's core tunes the channel once more after
+  `b43_lpphy_op_init()`, wl does not.
+- **wl's power control cycle after an up** (some 440 operations from #59298
+  and #74414): wl leaves hardware control and takes it again once more, with
+  the offsets cleared and written back.
 
 Every run prints, on stderr, the reads past the window (served from b43's
 own writes, or 0), the window's reads b43 did not take, b43's messages and

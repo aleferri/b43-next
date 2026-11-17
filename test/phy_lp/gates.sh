@@ -57,8 +57,10 @@ score_phy "$T/attach.trace" "$first" "$last"
 
 # The station: the rest of the capture, wl's channel switches with the MAC
 # up (its writes of the channel to MMIO 0x3f0), the scans and the BSS's
-# channel, run as b43_op_config() runs them. PHY and radio only: the rest
-# of the window is the MAC's traffic.
+# channel, run as b43_op_config() runs them, and NetworkManager's interface
+# down and up at each connection change: core resets (TMSLOW 0x00030001)
+# and a PHY init, whose tune is the init's own (channel 0 in the list).
+# PHY and radio only: the rest of the window is the MAC's traffic.
 end=$(tail -1 "$ops" | awk '{ print substr($2, 2) }')
 scan=$(awk -v l="$last" '
 	function hex(s,  i, n) {
@@ -68,10 +70,16 @@ scan=$(awk -v l="$last" '
 			n = n * 16 + index("0123456789abcdef", substr(s, i, 1)) - 1
 		return n
 	}
-	substr($2, 2) + 0 > l && / REG\.WR off=0x03f0 / {
+	substr($2, 2) + 0 <= l { next }
+	/ REG\.WR off=0x0f98 val=0x00030001$/ { reset = 1 }
+	/ PHY\.WR addr=0x0455 val=0x0800$/ && reset {
+		printf "%s0", sep; sep = ","; reset = 0; own = 1
+	}
+	/ REG\.WR off=0x03f0 / {
+		if (own) { own = 0; next }
 		split($6, a, "="); printf "%s%d", sep, hex(a[2]); sep = ","
 	}' "$ops")
-echo "== station, ops $first:$end, $(echo "$scan" | tr ',' '\n' | wc -l) switches"
+echo "== station, ops $first:$end, $(echo "$scan" | tr ',' '\n' | grep -vc '^0$') switches, $(echo "$scan" | tr ',' '\n' | grep -c '^0$') downs and ups"
 LP_CHANNEL=1 LP_SCAN=$scan ./lp-trace station "$ops" "$first" "$end" \
 	-o "$T/station.trace"
 score_phy "$T/station.trace" "$first" "$end"
