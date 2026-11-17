@@ -39,7 +39,8 @@ static u8 b43_nbits(s32 value)
 /*
  * brcmsmac's wlc_phy_calc_rx_iq_comp_nphy() for one estimate: @iq the I/Q
  * product, @ii and @qq the I and Q powers. wl rounds the root of b where
- * brcmsmac truncates it. a and b come out unmasked.
+ * brcmsmac truncates it, on the N-PHY and on the LCN-PHY alike (the BCM4313's
+ * capture, TODO_LCN.md). a and b come out unmasked.
  */
 enum b43_rx_iq_comp b43_rx_iq_comp(s32 iq, u32 ii, u32 qq, s32 *a_out,
 				   s32 *b_out)
