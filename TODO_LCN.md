@@ -188,17 +188,35 @@ are on channel 1.
 - **Table 24's bit 19** (0x80000) is set in every write and absent in the
   reads back: taken as a write flag. The post-processing copies entry 5
   into 0-4, 0x3e into 0x3f and 1 into 0, as wl.
-- **0x676 bit 0 cleared at the start and at the end**: wl's RMWs there leave
-  the register as it was (0x200, 0xb8a0); bit 0 is the start bit the poll
-  waits on. **0x86c**: three nibbles cleared at the start, set to 4 at the
-  end, one RMW each, as wl.
-- **Left out, of unknown purpose**: RMWs of 0x6da, 0x6d1, 0x631 and 0x6c9
-  that leave them as they are, a second read of 0x4d7, an RMW of 0x4eb
-  before its bit 4, the reads of the TX gains before the index is loaded
-  (nothing restores them), the reads of 0x671-0x679 and 0x6da after the
-  calibration, radio 0x0d7, 0x128 and 0x116 before the restore, radio 0x0ff
-  and 0x007 in the loopback, and wl's 0x4b1, 0x4e6 and 0x4ae after each RX
-  gain (0x4e6 = 0x18 with lna1 3, 0 otherwise; 0x4ae's top nibble cleared).
+- **The PAPD compensation** is 0x676 bit 7, 0x6da bit 0 and three nibbles
+  of 0x86c (4 each): wl turns it off before the calibration, in that order,
+  one RMW per nibble, and on after it. At the attach it is off already, so
+  the RMWs leave the registers as they are; at #186871 it is on and they
+  clear 0x676 0xb8a0 to 0xb820, 0x6da 0x2049 to 0x2048, 0x86c 0x444 to 0.
+  These are the only bits of the three that change in the capture.
+- **Around the PAPD, from brcmsmac's fields and the capture's changes**:
+  0x4eb bits 0-2 = 3 (2 with a FEM) and bits 3-5 = 3, the fields of
+  brcmsmac's init, restored with 0x4ea to its 0x4688 and 0xb; 0x631 |= 0x15,
+  as brcmsmac's RX I/Q calibration; radio 0x0ff bit 4 and 0x007 bit 0 off,
+  the bits the I/Q-LO loopback turns on (the only ones that change in the
+  capture); radio 0x0d7 bit 3 on after the calibration (likewise).
+- **wl's RX gain** writes, after brcmsmac's fields, lna1 again into 0x4e6
+  bits 3-4 (as brcmsmac's other `set_rx_gain()`), then clears 0x4ae bits
+  12-15, the only bits of 0x4ae that change in its 77 calls.
+- **The registers wl reads after the calibration** (0x671, 0x673-0x676,
+  0x679, 0x6da) are written nowhere else in the capture: not a save. b43
+  reads them for the calibration statistics only (`papd/regs`).
+- **Not understood yet**, each with what the capture gives:
+  - an RMW of 0x4b1 in wl's RX gain, after the TR switch: of 0x4b1 only
+    bits 11-12 (lna1) ever change; brcmsmac clears bit 15 there from rev 2;
+  - an RMW of 0x4b0 before the first RX gain (#19304), and of 0x6c9 before
+    the setup writes it (#19693): neither changes in the capture;
+  - the TX gains read before the index is loaded (#19346), not restored:
+    brcmsmac's calibrations restore theirs when the control was off, and
+    every PAPD of the capture starts with it on;
+  - a second read of 0x4d7 before its RMWs;
+  - radio 0x128 (an RMW that never changes) and 0x116 = 0 before the
+    radio's restore, which writes 0x116 again.
   Each shifts the harness's reads of its register.
 
 ### Channel
