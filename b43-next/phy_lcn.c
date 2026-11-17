@@ -1266,11 +1266,12 @@ static bool b43_phy_lcn_iqcal_wait(struct b43_wldev *dev)
 static void b43_phy_lcn_tx_iqlo_cal(struct b43_wldev *dev,
 				    struct lcn_tx_gains *target)
 {
+	/* wl's; brcmsmac starts with one 0x8434 */
 	static const u16 cmds[] = {
-		0x8434, 0x8334, 0x8084, 0x8267, 0x8056, 0x8234,
+		0x8421, 0x8423, 0x8334, 0x8084, 0x8267, 0x8056, 0x8234,
 	};
 	static const u16 cmd_nums[] = {
-		0x7a97, 0x7a97, 0x7a97, 0x7a87, 0x7a87, 0x7b97,
+		0x7a97, 0x7a97, 0x7a97, 0x7a97, 0x7a87, 0x7a87, 0x7b97,
 	};
 	u16 save_rf[ARRAY_SIZE(b43_phy_lcn_iqlo_loopback_regs)];
 	u16 coeffs[11] = { 0 };
