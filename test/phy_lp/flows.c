@@ -174,21 +174,46 @@ static struct b43_wldev *setup(void)
 	return &wldev;
 }
 
+/*
+ * What b43 runs of the PHY from its init to the MAC enable: the analog
+ * switch of b43_wireless_core_reset() and of b43_phy_bringup(), then
+ * b43_phy_init().
+ */
+static void lp_init(struct b43_wldev *dev)
+{
+	dev->phy.chandef = NULL;
+	dev->phy.do_full_init = true;
+	dev->phy.ops->switch_analog(dev, true);
+	dev->phy.ops->switch_analog(dev, true);
+	b43_phy_init(dev);
+}
+
 int lp_run_flow(const char *name)
 {
 	struct b43_wldev *dev = setup();
 
 	if (!strcmp(name, "full")) {
+		lp_init(dev);
+	} else if (!strcmp(name, "station")) {
+		unsigned int ch[256];
+		int i, n = lp_channels(ch, ARRAY_SIZE(ch));
+
 		/*
-		 * What b43 runs of the PHY from its init to the MAC enable: the
-		 * analog switch of b43_wireless_core_reset() and of
-		 * b43_phy_bringup(), then b43_phy_init().
+		 * The init, then mac80211's channel switches with the MAC up,
+		 * as b43_op_config() runs them: the MAC suspended, the
+		 * channel set, b43_switch_channel(), the MAC enabled.
 		 */
-		dev->phy.chandef = NULL;
-		dev->phy.do_full_init = true;
-		dev->phy.ops->switch_analog(dev, true);
-		dev->phy.ops->switch_analog(dev, true);
-		b43_phy_init(dev);
+		lp_init(dev);
+		for (i = 0; i < n; i++) {
+			b43_mac_suspend(dev);
+			chan.hw_value = ch[i];
+			chan.center_freq = ch[i] == 14 ? 2484 : 2407 + 5 * ch[i];
+			hw.conf.chandef.center_freq1 = chan.center_freq;
+			dev->phy.chandef = &hw.conf.chandef;
+			dev->phy.channel = ch[i];
+			b43_switch_channel(dev, ch[i]);
+			b43_mac_enable(dev);
+		}
 	} else
 		return -1;
 	calstat_print();

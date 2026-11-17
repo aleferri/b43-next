@@ -34,15 +34,31 @@
 /* The read address of a radio register of LP-PHY rev 0/1: its write one | 0x100 */
 #define RADIO_READ	0x100
 
-#define MAX_OPS		65536
 #define LINE		256
 
 struct op {
 	char text[LINE];
 };
 
-static struct op ref[MAX_OPS], out[MAX_OPS];
-static int nref, nout, nlog;
+struct ops {
+	struct op *v;
+	int n, cap;
+};
+
+static struct ops ref, out;
+static int nlog;
+
+/* The next line of @l, which grows as needed */
+static char *op_slot(struct ops *l)
+{
+	if (l->n == l->cap) {
+		l->cap = l->cap ? 2 * l->cap : 65536;
+		l->v = realloc(l->v, l->cap * sizeof(*l->v));
+		if (!l->v)
+			exit(2);
+	}
+	return l->v[l->n++].text;
+}
 
 /* One queue of read values per register, in the capture's order. */
 struct queue {
@@ -189,7 +205,7 @@ static unsigned int serve(const char *key)
 		return q->vals[q->pos++];
 	exhausted++;
 	if (getenv("LP_DEBUG"))
-		fprintf(stderr, "read past the window: %s (op %d)\n", key, nout + 1);
+		fprintf(stderr, "read past the window: %s (op %d)\n", key, out.n + 1);
 	return c ? c->val : 0;
 }
 
@@ -198,8 +214,7 @@ static void emit(const char *fmt, const char *cls, unsigned int a,
 {
 	if (peek)
 		return;
-	if (nout < MAX_OPS)
-		snprintf(out[nout++].text, LINE, fmt, cls, a, v);
+	snprintf(op_slot(&out), LINE, fmt, cls, a, v);
 }
 
 /*
@@ -210,12 +225,10 @@ static void phy_data(const char *cls, int wide, unsigned int v)
 {
 	if (peek)
 		return;
-	if (nout >= MAX_OPS)
-		return;
 	if (wide)
-		snprintf(out[nout++].text, LINE, "%sW val=0x%04x", cls, v);
+		snprintf(op_slot(&out), LINE, "%sW val=0x%04x", cls, v);
 	else
-		snprintf(out[nout++].text, LINE, "%s addr=0x%04x val=0x%04x",
+		snprintf(op_slot(&out), LINE, "%s addr=0x%04x val=0x%04x",
 			 cls, phy_addr, v);
 }
 
@@ -298,8 +311,8 @@ void lp_mmio_write32(unsigned short offset, unsigned int value)
 
 	if (peek)
 		;
-	else if (offset == 0x120 && nout < MAX_OPS)
-		snprintf(out[nout++].text, LINE, "MAC.MCTRL val=0x%08x", value);
+	else if (offset == 0x120)
+		snprintf(op_slot(&out), LINE, "MAC.MCTRL val=0x%08x", value);
 	else if (offset != 0x120)
 		emit("%s off=0x%04x val=0x%08x", "REG.WR", offset, value);
 	snprintf(key, sizeof(key), "REG %04x", offset);
@@ -369,12 +382,12 @@ void lp_marker(void *fn, int leave)
 		if (fn_markers)
 			load_syms();
 	}
-	if (!fn_markers || nout >= MAX_OPS)
+	if (!fn_markers)
 		return;
 	for (i = 0; i < nsyms; i++)
 		if (syms[i].addr == (unsigned long)fn)
 			name = syms[i].name;
-	snprintf(out[nout++].text, LINE, "----%sFN:%s----", leave ? "/" : "", name);
+	snprintf(op_slot(&out), LINE, "----%sFN:%s----", leave ? "/" : "", name);
 }
 
 void lp_peek(int on)
@@ -407,6 +420,20 @@ long lp_env(const char *name, long dflt)
 	const char *v = getenv(name);
 
 	return v ? strtol(v, NULL, 0) : dflt;
+}
+
+int lp_channels(unsigned int *ch, int max)
+{
+	const char *p = getenv("LP_SCAN");
+	int n = 0;
+
+	while (p && *p && n < max) {
+		char *end;
+
+		ch[n++] = strtoul(p, &end, 10);
+		p = *end ? end + 1 : end;
+	}
+	return n;
 }
 
 /* b43-next-traces' srom.txt: "0xNNN: wwww wwww ..." per line */
@@ -521,8 +548,7 @@ static int load(const char *path, long first, long last)
 		r = strstr(args, " reg=");
 		if (r)
 			*r = 0;
-		if (nref < MAX_OPS)
-			snprintf(ref[nref++].text, LINE, "%s %s", cls, args);
+		snprintf(op_slot(&ref), LINE, "%s %s", cls, args);
 
 		if (!strncmp(cls, "PHY.", 4) &&
 		    sscanf(args, "addr=0x%x val=0x%x", &a, &v) == 2) {
@@ -587,8 +613,8 @@ int main(int argc, char **argv)
 		unread += queues[i].n - queues[i].pos;
 
 	if (verbose)
-		for (i = 0; i < nout; i++)
-			printf("%s\n", out[i].text);
+		for (i = 0; i < out.n; i++)
+			printf("%s\n", out.v[i].text);
 	if (trace) {
 		FILE *f = fopen(trace, "w");
 
@@ -596,12 +622,12 @@ int main(int argc, char **argv)
 			perror(trace);
 			return 2;
 		}
-		for (i = 0; i < nout; i++)
-			fprintf(f, out[i].text[0] == '-' ? "%s\n" : "cpu0 %s\n",
-				out[i].text);
+		for (i = 0; i < out.n; i++)
+			fprintf(f, out.v[i].text[0] == '-' ? "%s\n" : "cpu0 %s\n",
+				out.v[i].text);
 		fclose(f);
 		fprintf(stderr, "%d ops; reads past the window %d, window reads "
-			"not taken %d, b43 messages %d\n", nout, exhausted, unread,
+			"not taken %d, b43 messages %d\n", out.n, exhausted, unread,
 			nlog);
 		for (i = 0; i < ncore; i++)
 			fprintf(stderr, "core, no ops: %s x%d\n",
@@ -609,20 +635,20 @@ int main(int argc, char **argv)
 		return 0;
 	}
 
-	for (i = 0; i < nout && i < nref; i++) {
-		r = !strcmp(out[i].text, ref[i].text);
+	for (i = 0; i < out.n && i < ref.n; i++) {
+		r = !strcmp(out.v[i].text, ref.v[i].text);
 		if (!r)
 			break;
 	}
-	if (i == nout && i == nref && !exhausted && !unread && !nlog) {
-		printf("PASS %-12s %d ops\n", argv[1], nref);
+	if (i == out.n && i == ref.n && !exhausted && !unread && !nlog) {
+		printf("PASS %-12s %d ops\n", argv[1], ref.n);
 		return 0;
 	}
 	printf("FAIL %-12s ops %d/%d, first difference at op %d of the window\n",
-	       argv[1], nout, nref, i + 1);
-	if (i < nref || i < nout)
-		printf("     wl: %s\n     b43: %s\n", i < nref ? ref[i].text : "(end)",
-		       i < nout ? out[i].text : "(end)");
+	       argv[1], out.n, ref.n, i + 1);
+	if (i < ref.n || i < out.n)
+		printf("     wl: %s\n     b43: %s\n", i < ref.n ? ref.v[i].text : "(end)",
+		       i < out.n ? out.v[i].text : "(end)");
 	printf("     reads past the capture %d, capture reads not taken %d, "
 	       "b43 messages %d\n", exhausted, unread, nlog);
 	return 1;

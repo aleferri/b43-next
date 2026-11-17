@@ -51,6 +51,30 @@ What is left:
   PHY 0x4a7 and -2 and 0 as the CCK and OFDM offsets; wl writes 0x24 and
   -26 and -24. The per-rate targets, 62 and 60, are the same.
 
+## The station
+
+The rest of the capture, to 155 s: wl with the MAC up scans channels 1-11
+again and again and stays on channel 1, the BSS's. Flow `station` runs the
+init and then each of wl's channel switches, the channels its writes to MMIO
+0x3f0 give (`LP_SCAN`), as `b43_op_config()` runs them: the MAC suspended,
+the channel set, `b43_switch_channel()`, the MAC enabled. Only the PHY and
+radio row counts: the rest of the window is the MAC's traffic.
+
+| capture | PHY+radio |
+|---|---|
+| attach, station | 44563/62534 = 71.26% |
+
+Every switch lines up with wl's: the tune, the gain table, the TX power
+control left and taken again. What is left:
+
+- **wl's PHY init, again** (some 4300 operations from #52999 and from
+  #68294, 931 from #128935): back on channel 1 after a scan, wl runs its
+  init again, tables, baseband, radio and the TX power control, without the
+  RC calibration, and applies its stored TX I/Q coefficients to the 128
+  entries of the TX gain table from 320 (TXpwrtblIqloCal). b43 has no such
+  path.
+- **The power control's split**, on every switch, as in the init.
+
 Every run prints, on stderr, the reads past the window (served from b43's
 own writes, or 0), the window's reads b43 did not take, b43's messages and
 the calls into the core.
@@ -76,7 +100,9 @@ the calls into the core.
 ## Environment
 
 `LP_SROM` (the SROM dump, set by `gates.sh`), `LP_CHANNEL` (1-14, default
-1), `LP_MAX_POWER` (cfg80211's limit of the channel, dBm, default 20), `LP_CALSTAT=1` (the calibration statistics on stderr, as `../phy_n`
-prints them), `LP_DEBUG=1` (each read past the window on stderr), `LP_FN=1`
+1), `LP_SCAN` (the channels of flow `station`, comma separated),
+`LP_MAX_POWER` (cfg80211's limit of the channel, dBm, default 20),
+`LP_CALSTAT=1` (the calibration statistics on stderr, as `../phy_n` prints
+them), `LP_DEBUG=1` (each read past the window on stderr), `LP_FN=1`
 (function markers in the trace; the binary must be built with
 `make LP_FN=1`).
