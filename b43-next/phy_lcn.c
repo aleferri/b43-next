@@ -108,6 +108,8 @@ static void b43_radio_2064_channel_setup(struct b43_wldev *dev)
 /* wlc_radio_2064_init */
 static void b43_radio_2064_init(struct b43_wldev *dev)
 {
+	int i;
+
 	if (b43_current_band(dev->wl) == NL80211_BAND_2GHZ) {
 		b43_radio_write(dev, 0x09c, 0x0020);
 		b43_radio_write(dev, 0x105, 0x0008);
@@ -116,6 +118,7 @@ static void b43_radio_2064_init(struct b43_wldev *dev)
 	}
 	b43_radio_write(dev, 0x032, 0x0062);
 	b43_radio_write(dev, 0x033, 0x0019);
+	b43_radio_write(dev, 0x0c2, 0x006f);
 	b43_radio_write(dev, 0x090, 0x0010);
 	b43_radio_write(dev, 0x010, 0x0000);
 	if (dev->phy.rev == 1) {
@@ -127,7 +130,10 @@ static void b43_radio_2064_init(struct b43_wldev *dev)
 	b43_radio_write(dev, 0x01e, 0x0006);
 
 	b43_phy_write(dev, 0x4ea, 0x4688);
-	b43_phy_maskset(dev, 0x4eb, ~0x7, 0x2);
+	if (dev->dev->bus_sprom->boardflags_lo & B43_BFL_FEM)
+		b43_phy_maskset(dev, 0x4eb, ~0x7, 0x2);
+	else
+		b43_phy_maskset(dev, 0x4eb, ~0x7, 0x3);
 	b43_phy_mask(dev, 0x4eb, ~0x01c0);
 	b43_phy_maskset(dev, 0x46a, 0xff00, 0x19);
 
@@ -141,8 +147,15 @@ static void b43_radio_2064_init(struct b43_wldev *dev)
 	b43_radio_set(dev, 0x057, 0x1);
 	b43_radio_set(dev, 0x05b, 0x2);
 
-	/* TODO: wait for some bit to be set */
-	b43_radio_read(dev, 0x05c);
+	for (i = 0; i < 100; i++) {
+		if (b43_radio_read(dev, 0x05c) & 0x20)
+			break;
+		udelay(10);
+	}
+	if (i < 100)
+		b43_radio_read(dev, 0x05c);
+	else
+		b43err(dev->wl, "Radio 2064 R calibration timed out\n");
 
 	b43_radio_mask(dev, 0x05b, (u16) ~0xff02);
 	b43_radio_mask(dev, 0x057, (u16) ~0xff01);
@@ -154,7 +167,24 @@ static void b43_radio_2064_init(struct b43_wldev *dev)
 	b43_phy_write(dev, 0x937, 0x016b);
 
 	b43_radio_mask(dev, 0x057, (u16) ~0xff02);
-	b43_radio_write(dev, 0x0c2, 0x006f);
+
+	if (!(dev->dev->bus_sprom->boardflags_lo & B43_BFL_FEM)) {
+		b43_radio_write(dev, 0x02c, 0x07);
+		b43_radio_write(dev, 0x032, 0x6f);
+		b43_radio_write(dev, 0x08f, 0x0c);
+		b43_radio_write(dev, 0x033, 0x39);
+		b43_radio_write(dev, 0x003, 0x66);
+		b43_radio_write(dev, 0x00d, 0x00);
+		b43_radio_write(dev, 0x00c, 0x55);
+		b43_radio_write(dev, 0x00a, 0x73);
+		b43_radio_write(dev, 0x008, 0xff);
+		b43_radio_write(dev, 0x01f, 0x00);
+		b43_radio_write(dev, 0x01d, 0x07);
+		b43_radio_mask(dev, 0x01e, ~0x4);
+		b43_radio_write(dev, 0x032, 0x6f);
+		b43_radio_write(dev, 0x033, 0x19);
+		b43_radio_write(dev, 0x039, 0x0e);
+	}
 }
 
 /**************************************************
@@ -259,8 +289,8 @@ static void b43_phy_lcn_bu_tweaks(struct b43_wldev *dev)
 {
 	b43_phy_set(dev, 0x805, 0x1);
 
-	b43_phy_maskset(dev, 0x42f, ~0x7, 0x3);
-	b43_phy_maskset(dev, 0x030, ~0x7, 0x3);
+	b43_phy_maskset(dev, 0x42f, ~0x7, 0x5);
+	b43_phy_maskset(dev, 0x030, ~0x7, 0x6);
 
 	b43_phy_write(dev, 0x414, 0x1e10);
 	b43_phy_write(dev, 0x415, 0x0640);
@@ -284,9 +314,9 @@ static void b43_phy_lcn_bu_tweaks(struct b43_wldev *dev)
 	if (dev->phy.rev == 1) {
 		b43_phy_maskset(dev, 0x423, ~0xff, 0x46);
 		b43_phy_maskset(dev, 0x411, ~0xff, 1);
-		b43_phy_set(dev, 0x434, 0xff); /* FIXME: update to wl */
-
-		/* TODO: wl operates on PHY 0x416, brcmsmac is outdated here */
+		b43_phy_maskset(dev, 0x434, ~0xff, 0xfc);
+		b43_phy_maskset(dev, 0x416, ~0xff, 0xa4);
+		b43_phy_maskset(dev, 0x416, (u16)~0xff00, 0x9b00);
 
 		b43_phy_maskset(dev, 0x656, ~0xf, 2);
 		b43_phy_set(dev, 0x44d, 4);
@@ -699,13 +729,13 @@ static int b43_phy_lcn_op_init(struct b43_wldev *dev)
 	b43_phy_set(dev, 0x44a, 0x80);
 	b43_phy_mask(dev, 0x44a, 0x7f);
 	b43_phy_set(dev, 0x6d1, 0x80);
-	b43_phy_write(dev, 0x6d0, 0x7);
+	b43_phy_write(dev, 0x6d0, 0xf);
 
 	b43_phy_lcn_afe_set_unset(dev);
 
 	b43_phy_write(dev, 0x60a, 0xa0);
 	b43_phy_write(dev, 0x46a, 0x19);
-	b43_phy_maskset(dev, 0x663, 0xFF00, 0x64);
+	b43_phy_maskset(dev, 0x663, 0xFF00, 0x50);
 
 	b43_phy_lcn_tables_init(dev);
 
