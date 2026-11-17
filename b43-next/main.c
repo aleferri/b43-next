@@ -2413,6 +2413,9 @@ u16 b43_antenna_to_phyctl(struct b43_wldev *dev, int antenna)
 		return B43_TXH_PHY_ANT3;
 	case B43_ANTENNA_AUTO0:
 	case B43_ANTENNA_AUTO1:
+		/* brcmsmac's _brcms_c_stf_phy_txant_upd(), as wl writes it */
+		if (dev->phy.type == B43_PHYTYPE_LCN)
+			return B43_TXH_PHY_ANT_LCN_LAST;
 		return B43_TXH_PHY_ANT01AUTO;
 	}
 	B43_WARN_ON(1);
@@ -4013,7 +4016,12 @@ static void b43_set_phytxctl_defaults(struct b43_wldev *dev)
 {
 	u16 ctl = 0;
 
-	if (!dev->fw.layout.phytxctl_shm)
+	/*
+	 * The BCM4313's wl keeps the initvals' words and sets only their
+	 * antenna, which b43_mgmtframe_txantenna() does
+	 * (brcms_c_ucode_txant_set()).
+	 */
+	if (!dev->fw.layout.phytxctl_shm || dev->phy.type == B43_PHYTYPE_LCN)
 		return;
 
 	ctl |= B43_TXH_PHY_ENC_CCK;
@@ -4035,14 +4043,13 @@ static void b43_mgmtframe_txantenna(struct b43_wldev *dev, int antenna)
 		return;
 	ant = b43_antenna_to_phyctl(dev, antenna);
 
-	/* For ACK/CTS */
-	tmp = b43_shm_read16(dev, B43_SHM_SHARED, B43_SHM_SH_ACKCTSPHYCTL);
-	tmp = (tmp & ~B43_TXH_PHY_ANT) | ant;
-	b43_shm_write16(dev, B43_SHM_SHARED, B43_SHM_SH_ACKCTSPHYCTL, tmp);
-	/* For Probe Resposes */
+	/* Probe responses, then ACK/CTS, as brcms_c_ucode_txant_set() */
 	tmp = b43_shm_read16(dev, B43_SHM_SHARED, B43_SHM_SH_PRPHYCTL);
 	tmp = (tmp & ~B43_TXH_PHY_ANT) | ant;
 	b43_shm_write16(dev, B43_SHM_SHARED, B43_SHM_SH_PRPHYCTL, tmp);
+	tmp = b43_shm_read16(dev, B43_SHM_SHARED, B43_SHM_SH_ACKCTSPHYCTL);
+	tmp = (tmp & ~B43_TXH_PHY_ANT) | ant;
+	b43_shm_write16(dev, B43_SHM_SHARED, B43_SHM_SH_ACKCTSPHYCTL, tmp);
 }
 
 

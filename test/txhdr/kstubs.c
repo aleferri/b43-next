@@ -139,3 +139,12 @@ unsigned int __sw_hweight32(unsigned int w)
 	w = (w + (w >> 4)) & 0x0f0f0f0f;
 	return (w * 0x01010101) >> 24;
 }
+
+u16 b43_antenna_to_phyctl(struct b43_wldev *dev, int antenna)
+{
+	if (b43_ht_core(dev))
+		return dev->txchain << B43_TXH_PHY_ANT_SHIFT;
+	if (dev->phy.type == B43_PHYTYPE_LCN)
+		return B43_TXH_PHY_ANT_LCN_LAST;
+	return B43_TXH_PHY_ANT01AUTO;
+}

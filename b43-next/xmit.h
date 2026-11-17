@@ -150,6 +150,7 @@ struct b43_txhdr {
 #define  B43_TXH_PHY_ANT0		0x0000 /* Use antenna 0 */
 #define  B43_TXH_PHY_ANT1		0x0040 /* Use antenna 1 */
 #define  B43_TXH_PHY_ANT01AUTO		0x00C0 /* Use antenna 0/1 auto */
+#define  B43_TXH_PHY_ANT_LCN_LAST	0x0000 /* LCN-PHY: the last RX antenna */
 #define  B43_TXH_PHY_ANT2		0x0100 /* Use antenna 2 */
 #define  B43_TXH_PHY_ANT3		0x0200 /* Use antenna 3 */
 #define B43_TXH_PHY_TXPWR		0xFC00 /* TX power */
