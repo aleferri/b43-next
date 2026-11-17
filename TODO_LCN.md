@@ -7,14 +7,6 @@ The scores are in `test/phy_lcn/README.md`.
 
 ## Missing from b43
 
-- **TX power recalculation** (`op_recalc_txpower` and `op_adjust_txpower`
-  are empty). After a channel switch wl turns the control off, writes 20
-  entries of the rate table at 0x340 (0xc each) and the target at 0x4a7
-  (0x3a), and turns the control back on, writing the table and the target
-  again (#86970 on channel 2, about 320 operations). brcmsmac's
-  `wlc_lcnphy_txpower_recalc_target()` has the same steps, but the values
-  do not follow from the SROM's maxima and offsets as brcmsmac computes
-  them. At the init the target is left at 0, as wl does.
 - **The TX power control's warm-up** after the init's calibration: wl turns
   the control off and on, then sends 50 dummy frames and reads the control's
   index (0x473) after each, while it settles from 0xb2 to 0x86-0x88 (#17454,
@@ -77,7 +69,8 @@ register as it was, so their masks cannot be read off the capture.
 - Three more accesses of 0x4eb after the 2064's 0x4eb setup (#5976).
 - Reads of 0x4a5, 0x40d and 0x4a2 and an RMW of 0x4a5 in the TSSI setup,
   after 0x4a8 (#6958).
-- RMW of 0x525 after every write of the TX power control's mode.
+- RMW of 0x525 after every write of the TX power control's mode, and of
+  0x4a9 when the control turns on.
 - RMW of 0x448 after the tune, before the AFE toggle (#8096).
 - The block after the TX filters (#8162-#8226): shared memory reads, RMW
   of 0x434 and 0x423, 0x550, a pulse of 0x44a, 0x6da = 0x2048, writes of
@@ -131,18 +124,47 @@ what the capture shows, what b43 does with it, and what would tell.
   (`B43_LCN_TX_PWR_CTRL_START_IDX`, `_NPT`), what wl writes to 0x4a4 and
   0x4a5 when it turns the control on (#7962). brcmsmac starts from 140 and
   1. wl may compute them; another board or a later turn-on would tell.
-- **Turning the control off reloads the current index's gains**: from the
-  software mode wl does (#7300, the gains of index 52 after the idle TSSI
-  estimate, which had set 127). From the hardware mode the capture shows
-  both: no reload at #8512, a reload of index 30's gains at #10454. b43
-  reloads whenever it leaves another mode for off. To set the idle TSSI's
-  restore right, it restores the index before it restores the mode.
-- **`b43_phy_lcn_set_tx_pwr_by_index()` loads the gains itself only if the
-  control was off**: otherwise turning it off already did, and wl does not
-  load them twice.
+- **Only `b43_phy_lcn_set_tx_pwr_by_index()` loads an index's gains**, after
+  turning the control off; turning it off alone loads none. Every case of
+  the capture fits: one transition and a load at #7289 (index 52, the idle
+  TSSI's restore) and #10248 (index 30, the TX I/Q-LO calibration), one
+  transition and no load at #8512 and in every recalculation.
 - **The target at the init is 0** (0x4a7, #7955): wl's; brcmsmac sets
-  `LCN_TARGET_PWR` (60). The target comes with the TX power recalculation,
-  which is missing (above).
+  `LCN_TARGET_PWR` (60). The rate table is written, there and when the
+  control turns on, only once a recalculation has computed it.
+
+### TX power recalculation
+
+wl's steps are brcmsmac's `wlc_phy_txpower_recalc_target_lcnphy()`: the
+control off, the 20 offsets at 0x340 (4 CCK, 8 OFDM, 8 MCS) and the target,
+the control on, which writes both again (#22119 after the init, #86970 after
+the switch to channel 2). The values, in qdBm, on the CQ57:
+
+| channels | target | CCK | OFDM, MCS 0-6 | MCS 7 |
+|---|---|---|---|---|
+| 1-11 | 58 | +12 | -2 | 0 |
+| 12-13 | 40 | +10 | 0 | 0 |
+
+- **The offsets' sign**: power = target - offset, as brcmsmac's
+  `-tx_power_offset`; the other way MCS 7 would be stronger than MCS 0-6,
+  against the SROM.
+- **OFDM and MCS**: the SROM's (66, 64, MCS 7 62), capped by a locale row
+  (64 on 1-11, 44 on 12-13), less a backoff of 4 where brcmsmac has 6; the
+  target is the lowest of them. The rows are of this board's ccode (XV);
+  another ccode would show others.
+- **CCK, approximated**: wl's CCK has a logic of its own, which one capture
+  does not determine. b43 takes the SROM's CCK (68) without the backoff,
+  capped by a CCK row (52 on 12-13), with brcmsmac's CCK offset of
+  `wlc_lcnphy_set_tx_pwr_soft_ctrl()` (22): offset = target - power + 22. An
+  offset of 14 with the backoff and a row of 48, or of 18 with the backoff
+  and a row of 52, give the same bytes on this board.
+- **The target is written every time**, unchanged or not (#22414, #87221);
+  brcmsmac writes it only when it changes. When it changes, the control
+  starts again from index 180 and 1 packet, wl's 0x4a5 from #22419 on;
+  brcmsmac's `wlc_lcnphy_txpower_reset_npt()`.
+- **The regulatory limit less the antenna gain, and the user's**, applied to
+  both chains as the HT-PHY does: not in the capture, whose channels have
+  none in the harness.
 - **0x4d0 bits 6-14 = 0x1f8 in the TSSI setup** (#7157): wl's; brcmsmac
   writes 0.
 - **The TSSI mux after the PA**: brcmsmac's, with wl's write of radio 0x07f
