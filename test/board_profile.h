@@ -124,6 +124,8 @@ struct board_profile {
 	 * above, which are the AC boards'.
 	 */
 	const char *nvram_prefix;
+	/* A station, which mac80211 brings up as one, rather than an AP */
+	bool sta;
 };
 
 /*
@@ -644,6 +646,19 @@ static const struct board_profile PROFILE_R6400V1 = {
 	.host_core = 0x820, .nvram_prefix = "pci/1/1/",
 };
 
+/*
+ * The Compaq CQ57's BCM4313, `wl revinfo`: chip rev 1, corerev 24, an LCN-PHY
+ * rev 1 with the radio 2064 rev 1, behind a PCIe core of the first
+ * generation; a station. Its SROM (rev 8) is read through
+ * ../sprom/decode_r8, an NVRAM without prefix.
+ */
+static const struct board_profile PROFILE_CQ57 = {
+	.name = "cq57", .chip_id = 0x4313, .chip_rev = 0x1,
+	.pci_device = 0x4727, .radio_ver = 0x2064, .radio_rev = 1,
+	.phy_rev = 1, .core_rev = 24, .phy_type = 0x08,
+	.host_core = 0x820, .nvram_prefix = "", .sta = true,
+};
+
 /* One-shot mock storage. Lives for the whole run. */
 /* The profile by name, as the two suites pass it (argv or B43_BOARD). */
 static inline const struct board_profile *board_profile_lookup(const char *name)
@@ -664,6 +679,8 @@ static inline const struct board_profile *board_profile_lookup(const char *name)
 		return &PROFILE_R7000_5G;
 	if (name && !strcmp(name, "r6400v1"))
 		return &PROFILE_R6400V1;
+	if (name && !strcmp(name, "cq57"))
+		return &PROFILE_CQ57;
 	return &PROFILE_D6220;
 }
 
