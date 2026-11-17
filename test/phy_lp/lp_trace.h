@@ -20,6 +20,8 @@ void lp_peek(int on);
 void lp_log(const char *what);
 /* An environment variable as a number, or dflt. */
 long lp_env(const char *name, long dflt);
+/* The channels LP_SCAN lists, comma separated; their count. */
+int lp_channels(unsigned int *ch, int max);
 /* The board's SROM words, from the dump LP_SROM names; their count, or 0. */
 int lp_srom(unsigned short *words, int max);
 /* A line of the driver's calibration report */
