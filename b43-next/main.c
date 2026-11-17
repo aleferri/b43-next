@@ -2179,31 +2179,6 @@ static void b43_calculate_link_quality(struct b43_wldev *dev)
 	b43_generate_noise_sample(dev);
 }
 
-/* The microcode leaves each core's power summed over 512 samples. Returns
- * the noisier core in dBm, or 0 if the sample is missing. */
-int b43_noise_pwr_dbm(const u32 *pwr, unsigned int cores, int offset)
-{
-	int noise = INT_MIN;
-	unsigned int core;
-	u32 any = 0;
-
-	for (core = 0; core < cores; core++)
-		any |= pwr[core];
-	if (!any)
-		return 0;
-
-	for (core = 0; core < cores; core++) {
-		u32 p = pwr[core] >> 9;
-		int db = 0;
-
-		/* 3 dB per bit, 2 for the next bit */
-		if (p >= 2)
-			db = 3 * ilog2(p) + 2 * ((p >> (ilog2(p) - 1)) & 1);
-		noise = max(noise, db + offset);
-	}
-	return noise;
-}
-
 /*
  * The noise sample of a PHY that requests and reads its own: the AC-PHY's,
  * at the same SHM 0x308, taken with the N-PHY's offset until a comparison

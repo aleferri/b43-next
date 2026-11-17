@@ -473,6 +473,8 @@ void b43_phy_txpower_adjust_work(struct work_struct *work);
  */
 int b43_phy_shm_tssi_read(struct b43_wldev *dev, u16 shm_offset);
 
+int b43_noise_pwr_dbm(const u32 *pwr, unsigned int cores, int offset);
+
 /**
  * b43_phy_switch_analog_generic - Generic PHY operation for switching the Analog.
  *

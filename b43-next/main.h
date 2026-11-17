@@ -98,7 +98,6 @@ void b43_controller_restart(struct b43_wldev *dev, const char *reason);
 
 void b43_macstat_update(struct b43_wldev *dev, bool count);
 void b43_generate_noise_sample(struct b43_wldev *dev);
-int b43_noise_pwr_dbm(const u32 *pwr, unsigned int cores, int offset);
 void b43_noise_pwr_report(struct b43_wldev *dev, const u32 *pwr,
 			  unsigned int cores);
 

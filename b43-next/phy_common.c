@@ -586,6 +586,31 @@ int b43_phy_shm_tssi_read(struct b43_wldev *dev, u16 shm_offset)
 	return average;
 }
 
+/* The microcode leaves each core's power summed over 512 samples. Returns
+ * the noisier core in dBm, or 0 if the sample is missing. */
+int b43_noise_pwr_dbm(const u32 *pwr, unsigned int cores, int offset)
+{
+	int noise = INT_MIN;
+	unsigned int core;
+	u32 any = 0;
+
+	for (core = 0; core < cores; core++)
+		any |= pwr[core];
+	if (!any)
+		return 0;
+
+	for (core = 0; core < cores; core++) {
+		u32 p = pwr[core] >> 9;
+		int db = 0;
+
+		/* 3 dB per bit, 2 for the next bit */
+		if (p >= 2)
+			db = 3 * ilog2(p) + 2 * ((p >> (ilog2(p) - 1)) & 1);
+		noise = max(noise, db + offset);
+	}
+	return noise;
+}
+
 void b43_phyop_switch_analog_generic(struct b43_wldev *dev, bool on)
 {
 	b43_write16(dev, B43_MMIO_PHY0, on ? 0 : 0xF4);
