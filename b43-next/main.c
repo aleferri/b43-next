@@ -8287,13 +8287,19 @@ static int b43_setup_bands(struct b43_wldev *dev,
 		struct ieee80211_sta_ht_cap ht_cap = { }, *ht = &ht_cap;
 
 		ht->ht_supported = true;
-		/* Every RX chain stays awake. The HT-PHY: 20 MHz, sending
-		 * BCC only.
+		/* Every RX chain stays awake. The HT-PHY sends BCC only, and
+		 * runs 20 and 40 MHz as wl 7.14's beacons on the R6400
+		 * announce it: the short guard interval at both widths, CCK
+		 * in a 40 MHz BSS (HT capabilities 0x187f at 40 MHz, 0x083d
+		 * at 20).
 		 */
 		ht->cap = IEEE80211_HT_CAP_SM_PS | IEEE80211_HT_CAP_SGI_20;
 		if (dev->phy.type == B43_PHYTYPE_HT)
 			ht->cap |= IEEE80211_HT_CAP_LDPC_CODING |
-				   IEEE80211_HT_CAP_GRN_FLD;
+				   IEEE80211_HT_CAP_GRN_FLD |
+				   IEEE80211_HT_CAP_SUP_WIDTH_20_40 |
+				   IEEE80211_HT_CAP_SGI_40 |
+				   IEEE80211_HT_CAP_DSSSCCK40;
 		if (dev->phy.nphy_ht)
 			ht->cap |= IEEE80211_HT_CAP_MAX_AMSDU |
 				   IEEE80211_HT_CAP_SUP_WIDTH_20_40 |
