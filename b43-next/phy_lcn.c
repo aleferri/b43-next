@@ -518,8 +518,6 @@ static void b43_phy_lcn_rev0_baseband_init(struct b43_wldev *dev)
 		b43_phy_write(dev, 0x910, 0x1);
 	}
 
-	b43_phy_write(dev, 0x910, 0x1);
-
 	b43_phy_maskset(dev, 0x448, ~0x300, 0x100);
 	b43_phy_maskset(dev, 0x608, ~0xff, 0x17);
 	b43_phy_maskset(dev, 0x604, ~0x7ff, 0x3ea);
@@ -687,6 +685,15 @@ static void b43_phy_lcn_sense_setup(struct b43_wldev *dev,
 	msleep(1);
 }
 
+/* wl's latch of a TX filter's coefficients */
+static void b43_phy_lcn_latch_tx_iir_filter(struct b43_wldev *dev)
+{
+	b43_phy_set(dev, 0x6da, 0x8000);
+	b43_phy_set(dev, 0x6d3, 0x8000);
+	b43_phy_mask(dev, 0x6d3, (u16)~0x8000);
+	b43_phy_mask(dev, 0x6da, (u16)~0x8000);
+}
+
 static bool b43_phy_lcn_load_tx_iir_cck_filter(struct b43_wldev *dev,
 					       u8 filter_type)
 {
@@ -694,8 +701,7 @@ static bool b43_phy_lcn_load_tx_iir_cck_filter(struct b43_wldev *dev,
 	u16 phy_regs[] = { 0x910, 0x91e, 0x91f, 0x924, 0x925, 0x926, 0x920,
 			   0x921, 0x927, 0x928, 0x929, 0x922, 0x923, 0x930,
 			   0x931, 0x932 };
-	/* Table is from brcmsmac, values for type 25 were outdated, probably
-	 * others need updating too */
+	/* From brcmsmac, but type 25, which is wl's */
 	struct lcn_tx_iir_filter tx_iir_filters_cck[] = {
 		{ 0,  { 1, 415, 1874, 64, 128, 64, 792, 1656, 64, 128, 64, 778,
 			1582, 64, 128, 64 } },
@@ -715,10 +721,9 @@ static bool b43_phy_lcn_load_tx_iir_cck_filter(struct b43_wldev *dev,
 			767, 1760, 128, 233, 128 } },
 		{ 24, { 1, 325, 1884, 32, 40, 32, 756, 1720, 256, 471, 256, 766,
 			1760, 256, 1881, 256 } },
-		{ 25, { 1, 299, 1884, 51, 64, 51, 736, 1720, 256, 471, 256, 765,
-			1760, 262, 1878, 262 } },
-		/* brcmsmac version { 25, { 1, 299, 1884, 51, 64, 51, 736, 1720,
-		 * 256, 471, 256, 765, 1760, 256, 1881, 256 } }, */
+		{ 25, { 1, 299, 0xff5c, 0xffcd, 0xffc0, 0xffcd, 736, 0xfeb8,
+			0xff00, 0xfe29, 0xff00, 765, 0xfee0, 0xfefa, 170,
+			0xfefa } },
 		{ 26, { 1, 277, 1943, 39, 117, 88, 637, 1838, 64, 192, 144, 614,
 			1864, 128, 384, 288 } },
 		{ 27, { 1, 245, 1943, 49, 147, 110, 626, 1838, 256, 768, 576,
@@ -729,9 +734,12 @@ static bool b43_phy_lcn_load_tx_iir_cck_filter(struct b43_wldev *dev,
 
 	for (i = 0; i < ARRAY_SIZE(tx_iir_filters_cck); i++) {
 		if (tx_iir_filters_cck[i].type == filter_type) {
+			b43_phy_write(dev, phy_regs[0],
+				      tx_iir_filters_cck[i].values[0]);
 			for (j = 0; j < 16; j++)
 				b43_phy_write(dev, phy_regs[j],
 					      tx_iir_filters_cck[i].values[j]);
+			b43_phy_lcn_latch_tx_iir_filter(dev);
 			return true;
 		}
 	}
@@ -751,15 +759,19 @@ static bool b43_phy_lcn_load_tx_iir_ofdm_filter(struct b43_wldev *dev,
 		       0x0, 0x278, 0xfea0, 0x80, 0x100, 0x80 } },
 		{ 1, { 0, 374, 0xFF79, 16, 32, 16, 799, 0xFE74, 50, 32, 50, 750,
 		       0xFE2B, 212, 0xFFCE, 212 } },
-		{ 2, { 0, 375, 0xFF16, 37, 76, 37, 799, 0xFE74, 32, 20, 32, 748,
-		       0xFEF2, 128, 0xFFE2, 128 } },
+		{ 2, { 0, 375, 0xff16, 0xffdb, 0xffb4, 0xffdb, 799, 0xfe74,
+		       0xffe0, 0xffec, 0xffe0, 748, 0xfef2, 0xff6c, 35,
+		       0xff6c } },
 	};
 
 	for (i = 0; i < ARRAY_SIZE(tx_iir_filters_ofdm); i++) {
 		if (tx_iir_filters_ofdm[i].type == filter_type) {
+			b43_phy_write(dev, phy_regs[0],
+				      tx_iir_filters_ofdm[i].values[0]);
 			for (j = 0; j < 16; j++)
 				b43_phy_write(dev, phy_regs[j],
 					      tx_iir_filters_ofdm[i].values[j]);
+			b43_phy_lcn_latch_tx_iir_filter(dev);
 			return true;
 		}
 	}
@@ -1106,8 +1118,11 @@ static int b43_phy_lcn_set_channel(struct b43_wldev *dev,
 		/* brcmsmac uses filter_type 2, we follow wl with 25 */
 		b43_phy_lcn_load_tx_iir_cck_filter(dev, 25);
 	}
-	/* brcmsmac uses filter_type 2, we follow wl with 0 */
-	b43_phy_lcn_load_tx_iir_ofdm_filter(dev, 0);
+	/* brcmsmac has 0 with a FEM, and 3, which it lacks, without */
+	if (dev->dev->bus_sprom->boardflags_lo & B43_BFL_FEM)
+		b43_phy_lcn_load_tx_iir_ofdm_filter(dev, 0);
+	else
+		b43_phy_lcn_load_tx_iir_ofdm_filter(dev, 2);
 
 	b43_phy_maskset(dev, 0x4eb, ~(0x7 << 3), 0x1 << 3);
 
