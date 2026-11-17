@@ -1197,12 +1197,19 @@ static const struct b43_ppr_locale lpphy_locale_cck_2g[] = {
 };
 
 /*
+ * wl's lowest target on the LP-PHY, that of the rates in its table the
+ * LP-PHY has no limit for.
+ */
+#define LPPHY_TX_PWR_FLOOR	INT_TO_Q52(9)
+
+/*
  * The per-rate targets of the channel, brcmsmac's chain as for the other
  * PHYs: the board's PPR, the CCK rates capped by wl's locale, the regulatory
- * limit less the antenna gain and the user's, less 6 qdBm, at least 10 dBm
- * (brcmsmac's floor outside the N-PHY). Kept as the lowest target and each
- * rate's distance above it, which is what the hardware takes.
+ * limit less the antenna gain and the user's, less 6 qdBm, at least wl's
+ * floor. The hardware takes a base and each rate's distance above it; wl's
+ * base is the floor (on the HP 550 36, CCK 26 and OFDM 24 above it).
  */
+
 static bool lpphy_tx_power_targets(struct b43_wldev *dev)
 {
 	struct b43_phy_lp *lpphy = dev->phy.lp;
@@ -1234,9 +1241,9 @@ static bool lpphy_tx_power_targets(struct b43_wldev *dev)
 	if (dev->phy.desired_txpower)
 		b43_ppr_apply_max(&ppr, INT_TO_Q52(dev->phy.desired_txpower));
 	b43_ppr_add(&ppr, -6);
-	b43_ppr_apply_min(&ppr, INT_TO_Q52(10));
+	b43_ppr_apply_min(&ppr, LPPHY_TX_PWR_FLOOR);
 
-	lo = b43_ppr_get_min(&ppr);
+	lo = LPPHY_TX_PWR_FLOOR;
 	changed = lo != old_lo;
 	lpphy->tx_pwr_min = lo;
 	/* CCK reads 0 on 5 GHz, where the table has none: offset 0 */
