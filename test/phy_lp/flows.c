@@ -206,6 +206,7 @@ int lp_run_flow(const char *name)
 		 */
 		lp_init(dev);
 		for (i = 0; i < n; i++) {
+			lp_mark(ch[i] ? "SWITCH" : "UP");
 			/* An interface down and up: b43_wireless_core_init() */
 			if (!ch[i]) {
 				dev->phy.ops->prepare_structs(dev);
@@ -301,10 +302,10 @@ void b43_power_saving_ctl_bits(struct b43_wldev *dev, unsigned int ps_flags)
 {
 	lp_core("b43_power_saving_ctl_bits");
 }
+/* Shared memory: OBJ ops, reads served from wl's */
 u16 b43_shm_read16(struct b43_wldev *dev, u16 routing, u16 offset)
 {
-	lp_core("b43_shm_read16");
-	return 0;
+	return lp_shm_read16(routing, offset);
 }
 u32 b43_shm_read32(struct b43_wldev *dev, u16 routing, u16 offset)
 {
@@ -313,7 +314,7 @@ u32 b43_shm_read32(struct b43_wldev *dev, u16 routing, u16 offset)
 }
 void b43_shm_write16(struct b43_wldev *dev, u16 routing, u16 offset, u16 value)
 {
-	lp_core("b43_shm_write16");
+	lp_shm_write16(routing, offset, value);
 }
 void b43_shm_write32(struct b43_wldev *dev, u16 routing, u16 offset, u32 value)
 {
