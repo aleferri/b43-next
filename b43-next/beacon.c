@@ -143,6 +143,27 @@ static void b43_write_beacon_phytxctl(struct b43_wldev *dev, u16 rate)
 	else
 		ctl |= B43_TXH_PHY_ENC_OFDM;
 	b43_shm_write16(dev, B43_SHM_SHARED, B43_SHM_SH_BEACPHYCTL, ctl);
+
+	/*
+	 * Word 1 of the N and HT microcode's beacon PHY control is in
+	 * EXTNPHYCTL: its bandwidth field picks the 20 MHz half of a 40 MHz
+	 * channel, as b43_generate_tx_phy_ctl1() does for a frame's. Left
+	 * alone, the first BSS's beacon went out on the lower half, the
+	 * secondary channel at HT40- (egc112, R6400 v2, b43-next#33).
+	 */
+	if (dev->phy.type == B43_PHYTYPE_N || dev->phy.type == B43_PHYTYPE_HT) {
+		const struct cfg80211_chan_def *cd = dev->phy.chandef;
+		u16 ctl1;
+
+		ctl1 = b43_shm_read16(dev, B43_SHM_SHARED, B43_SHM_SH_EXTNPHYCTL);
+		ctl1 &= ~B43_TXH_PHY1_BW;
+		if (b43_is_40mhz(dev) && cd &&
+		    cd->chan->center_freq > cd->center_freq1)
+			ctl1 |= B43_TXH_PHY1_BW_20U;
+		else
+			ctl1 |= B43_TXH_PHY1_BW_20;
+		b43_shm_write16(dev, B43_SHM_SHARED, B43_SHM_SH_EXTNPHYCTL, ctl1);
+	}
 }
 
 /*
