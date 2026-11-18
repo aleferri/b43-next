@@ -79,8 +79,8 @@ its own first enable after the PAPD. On 2026-11-18, `--min-block 8
 
 | ops | score |
 |---|---|
-| all | 27478/34102 = 80.58% |
-| PHY, radio, MACCTL, I/O control | 13949/17675 = 78.92% |
+| all | 28312/33110 = 85.51% |
+| PHY, radio, MACCTL, I/O control | 14737/16732 = 88.08% |
 
 What is left in the control operations, in the order they come:
 
@@ -110,10 +110,6 @@ register as it was, so their masks cannot be read off the capture.
 - Reads of 0x4a5, 0x40d and 0x4a2 and an RMW of 0x4a5 in the TSSI setup,
   after 0x4a8 (#7083).
 - RMW of 0x525 after every write of the TX power control's mode.
-- A read of 0x4a4 in the TX I/Q-LO calibration, after 0x6da = 0xffff and
-  before the first command (#11071). The harness serves each register's
-  reads in wl's order, so every later read of 0x4a4 gets the value of the
-  one before it.
 - RMW of 0x448 after the tune, before the AFE toggle (#8251).
 - The block after the TX filters (#8317-#8381): shared memory reads, RMW
   of 0x434 and 0x423, 0x550, a pulse of 0x44a, 0x6da = 0x2048, writes of
@@ -320,6 +316,10 @@ are on channel 1.
 
 ### Calibrations
 
+- **A read of 0x4a4 in the TX I/Q-LO calibration**, after 0x6da = 0xffff
+  and before the first command, in all four of the capture (#11071 the
+  first, 0x10b4 every time): wl's, its use not known. b43 makes it too,
+  so the harness's later reads of 0x4a4 get their own values.
 - **The periodic calibration starts from the control's index** (0x4a4,
   0x473, #8457), as wl; brcmsmac takes its cached index.
 - **The periodic calibration's preamble** (#8419-#8444), all 4 of the
