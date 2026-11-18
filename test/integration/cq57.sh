@@ -24,7 +24,6 @@ BOARD=$TRACES/bcm4313-rev1/compaq-cq57
 T=${GATE_TMP:-$(mktemp -d)}
 mkdir -p "$T"
 [ -n "${GATE_TMP:-}" ] || trap 'rm -rf "$T"' EXIT
-b43trace() { PYTHONPATH=$TRACE_TOOLS/src python3 -m "b43trace.$@"; }
 
 zcat "$BOARD/traces/mmio-attach/attach.txt.gz" > "$T/cap.txt"
 b43trace bus.mmio2ops "$T/cap.txt" --no-bulk -o "$T/cap.m2o" 2>/dev/null
