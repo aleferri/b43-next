@@ -1395,6 +1395,8 @@ static void b43_phy_lcn_tx_iqlo_cal(struct b43_wldev *dev,
 			      b43_phy_lcn_iqcal_ir_ladder);
 	b43_phy_lcn_start_tx_tone(dev, 3750, 88, true);
 	b43_phy_write(dev, 0x6da, 0xffff);
+	/* wl reads the control's mode here in every calibration, use unknown */
+	b43_phy_read(dev, 0x4a4);
 
 	for (i = 0; i < ARRAY_SIZE(cmds); i++) {
 		type = (cmds[i] >> 8) & 0xf;
