@@ -341,6 +341,10 @@ are on channel 1.
   registers as they are (0x03a and 0x11a after the 0x03a bits, 0x4d7 twice,
   0x4eb in the cleanup): which bits wl means there is not known, and 0x4d7
   is written back at the end.
+- **The LO coefficients after the calibration**: radio 0x089-0x08c, each
+  read twice, as `LCNPHY_IQLOCC_READ()` evaluates its argument, before the
+  results are read from table 0 (#11646). brcmsmac calibrates again at
+  index 16 when fi and fq are both at 15; never in the capture.
 - **The calibration's cleanup**, 77 operations in all four: the tone
   stopped first, then the loopback restored, where brcmsmac does the
   reverse; the gains are the current ones (index 30's), wl calls it
