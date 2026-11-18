@@ -6313,7 +6313,7 @@ static void b43_update_basic_rates(struct b43_wldev *dev, u32 brates)
 /*
  * brcms_c_set_ratetable() at the init: the basic rate map of the mandatory
  * rates, the set wl starts with (1, 2, 5.5 and 11 Mb/s with 6, 12 and 24,
- * the compaq-cq57's #32940-#32962), until mac80211 hands its own.
+ * the compaq-cq57's #33252-#33274), until mac80211 hands its own.
  */
 static void b43_basic_rates_init(struct b43_wldev *dev)
 {
@@ -7116,7 +7116,7 @@ static void b43_set_synth_pu_delay(struct b43_wldev *dev, bool idle)
 		pu_delay = 200;
 	else
 		pu_delay = 1050;
-	/* The BCM4313's wl writes its 200 at the up too (#31216) */
+	/* The BCM4313's wl writes its 200 at the up too (#31519) */
 	if ((b43_is_mode(dev->wl, NL80211_IFTYPE_ADHOC) || idle) &&
 	    dev->phy.type != B43_PHYTYPE_LCN)
 		pu_delay = 500;

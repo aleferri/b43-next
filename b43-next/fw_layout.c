@@ -78,7 +78,7 @@ static const struct b43_shm_layout b43_shm_layout_ac_928 = {
 /*
  * 832 on the LCN-PHY, the BCM4313's of the x86 hybrid 6.30 (router-data
  * bcm4313-rev1/compaq-cq57): the AC 832's MAC config block, at its own base;
- * its empty key index slots are zero too (#32168 of the --no-bulk decoding).
+ * its empty key index slots are zero too (#32471 of the --no-bulk decoding).
  */
 static const struct b43_shm_layout b43_shm_layout_lcn_832 = {
 	.mac_cfg	= B43_SHM_SH_MACCFG_LCN832,
@@ -284,7 +284,7 @@ const struct b43_fw_layout *b43_fw_layout_get(const struct b43_fw_family *family
 /*
  * The invariant part of the MAC config block, right after the two zeroings
  * on the AC, after the key table's clear on the LCN-PHY (compaq-cq57,
- * #32475-#32529, at 0x00e4 with 0 in the first cell, one chain).
+ * #32778-#32832, at 0x00e4 with 0 in the first cell, one chain).
  *
  * Every value is the same on every segment of the d6220 cold sweep, and the
  * tg789vac writes the same ones except for the chain-count cells; the
