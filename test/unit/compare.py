@@ -556,15 +556,8 @@ VENDOR_ONLY = (
 #          there and never will be: same function, different register, by
 #          structure. It appears only with the --bus profile
 #          (test/integration): test/unit's harness does not compile leds.c.
-#   REG.RD 0x3e0   PHY_VER, which mainline b43 reads at three points outside
-#          the PHY: the version at the probe (main.c), the commit of
-#          b43_radio_unlock(), and every B43_MAX_WRITES_IN_ROW writes of
-#          b43_phy_write() and b43_radio_write() on a PCI host, to flush the
-#          posted writes (phy_common.c). wl reads it nowhere in the CQ57's
-#          capture; the PHY decides only how many writes it makes.
 PORT_ONLY = (
     r'^REG\.WR off=0x49c\b',
-    r'^REG\.RD off=0x3e0\b',
 )
 
 # The second case of the list above: the counterpart exists, but the capture
@@ -587,12 +580,19 @@ PORT_ONLY = (
 #          wlc_phy_write_table_ext() writes on the data port without going
 #          through phy_reg_write(), the hooked accessor. The bus captures
 #          carry them.
+#   REG.RD 0x3e0   PHY_VER, which b43 reads at the probe (main.c), at the
+#          commit of b43_radio_unlock() and every B43_MAX_WRITES_IN_ROW
+#          writes of b43_phy_write() and b43_radio_write() on a PCI host, to
+#          flush the posted writes (phy_common.c). wl reads it the same way,
+#          every 24 writes: the entry counts against a decoding that does not
+#          carry it.
 PORT_ONLY_UNTRACED = (
     (r'^AMT\.', 'AMT.'),
     (r'^REG\.', 'REG.'),
     (r'^MAC\.MCMD\b', 'MAC.MCMD'),
     (r'^WRAP\.', 'WRAP.'),
     (r'^PHY\.WRW\b', 'PHY.WRW'),
+    (r'^REG\.RD off=0x3e0\b', 'REG.RD off=0x3e0'),
 )
 
 
