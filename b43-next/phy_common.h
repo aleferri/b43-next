@@ -34,8 +34,12 @@ struct b43_cal_entry;
 #define B43_PHYVER_TYPE_SHIFT		8
 #define B43_PHYVER_VERSION		0x00FF
 
-/* PHY writes need to be flushed if we reach limit, unless each address
- * write is read back (b43_flush_writes()). */
+/*
+ * PHY and radio writes on a PCI host are flushed before the one past the
+ * limit, unless each address write is read back (b43_flush_writes()): a PHY
+ * write by reading PHY_VER, a radio write by reading MACCTL. As wl, every
+ * read and read-modify-write leaves the count at 1.
+ */
 #define B43_MAX_WRITES_IN_ROW		24
 
 /**
