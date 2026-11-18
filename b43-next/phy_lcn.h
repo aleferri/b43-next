@@ -52,6 +52,18 @@ struct b43_phy_lcn {
 	/* 0x476 and 0x477 at the last watchdog turn, 9 bits signed */
 	s16 sense[2];
 
+	/* The AGC's values at the init, brcmsmac's wlc_lcnphy_agc_temp_init() */
+	struct {
+		s8 ofdm_gain_idx_offset;
+		s8 dsss_gain_idx_offset;
+		s8 tr_r_gain;
+		s8 tr_t_gain;
+		s8 input_pwr_offset_db;
+		u8 med_low_gain_db;
+		u8 very_low_gain_db;
+		u32 gain_idx_14[2];
+	} agc;
+
 	/* The init's calibration, which a channel switch loads again */
 	bool cal_done;
 	s16 txiqcc[2];

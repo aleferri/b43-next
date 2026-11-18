@@ -2187,6 +2187,30 @@ static void b43_phy_lcn_op_prepare_structs(struct b43_wldev *dev)
 	phy_lcn->tssi_npt = B43_LCN_TX_PWR_CTRL_START_NPT;
 }
 
+/* wlc_lcnphy_agc_temp_init */
+static void b43_phy_lcn_agc_temp_init(struct b43_wldev *dev)
+{
+	struct b43_phy_lcn *lcn = dev->phy.lcn;
+	u32 tr[2];
+	u16 tmp;
+
+	tmp = b43_phy_read(dev, 0x4df);
+	lcn->agc.ofdm_gain_idx_offset = sign_extend32(tmp, 7);
+	lcn->agc.dsss_gain_idx_offset = sign_extend32(tmp >> 8, 7);
+
+	b43_lcntab_read_bulk(dev, B43_LCNTAB32(17, 59), 2, tr);
+	lcn->agc.tr_r_gain = sign_extend32(tr[0], 6);
+	lcn->agc.tr_t_gain = sign_extend32(tr[1], 6);
+
+	tmp = b43_phy_read(dev, 0x434);
+	lcn->agc.input_pwr_offset_db = sign_extend32(tmp, 7);
+	lcn->agc.med_low_gain_db = b43_phy_read(dev, 0x424) >> 8;
+	lcn->agc.very_low_gain_db = b43_phy_read(dev, 0x425) & 0xff;
+
+	b43_lcntab_read_bulk(dev, B43_LCNTAB32(13, 28), 2,
+			     lcn->agc.gain_idx_14);
+}
+
 /* wlc_phy_init_lcnphy */
 static int b43_phy_lcn_op_init(struct b43_wldev *dev)
 {
@@ -2217,6 +2241,8 @@ static int b43_phy_lcn_op_init(struct b43_wldev *dev)
 
 	bcmn_chipco_regctl_maskset(cc, 0, ~0xf, 0x9);
 	bcmn_chipco_chipctl_maskset(cc, 0, 0, 0x03cddddd);
+
+	b43_phy_lcn_agc_temp_init(dev);
 
 	b43_phy_set(dev, 0x448, 0x4000);
 	udelay(100);
