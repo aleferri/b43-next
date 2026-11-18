@@ -1477,17 +1477,38 @@ static void b43_phy_lcn_load_tx_iqlo(struct b43_wldev *dev, u16 a, u16 b,
 }
 
 /*
+ * wlc_lcnphy_get_radio_loft: the radio's four LO coefficients, raw, and
+ * whether fi and fq are both at their end (15). Each register is read twice,
+ * as LCNPHY_IQLOCC_READ() evaluates its argument twice, in wl too.
+ */
+static bool b43_phy_lcn_get_radio_loft(struct b43_wldev *dev, u16 *raw)
+{
+	s8 coef[4];
+	u16 hi;
+	int i;
+
+	for (i = 0; i < 4; i++) {
+		hi = (b43_radio_read(dev, 0x089 + i) & 0xf0) >> 4;
+		raw[i] = b43_radio_read(dev, 0x089 + i);
+		coef[i] = (raw[i] & 0x0f) - hi;
+	}
+	return abs(coef[2]) == 15 && abs(coef[3]) == 15;
+}
+
+/*
  * wlc_lcnphy_txpwrtbl_iqlo_cal: the I/Q and LO coefficients of index 30's
  * gains, for every index of the TX power table.
  */
 static void b43_phy_lcn_txpwrtbl_iqlo_cal(struct b43_wldev *dev)
 {
 	struct b43_phy_lcn *lcn = dev->phy.lcn;
+	struct lcn_tx_gains recal = {
+		.gm_gain = 7, .pga_gain = 0, .pad_gain = 30, .dac_gain = 0,
+	};
 	struct lcn_tx_gains old_gains;
 	u16 save_ctrl = b43_phy_lcn_get_tx_pwr_ctrl(dev);
 	u16 save_pa_gain, iqcc[2], didq;
 	u8 save_bbmult, save_idx = lcn->tx_pwr_curr_idx;
-	int i;
 
 	b43_cal_begin(dev, B43_CAL_TXIQLO);
 	b43_phy_lcn_get_tx_gain(dev, &old_gains);
@@ -1501,6 +1522,12 @@ static void b43_phy_lcn_txpwrtbl_iqlo_cal(struct b43_wldev *dev)
 	b43_phy_lcn_set_tx_pwr_by_index(dev, 30);
 	b43_phy_lcn_set_tx_pwr_by_index(dev, 30);
 	b43_phy_lcn_tx_iqlo_cal(dev, NULL);
+	/* LO at its end: brcmsmac's second calibration, index 16 */
+	if (b43_phy_lcn_get_radio_loft(dev, lcn->loft)) {
+		b43_phy_lcn_set_tx_pwr_by_index(dev, 16);
+		b43_phy_lcn_tx_iqlo_cal(dev, &recal);
+		b43_phy_lcn_get_radio_loft(dev, lcn->loft);
+	}
 
 	b43_lcntab_read_bulk(dev, B43_LCNTAB16(0x0, 80), 2, iqcc);
 	didq = b43_lcntab_read(dev, B43_LCNTAB16(0x0, 85));
@@ -1508,8 +1535,6 @@ static void b43_phy_lcn_txpwrtbl_iqlo_cal(struct b43_wldev *dev)
 	lcn->txiqcc[0] = sign_extend32(iqcc[0], 9);
 	lcn->txiqcc[1] = sign_extend32(iqcc[1], 9);
 	lcn->txdidq = didq;
-	for (i = 0; i < 4; i++)
-		lcn->loft[i] = b43_radio_read(dev, 0x089 + i);
 	b43_cal_report(dev, LCN_CAL_TXIQLO, lcn->txiqcc[0], lcn->txiqcc[1],
 		       lcn->txdidq, lcn->loft[0], lcn->loft[1], lcn->loft[2],
 		       lcn->loft[3]);
