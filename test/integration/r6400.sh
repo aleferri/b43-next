@@ -33,7 +33,6 @@ BOARD=$TRACES/bcm4331-rev2/r6400v1
 T=${GATE_TMP:-$(mktemp -d)}
 mkdir -p "$T"
 [ -n "${GATE_TMP:-}" ] || trap 'rm -rf "$T"' EXIT
-b43trace() { PYTHONPATH=$TRACE_TOOLS/src python3 -m "b43trace.$@"; }
 
 zcat "$BOARD/traces/mmio-cold/$CAP.bin.gz" > "$T/cap.bin"
 b43trace bus.mmio2ops "$T/cap.bin" --format wl-mmio-trap \

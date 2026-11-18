@@ -111,7 +111,8 @@ caps="hot-2g-20 hot-2g-40"
 case ${1:-} in hot-2g-*) caps=$1; shift ;; esac
 for c in $caps; do
 	ops=$T/$c.ops
-	zcat "$BOARD"/traces/mmio-*/"$c-ops.txt.gz" > "$ops"
+	zcat "$BOARD"/traces/mmio-*/"$c.bin.gz" > "$T/$c.bin"
+	b43trace bus.mmio2ops "$T/$c.bin" -o "$ops" 2>/dev/null
 	grep -E "$PHYSEL" "$ops" > "$T/$c.phy.ops"
 	rc0=$(rc "$ops" 0x0cc2) rc1=$(rc "$ops" 0x0cc3) rc2=$(rc "$ops" 0x0ca1)
 	before=6 gain=40

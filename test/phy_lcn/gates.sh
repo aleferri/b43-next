@@ -38,8 +38,7 @@ export LCN_NVRAM=$T/nvram.txt
 
 ops=$T/attach.ops
 zcat "$BOARD/traces/mmio-attach/attach.txt.gz" > "$T/attach.txt"
-PYTHONPATH=$TRACE_TOOLS/src python3 -m b43trace.bus.mmio2ops "$T/attach.txt" \
-	-o "$ops" 2>/dev/null || exit 2
+b43trace bus.mmio2ops "$T/attach.txt" -o "$ops" 2>/dev/null || exit 2
 
 init=$(awk '/ PHY\.WR addr=0x06d0 / { print substr($2, 2); exit }' "$ops")
 first=$(awk -v i="$init" '{ n = substr($2, 2) + 0 } n >= i { exit }

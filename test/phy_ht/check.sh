@@ -31,9 +31,10 @@ windows() {
 	{ p2 = p1; p1 = substr($2, 2) }' "$1"
 }
 
-for f in "$BOARD"/traces/mmio-*/*-ops.txt.gz; do
-	ops=$T/$(basename "$f" .gz)
-	zcat "$f" > "$ops"
+for f in "$BOARD"/traces/mmio-*/*.bin.gz; do
+	ops=$T/$(basename "$f" .bin.gz)-ops.txt
+	zcat "$f" > "$T/cap.bin"
+	b43trace bus.mmio2ops "$T/cap.bin" -o "$ops" 2>/dev/null
 	# What the window before left: its channel (ch 6 before the first of
 	# the hot cycle, its untraced warm-up) and, after a BSS start, the TX
 	# gain index of its RX calibration
