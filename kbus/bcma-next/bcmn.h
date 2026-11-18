@@ -21,7 +21,6 @@
 #define bcmn_block_write bcma_block_write
 #define BCMN_BOARD_TYPE_BCM943224M93 BCMA_BOARD_TYPE_BCM943224M93
 #define bcmn_bus bcma_bus
-#define bcmn_cc bcma_cc
 #define BCMN_CC_CHIPCTL BCMA_CC_CHIPCTL
 #define BCMN_CC_GPIOTOUTM BCMA_CC_GPIOTOUTM
 #define bcmn_cc_mask32 bcma_cc_mask32
@@ -76,7 +75,6 @@
 #define bcmn_driver_register bcma_driver_register
 #define bcmn_driver_unregister bcma_driver_unregister
 #define bcmn_drv_cc bcma_drv_cc
-#define bcmn_err_wireless_exit bcma_err_wireless_exit
 #define bcmn_get_drvdata bcma_get_drvdata
 #define bcmn_host_pci_down bcma_host_pci_down
 #define bcmn_host_pci_irq_ctl bcma_host_pci_irq_ctl
@@ -87,7 +85,6 @@
 #define BCMN_IOST BCMA_IOST
 #define BCMN_IOST_DMA64 BCMA_IOST_DMA64
 #define BCMN_MANUF_BCM BCMA_MANUF_BCM
-#define bcmn_out bcma_out
 #define BCMN_PKG_ID_BCM43224_FAB_SMIC BCMA_PKG_ID_BCM43224_FAB_SMIC
 #define bcmn_pmu_spuravoid_pllupdate bcma_pmu_spuravoid_pllupdate
 #define bcmn_read16 bcma_read16

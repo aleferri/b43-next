@@ -29,7 +29,6 @@
 #define SSBN_BUSTYPE_PCMCIA SSB_BUSTYPE_PCMCIA
 #define SSBN_BUSTYPE_SDIO SSB_BUSTYPE_SDIO
 #define ssbn_bus_unregister ssb_bus_unregister
-#define ssbn_cc ssb_cc
 #define SSBN_CHIPCO_CAP_PMU SSB_CHIPCO_CAP_PMU
 #define SSBN_CHIPCO_CHIPCTL SSB_CHIPCO_CHIPCTL
 #define SSBN_CHIPCO_CHIPCTL_ADDR SSB_CHIPCO_CHIPCTL_ADDR
@@ -38,7 +37,6 @@
 #define ssbn_chipcommon ssb_chipcommon
 #define SSBN_CHIPPACK_BCM4712S SSB_CHIPPACK_BCM4712S
 #define ssbn_commit_settings ssb_commit_settings
-#define ssbn_dev ssb_dev
 #define SSBN_DEV_80211 SSB_DEV_80211
 #define ssbn_device ssb_device
 #define SSBN_DEVICE SSB_DEVICE
