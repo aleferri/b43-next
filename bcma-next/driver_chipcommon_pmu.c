@@ -77,6 +77,55 @@ static u32 bcmn_pmu_xtalfreq(struct bcmn_drv_cc *cc)
 	return (alp_hz + 50000) / 100000 * 100;
 }
 
+/* The ADFLL's FREQTGT for each crystal (kHz), one table per DFLL frequency */
+struct bcmn_pmu2_xtaltab {
+	u16 fref;
+	u32 freq_tgt;
+};
+
+static const struct bcmn_pmu2_xtaltab bcmn_pmu2_xtaltab_480[] = {
+	{ 12000, 0x4FFFC }, { 20000, 0x2FFFD }, { 26000, 0x24EC3 },
+	{ 37400, 0x19AB1 }, { 52000, 0x12761 }, { }
+};
+
+static const struct bcmn_pmu2_xtaltab bcmn_pmu2_xtaltab_485[] = {
+	{ 12000, 0x50D52 }, { 20000, 0x307FE }, { 26000, 0x254EA },
+	{ 37400, 0x19EF8 }, { 52000, 0x12A75 }, { }
+};
+
+static const struct bcmn_pmu2_xtaltab bcmn_pmu2_xtaltab_492[] = {
+	{ 12000, 0x51FFC }, { 20000, 0x31330 }, { 26000, 0x25D88 },
+	{ 37400, 0x1A4F5 }, { 52000, 0x12EC4 }, { }
+};
+
+static u32 bcmn_pmu2_freq_tgt(const struct bcmn_pmu2_xtaltab *t, u32 xtalfreq)
+{
+	for (; t->fref; t++)
+		if (t->fref == xtalfreq)
+			return t->freq_tgt;
+	return 0;
+}
+
+/* The crystal from the FREQTGT the ADFLL runs at, 20 MHz if no table has it */
+static u32 bcmn_pmu2_alp_clock(struct bcmn_drv_cc *cc)
+{
+	static const struct bcmn_pmu2_xtaltab *tabs[] = {
+		bcmn_pmu2_xtaltab_480, bcmn_pmu2_xtaltab_485,
+	};
+	const struct bcmn_pmu2_xtaltab *t;
+	u32 freq_tgt;
+	int i;
+
+	freq_tgt = (bcmn_chipco_pll_read(cc, BCMN_CC_PMU15_PLL_PLLCTL0) &
+		    BCMN_CC_PMU15_PLL_PC0_FREQTGT_MASK) >>
+		   BCMN_CC_PMU15_PLL_PC0_FREQTGT_SHIFT;
+	for (i = 0; i < ARRAY_SIZE(tabs); i++)
+		for (t = tabs[i]; t->fref; t++)
+			if (t->freq_tgt == freq_tgt)
+				return t->fref * 1000;
+	return 20000 * 1000;
+}
+
 static void bcmn_pmu2_pll_init0(struct bcmn_drv_cc *cc, u32 xtalfreq)
 {
 	struct bcmn_bus *bus = cc->core->bus;
@@ -85,24 +134,8 @@ static void bcmn_pmu2_pll_init0(struct bcmn_drv_cc *cc, u32 xtalfreq)
 
 	switch (bus->chipinfo.id) {
 	case BCMN_CHIP_ID_BCM43142:
-		/* pmu2_xtaltab0_adfll_485 */
-		switch (xtalfreq) {
-		case 12000:
-			freq_tgt_target = 0x50D52;
-			break;
-		case 20000:
-			freq_tgt_target = 0x307FE;
-			break;
-		case 26000:
-			freq_tgt_target = 0x254EA;
-			break;
-		case 37400:
-			freq_tgt_target = 0x19EF8;
-			break;
-		case 52000:
-			freq_tgt_target = 0x12A75;
-			break;
-		}
+		freq_tgt_target = bcmn_pmu2_freq_tgt(bcmn_pmu2_xtaltab_485,
+						     xtalfreq);
 		break;
 	}
 
@@ -395,6 +428,8 @@ u32 bcmn_pmu_get_alp_clock(struct bcmn_drv_cc *cc)
 			return 40000 * 1000;
 		else
 			return 20000 * 1000;
+	case BCMN_CHIP_ID_BCM43142:
+		return bcmn_pmu2_alp_clock(cc);
 	default:
 		bcmn_warn(bus, "No ALP clock specified for %04X device, pmu rev. %d, using default %d Hz\n",
 			  bus->chipinfo.id, cc->pmu.rev, BCMN_CC_PMU_ALP_CLOCK);
@@ -547,7 +582,7 @@ static void bcmn_pmu_spuravoid_pll_write(struct bcmn_drv_cc *cc, u32 offset,
 
 void bcmn_pmu_spuravoid_pllupdate(struct bcmn_drv_cc *cc, int spuravoid)
 {
-	u32 tmp = 0;
+	u32 tmp = 0, freq_tgt;
 	u8 phypll_offset = 0;
 	u8 bcm5357_bcm43236_p1div[] = {0x1, 0x5, 0x5};
 	u8 bcm5357_bcm43236_ndiv[] = {0x30, 0xf6, 0xfc};
@@ -711,6 +746,19 @@ void bcmn_pmu_spuravoid_pllupdate(struct bcmn_drv_cc *cc, int spuravoid)
 			bcmn_pmu_spuravoid_pll_write(cc, BCMN_CC_PMU_PLL_CTL5,
 						     0x88888815);
 		}
+		tmp = BCMN_CC_PMU_CTL_PLL_UPD;
+		break;
+	case BCMN_CHIP_ID_BCM43142:
+		/* The HT clock stays up: wl has no HT resources for this chip */
+		freq_tgt = bcmn_pmu2_freq_tgt(spuravoid == 1 ?
+					      bcmn_pmu2_xtaltab_492 :
+					      bcmn_pmu2_xtaltab_485,
+					      bcmn_pmu_get_alp_clock(cc) / 1000);
+		if (!freq_tgt)
+			break;
+		bcmn_chipco_pll_maskset(cc, BCMN_CC_PMU15_PLL_PLLCTL0,
+					~BCMN_CC_PMU15_PLL_PC0_FREQTGT_MASK,
+					freq_tgt << BCMN_CC_PMU15_PLL_PC0_FREQTGT_SHIFT);
 		tmp = BCMN_CC_PMU_CTL_PLL_UPD;
 		break;
 	default:
