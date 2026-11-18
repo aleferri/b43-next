@@ -28,9 +28,12 @@ messages, and `B43_NEXT_CALSTAT=y` on top of it the calibration statistics:
 computed and read back, its last value or a ring of the last ones, and
 `cal/all` every entry in the order it was reported. `B43_NEXT_DFS=y`, on a kernel with
 CFG80211_CERTIFICATION_ONUS, lets an AP on the AC-PHY run on radar
-channels (tested on the RT-AC66U B1 only, not a certified detector). What
-the kernel's Kconfig decided for b43, ssb and bcma is decided in
-[`Kbuild`](Kbuild).
+channels (tested on the RT-AC66U B1 only, not a certified detector).
+`B43_NEXT_KERNEL_BUS=y` builds the driver alone, on the kernel's bcma and
+ssb instead of its own copies (bcma-next, ssb-next), for the buses the
+kernel has: the cores then come from the kernel's bus, the SoC's own
+included. What the kernel's Kconfig decided for b43, ssb and bcma is
+decided in [`Kbuild`](Kbuild).
 
 Of the 6.18 stable kernels, 6.18.33 to 6.18.38 are not supported: their
 typed allocators take a mandatory GFP and lack `kzalloc_flex()`.
