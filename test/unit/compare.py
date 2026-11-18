@@ -551,16 +551,8 @@ SOLO_VENDOR = (
 #          e non ci sara': stessa funzione, registro diverso, per struttura.
 #          Compare solo con il profilo --bus (test/integration): l'harness
 #          di test/unit non compila leds.c.
-#   REG.RD 0x3e0   PHY_VER, che b43 mainline legge in tre punti fuori dal
-#          PHY: la versione alla probe (main.c), il commit di
-#          b43_radio_unlock(), e ogni B43_MAX_WRITES_IN_ROW scritture di
-#          b43_phy_write() e b43_radio_write() su un host PCI, per svuotare
-#          le scritture posticipate (phy_common.c). wl non la legge in nessun
-#          punto della cattura del CQ57; il PHY decide solo quante scritture
-#          fa.
 SOLO_PORT = (
     r'^REG\.WR off=0x49c\b',
-    r'^REG\.RD off=0x3e0\b',
 )
 
 # Il secondo caso della lista sopra: la controparte esiste, ma la cattura non
@@ -583,12 +575,19 @@ SOLO_PORT = (
 #          wlc_phy_write_table_ext() scrive sul data port senza passare da
 #          phy_reg_write(), l'accessore agganciato. Le catture al bus le
 #          portano.
+#   REG.RD 0x3e0   PHY_VER, che b43 legge alla probe (main.c), al commit di
+#          b43_radio_unlock() e ogni B43_MAX_WRITES_IN_ROW scritture di
+#          b43_phy_write() e b43_radio_write() su un host PCI, per svuotare
+#          le scritture posticipate (phy_common.c). wl la legge allo stesso
+#          modo, ogni 24 scritture: la voce vale contro una decodifica che
+#          non la porta.
 SOLO_PORT_SENZA_CLASSE = (
     (r'^AMT\.', 'AMT.'),
     (r'^REG\.', 'REG.'),
     (r'^MAC\.MCMD\b', 'MAC.MCMD'),
     (r'^WRAP\.', 'WRAP.'),
     (r'^PHY\.WRW\b', 'PHY.WRW'),
+    (r'^REG\.RD off=0x3e0\b', 'REG.RD off=0x3e0'),
 )
 
 
