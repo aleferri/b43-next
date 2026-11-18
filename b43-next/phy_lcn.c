@@ -1022,7 +1022,7 @@ static void b43_phy_lcn_idle_tssi_est(struct b43_wldev *dev)
 	b43_phy_lcn_set_bbmult(dev, save_bbmult);
 	b43_phy_lcn_set_tx_gain_override(dev, old_override);
 	b43_phy_lcn_set_tx_gain(dev, &old_gains);
-	/* wl loads the index, then restores the mode (#7289, #7353) */
+	/* wl loads the index, then restores the mode (#7421, #7485) */
 	b43_phy_lcn_set_tx_pwr_by_index(dev, save_idx);
 	b43_phy_lcn_set_tx_pwr_ctrl(dev, save_ctrl);
 
@@ -1468,7 +1468,7 @@ static void b43_phy_lcn_txpwrtbl_iqlo_cal(struct b43_wldev *dev)
 	save_bbmult = b43_phy_lcn_get_bbmult(dev);
 	/*
 	 * Where brcmsmac turns the control off and sets the target gains, wl
-	 * loads index 30, then again before the calibration (#10248, #10502)
+	 * loads index 30, then again before the calibration (#10465, #10726)
 	 */
 	b43_phy_lcn_set_tx_pwr_by_index(dev, 30);
 	b43_phy_lcn_set_tx_pwr_by_index(dev, 30);
@@ -1731,7 +1731,7 @@ stop_tone:
 
 /*
  * The PAPD compensation of the TX path: wl turns it off before the
- * calibrations, the periodic one's (#8272) and the PAPD's, as at #186871
+ * calibrations, the periodic one's (#8427) and the PAPD's, as at #187615
  * where it was on, and on after the PAPD's
  */
 static void b43_phy_lcn_papd_comp(struct b43_wldev *dev, bool enable)
@@ -1750,7 +1750,7 @@ static void b43_phy_lcn_periodic_cal(struct b43_wldev *dev)
 {
 	struct b43_phy_lcn *lcn = dev->phy.lcn;
 	u16 save_ctrl = b43_phy_lcn_get_tx_pwr_ctrl(dev);
-	/* The index the control is at, as wl (#8302); brcmsmac's cached one */
+	/* The index the control is at, as wl (#8457); brcmsmac's cached one */
 	u8 index = b43_phy_lcn_get_current_tx_pwr_idx(dev);
 	int i;
 
@@ -1759,7 +1759,7 @@ static void b43_phy_lcn_periodic_cal(struct b43_wldev *dev)
 	b43_phy_lcn_papd_comp(dev, false);
 	/*
 	 * The TX I/Q-LO coefficients cleared before they are calibrated
-	 * (#8282), every time: wlc_lcnphy_set_tx_iqlo_coeffs()' radio value
+	 * (#8437), every time: wlc_lcnphy_set_tx_iqlo_coeffs()' radio value
 	 * for 0 is 0x88
 	 */
 	for (i = 0; i < 4; i++)
@@ -1822,7 +1822,7 @@ static u8 b43_phy_lcn_tx_pwr_warmup(struct b43_wldev *dev)
 	return index;
 }
 
-/* The radio's loopback for the PAPD calibration, wl's (#19454) */
+/* The radio's loopback for the PAPD calibration, wl's (#19737) */
 static const u16 b43_phy_lcn_papd_radio_regs[] = {
 	0x116, 0x12d, 0x12c, 0x06a, 0x098, 0x097, 0x12f, 0x00b, 0x113,
 	0x01d, 0x114, 0x02e, 0x12a, 0x009, 0x11f, 0x007, 0x0ff, 0x005,
@@ -1835,7 +1835,7 @@ static const struct { u16 reg, val; } b43_phy_lcn_papd_loopback[] = {
 	{ 0x12a, 0x08 }, { 0x009, 0x02 },
 };
 
-/* The PHY registers the calibration saves, in wl's order (#19219) */
+/* The PHY registers the calibration saves, in wl's order (#19502) */
 static const u16 b43_phy_lcn_papd_phy_regs[] = {
 	0x90f, 0x900, 0x901, 0x906, 0x907, 0x908, 0x902, 0x903,
 	0x909, 0x90a, 0x90b, 0x904, 0x905, 0x90c, 0x90d, 0x90e,
@@ -1843,7 +1843,7 @@ static const u16 b43_phy_lcn_papd_phy_regs[] = {
 
 /*
  * The PAPD engine's setup, written as wl writes it on the CQ57 on channel 1
- * (#19693-#19747), the samples it plays in table 21 between 0x677 and
+ * (#19984-#20040), the samples it plays in table 21 between 0x677 and
  * 0x67b. What of it depends on the channel or the board is not known.
  */
 static const struct { u16 reg, val; } b43_phy_lcn_papd_setup[] = {
@@ -1901,7 +1901,7 @@ static bool b43_phy_lcn_papd_run(struct b43_wldev *dev)
 
 /*
  * wl's PAPD calibration, which brcmsmac does not have: the capture is the
- * only source (#18975-#20678). At the index the warm-up settled at, with the
+ * only source (#19251-#20981). At the index the warm-up settled at, with the
  * TX looped back to the RX, the engine runs twice; wl then copies entry 5
  * into entries 0-4 and entry 0x3e into 0x3f.
  */
@@ -1993,7 +1993,7 @@ static void b43_phy_lcn_papd_cal(struct b43_wldev *dev, u8 index)
 	b43_lcntab_read_bulk(dev, B43_LCNTAB32(24, 0), B43_LCN_PAPD_ENTRIES,
 			     table);
 	b43_cal_report_values(dev, LCN_CAL_PAPD, table, B43_LCN_PAPD_ENTRIES);
-	/* What wl reads after the calibration and writes nowhere (#20516) */
+	/* What wl reads after the calibration and writes nowhere (#20819) */
 	B43_CAL_PEEK(dev, 1);
 	b43_cal_report(dev, LCN_CAL_PAPD_REGS, b43_phy_read(dev, 0x671),
 		       b43_phy_read(dev, 0x673), b43_phy_read(dev, 0x674),
