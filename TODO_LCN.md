@@ -346,11 +346,6 @@ are on channel 1.
 
 ## Not covered by the capture
 
-- The write flush of the other PHYs: b43's rule in `phy_common.c` (before
-  the 25th write, PHY_VER or MACCTL; every read leaves the count at 1) fits
-  the 3348 flushes of the whole capture, 3340 of PHY_VER and 8 of MACCTL,
-  and is every PHY's; their captures would show whether their wl counts
-  alike.
 - Boards with a FEM: the external PA's TX gain table, the RF power table
   (b43 keeps the older code and its rewrite), the switch control tables of
   the ePA and BT ePA boards, the TSSI after the external PA, the OFDM
