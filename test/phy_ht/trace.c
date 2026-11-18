@@ -18,7 +18,6 @@
 #include <regex.h>
 #include "ht_trace.h"
 
-#define PHY_VER		0x3e0
 #define PHY_CTL		0x3fc
 #define PHY_DATA	0x3fe
 #define RADIO_CTL	0x3d8
@@ -136,9 +135,6 @@ unsigned short ht_mmio_read16(unsigned short offset)
 		v = serve(key);
 		emit("%s addr=0x%04x val=0x%04x", "RAD.RD", radio_addr, v);
 		return v;
-	case PHY_VER:
-		/* b43's posting read every 64 writes: mmio2ops drops it. */
-		return 0;
 	default:
 		snprintf(key, sizeof(key), "REG %04x", offset);
 		v = serve(key);

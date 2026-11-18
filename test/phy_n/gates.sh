@@ -37,7 +37,8 @@ mkdir -p "$T"
 [ $# -gt 0 ] || set -- cold-2g1-20 cold-2g6-20 cold-2g11-20
 for c in "$@"; do
 	ops=$T/$c.ops
-	zcat "$BOARD/traces/mmio-cold/$c-ops.txt.gz" > "$ops"
+	zcat "$BOARD/traces/mmio-cold/$c.bin.gz" > "$T/$c.bin"
+	b43trace bus.mmio2ops "$T/$c.bin" -o "$ops" 2>/dev/null
 	first=$(awk "/MARK 'up'/ { u = 1; next } u && / PHY\./ { print substr(\$2, 2); exit }" "$ops")
 	last=$(awk "/MARK 'ssid'/ { print substr(\$2, 2) - 1; exit }" "$ops")
 	ch=$(echo "$c" | sed 's/cold-2g\([0-9]*\).*/\1/')
