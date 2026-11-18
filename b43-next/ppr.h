@@ -87,6 +87,12 @@ u8 b43_ppr_get_bw_max(const struct b43_ppr *ppr, enum b43_ppr_bw bw);
  */
 void b43_ppr_dist(const struct b43_ppr *ppr, u8 target, struct b43_ppr *dist);
 
+/* A distance in quarter dB in half-dB steps, rounded up, to the limit's side */
+static inline unsigned int b43_ppr_half_db(unsigned int qdb)
+{
+	return DIV_ROUND_UP(qdb, 2);
+}
+
 bool b43_ppr_has_cck(const struct b43_ppr *ppr);
 u8 b43_ppr_get_cck(const struct b43_ppr *ppr, unsigned int rate);
 u8 b43_ppr_get_ofdm(const struct b43_ppr *ppr, enum b43_ppr_bw bw,

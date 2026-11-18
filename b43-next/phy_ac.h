@@ -571,6 +571,9 @@ struct b43_phy_ac {
 	 */
 	struct b43_ppr txpwr_ppr;
 	struct b43_ppr txpwr_spacing;	/* distances, never saturated */
+	/* Each rate's distance under the top of txpwr_ppr and of txpwr_spacing */
+	struct b43_ppr txpwr_dist;
+	struct b43_ppr txpwr_spacing_dist;
 	u8 txpwr_max[B43_PHY_AC_MAX_CORES];
 	/* maxp5ga of the lowest core, 0 when the SROM declares no power. */
 	u8 txpwr_maxp;

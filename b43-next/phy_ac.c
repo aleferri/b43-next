@@ -762,7 +762,7 @@ static const struct b43_phy_ac_prb_rsp_rate b43_phy_ac_prb_rsp_rates[12] = {
  */
 static u16 b43_phy_ac_po_field(int qdb)
 {
-	return (u16)(DIV_ROUND_UP(qdb, 2) * 8);
+	return (u16)(b43_ppr_half_db(qdb) * 8);
 }
 
 /*
@@ -1060,51 +1060,45 @@ static void b43_phy_ac_bss_cc_update(struct b43_wldev *dev,
 }
 
 /*
- * Distance of a legacy OFDM rate from the target, in sixteenths of a dB,
- * for the per-rate block and the beacon cell, on the BCM4352.
+ * The distances under the target the fields of the OFDM and MCS rates are
+ * taken from, by chip.
  *
- * @spacing is the rate's entry in txpwr_spacing, the SROM rows laid out from
- * 0x7f so that no entry saturates. The rows keep their distance from a capped
- * target -- on the d6220's ch100/20 the target sits 1 dB under the top row
- * and the fields are still the SROM's 0/16/32/48 -- and the legacy limit of
- * b43_phy_ac_legacy_cap(), @cap, saturates the rates it would put higher.
+ * The BCM4352 keeps the SROM's, txpwr_spacing_dist: the rows laid out from
+ * 0x7f so that no entry saturates keep their distance from a capped target
+ * -- on the d6220's ch100/20 the target sits 1 dB under the top row and the
+ * fields are still the SROM's 0/16/32/48.
+ *
+ * On the BCM4360 a rate sits at its own entry of the finished table,
+ * txpwr_dist, capped like every rate by the ceiling, instead of keeping its
+ * SROM distance from a capped target. Where a cap binds every legacy rate
+ * below it lands on it: on ch36-48/20 the tg789vac and the agcombo write
+ * zero on all eight under a target of 56, where their SROM spacing goes to
+ * 2 dB, and on ch100/20 the tg789vac writes zero at 76 over rows that go to
+ * 2.5 dB.
+ *
+ * The CCK rates keep the SROM's distances on both.
  */
-static u16 b43_phy_ac_rate_po(const struct b43_phy_ac *ac, u8 spacing,
-			      u16 cap)
+static const struct b43_ppr *b43_phy_ac_rate_dist(struct b43_wldev *dev)
 {
-	int dist = b43_ppr_get_max(&ac->txpwr_spacing) - spacing;
-	int target = b43_ppr_get_max(&ac->txpwr_ppr);
+	const struct b43_phy_ac *ac = dev->phy.ac;
 
-	if (cap && target > (int)cap - 6)
-		dist = max(dist, target - ((int)cap - 6));
-	return b43_phy_ac_po_field(dist);
-}
-
-/* Whether legacy rates take the capped form of b43_phy_ac_rate_po_capped(). */
-static bool b43_phy_ac_legacy_capped(struct b43_wldev *dev)
-{
-	return dev->dev->chip_id == 0x4360;
+	if (dev->dev->chip_id == 0x4360)
+		return &ac->txpwr_dist;
+	return &ac->txpwr_spacing_dist;
 }
 
 /*
- * The same distance on the BCM4360, where a legacy rate sits at its own entry
- * of the finished table, @power, capped like every rate by the ceiling and
- * under the legacy limit, instead of keeping its SROM distance from a capped
- * target. Where a cap binds every legacy rate below it lands on it: on
- * ch36-48/20 the tg789vac and the agcombo write zero on all eight under a
- * target of 56, where their SROM spacing goes to 2 dB, and on ch100/20 the
- * tg789vac writes zero at 76 over rows that go to 2.5 dB. The d6220, a
- * BCM4352, keeps its spacing under the same cap (ch100/20, 0/16/32/48).
+ * The field of a rate @dist under the target, for the per-rate block and the
+ * beacon cell. The legacy limit of b43_phy_ac_legacy_cap(), @cap, saturates
+ * the rates it would put higher.
  */
-static u16 b43_phy_ac_rate_po_capped(const struct b43_phy_ac *ac, u8 power,
-				     u16 cap)
+static u16 b43_phy_ac_rate_po(const struct b43_phy_ac *ac, u8 dist, u16 cap)
 {
-	int target = b43_ppr_get_max(&ac->txpwr_ppr);
-	int p = power;
+	int d = dist;
 
 	if (cap)
-		p = min(p, (int)cap - 6);
-	return target > p ? b43_phy_ac_po_field(target - p) : 0;
+		d = max(d, b43_ppr_get_max(&ac->txpwr_ppr) - ((int)cap - 6));
+	return b43_phy_ac_po_field(d);
 }
 
 /*
@@ -1187,21 +1181,18 @@ static u16 b43_phy_ac_legacy_cap(struct b43_wldev *dev,
  * firmware's own configuration, whose power targets are not in the
  * collection; the form is not checked against them.
  */
-static void b43_phy_ac_vht_rate_po(struct b43_phy_ac *ac, bool capped)
+static void b43_phy_ac_vht_rate_po(struct b43_wldev *dev)
 {
-	const struct b43_ppr *t = capped ? &ac->txpwr_ppr : &ac->txpwr_spacing;
+	struct b43_phy_ac *ac = dev->phy.ac;
+	const struct b43_ppr *dist = b43_phy_ac_rate_dist(dev);
 	enum b43_ppr_bw bw;
 	unsigned int mcs;
-	u8 p;
 
-	for (bw = B43_PPR_BW_20; bw < B43_PPR_BW_NUM; bw++) {
-		for (mcs = 0; mcs < B43_PPR_MCS_RATES; mcs++) {
-			p = b43_ppr_get_mcs(t, bw, B43_PPR_SISO, mcs);
-			ac->rate_po_vht[bw][mcs] = capped ?
-				b43_phy_ac_rate_po_capped(ac, p, 0) :
-				b43_phy_ac_rate_po(ac, p, 0);
-		}
-	}
+	for (bw = B43_PPR_BW_20; bw < B43_PPR_BW_NUM; bw++)
+		for (mcs = 0; mcs < B43_PPR_MCS_RATES; mcs++)
+			ac->rate_po_vht[bw][mcs] = b43_phy_ac_rate_po(ac,
+				b43_ppr_get_mcs(dist, bw, B43_PPR_SISO, mcs),
+				0);
 }
 
 /*
@@ -1235,8 +1226,7 @@ static void b43_phy_ac_prb_rsp_rate_po(struct b43_wldev *dev,
 {
 	B43_AC_FN();
 	struct b43_phy_ac *ac = dev->phy.ac;
-	const struct b43_ppr *sp = &ac->txpwr_spacing;
-	bool capped = b43_phy_ac_legacy_capped(dev);
+	const struct b43_ppr *dist = b43_phy_ac_rate_dist(dev);
 	enum b43_ppr_bw bw = b43_ppr_bw(ac->cal_width);
 	enum nl80211_chan_width w = ac->txpwr_pass2 ? NL80211_CHAN_WIDTH_20
 						    : ac->cal_width;
@@ -1252,21 +1242,16 @@ static void b43_phy_ac_prb_rsp_rate_po(struct b43_wldev *dev,
 		u16 cell = (u16)(2 * ptr + B43_AC_RT_RATE_PO);
 		u16 val;
 
-		if (r->cck && b43_ppr_has_cck(sp))
+		if (r->cck && b43_ppr_has_cck(&ac->txpwr_spacing))
 			val = ac->rate_po_cck = b43_phy_ac_rate_po(ac,
-					b43_ppr_get_cck(sp, r->idx), 0);
+				b43_ppr_get_cck(&ac->txpwr_spacing_dist,
+						r->idx), 0);
 		else if (r->cck)
 			val = ac->rate_po_cck = b43_phy_ac_cck_rate_po(ac);
-		else if (capped)
-			val = b43_phy_ac_rate_po_capped(ac,
-					b43_ppr_get_ofdm(&ac->txpwr_ppr, bw,
-							 B43_PPR_SISO, r->idx),
-					cap);
 		else
 			val = b43_phy_ac_rate_po(ac,
-					b43_ppr_get_ofdm(sp, bw, B43_PPR_SISO,
-							 r->idx),
-					cap);
+				b43_ppr_get_ofdm(dist, bw, B43_PPR_SISO,
+						 r->idx), cap);
 
 		if (!r->cck)
 			ac->rate_po_ofdm[r->idx] = val;
@@ -1274,7 +1259,7 @@ static void b43_phy_ac_prb_rsp_rate_po(struct b43_wldev *dev,
 		b43_shm_write16(dev, B43_SHM_SHARED, cell, val);
 	}
 
-	b43_phy_ac_vht_rate_po(ac, capped);
+	b43_phy_ac_vht_rate_po(dev);
 }
 
 /*
@@ -1305,7 +1290,7 @@ static u16 b43_phy_ac_beacon_pwr_offset_at(struct b43_wldev *dev,
 
 	if (ac->beacon_cck && b43_ppr_has_cck(&ac->txpwr_spacing))
 		return b43_phy_ac_rate_po(ac,
-				b43_ppr_get_cck(&ac->txpwr_spacing, 0), 0);
+				b43_ppr_get_cck(&ac->txpwr_spacing_dist, 0), 0);
 
 	/*
 	 * The cell is the 6 Mbit/s field, in each chip's form: at 20 and
@@ -1318,13 +1303,9 @@ static u16 b43_phy_ac_beacon_pwr_offset_at(struct b43_wldev *dev,
 		w = NL80211_CHAN_WIDTH_20;
 	cap = b43_phy_ac_legacy_cap(dev, site, w,
 				    ac->txpwr_pass2 ? w : ac->cal_width);
-	if (b43_phy_ac_legacy_capped(dev))
-		return b43_phy_ac_rate_po_capped(ac,
-				b43_ppr_get_ofdm(&ac->txpwr_ppr, b43_ppr_bw(w),
-						 B43_PPR_SISO, 0), cap);
 	return b43_phy_ac_rate_po(ac,
-			b43_ppr_get_ofdm(&ac->txpwr_spacing, b43_ppr_bw(w),
-					 B43_PPR_SISO, 0), cap);
+			b43_ppr_get_ofdm(b43_phy_ac_rate_dist(dev),
+					 b43_ppr_bw(w), B43_PPR_SISO, 0), cap);
 }
 
 /*
@@ -2078,6 +2059,9 @@ bool b43_phy_ac_txpwr_recalc(struct b43_wldev *dev)
 	b43_ppr_add(ppr, -6);
 	b43_ppr_apply_min(ppr, INT_TO_Q52(1));
 	max = b43_ppr_get_max(ppr);
+	b43_ppr_dist(ppr, max, &ac->txpwr_dist);
+	b43_ppr_dist(&ac->txpwr_spacing, b43_ppr_get_max(&ac->txpwr_spacing),
+		     &ac->txpwr_spacing_dist);
 
 	ac->txpwr_maxp = maxp;
 
