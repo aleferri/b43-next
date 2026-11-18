@@ -270,6 +270,25 @@ enum b43_addrtype {
 	B43_DMA_ADDR_EXT,
 };
 
+/* AC AQM context of the last successfully submitted MPDU on this FIFO.
+ * A changed epoch prevents the next MPDU joining the preceding aggregate.
+ * The ring is allocated afresh when the DMA/core is initialized.
+ */
+struct b43_ac_tx_epoch {
+	u8 value;
+	bool ampdu;
+	/* A lifecycle change must end the previous hardware context once. */
+	bool pending;
+	u8 addr[ETH_ALEN];
+	u8 tid;
+	u16 next_seq;
+	__le16 phy_ctl[3];
+	u8 plcp[5];
+	u8 cipher_bss, key_idx;
+	u8 mpdu_max, mpdu_max_fb, ba_win, max_agg_len;
+	__le16 ampdu_dur, chanspec;
+};
+
 struct b43_dmaring {
 	/* Lowlevel DMA ops. */
 	const struct b43_dma_ops *ops;
@@ -316,6 +335,8 @@ struct b43_dmaring {
 	enum b43_dmatype type;
 	/* Boolean. Is this ring stopped at ieee80211 level? */
 	bool stopped;
+	/* AC epoch state follows successful DMA submissions, never TX attempts. */
+	struct b43_ac_tx_epoch ac_epoch;
 	/* Number of A-MPDUs awaiting TX status. */
 	u8 ampdu_pending;
 	/* A-MPDU preload in bytes, the FIFO's underflow counter at its last
@@ -360,6 +381,7 @@ static inline void b43_dma_write(struct b43_dmaring *ring, u16 offset, u32 value
 int b43_dma_init(struct b43_wldev *dev);
 void b43_dma_free(struct b43_wldev *dev);
 
+void b43_dma_ac_epoch_invalidate(struct b43_wldev *dev);
 void b43_dma_tx_suspend(struct b43_wldev *dev);
 void b43_dma_tx_resume(struct b43_wldev *dev);
 bool b43_dma_tx_empty(struct b43_wldev *dev);

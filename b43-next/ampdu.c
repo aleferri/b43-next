@@ -193,6 +193,8 @@ void b43_ampdu_tx_sta_drop(struct b43_wl *wl, struct ieee80211_sta *sta)
 	int tid;
 
 	mutex_lock(&wl->mutex);
+	if (wl->current_dev)
+		b43_dma_ac_epoch_invalidate(wl->current_dev);
 	for (tid = 0; tid < IEEE80211_NUM_TIDS; tid++)
 		b43_ampdu_tx_stop(wl, &bsta->ampdu_tx[tid], true);
 	mutex_unlock(&wl->mutex);
@@ -575,9 +577,11 @@ int b43_ampdu_action(struct ieee80211_hw *hw, struct ieee80211_vif *vif,
 			return 0;
 		return IEEE80211_AMPDU_TX_START_IMMEDIATE;
 	case IEEE80211_AMPDU_TX_OPERATIONAL:
-		WRITE_ONCE(bsta->ampdu_win[params->tid], params->buf_size);
 		mutex_lock(&wl->mutex);
+		WRITE_ONCE(bsta->ampdu_win[params->tid], params->buf_size);
 		dev = wl->current_dev;
+		if (dev)
+			b43_dma_ac_epoch_invalidate(dev);
 		if (dev && b43_ampdu_tx_host(dev)) {
 			memset(t, 0, sizeof(*t));
 			skb_queue_head_init(&t->queue);
@@ -592,9 +596,12 @@ int b43_ampdu_action(struct ieee80211_hw *hw, struct ieee80211_vif *vif,
 		mutex_unlock(&wl->mutex);
 		return 0;
 	case IEEE80211_AMPDU_TX_STOP_CONT:
-		WRITE_ONCE(bsta->ampdu_win[params->tid], 0);
 		/* Queued and retried members continue as ordinary MPDUs. */
 		mutex_lock(&wl->mutex);
+		WRITE_ONCE(bsta->ampdu_win[params->tid], 0);
+		dev = wl->current_dev;
+		if (dev)
+			b43_dma_ac_epoch_invalidate(dev);
 		b43_ampdu_tx_stop(wl, t, false);
 		mutex_unlock(&wl->mutex);
 		ieee80211_stop_tx_ba_cb_irqsafe(vif, params->sta->addr,
@@ -602,8 +609,11 @@ int b43_ampdu_action(struct ieee80211_hw *hw, struct ieee80211_vif *vif,
 		return 0;
 	case IEEE80211_AMPDU_TX_STOP_FLUSH:
 	case IEEE80211_AMPDU_TX_STOP_FLUSH_CONT:
-		WRITE_ONCE(bsta->ampdu_win[params->tid], 0);
 		mutex_lock(&wl->mutex);
+		WRITE_ONCE(bsta->ampdu_win[params->tid], 0);
+		dev = wl->current_dev;
+		if (dev)
+			b43_dma_ac_epoch_invalidate(dev);
 		b43_ampdu_tx_stop(wl, t, params->action ==
 				  IEEE80211_AMPDU_TX_STOP_FLUSH);
 		mutex_unlock(&wl->mutex);

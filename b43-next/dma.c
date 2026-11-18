@@ -1675,6 +1675,100 @@ static int dma_tx_map_payload(struct b43_dmaring *ring, struct sk_buff *skb)
 	return dma_tx_map_linear(ring, skb);
 }
 
+/* Called under wl->mutex, like DMA submission and the lifecycle callbacks.
+ * Every FIFO may still contain frames from the old peer/session/key context.
+ * Defer its boundary until a frame is actually submitted; failed maps and
+ * multiple lifecycle changes must neither consume nor cancel the boundary.
+ */
+void b43_dma_ac_epoch_invalidate(struct b43_wldev *dev)
+{
+	struct b43_dmaring *rings[] = {
+		dev->dma.tx_ring_AC_BK, dev->dma.tx_ring_AC_BE,
+		dev->dma.tx_ring_AC_VI, dev->dma.tx_ring_AC_VO,
+		dev->dma.tx_ring_mcast,
+	};
+	unsigned int i;
+
+	lockdep_assert_held(&dev->wl->mutex);
+	if (!dev->fw.layout.hdr || !dev->fw.layout.hdr->tx_aqm_epoch)
+		return;
+	for (i = 0; i < ARRAY_SIZE(rings); i++) {
+		if (rings[i])
+			rings[i]->ac_epoch.pending = true;
+	}
+}
+
+/* Prepare an AC AQM context boundary without advancing committed state.
+ * Conservatively also separate changes to the cipher/key slot,
+ * channel and negotiated limits. The primary-rate checks follow wl's epoch
+ * contract; HT length bytes are per MPDU and do not define that context.
+ * Called under the same wl->mutex that serializes this ring's submissions.
+ */
+static struct b43_ac_tx_epoch
+b43_dma_ac_epoch_prepare(const struct b43_ac_tx_epoch *prev,
+			struct sk_buff *skb, struct b43_txhdr_ac *txh)
+{
+	struct ieee80211_hdr *hdr = (void *)skb->data;
+	const struct ieee80211_tx_info *info = IEEE80211_SKB_CB(skb);
+	const struct b43_txhdr_ac_rate *r = &txh->rate[0];
+	struct b43_ac_tx_epoch next = *prev;
+	u16 seq;
+	u8 ft = le16_to_cpu(r->phy_ctl[0]) & B43_TXH_PHY_ENC;
+	u8 tid = ieee80211_is_data_qos(hdr->frame_control) ?
+		 ieee80211_get_tid(hdr) : 0;
+	bool change;
+
+	next.ampdu = !!(txh->mac_ctl_lo & cpu_to_le16(B43_TXH_AC_MAC_AMPDU));
+	if (!next.ampdu) {
+		/* Exactly one boundary when leaving a run of aggregate MPDUs. */
+		change = prev->pending || prev->ampdu;
+		goto epoch;
+	}
+	seq = le16_to_cpu(hdr->seq_ctrl) >> 4;
+	change = prev->pending || !prev->ampdu ||
+		 /* Hardware-assigned sequence numbers cannot be predicted here. */
+		 (txh->mac_ctl_lo & cpu_to_le16(B43_TXH_AC_MAC_ASEQ)) ||
+		 (info->flags & IEEE80211_TX_CTL_RATE_CTRL_PROBE) ||
+		 !ether_addr_equal(hdr->addr1, prev->addr) || tid != prev->tid ||
+		 seq != prev->next_seq ||
+		 memcmp(r->phy_ctl, prev->phy_ctl, sizeof(prev->phy_ctl)) ||
+		 r->plcp.raw[0] != prev->plcp[0] ||
+		 r->plcp.raw[3] != prev->plcp[3] ||
+		 (ft == B43_TXH_PHY_ENC_VHT &&
+		  (r->plcp.raw[1] != prev->plcp[1] ||
+		   r->plcp.raw[2] != prev->plcp[2] ||
+		   r->plcp.raw[4] != prev->plcp[4])) ||
+		 txh->cipher_bss != prev->cipher_bss ||
+		 txh->key_idx != prev->key_idx ||
+		 txh->chanspec != prev->chanspec ||
+		 txh->ampdu_dur != prev->ampdu_dur ||
+		 txh->mpdu_max != prev->mpdu_max ||
+		 txh->mpdu_max_fb != prev->mpdu_max_fb ||
+		 txh->ba_win != prev->ba_win ||
+		 txh->max_agg_len != prev->max_agg_len;
+	ether_addr_copy(next.addr, hdr->addr1);
+	next.tid = tid;
+	next.next_seq = (seq + 1) & (IEEE80211_SCTL_SEQ >> 4);
+	memcpy(next.phy_ctl, r->phy_ctl, sizeof(next.phy_ctl));
+	memcpy(next.plcp, r->plcp.raw, sizeof(next.plcp));
+	next.cipher_bss = txh->cipher_bss;
+	next.key_idx = txh->key_idx;
+	next.chanspec = txh->chanspec;
+	next.ampdu_dur = txh->ampdu_dur;
+	next.mpdu_max = txh->mpdu_max;
+	next.mpdu_max_fb = txh->mpdu_max_fb;
+	next.ba_win = txh->ba_win;
+	next.max_agg_len = txh->max_agg_len;
+epoch:
+	/* Only a successful DMA submission commits consumption of this flag. */
+	next.pending = false;
+	if (change)
+		next.value ^= 1;
+	txh->toe[2] = (txh->toe[2] & ~B43_TXH_AC_TOE_EPOCH) |
+		      (next.value ? B43_TXH_AC_TOE_EPOCH : 0);
+	return next;
+}
+
 static int dma_tx_fragment(struct b43_dmaring *ring,
 			   struct sk_buff *skb,
 			   const struct b43_txhdr_ampdu *ampdu)
@@ -1682,6 +1776,8 @@ static int dma_tx_fragment(struct b43_dmaring *ring,
 	const struct b43_dma_ops *ops = ring->ops;
 	struct ieee80211_tx_info *info = IEEE80211_SKB_CB(skb);
 	struct b43_private_tx_info *priv_info = b43_get_priv_tx_info(info);
+	struct b43_ac_tx_epoch ac_epoch;
+	bool ac = ring->dev->fw.layout.hdr->tx_aqm_epoch;
 	u8 *header;
 	int slot, old_top_slot, old_used_slots;
 	int err;
@@ -1707,6 +1803,10 @@ static int dma_tx_fragment(struct b43_dmaring *ring,
 		ring->used_slots = old_used_slots;
 		return err;
 	}
+
+	if (ac)
+		ac_epoch = b43_dma_ac_epoch_prepare(&ring->ac_epoch, skb,
+					       (void *)header);
 
 	if (ring->txhdr_dma) {
 		meta_hdr->dmaaddr = ring->txhdr_dma + (header - ring->txhdr_cache);
@@ -1744,6 +1844,12 @@ static int dma_tx_fragment(struct b43_dmaring *ring,
 		b43_shm_write16(ring->dev, B43_SHM_SHARED,
 				B43_SHM_SH_MCASTCOOKIE, cookie);
 	}
+	/* Every mapping succeeded. AC MPDUs are submitted singly here; the
+	 * non-AC software A-MPDU path has its own batch unwind rules.
+	 * Keep failed mappings from changing the next hardware boundary.
+	 */
+	if (ac)
+		ring->ac_epoch = ac_epoch;
 	/* Now transfer the whole frame, or the A-MPDU after its last member. */
 	if (ampdu && !ampdu->last)
 		return 0;

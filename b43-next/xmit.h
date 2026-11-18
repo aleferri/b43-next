@@ -187,9 +187,10 @@ struct b43_txhdr {
  * TX descriptor of the AC microcode, d11 core revisions 40-63, long format:
  * per-frame fields, four rate blocks, the link ("cache") fields. Layout and
  * names from Broadcom's d11actxh_t; in front of it a 4-byte TX offload
- * header that lets the frame through as it is, 0x02 in its bytes 0 and 2,
- * as gonsolo's port sends it (see PROVENANCE.md). The frame follows the
- * descriptor directly; the TX status echoes @cookie as the frame ID.
+ * header that lets the frame through as it is, 0x02 in byte 0. Byte 2
+ * holds the aggregation epoch bit, prepared per FIFO before DMA submission.
+ * The frame follows the descriptor directly; the TX status echoes @cookie as
+ * the frame ID.
  */
 struct b43_txhdr_ac_rate {
 	__le16 phy_ctl[3];		/* PHY TX control words 0-2 */
@@ -233,6 +234,9 @@ struct b43_txhdr_ac {
 /* Cache info, ampdu_dur: d11.h's minimum duration index and maximum */
 #define B43_TXH_AC_AMPDU_DENSITY	0x000F	/* MPDU density, 802.11 code */
 #define B43_TXH_AC_AMPDU_MAX_DUR_SHIFT	4	/* In 16 us units */
+
+/* TX offload prefix byte 2: aggregate context boundary, not passthrough. */
+#define B43_TXH_AC_TOE_EPOCH		BIT(1)
 
 /* MAC TX control, low */
 #define B43_TXH_AC_MAC_AMPDU		0x0040	/* Aggregatable */
