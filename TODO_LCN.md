@@ -79,8 +79,8 @@ its own first enable after the PAPD. On 2026-11-18, `--min-block 8
 
 | ops | score |
 |---|---|
-| all | 28312/33110 = 85.51% |
-| PHY, radio, MACCTL, I/O control | 14737/16732 = 88.08% |
+| all | 28557/32940 = 86.69% |
+| PHY, radio, MACCTL, I/O control | 14982/16561 = 90.47% |
 
 What is left in the control operations, in the order they come:
 
@@ -333,6 +333,19 @@ are on channel 1.
   calibrations first.
 - **The TX I/Q-LO commands**: wl's seven (0x8421 and 0x8423 where brcmsmac
   has 0x8434), each with brcmsmac's number.
+- **The TX I/Q-LO calibration's loopback**, the same 90 operations in all
+  four of the capture (#10819 the first): brcmsmac's radio list with 0x0ff
+  again and 0x0c0, 0x0ca, 0x0c5, saved and restored; 0x03a cleared bit by
+  bit; 0x025 = 0xe then bit 0; no 0x012, 0x036 = 0x11 or 0x112 bits 1-2,
+  which wl never sets in the capture. Five read-modify-writes leave the
+  registers as they are (0x03a and 0x11a after the 0x03a bits, 0x4d7 twice,
+  0x4eb in the cleanup): which bits wl means there is not known, and 0x4d7
+  is written back at the end.
+- **The calibration's cleanup**, 77 operations in all four: the tone
+  stopped first, then the loopback restored, where brcmsmac does the
+  reverse; the gains are the current ones (index 30's), wl calls it
+  without target gains, where brcmsmac's table calibration passes gm 7,
+  pga 0, pad 21.
 - **The RX I/Q calibration's tones**: amplitudes 60 and 120 (#13249,
   #13377), brcmsmac's 20 and 40; the gain search and the ratio test are
   brcmsmac's. The compensation is `b43_rx_iq_comp()` of `calibrate.c`,
