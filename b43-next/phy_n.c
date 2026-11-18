@@ -4365,23 +4365,24 @@ static void b43_nphy_tx_power_offsets(struct b43_wldev *dev,
 {
 	struct b43_phy_n *nphy = dev->phy.n;
 	static const enum b43_ppr_bw bws[] = { B43_PPR_BW_20, B43_PPR_BW_40 };
-	u8 max = b43_ppr_get_max(ppr);
 	unsigned int i, b, m, o = 0;
 	enum b43_ppr_bw bw;
+	struct b43_ppr dist;
 
+	b43_ppr_dist(ppr, b43_ppr_get_max(ppr), &dist);
 	memset(nphy->tx_power_offset, 0, sizeof(nphy->tx_power_offset));
 	for (i = 0; i < B43_PPR_CCK_RATES; i++)
-		nphy->tx_power_offset[o++] = max - b43_ppr_get_cck(ppr, i);
+		nphy->tx_power_offset[o++] = b43_ppr_get_cck(&dist, i);
 	for (b = 0; b < ARRAY_SIZE(bws); b++) {
 		bw = b43_ppr_get_bw_max(ppr, bws[b]) ? bws[b] : B43_PPR_BW_20;
 		for (m = B43_PPR_SISO; m <= B43_PPR_CDD; m++)
 			for (i = 0; i < B43_PPR_OFDM_RATES; i++)
-				nphy->tx_power_offset[o++] = max -
-					b43_ppr_get_ofdm(ppr, bw, m, i);
+				nphy->tx_power_offset[o++] =
+					b43_ppr_get_ofdm(&dist, bw, m, i);
 		for (m = B43_PPR_SISO; m < B43_PPR_MODE_NUM; m++)
 			for (i = 0; i < 8; i++)
-				nphy->tx_power_offset[o++] = max -
-					b43_ppr_get_mcs(ppr, bw, m,
+				nphy->tx_power_offset[o++] =
+					b43_ppr_get_mcs(&dist, bw, m,
 							m == B43_PPR_CDD && i ?
 							i - 1 : i);
 	}

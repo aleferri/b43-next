@@ -126,6 +126,16 @@ u8 b43_ppr_get_bw_max(const struct b43_ppr *ppr, enum b43_ppr_bw bw)
 	return res;
 }
 
+void b43_ppr_dist(const struct b43_ppr *ppr, u8 target, struct b43_ppr *dist)
+{
+	unsigned int i;
+
+	for (i = 0; i < B43_PPR_ENTRIES; i++)
+		dist->__all[i] = max_t(int, target - ppr->__all[i], 0);
+	dist->loaded = ppr->loaded;
+	dist->mcs_num = ppr->mcs_num;
+}
+
 bool b43_ppr_has_cck(const struct b43_ppr *ppr)
 {
 	return ppr->loaded & BIT(B43_PPR_G_CCK);
