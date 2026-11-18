@@ -8,7 +8,7 @@
 /*
  * The tones the PHYs play from their sample buffers: a tone of @freq kHz at
  * @rate MHz turns by b43_tone_rot() degrees Q16 per sample, and its sample
- * at an angle is b43_tone_sample() of it, whole degrees, @amp the amplitude.
+ * at an angle is b43_tone_sample() of it, the angle Q16, @amp the amplitude.
  */
 static inline s32 b43_tone_rot(u32 freq, u32 rate)
 {
