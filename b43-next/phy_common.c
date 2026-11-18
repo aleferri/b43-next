@@ -231,7 +231,7 @@ static inline void assert_mac_suspended(struct b43_wldev *dev)
 u16 b43_radio_read(struct b43_wldev *dev, u16 reg)
 {
 	assert_mac_suspended(dev);
-	dev->phy.writes_counter = 0;
+	dev->phy.writes_counter = 1;
 	return dev->phy.ops->radio_read(dev, reg);
 }
 
@@ -282,7 +282,7 @@ bool b43_radio_wait_value(struct b43_wldev *dev, u16 offset, u16 mask,
 u16 b43_phy_read(struct b43_wldev *dev, u16 reg)
 {
 	assert_mac_suspended(dev);
-	dev->phy.writes_counter = 0;
+	dev->phy.writes_counter = 1;
 
 	if (dev->phy.ops->phy_read)
 		return dev->phy.ops->phy_read(dev, reg);
@@ -314,24 +314,12 @@ void b43_phy_copy(struct b43_wldev *dev, u16 destreg, u16 srcreg)
 
 void b43_phy_mask(struct b43_wldev *dev, u16 offset, u16 mask)
 {
-	if (dev->phy.ops->phy_maskset) {
-		assert_mac_suspended(dev);
-		dev->phy.ops->phy_maskset(dev, offset, mask, 0);
-	} else {
-		b43_phy_write(dev, offset,
-			      b43_phy_read(dev, offset) & mask);
-	}
+	b43_phy_maskset(dev, offset, mask, 0);
 }
 
 void b43_phy_set(struct b43_wldev *dev, u16 offset, u16 set)
 {
-	if (dev->phy.ops->phy_maskset) {
-		assert_mac_suspended(dev);
-		dev->phy.ops->phy_maskset(dev, offset, 0xFFFF, set);
-	} else {
-		b43_phy_write(dev, offset,
-			      b43_phy_read(dev, offset) | set);
-	}
+	b43_phy_maskset(dev, offset, 0xFFFF, set);
 }
 
 void b43_phy_maskset(struct b43_wldev *dev, u16 offset, u16 mask, u16 set)
@@ -339,6 +327,7 @@ void b43_phy_maskset(struct b43_wldev *dev, u16 offset, u16 mask, u16 set)
 	if (dev->phy.ops->phy_maskset) {
 		assert_mac_suspended(dev);
 		dev->phy.ops->phy_maskset(dev, offset, mask, set);
+		dev->phy.writes_counter = 1;
 	} else {
 		b43_phy_write(dev, offset,
 			      (b43_phy_read(dev, offset) & mask) | set);
