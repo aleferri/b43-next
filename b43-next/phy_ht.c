@@ -644,13 +644,22 @@ static void b43_phy_ht_tx_power_fix(struct b43_wldev *dev)
  * the measured edge on both boards. Elsewhere the loop stays on: an Apple
  * BCM4331 card has an external LNA and PA too (BFL_EXTLNA, extpagain 0) but
  * neither flag, and there the loop holds b43_phy_ht_op_recalc_txpower()'s
- * target.
+ * target. The ht_txgain_idx module parameter overrides the choice, e.g. a
+ * higher index for less power at close range; b43_phy_ht_op_prepare_structs()
+ * reads it once per init, so a change takes effect at the next wifi restart.
  */
+static int modparam_ht_txgain_idx = -2;
+module_param_named(ht_txgain_idx, modparam_ht_txgain_idx, int, 0644);
+MODULE_PARM_DESC(ht_txgain_idx, "HT-PHY: static TX gain index 0..127 instead of the TX power control loop; -2 = automatic (default), -1 = power control loop");
+
 static int b43_phy_ht_static_txgain(struct b43_wldev *dev)
 {
 	u16 bf = dev->dev->bus_sprom->boardflags_lo;
+	int idx = dev->phy.ht->txgain_param;
 
-	if (!(bf & (B43_BFL_FEM | B43_BFL_HGPA)))
+	if (idx >= 0 && idx < 128)
+		return idx;
+	if (idx == -1 || !(bf & (B43_BFL_FEM | B43_BFL_HGPA)))
 		return -1;
 	return (bf & B43_BFL_HGPA) ? 24 : 16;
 }
@@ -1312,6 +1321,7 @@ static void b43_phy_ht_op_prepare_structs(struct b43_wldev *dev)
 	int i;
 
 	memset(phy_ht, 0, sizeof(*phy_ht));
+	phy_ht->txgain_param = READ_ONCE(modparam_ht_txgain_idx);
 	/*
 	 * wl keeps across a down the turns over the glitch threshold and the
 	 * channel of its last init

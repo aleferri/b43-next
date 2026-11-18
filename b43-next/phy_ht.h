@@ -141,6 +141,7 @@ struct b43_phy_ht {
 	u8 tx_pwr_idx[3];
 	u8 tx_pwr_target[3];
 	u8 tx_gain_idx;
+	int txgain_param;	/* ht_txgain_idx, read once per init */
 	struct b43_ppr tx_pwr_ppr;
 
 	s32 bb_mult_save[3];
