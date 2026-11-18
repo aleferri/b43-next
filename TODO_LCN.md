@@ -19,10 +19,10 @@ The scores are in `test/phy_lcn/README.md`.
   (the temperature based recalibration) shows on this board.
 - **The block every 256 ms**: shared memory 0x008e, 0x0e50-0x0e54, a MAC
   suspend, an RMW of 0x448, table 21 read from entry 0, then 0x6da,
-  0x5a6, 0x5a2, 0x5a5 and 0x583-0x586 written as in #8162-#8226 (#402429
+  0x5a6, 0x5a2, 0x5a5 and 0x583-0x586 written as in #8317-#8381 (#402429
   on). Not identified.
 - **`agc_temp_init`**: wl reads 0x4df, table 17 at 59-60, 0x434, 0x424,
-  0x425 and table 13 at 28-29 after the PMU (#8239-#8251); b43 neither
+  0x425 and table 13 at 28-29 after the PMU (#8394-#8406); b43 neither
   reads nor keeps them, and nothing uses them yet.
 
 ## Firmware
@@ -32,7 +32,7 @@ rebuilds `ucode24_lcn.fw` (9962 words), `lcn0initvals24.fw` (561 writes)
 and `lcn0bsinitvals24.fw` (35) from the capture, the names `b43` asks for
 the BCM4313; wl's revinfo says ucode 0x340006e (832.110). The bsinitvals are
 the band registers and 15 shared memory cells after them, written blind
-(#12049-#12068 of the `--no-bulk` decoding): the IFS registers, 0x000c,
+(#12051-#12070 of the `--no-bulk` decoding): the IFS registers, 0x000c,
 0x000e, the slot time, the beacon TSF offset, the synth PU delay,
 0x1670-0x1672 and the eight cells 0x0770-0x080a at stride 0x16. A run of
 blind writes ends before the OBJADDR select of the driver's access that
@@ -54,7 +54,7 @@ the attach window, cells b43 writes with other values:
 
 Settled: the basic rate map at the init is wl's (`brcms_c_set_ratetable()`
 with the mandatory rates, `b43_basic_rates_init()`), from the direct maps
-scanned once after RFATT (`b43_rate_dirmap_read()`, #31230, as the AC-PHY's), and 0x0480-0x04ff, no
+scanned once after RFATT (`b43_rate_dirmap_read()`, #31533, as the AC-PHY's), and 0x0480-0x04ff, no
 table of the 832 microcode, is left alone as on the AC-PHY; the TX FIFOs
 are brcmsmac's for core 24 (`b43_txfifo_fixup()`);
 the PHY TX control words keep the initvals' and get only their antenna, the
@@ -63,7 +63,7 @@ PHY_TXC_LCNPHY_ANT_LAST). The EDCA parameters (0x0242-0x02ae) are the ones
 mac80211 hands b43 with `conf_tx` at the interface's add, where wl keeps the
 initvals' until it associates; PRMAXTIME stays b43's 1, its firmware never
 answering probes. MIMO_MAXSYM and the A-MPDU watchdog (0x00ba, 0x003c) wl
-raises to 0xffff and 10 for its 64K A-MPDUs (#32936), as
+raises to 0xffff and 10 for its 64K A-MPDUs (#33248), as
 `b43_chip_init_mac()` does with HT, which the LCN-PHY has not in b43.
 
 ## The whole of b43 on the virtual chip
@@ -72,17 +72,22 @@ raises to 0xffff and 10 for its 64K A-MPDUs (#32936), as
 capture (profile `cq57`; bcma reads the SROM off the chip, in
 `bcmn_bus_register()`'s order; the firmware rebuilt from the capture), and
 scores the window from the capture's start to the op before wl's first MAC
-enable (#1-#32969 of the `--no-bulk` decoding) against b43's trace cut at
-its own first enable after the PAPD. On 2026-11-17, `--min-block 8
+enable (#1-#33281 of the `--no-bulk` decoding) against b43's trace cut at
+its own first enable after the PAPD. On 2026-11-18, `--min-block 8
 --gap-tol 2 --anchor-values`:
 
 | ops | score |
 |---|---|
-| all | 26897/33733 = 79.73% |
-| PHY, radio, MACCTL, I/O control | 13745/17700 = 77.66% |
+| all | 26649/34936 = 76.28% |
+| PHY, radio, MACCTL, I/O control | 13949/17675 = 78.92% |
 
 What is left in the control operations, in the order they come:
 
+- **PHY_VER's reads**, every 24 PHY and radio writes on both sides: b43's
+  count starts again at every read (`b43_phy_read()`, `b43_radio_read()`),
+  wl's does not always, and its rule is not known. The reads fall at
+  different points and break the blocks; with b43's left out the window
+  scores 26892/34381 = 78.22%.
 - **The bus scan** (#1-#69): wl reads the chip id and the EROM; the harness
   builds the cores by hand.
 - **The OTP** (#105-#117): wl reads words 0 and 0x14 of the SROM and the OTP
@@ -93,7 +98,7 @@ What is left in the control operations, in the order they come:
 - **After the up**: wl's block on 0x49e and chipcommon (about 1245 ops).
 - **The station's events**: `pipeline.timeline` reads an AP's (watchdog,
   templates, BSS up) and finds none here. The scans (channels 1-13, 15 of
-  them), the three associations (#289597, #739814, #1052874 of the bulk
+  them), the three associations (#290980, #742070, #1055976 of the bulk
   decoding) and wl's watchdog while associated need their markers and
   their mac80211 calls.
 
@@ -102,19 +107,19 @@ What is left in the control operations, in the order they come:
 wl makes them, b43 does not; no source explains them, and most leave the
 register as it was, so their masks cannot be read off the capture.
 
-- RMW of 0x4d0 and 0x478 at the init's start (#1677).
+- RMW of 0x4d0 and 0x478 at the init's start (#1679).
 - Reads of 0x423, 0x550, 0x434, 0x432 and two RMW of 0x55d before the
-  2064's init (#5952).
-- Three more accesses of 0x4eb after the 2064's 0x4eb setup (#5976).
+  2064's init (#6045).
+- Three more accesses of 0x4eb after the 2064's 0x4eb setup (#6069).
 - Reads of 0x4a5, 0x40d and 0x4a2 and an RMW of 0x4a5 in the TSSI setup,
-  after 0x4a8 (#6958).
+  after 0x4a8 (#7083).
 - RMW of 0x525 after every write of the TX power control's mode.
 - A read of 0x4a4 in the TX I/Q-LO calibration, after 0x6da = 0xffff and
-  before the first command (#10844). The harness serves each register's
+  before the first command (#11071). The harness serves each register's
   reads in wl's order, so every later read of 0x4a4 gets the value of the
   one before it.
-- RMW of 0x448 after the tune, before the AFE toggle (#8096).
-- The block after the TX filters (#8162-#8226): shared memory reads, RMW
+- RMW of 0x448 after the tune, before the AFE toggle (#8251).
+- The block after the TX filters (#8317-#8381): shared memory reads, RMW
   of 0x434 and 0x423, 0x550, a pulse of 0x44a, 0x6da = 0x2048, writes of
   0x5a6, 0x5a2, 0x5a5 and 0x583-0x586.
 - RMW of 0x416 and 0x420 after 0x424/0x425 on the spur avoidance channels
@@ -132,7 +137,7 @@ what the capture shows, what b43 does with it, and what would tell.
 ### Tables and init
 
 - **TX gain table of the internal PA** (`b43_lcntab_tx_gain_tbl_2ghz_rev0`):
-  wl's 128 entries at #3265, pad and BB multiplier taken off the capture.
+  wl's 128 entries at #3333, pad and BB multiplier taken off the capture.
   brcmsmac's `dot11lcnphy_2GHz_gaintable_rev0` differs on 103 of them, the
   pad on 70; whether wl's is a newer table or this board's is not known.
   The PA gain (0x60) and the fixed gm (15) are brcmsmac's and wl's.
@@ -142,19 +147,19 @@ what the capture shows, what b43 does with it, and what would tell.
   brcmsmac computes it from the BB multiplier, which wl does not read. Pad
   0 never occurs in this table; with a FEM b43 keeps the old code.
 - **Switch control table of a BT FEM board without a FEM**
-  (`b43_lcntab_sw_ctl_4313_bt_ipa_rev0`): wl's at #4416. brcmsmac's
+  (`b43_lcntab_sw_ctl_4313_bt_ipa_rev0`): wl's at #4484. brcmsmac's
   `dot11lcn_sw_ctrl_tbl_4313_ipa_rev0_combo` starts the same and differs
   from the 7th entry: taken as a newer version of it, chosen by brcmsmac's
   flags (`BFL_FEM_BT` without `BFL_FEM`). brcmsmac's RFSEQ entry 4 = 100 of
   BT boards is not in the capture and not written.
 - **0x416 in the BU tweaks**: wl reads and writes it twice, 0x9fa6 to 0x9fa4
-  to 0x9ba4 (#5740). Modelled as the low byte set to 0xa4 and the high byte
+  to 0x9ba4 (#5826). Modelled as the low byte set to 0xa4 and the high byte
   to 0x9b, the pattern brcmsmac's rev 2 baseband init uses on the same
   register (two byte fields). A board whose register starts elsewhere would
   show whether the masks are the bytes.
-- **Radio 0x01e at the end of the 2064's init**: 0x06 to 0x02 (#6027),
+- **Radio 0x01e at the end of the 2064's init**: 0x06 to 0x02 (#6120),
   modelled as bit 2 cleared.
-- **The radio writes at the end of the 2064's init** (#6016-#6031): wl's,
+- **The radio writes at the end of the 2064's init** (#6109-#6124): wl's,
   written as they are, only without a FEM, as brcmsmac's last three
   (0x032, 0x033, 0x039) are.
 
@@ -162,36 +167,36 @@ what the capture shows, what b43 does with it, and what would tell.
 
 - **Where the hardware control starts**: index 180 and 0 packets
   (`B43_LCN_TX_PWR_CTRL_START_IDX`, `_NPT`), what wl writes to 0x4a4 and
-  0x4a5 when it turns the control on (#7962). brcmsmac starts from 140 and
+  0x4a5 when it turns the control on (#8117). brcmsmac starts from 140 and
   1. wl may compute them; another board or a later turn-on would tell.
 - **Only `b43_phy_lcn_set_tx_pwr_by_index()` loads an index's gains**, after
   turning the control off; turning it off alone loads none. Every case of
-  the capture fits: one transition and a load at #7289 (index 52, the idle
-  TSSI's restore) and #10248 (index 30, the TX I/Q-LO calibration), one
-  transition and no load at #8512 and in every recalculation.
+  the capture fits: one transition and a load at #7421 (index 52, the idle
+  TSSI's restore) and #10465 (index 30, the TX I/Q-LO calibration), one
+  transition and no load at #8674 and in every recalculation.
 - **The idle TSSI's restore loads the index, then restores the mode**
-  (#7289, #7353); brcmsmac restores only the mode.
-- **The TX I/Q-LO calibration loads index 30 twice** (#10248, #10502), where
+  (#7421, #7485); brcmsmac restores only the mode.
+- **The TX I/Q-LO calibration loads index 30 twice** (#10465, #10726), where
   brcmsmac turns the control off and sets fixed target gains, then loads it.
 - **0x4a9 bit 15 off when the control turns on**, after the gain override
-  (#7975 and every turn-on, the register at 0): brcmsmac's
+  (#8130 and every turn-on, the register at 0): brcmsmac's
   `wlc_lcnphy_set_tx_pwr_soft_ctrl()` sets it in the same place, for the
   index the software control imposes.
-- **The target at the init is 0** (0x4a7, #7955): wl's; brcmsmac sets
+- **The target at the init is 0** (0x4a7, #8110): wl's; brcmsmac sets
   `LCN_TARGET_PWR` (60). The rate table is written, there and when the
   control turns on, only once a recalculation has computed it.
 
-- **0x4d0 bits 6-14 = 0x1f8 in the TSSI setup** (#7157): wl's; brcmsmac
+- **0x4d0 bits 6-14 = 0x1f8 in the TSSI setup** (#7289): wl's; brcmsmac
   writes 0.
 - **The TSSI mux after the PA**: brcmsmac's, with wl's write of radio 0x07f
   = 0 after 0x11a and without the two 0x4d7 bits at its start, which wl sets
-  in the idle TSSI estimate instead (#6903-#6933).
+  in the idle TSSI estimate instead (#7028-#7058).
 
 ### TX power recalculation
 
 wl's steps are brcmsmac's `wlc_phy_txpower_recalc_target_lcnphy()`: the
 control off, the 20 offsets at 0x340 (4 CCK, 8 OFDM, 8 MCS) and the target,
-the control on, which writes both again (#22119 after the init, #86970 after
+the control on, which writes both again (#22422 after the init, #87399 after
 the switch to channel 2). The values, in qdBm, on the CQ57:
 
 | channels | target | CCK | OFDM, MCS 0-6 | MCS 7 |
@@ -212,9 +217,9 @@ the switch to channel 2). The values, in qdBm, on the CQ57:
   `wlc_lcnphy_set_tx_pwr_soft_ctrl()` (22): offset = target - power + 22. An
   offset of 14 with the backoff and a row of 48, or of 18 with the backoff
   and a row of 52, give the same bytes on this board.
-- **The target is written every time**, unchanged or not (#22414, #87221);
+- **The target is written every time**, unchanged or not (#22726, #87658);
   brcmsmac writes it only when it changes. When it changes, the control
-  starts again from 1 packet, wl's 0x4a5 from #22419 on, and from the index
+  starts again from 1 packet, wl's 0x4a5 from #22731 on, and from the index
   it had: brcmsmac's `wlc_lcnphy_txpower_reset_npt()` resets both, but in
   the scan at #450197-#482262 of the bulk decoding the target goes from 58
   to 40 and back and every turn-on starts from 0x98, the watchdog's.
@@ -239,15 +244,15 @@ the switch to channel 2). The values, in qdBm, on the CQ57:
   15 on channels 1-11.
 ### Warm-up and PAPD calibration
 
-After the init's calibration, with the control on (#17456-#20678), as wl:
+After the init's calibration, with the control on (#17725-#20981), as wl:
 brcmsmac has neither, so the capture is the only source, and all 7 of them
 are on channel 1.
 
 - **The warm-up**: the offsets cleared, the target at 0x40, 50 dummy frames
   (`b43_dummy_transmission()`) each followed by the control's index
   (`b43_phy_lcn_get_current_tx_pwr_idx()`), between deaf modes. 50 in every
-  warm-up of the capture, also when the index settles after 3 (#183672): no
-  stop condition. The PAPD loads the index it settles at (#19349, 0x44 from
+  warm-up of the capture, also when the index settles after 3 (#184388): no
+  stop condition. The PAPD loads the index it settles at (#19632, 0x44 from
   0x473 = 0x88).
 - **The PAPD's helpers are b43's**: the RX gain override, `tx_pu`, the RX
   gain by distribution (brcmsmac's, now with biq2, lna1 and the TR switch),
@@ -264,7 +269,7 @@ are on channel 1.
 - **The PAPD compensation** is 0x676 bit 7, 0x6da bit 0 and three nibbles
   of 0x86c (4 each): wl turns it off before the calibration, in that order,
   one RMW per nibble, and on after it. At the attach it is off already, so
-  the RMWs leave the registers as they are; at #186871 it is on and they
+  the RMWs leave the registers as they are; at #187615 it is on and they
   clear 0x676 0xb8a0 to 0xb820, 0x6da 0x2049 to 0x2048, 0x86c 0x444 to 0.
   These are the only bits of the three that change in the capture.
 - **Around the PAPD, from brcmsmac's fields and the capture's changes**:
@@ -282,9 +287,9 @@ are on channel 1.
 - **Not understood yet**, each with what the capture gives:
   - an RMW of 0x4b1 in wl's RX gain, after the TR switch: of 0x4b1 only
     bits 11-12 (lna1) ever change; brcmsmac clears bit 15 there from rev 2;
-  - an RMW of 0x4b0 before the first RX gain (#19304), and of 0x6c9 before
-    the setup writes it (#19693): neither changes in the capture;
-  - the TX gains read before the index is loaded (#19346), not restored:
+  - an RMW of 0x4b0 before the first RX gain (#19587), and of 0x6c9 before
+    the setup writes it (#19984): neither changes in the capture;
+  - the TX gains read before the index is loaded (#19629), not restored:
     brcmsmac's calibrations restore theirs when the control was off, and
     every PAPD of the capture starts with it on;
   - a second read of 0x4d7 before its RMWs;
@@ -303,10 +308,10 @@ are on channel 1.
 - **0x424/0x425 on the spur avoidance channels** (5-8, 13): 0x25 and 0x590f,
   wl's on every tune of the capture; brcmsmac's 0x1f and 0x590a.
 - **0x780 before the channel tweaks**: 0 to 0x400 to 0x600 at the init
-  (#7987), 0x600 left as it is on every switch; modelled as bits 10 and 9
+  (#8142), 0x600 left as it is on every switch; modelled as bits 10 and 9
   set.
 - **The pulses of the AFE overrides after a tune**: bits 0 then 1 of 0x43b
-  and 0x43c, override on, value on, value off, override off (#8162, and on
+  and 0x43c, override on, value on, value off, override off (#8317, and on
   every switch). The name is b43's.
 - **The TX filters**: wl's coefficients are brcmsmac's CCK type 25 and OFDM
   type 2 with the numerator negated (b0, b1, b2 of each section), the
@@ -320,29 +325,29 @@ are on channel 1.
 ### Calibrations
 
 - **The periodic calibration starts from the control's index** (0x4a4,
-  0x473, #8302), as wl; brcmsmac takes its cached index.
-- **The periodic calibration's preamble** (#8264-#8289), all 4 of the
+  0x473, #8457), as wl; brcmsmac takes its cached index.
+- **The periodic calibration's preamble** (#8419-#8444), all 4 of the
   capture: deaf, the PAPD compensation off, the TX I/Q-LO coefficients
   cleared (radio 0x089-0x08c = 0x88, `wlc_lcnphy_set_tx_iqlo_coeffs()`'
   value for 0, then LOCC and IQCC). Off, the compensation also keeps the
   harness's reads of 0x676 in wl's order for the PAPD.
 - **The order of the init's calibration**: deaf, the idle TSSI estimate and
   the TSSI to power table, the TX I/Q-LO calibration, the RX I/Q one, as
-  wl (#8262 on). brcmsmac's `wlc_lcnphy_periodic_cal()` runs the I/Q
+  wl (#8417 on). brcmsmac's `wlc_lcnphy_periodic_cal()` runs the I/Q
   calibrations first.
 - **The TX I/Q-LO commands**: wl's seven (0x8421 and 0x8423 where brcmsmac
   has 0x8434), each with brcmsmac's number.
-- **The RX I/Q calibration's tones**: amplitudes 60 and 120 (#13015,
-  #13142), brcmsmac's 20 and 40; the gain search and the ratio test are
+- **The RX I/Q calibration's tones**: amplitudes 60 and 120 (#13249,
+  #13377), brcmsmac's 20 and 40; the gain search and the ratio test are
   brcmsmac's. The compensation is `b43_rx_iq_comp()` of `calibrate.c`,
   shared with N, HT and AC, rounding the root of b as wl does: on the CQ57
-  wl's estimate (#17033-#17038) gives b = 0x3e6 rounded, 0x3e5 truncated,
-  and wl writes 0x3e6 (#17046). Not a hypothesis any more.
+  wl's estimate (#17295-#17300) gives b = 0x3e6 rounded, 0x3e5 truncated,
+  and wl writes 0x3e6 (#17308). Not a hypothesis any more.
 - **The results a channel switch loads**: the TX I/Q coefficients (sign
   extended from 10 bits, as wl writes them there, 0xfff1, where after the
   calibration it writes 0x03f1), the LO, the radio's LO (0x089-0x08c, read
   back after the calibration) and the RX compensation, in wl's order
-  (#85798-#86969).
+  (#86227-#87398).
 
 ## Not covered by the capture
 
@@ -361,6 +366,6 @@ are on channel 1.
 
 - `test/phy_lcn/gates.sh` scores the attach, the second scan's channel
   switches and the PHY's part of every watchdog turn; the first scan
-  (#44938-#81737) and the associations are not scored.
+  (#45250-#82148) and the associations are not scored.
 - The capture has no marks: the windows are found by patterns, see
   `gates.sh`.
