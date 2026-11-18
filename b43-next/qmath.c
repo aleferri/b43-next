@@ -26,7 +26,7 @@ static const s32 b43_cordic_atan[B43_CORDIC_ITER] = {
 	14668, 7334, 3667, 1833, 917, 458, 229, 115, 57, 29,
 };
 
-/* Angle in degrees Q16 -> (cos, sin) in Q16. |theta| stays well under 90. */
+/* Angle in degrees Q16 -> (cos, sin) in Q16, |theta| up to 90. */
 void b43_cordic_rotate(s32 theta, s32 *cos_out, s32 *sin_out)
 {
 	s32 i = B43_CORDIC_GAIN, q = 0, angle = 0, t;

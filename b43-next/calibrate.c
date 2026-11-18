@@ -10,12 +10,29 @@
 #include "qmath.h"
 #include "calibrate.h"
 
+/*
+ * cordic_calc_iq()'s reduction to +-90 degrees, then the rotation, on the
+ * Q16 angle as wl's wlc_phy_cordic() takes it: the kernel's rounds it to
+ * whole degrees first.
+ */
 struct cordic_iq b43_tone_sample(s32 angle, u16 amp)
 {
-	struct cordic_iq s = cordic_calc_iq(CORDIC_FLOAT(angle));
+	int sign = angle < 0 ? -1 : 1;
+	s32 a = amp;
+	struct cordic_iq s;
 
-	s.i = CORDIC_FLOAT(s.i * amp);
-	s.q = CORDIC_FLOAT(s.q * amp);
+	angle = ((angle + CORDIC_FIXED(180) * sign) % CORDIC_FIXED(360)) -
+		CORDIC_FIXED(180) * sign;
+	if (CORDIC_FLOAT(angle) > 90) {
+		angle -= CORDIC_FIXED(180);
+		a = -a;
+	} else if (CORDIC_FLOAT(angle) < -90) {
+		angle += CORDIC_FIXED(180);
+		a = -a;
+	}
+	b43_cordic_rotate(angle, &s.i, &s.q);
+	s.i = CORDIC_FLOAT(s.i * a);
+	s.q = CORDIC_FLOAT(s.q * a);
 	return s;
 }
 
