@@ -31,7 +31,7 @@ an internal PA.
 The window runs from the first of wl's three analog switches before the PHY
 init (those of its two core resets and the init's own: b43 makes the same
 three in flow `full`) to the op before wl's first MAC enable, after its
-calibrations: #1089-#22546. wl's attach tunes channel 1, and b43 runs on it
+calibrations: #1090-#22858. wl's attach tunes channel 1, and b43 runs on it
 the PHY calls of its core in its order: the analog switch of
 `b43_wireless_core_reset()` and of `b43_phy_bringup()`, `b43_phy_init()`, and
 the TX power check of mac80211's first config. `../unit/cmp_skip.py --bus
@@ -40,15 +40,19 @@ parameters. The second row compares the PHY's and radio's operations only:
 the core's MMIO, shared memory and wrapper accesses are outside a harness
 that compiles no core, and its calls into the core are counted on stderr.
 
-On 2026-11-17, `--min-block 8 --gap-tol 2`:
+On 2026-11-18, `--min-block 8 --gap-tol 2`:
 
 | capture | grezzo | PHY+radio |
 |---|---|---|
-| attach | 14932/20132 = 74.17% | 15026/16571 = 90.68% |
+| attach | 13558/22130 = 61.27% | 15026/16571 = 90.68% |
 
 The grezzo counts wl's core operations, which this harness cannot emit:
 since the core reads the shared memory's address back as wl does, the 785
-reads of 0x160 in the window count among them.
+reads of 0x160 in the window count among them. It counts PHY_VER's reads
+too: b43 and wl make about as many, 313 and 311, every 24 writes, but
+b43's count starts again at every read and wl's follows another rule,
+so the two sides' reads fall at different points and break the blocks
+around them; without them the same streams score 14932/20132 = 74.17%.
 
 The init follows wl's through the tables, the baseband and radio init, the
 hardware TX power control, the channel and the PMU, then the calibration of
@@ -61,7 +65,7 @@ mac80211's first config. What b43 does not make yet, in wl's order:
   2064's init, of 0x4eb after it, of 0x525 after the TX power control's mode;
 - wl polls the I/Q-LO calibration's status (0x451) more often than b43,
   which offsets the reads around each command;
-- wl reads 0x4a4 once in the I/Q-LO calibration (#10844): every later read
+- wl reads 0x4a4 once in the I/Q-LO calibration (#11071): every later read
   of 0x4a4 b43 makes is served the value of the one before it.
 
 ## The channel switches
