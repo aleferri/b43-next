@@ -21,7 +21,8 @@ init with the R6400 v1's `wl-mmio-trap` captures; see `phy_ht/README.md`.
 Three smaller ones check one piece each: **`radar/`** replays recorded and
 synthetic radar FIFO reads through `b43-next/radar_ac.c`, **`sprom/`**
 diffs the SROM rev 11 extractor and the NVRAM path against the boards' dumps
-and decodes rev 8 SROMs into an nvram (`decode_r8`),
+and decodes rev 8-10 SROMs into an nvram (`decode_r8`, `decode_r9`,
+`decode_r10`),
 and **`txhdr/`** keeps the TX headers of `b43-next/xmit.c` against its own
 expected output, for a change meant not to move them.
 

@@ -60,6 +60,16 @@ decode_r8: extract_r8.o data_load.o decode_r8.o
 extract_r8.o: extract_r8.c extract_r8_gen.c kernel_shim.h ssbn_sprom.h ssbn_sprom_gen.h
 decode_r8.o:   decode_r8.c   data_load.h   ssbn_sprom.h ssbn_sprom_gen.h
 
+# What rev 9 and rev 10 add, from the same extractor.
+decode_r9: extract_r8.o data_load.o decode_r9.o
+	$(CC) $(LDFLAGS) -o $@ $^
+
+decode_r10: extract_r8.o data_load.o decode_r10.o
+	$(CC) $(LDFLAGS) -o $@ $^
+
+decode_r9.o:   decode_r9.c   data_load.h   ssbn_sprom.h ssbn_sprom_gen.h
+decode_r10.o:  decode_r10.c  data_load.h   ssbn_sprom.h ssbn_sprom_gen.h
+
 extract_r11.o: extract_r11.c extract_r11_gen.c kernel_shim.h ssbn_sprom.h ssbn_sprom_gen.h
 data_load.o:   data_load.c   data_load.h   kernel_shim.h
 synth_srom.o:  synth_srom.c  synth_srom.h  data_load.h kernel_shim.h
@@ -99,4 +109,5 @@ check-nvram: test_nvram
 
 clean:
 	rm -f $(OBJS) $(NVRAM_OBJS) ssbn_sprom_gen.h extract_r11_gen.c test test_nvram \
-	      extract_r8.o decode_r8.o extract_r8_gen.c decode_r8
+	      extract_r8.o decode_r8.o extract_r8_gen.c decode_r8 \
+	      decode_r9.o decode_r9 decode_r10.o decode_r10

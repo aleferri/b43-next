@@ -4,4 +4,6 @@ ssbn_sprom_gen.h
 test_nvram
 extract_r11_gen.c
 decode_r8
+decode_r9
+decode_r10
 extract_r8_gen.c

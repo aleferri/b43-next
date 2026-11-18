@@ -123,13 +123,25 @@ $ ./decode_r8 $TRACES/bcm4313-rev1/compaq-cq57/srom.txt
 The CQ57's `srom.txt` is the 220 words wl reads at the attach, from word 0x18
 of the OTP on.
 
+`decode_r9` and `decode_r10` print, from the same extractor, what their
+revision adds: rev 9 the power per rate that replaced rev 8's power offsets,
+which rev 10 keeps, and rev 10 `cckPwrOffset` and `swctrlmap_2g`. A rev 10
+SROM's nvram is the three outputs in a row:
+
+```
+$ make decode_r8 decode_r9 decode_r10
+$ S=$TRACES/bcm43142-rev1/hp-2230/srom.txt
+$ { ./decode_r8 $S; ./decode_r9 $S; ./decode_r10 $S; }
+```
+
 ## Files
 
 - `extract_r11.c`: `bcmn_sprom_extract_r11()` of `bcma-next/sprom.c`, with the
   SPOFF/SPEX macros and the rxgains helper, as the Makefile cuts them out
   (`extract_r11_gen.c`), behind a function `test.c` calls.
 - `extract_r8.c`, `decode_r8.c`: `bcmn_sprom_extract_r8()` the same way, and
-  its output as an nvram.
+  its output as an nvram; `decode_r9.c`, `decode_r10.c`: what rev 9 and rev 10
+  add to it.
 - `synth_srom.{h,c}`: the encoder counterpart, used by `--synth`, at the
   offsets of `include/ssb-next/ssbn_regs.h`.
 - `kernel_shim.h`: typedefs, `cpu_to_be16`, `BUILD_BUG_ON`, `ARRAY_SIZE`.
