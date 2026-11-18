@@ -3,13 +3,13 @@
 The gate is `test/phy_n/gates.sh --min-block 8 --gap-tol 2`, against the
 RT-AC56U's cold captures (BCM43217, N-PHY rev 17, radio 2057 rev 14,
 external PA and LNA; wl 7.14.164.18 under DD-WRT r66477). Numbers here are
-from `cold-2g6-20`, window #189-#31089.
+from `cold-2g6-20`, window #189-#31821.
 
 ## Where the operations are
 
 `up` is 30901 of wl's operations, of which 27188 are the PHY's and the
 radio's; b43's `full` flow makes 7517 PHY and radio operations. `ssid`
-(#31090-#73468, about 42k) and `bss-up` are what wl does when the BSS
+(#31822-#75168, about 42k) and `bss-up` are what wl does when the BSS
 starts; b43 runs none of it on the N-PHY, and they are not scored yet.
 
 ## `up`, PHY and radio, in order
@@ -19,22 +19,22 @@ In wl's order:
 
 | wl ops | at | wl | b43 | what |
 |---|---|---|---|---|
-| 19 | #952 | `STRA_2U` 0x1df = 0x1591, 0x1e1, ... | - | CRS registers b43 does not write |
-| 44 against 14 | #3202 | `TXF_20CO_*` 0x186-0x196, 0x2c6-0x2c7 | 0x2c6 only | the 20 MHz TX filter coefficients |
-| 37 against 5 | #3349 | table 7 0x152-... (0x2b48, 0x3389, ...) | 0x32f | table 7 entries b43 does not write |
-| 313 | #3450 | 0x0c75 = 1, then 0x021/0x2a8 polled, gain tables 0-3, 7, 8 | - | an RX gain block (inference: AGC/clip setup) |
-| 18 | #4007 | `AFECTL_OVER1` 0x08f read-back, 0x0aa, table 7 0x110, table 15 0x57 | - | |
-| 158 against 58 | #8020 | 0x020/0x2a7, 0x021/0x2a8, 0x280 reads | radio 0x16 ... | |
-| 360 | #9871 | tables 26/27 at 64-147 | - | the adjusted power table, written again |
-| 2598 | #10628 | `TXPCTL_CMD` 0x1e7, `RSSI1`/`RSSI2` 0x219/0x21a, five tone loads in table 17, tables 26/27 at 64-147 | - | the TX power control's TSSI measurement (inference) |
-| 16202 against 6 | #13518 | `IQLOCAL_CMD` 0x0c0 polled, table 15, table 17, then | - | the first TX I/Q-LO calibration pass, and |
-| (of which 15125) | #14630 | `C1_TXPCTL_STAT` 0x1ed, `IQLOCAL_CMD` 0x0c0 (1078 reads), `IQEST_CMD` 0x129 (171 reads), table 15 (388 writes), table 17 (eight tone loads), tables 26/27 0x040-0x23f (2944 writes each) | - | **the TX I/Q-LO and RX I/Q calibrations** |
+| 19 | #953 | `STRA_2U` 0x1df = 0x1591, 0x1e1, ... | - | CRS registers b43 does not write |
+| 44 against 14 | #3295 | `TXF_20CO_*` 0x186-0x196, 0x2c6-0x2c7 | 0x2c6 only | the 20 MHz TX filter coefficients |
+| 37 against 5 | #3445 | table 7 0x152-... (0x2b48, 0x3389, ...) | 0x32f | table 7 entries b43 does not write |
+| 313 | #3547 | 0x0c75 = 1, then 0x021/0x2a8 polled, gain tables 0-3, 7, 8 | - | an RX gain block (inference: AGC/clip setup) |
+| 18 | #4119 | `AFECTL_OVER1` 0x08f read-back, 0x0aa, table 7 0x110, table 15 0x57 | - | |
+| 158 against 58 | #8233 | 0x020/0x2a7, 0x021/0x2a8, 0x280 reads | radio 0x16 ... | |
+| 360 | #10095 | tables 26/27 at 64-147 | - | the adjusted power table, written again |
+| 2598 | #10873 | `TXPCTL_CMD` 0x1e7, `RSSI1`/`RSSI2` 0x219/0x21a, five tone loads in table 17, tables 26/27 at 64-147 | - | the TX power control's TSSI measurement (inference) |
+| 16202 against 6 | #13842 | `IQLOCAL_CMD` 0x0c0 polled, table 15, table 17, then | - | the first TX I/Q-LO calibration pass, and |
+| (of which 15125) | #14977 | `C1_TXPCTL_STAT` 0x1ed, `IQLOCAL_CMD` 0x0c0 (1078 reads), `IQEST_CMD` 0x129 (171 reads), table 15 (388 writes), table 17 (eight tone loads), tables 26/27 0x040-0x23f (2944 writes each) | - | **the TX I/Q-LO and RX I/Q calibrations** |
 
-Before #4933 and between the gaps, b43's operations are wl's in the same
+Before #5076 and between the gaps, b43's operations are wl's in the same
 order: the radio 2057 init and channel tune (radio writes 0x082, 0x0c4,
 0x149, 0x1b7 and 0x1c2 apart, and 0x047/0x0e3 written with other values),
 most of the PHY init, the tables' static contents and the TX gain table
-(tables 26 and 27 at 192, #4933). The equal blocks hold 7035 operations.
+(tables 26 and 27 at 192, #5076). The equal blocks hold 7035 operations.
 
 ## b43's calls against wl's ops
 
@@ -43,17 +43,17 @@ stream, `cold-2g6-20`:
 
 | b43 | wl |
 |---|---|
-| the analog switches, `b43_radio_2057_init()`, the channel | #189-#951 |
-| `b43_phy_initn()`, from the workarounds through `b43_nphy_tx_power_ctrl()` | #978-#8016, 6560 of its 6606 ops matched |
-| ... of which `b43_nphy_rssi_cal()` | #5447-#6799 |
+| the analog switches, `b43_radio_2057_init()`, the channel | #189-#952 |
+| `b43_phy_initn()`, from the workarounds through `b43_nphy_tx_power_ctrl()` | #979-#8229, 6560 of its 6606 ops matched |
+| ... of which `b43_nphy_rssi_cal()` | #5611-#6963 |
 | `b43_phy_init()`'s channel switch after the init | none: wl does not tune again |
-| `b43_nphy_op_recalc_txpower()`: `tx_power_ctl_setup()` | #9595-#10627 |
-| ... `tx_power_ctrl()` | #13348-#13517 |
+| `b43_nphy_op_recalc_txpower()`: `tx_power_ctl_setup()` | #9808-#10872 |
+| ... `tx_power_ctrl()` | #13665-#13841 |
 
-So the init is in place, and what b43 lacks comes after it: #8020-#9594
+So the init is in place, and what b43 lacks comes after it: #8233-#9807
 (mostly the core; on the PHY, a save and restore of the gains, 0x280/0x283
-and the RSSI calibration values 0x224-0x22f), #10628-#13347 (between the
-power control setup and its enable) and the calibrations from #13518.
+and the RSSI calibration values 0x224-0x22f), #10873-#13664 (between the
+power control setup and its enable) and the calibrations from #13842.
 
 ## wl's calibration at `up`, step by step
 
@@ -62,12 +62,12 @@ an older wl), on `cold-2g6-20`:
 
 | wl | step |
 |---|---|
-| #10448-#10457 | the original power index from `C1/C2_TXPCTL_STAT` 0x1ed/0x1ee, the original TX gain from table 7 at 0x110 (0x101a on both cores) |
-| #10628 | TX power control off (0x1e7 0xe019 -> 0x0019) |
-| #10628-#13342 | **the TX gain pre-calibration** (b43: `/* TODO N PHY Pre Calibrate TX Gain */`) |
-| #13343-#13517 | the power index read again, the TX power control |
-| #13518-... | the TX I/Q-LO calibration at the gain the pre-calibration found: table 7 at 0x110 = 0x10fa on both cores (#13553) |
-| ...-#31089 | the RX I/Q calibration and the save |
+| #10686-#10695 | the original power index from `C1/C2_TXPCTL_STAT` 0x1ed/0x1ee, the original TX gain from table 7 at 0x110 (0x101a on both cores) |
+| #10873 | TX power control off (0x1e7 0xe019 -> 0x0019) |
+| #10873-#13659 | **the TX gain pre-calibration** (b43: `/* TODO N PHY Pre Calibrate TX Gain */`) |
+| #13660-#13841 | the power index read again, the TX power control |
+| #13842-... | the TX I/Q-LO calibration at the gain the pre-calibration found: table 7 at 0x110 = 0x10fa on both cores (#13877) |
+| ...-#31821 | the RX I/Q calibration and the save |
 
 **The pre-calibration** is not brcmsmac's: for rev >= 7 brcmsmac sets a
 fixed index, and its `wlc_phy_cal_txgainctrl_nphy()` estimates the power
@@ -120,7 +120,7 @@ additional rssi cal on init (like wl)"). With 2, `b43_phy_initn()` takes the
 `else if (nphy->mphase_cal_phase_id == 0)` branch, "N PHY Periodic
 Calibration with arg 3", which is empty: the init runs neither
 `b43_nphy_cal_tx_iq_lo()` nor `b43_nphy_cal_rx_iq()`, and nothing else
-calls them. wl runs both at `up`, at #13518-#31089.
+calls them. wl runs both at `up`, at #13842-#31821.
 
 `N_PERICAL=0` lets the init run them, as an experiment: b43 then makes 24
 `IQLOCAL_CMD` accesses and no `IQEST_CMD`, before wl's TX power control
@@ -152,9 +152,9 @@ with arg 3, at the end of the init) and the TX gain table they start from.
 - The TX gain pre-calibration and the calibrations at init on radio 2057
   rev 14 with an external PA (`b43_nphy_precal_txgain_2057_rev14_epa()`,
   run where `perical = 2` ran nothing): the pre-calibration picks wl's
-  gain on every capture and matches wl's #10738-#13040 (2173 of its 2235
+  gain on every capture and matches wl's #10983-#13350 (2173 of its 2235
   ops); the TX I/Q-LO calibration that follows matches 833 of its 1090
-  ops inside wl's #13524-#26551. PHY+radio 25.42% -> 33.89%.
+  ops inside wl's #13848-#27192. PHY+radio 25.42% -> 33.89%.
 - Their place: wl runs them in its first power update, between the TX
   power control setup and its enable, then sets the power control
   coefficients again. b43 marks them pending at init and runs them there,
@@ -185,17 +185,17 @@ with arg 3, at the end of the init) and the TX gain table they start from.
    (`b43_nphy_cal_tx_iq_lo_phases()`): 59.58% -> 66.10% at 20 dBm.
 4. Done: the RSSI calibration again and the 2057 VCO calibration after
    the save, as at the end of brcmsmac's periodic calibration run: the
-   second RSSI calibration matches wl's #27993-#29345 (1208 of 1333), the
-   VCO calibration its eight ops at #29346. 66.10% -> 69.83% at 20 dBm.
+   second RSSI calibration matches wl's #28690-#30042 (1208 of 1333), the
+   VCO calibration its eight ops at #30043. 66.10% -> 69.83% at 20 dBm.
 5. Done: after the VCO calibration each core back to the power index it
    had before the calibration (read from 0x1ed/0x1ee where wl reads it),
    and the TX power control as it was: brcmsmac's restore_tx_gain.
    69.83% -> 71.86% at 20 dBm.
 6. Done: the block between the TX I/Q-LO and the RX I/Q calibrations
-   (#19740) is two more phases wl wraps in the TX power control, the PAPD
+   (#20165) is two more phases wl wraps in the TX power control, the PAPD
    one with nothing to do and the start of the RX one. 71.86% -> 72.32% at
    20 dBm.
-7. The rest: inside the RX I/Q calibration (#24659-#25600, b43 writes
+7. The rest: inside the RX I/Q calibration (#25240-#26214, b43 writes
    table 27 at 0x14a where wl does other things), the TX I/Q-LO phases'
-   inside, the small blocks (CRS #952, TX filter #3202, table 7 #3349, RX
-   gain block #3450), a flow against `ssid`, and 40 MHz.
+   inside, the small blocks (CRS #953, TX filter #3295, table 7 #3445, RX
+   gain block #3547), a flow against `ssid`, and 40 MHz.
