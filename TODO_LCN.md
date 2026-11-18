@@ -20,10 +20,11 @@ The scores are in `test/phy_lcn/README.md`.
 - **The block every 256 ms**: shared memory 0x008e, 0x0e50-0x0e54, a MAC
   suspend, an RMW of 0x448, table 21 read from entry 0, then 0x6da,
   0x5a6, 0x5a2, 0x5a5 and 0x583-0x586 written as in #8317-#8381 (#402429
-  on). Not identified.
-- **`agc_temp_init`**: wl reads 0x4df, table 17 at 59-60, 0x434, 0x424,
-  0x425 and table 13 at 28-29 after the PMU (#8394-#8406); b43 neither
-  reads nor keeps them, and nothing uses them yet.
+  on). The writes are the setup of brcmsmac's `wlc_lcnphy_samp_cap()`
+  (0x5a6 = 5, 0x5a2 = mode 3 in both fields, 0x5a5, 0x583-0x586), into
+  table 21, the sample play buffer; the shared memory cells are at the
+  word 0x008e points to, plus 0x26-0x28. What wl does with the samples is
+  not known.
 
 ## Firmware
 
