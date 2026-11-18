@@ -1953,9 +1953,10 @@ static bool b43_phy_lcn_papd_run(struct b43_wldev *dev)
 
 /*
  * wl's PAPD calibration, which brcmsmac does not have: the capture is the
- * only source (#19251-#20981). At the index the warm-up settled at, with the
+ * only source (#19251-#20993). At the index the warm-up settled at, with the
  * TX looped back to the RX, the engine runs twice; wl then copies entry 5
- * into entries 0-4 and entry 0x3e into 0x3f.
+ * into entries 0-4 and entry 0x3e into 0x3f. Every PAPD of the capture ends
+ * with the pulse of 0x44a and deaf mode off after the control's turn-on.
  */
 static void b43_phy_lcn_papd_cal(struct b43_wldev *dev, u8 index)
 {
@@ -2078,6 +2079,9 @@ static void b43_phy_lcn_papd_cal(struct b43_wldev *dev, u8 index)
 	b43_phy_lcn_papd_comp(dev, true);
 	b43_phy_lcn_set_bbmult(dev, save_bbmult);
 	b43_phy_lcn_set_tx_pwr_ctrl(dev, B43_LCN_TX_PWR_CTRL_HW);
+	b43_phy_set(dev, 0x44a, 0x44);
+	b43_phy_write(dev, 0x44a, 0x80);
+	b43_phy_lcn_deaf_mode(dev, false);
 }
 
 /**************************************************
@@ -2303,8 +2307,13 @@ static int b43_phy_lcn_op_init(struct b43_wldev *dev)
 	if (dev->phy.lcn->hw_pwr_ctl_capable)
 		b43_phy_lcn_set_tx_pwr_ctrl(dev, B43_LCN_TX_PWR_CTRL_HW);
 	b43_phy_lcn_periodic_cal(dev);
-	if (dev->phy.lcn->hw_pwr_ctl_capable)
+	if (dev->phy.lcn->hw_pwr_ctl_capable) {
 		b43_phy_lcn_papd_cal(dev, b43_phy_lcn_tx_pwr_warmup(dev));
+		/* wl's, only after the init's PAPD (#20994-#21012) */
+		b43_phy_lcn_set_tx_pwr_ctrl(dev, B43_LCN_TX_PWR_CTRL_HW);
+		b43_phy_lcn_deaf_mode(dev, false);
+		b43_phy_lcn_set_tx_gain_override(dev, false);
+	}
 
 	return 0;
 }
