@@ -632,6 +632,10 @@
 #define SSBN_SPROM9_PO_MCS32		0x0194
 #define SSBN_SPROM9_PO_LOFDM40DUP	0x0196
 
+/* SROM revision 10: rev 9 and these */
+#define SSBN_SPROM10_CCKPWROFFSET	0x01B4
+#define SSBN_SPROM10_SWCTRLMAP_2G	0x01B8	/* four 32-bit words, then a 16-bit one */
+
 /* SROM revision 11. Only the header fields whose absolute offset moved
  * are redefined; the bitfield masks/shifts are reused from rev 8.
  */

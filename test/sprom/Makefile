@@ -51,7 +51,7 @@ extract_r11_gen.c: $(REPO)/bcma-next/sprom.c
 # nvram, for the PHY harnesses of boards without one.
 extract_r8_gen.c: $(REPO)/bcma-next/sprom.c
 	awk '/^#define SPOFF\(/ { p = 1 } /^static s8 sprom_extract_antgain\(/ { p = 0 } \
-	     /^static (s8 sprom_extract_antgain|void bcmn_sprom_extract_(po_r8|po_r9|r8))\(/ { p = 2 } \
+	     /^static (s8 sprom_extract_antgain|void bcmn_sprom_extract_(po_r8|po_r9|r10|r8))\(/ { p = 2 } \
 	     p { print } p == 2 && /^\}/ { p = 0; print "" }' $< > $@
 
 decode_r8: extract_r8.o data_load.o decode_r8.o

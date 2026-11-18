@@ -225,6 +225,10 @@ struct ssbn_sprom {
 	u8 sar2g;
 	u8 sar5g;
 
+	/* from sromrev 10 */
+	u16 cckpwroffset;
+	u32 swctrlmap_2g[5];
+
 	/* SROM rev 11. Populated by the rev 11 extractor from the device's
 	 * SPROM, or by bcm47xx_sprom from NVRAM on a board without one; zero
 	 * on rev <= 10 boards.

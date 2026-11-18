@@ -234,6 +234,16 @@ static void bcmn_sprom_extract_po_r9(struct bcmn_bus *bus, const u16 *sprom)
 	SPEX(legofdm40duppo, SSBN_SPROM9_PO_LOFDM40DUP, ~0, 0);
 }
 
+static void bcmn_sprom_extract_r10(struct bcmn_bus *bus, const u16 *sprom)
+{
+	int i;
+
+	SPEX(cckpwroffset, SSBN_SPROM10_CCKPWROFFSET, ~0, 0);
+	for (i = 0; i < 4; i++)
+		SPEX32(swctrlmap_2g[i], SSBN_SPROM10_SWCTRLMAP_2G + 4 * i, ~0, 0);
+	SPEX(swctrlmap_2g[4], SSBN_SPROM10_SWCTRLMAP_2G + 16, ~0, 0);
+}
+
 static void bcmn_sprom_extract_r8(struct bcmn_bus *bus, const u16 *sprom)
 {
 	u16 v, o;
@@ -478,6 +488,8 @@ static void bcmn_sprom_extract_r8(struct bcmn_bus *bus, const u16 *sprom)
 		bcmn_sprom_extract_po_r8(bus, sprom);
 	else
 		bcmn_sprom_extract_po_r9(bus, sprom);
+	if (bus->sprom.revision == 10)
+		bcmn_sprom_extract_r10(bus, sprom);
 }
 
 static void bcmn_sprom_unpack_rxgains(struct ssbn_sprom_rxgains *out,
