@@ -79,8 +79,8 @@ its own first enable after the PAPD. On 2026-11-18, `--min-block 8
 
 | ops | score |
 |---|---|
-| all | 28557/32940 = 86.69% |
-| PHY, radio, MACCTL, I/O control | 14982/16561 = 90.47% |
+| all | 28622/32897 = 87.00% |
+| PHY, radio, MACCTL, I/O control | 15051/16514 = 91.14% |
 
 What is left in the control operations, in the order they come:
 
@@ -277,8 +277,6 @@ are on channel 1.
   0x679, 0x6da) are written nowhere else in the capture: not a save. b43
   reads them for the calibration statistics only (`papd/regs`).
 - **Not understood yet**, each with what the capture gives:
-  - an RMW of 0x4b1 in wl's RX gain, after the TR switch: of 0x4b1 only
-    bits 11-12 (lna1) ever change; brcmsmac clears bit 15 there from rev 2;
   - an RMW of 0x4b0 before the first RX gain (#19587), and of 0x6c9 before
     the setup writes it (#19984): neither changes in the capture;
   - the TX gains read before the index is loaded (#19629), not restored:
@@ -345,6 +343,20 @@ are on channel 1.
   read twice, as `LCNPHY_IQLOCC_READ()` evaluates its argument, before the
   results are read from table 0 (#11646). brcmsmac calibrates again at
   index 16 when fi and fq are both at 15; never in the capture.
+- **The RX I/Q calibration's loopback is wl's**, the same in all four of
+  the capture (#13169-#13214): radio 0x098 = 3 only, 0x44c |= 0x1800,
+  0x44d |= 0x2000, 0x938 bits 0-8 and 0x939 = 0x09e in them, 0x43b/0x43c
+  bits 0-1, 0x6d1 bit 2 (cleared again before the results), 0x4b7 =
+  0x6c00, then 0x938 bits 9 and 11, 0x939 bit 11 cleared, 0x4b0 bits 3
+  and 11; no TR switch override. brcmsmac writes ten radio registers and
+  other override bits. wl saves 0x112, 0x0ed, 0x0ec and 0x4b7 too, reads
+  the TX gains under the override, and restores every register it saved,
+  0x44c with its own value (brcmsmac writes 0x44d's into it). The masks
+  are the bits that change on the CQ57; 0x939 once and 0x4b1 are only
+  read back.
+- **0x4b1 read back in wl's RX gain**, after the TR switch, in the RX
+  I/Q calibration's gains and the PAPD's: of 0x4b1 only bits 11-12 (lna1)
+  ever change, so which bits wl means is not known.
 - **The calibration's cleanup**, 77 operations in all four: the tone
   stopped first, then the loopback restored, where brcmsmac does the
   reverse; the gains are the current ones (index 30's), wl calls it
