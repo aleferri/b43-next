@@ -42,7 +42,7 @@ Of the MAC's operations b43's are wl's but for:
   memory's channel, 0x00a0, is 6 at every write), wl's I/O control goes
   through a reset (0x07, 0x05, 0x4d, 0x43, 0x45) four times in the first
   17 ms of `up` (#7-#219) and three in the first 9 ms of `ssid`
-  (#20300-#20451). The four between them, every 2 s while no BSS is up,
+  (#20627-#20780). The four between them, every 2 s while no BSS is up,
   are its power saving, not scored. b43 resets three times in the whole
   run, all before its PHY work: twice at the probe, once at the core's
   init, and not at the BSS's start;

@@ -70,9 +70,9 @@ take values of wl's resets (0x45, 0x07), and b43's forced gated clock
 writes follow from them. `../integration/r6400.sh` runs the core and
 measures them. wl's power saving while no BSS is up, which b43 does not
 have, is not scored (`drop_power_save()` in `../unit/compare.py`): at the
-watchdog's third turn after `wl up` a read of table 13 entry 0x5f (#8520 on
+watchdog's third turn after `wl up` a read of table 13 entry 0x5f (#8701 on
 `cold-2g6-20`), then the DMA stopped, a core reset with the analog switch
-on, the radio off (0x810) and the analog switch off (#8590-#8613), and the
+on, the radio off (0x810) and the analog switch off (#8771-#8794), and the
 core into reset, out of it and back every 2 s until the next
 configuration.
 
@@ -182,5 +182,5 @@ at the index the RX calibration of the BSS before left (`HT_TX_GAIN_IDX`,
 ## Flows
 
 `pctl_init`, and its pieces for the windows of `cold-2g6-20` `up`:
-`power_fix` (#5238–5270), `pctl_off` (#5271–5273), `idle_tssi`
-(#5274–5497), `tssi_setup` (#5727–5735), `pctl_on` (#5736–5737).
+`power_fix` (#5401–5433), `pctl_off` (#5434–5436), `idle_tssi`
+(#5437–5660), `tssi_setup` (#5898–5906), `pctl_on` (#5907–5908).
