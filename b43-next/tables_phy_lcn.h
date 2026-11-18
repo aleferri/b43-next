@@ -13,6 +13,12 @@
 
 #define B43_LCNTAB_TX_GAIN_SIZE		128
 
+/* The static tables the LCN40-PHY loads as they are */
+extern const u16 b43_lcntab_0x00[108];
+extern const u16 b43_lcntab_0x01[64];
+extern const u16 b43_lcntab_0x17[154];
+extern const u32 b43_lcntab_0x18[160];
+
 u32 b43_lcntab_read(struct b43_wldev *dev, u32 offset);
 void b43_lcntab_read_bulk(struct b43_wldev *dev, u32 offset,
 			  unsigned int nr_elements, void *_data);

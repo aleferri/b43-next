@@ -8,6 +8,7 @@
 
 #include "b43.h"
 #include "phy_lcn40.h"
+#include "tables_phy_lcn40.h"
 
 static int b43_phy_lcn40_op_allocate(struct b43_wldev *dev)
 {
@@ -24,7 +25,12 @@ static void b43_phy_lcn40_op_prepare_structs(struct b43_wldev *dev)
 
 static int b43_phy_lcn40_op_init(struct b43_wldev *dev)
 {
-	b43err(dev->wl, "LCN40-PHY: no init yet\n");
+	b43_phy_set(dev, 0x44a, 0x100);
+	b43_phy_mask(dev, 0x44a, ~0x100);
+
+	b43_phy_lcn40_tables_init(dev);
+
+	b43err(dev->wl, "LCN40-PHY: init incomplete\n");
 	return -EOPNOTSUPP;
 }
 
@@ -61,9 +67,43 @@ static void b43_phy_lcn40_op_radio_write(struct b43_wldev *dev, u16 reg,
 	b43_write16(dev, B43_MMIO_RADIO24_DATA, value);
 }
 
+/*
+ * ChipCommon 0x144 of the BCM43142, as the stock driver changes it with the
+ * radio: with bit 30 of 0x140 clear, each register read back
+ */
+static void b43_phy_lcn40_cc_0x144_set(struct b43_wldev *dev, u32 set)
+{
+	struct bcmn_drv_cc *cc = &dev->dev->bdev->bus->drv_cc;
+
+	bcmn_cc_mask32(cc, 0x140, ~0x40000000);
+	bcmn_cc_read32(cc, 0x140);
+	bcmn_cc_set32(cc, 0x144, set);
+	bcmn_cc_read32(cc, 0x144);
+	bcmn_cc_set32(cc, 0x140, 0x40000000);
+	bcmn_cc_read32(cc, 0x140);
+}
+
+/* Only the radio's switch on: in the capture the switch off changes no bit */
 static void b43_phy_lcn40_op_software_rfkill(struct b43_wldev *dev,
 					     bool blocked)
 {
+	if (blocked)
+		return;
+
+	b43_phy_set(dev, 0x44a, 0x47);
+	b43_phy_mask(dev, 0x577, ~0x401);
+
+	if (b43_read32(dev, B43_MMIO_MACCTL) & B43_MACCTL_ENABLED)
+		b43err(dev->wl, "MAC not suspended\n");
+
+	b43_phy_lcn40_cc_0x144_set(dev, 0x1000);
+	b43_phy_lcn40_cc_0x144_set(dev, 0x200);
+
+	b43_phy_set(dev, 0x44a, 0x47);
+	b43_phy_mask(dev, 0x44c, ~0x1978);
+	b43_phy_mask(dev, 0x575, ~0x38);
+	b43_phy_mask(dev, 0x4b0, ~0x800);
+	b43_phy_mask(dev, 0x4f9, ~0x8);
 }
 
 /* The stock driver touches no PHY register around its core resets */

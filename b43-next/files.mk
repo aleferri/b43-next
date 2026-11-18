@@ -12,7 +12,7 @@ b43n-phy-n	:= phy_n.c tables_nphy.c radio_2055.c radio_2056.c radio_2057.c
 b43n-phy-lp	:= phy_lp.c tables_lpphy.c
 b43n-phy-ht	:= phy_ht.c tables_phy_ht.c radio_2059.c
 b43n-phy-lcn	:= phy_lcn.c tables_phy_lcn.c
-b43n-phy-lcn40	:= phy_lcn40.c
+b43n-phy-lcn40	:= phy_lcn40.c tables_phy_lcn40.c tables_phy_lcn.c
 b43n-phy-ac	:= phy_ac.c tables_phy_ac.c radio_2069.c radar_ac.c
 
 b43n-leds	:= leds.c
