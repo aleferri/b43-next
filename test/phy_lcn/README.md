@@ -44,15 +44,13 @@ On 2026-11-18, `--min-block 8 --gap-tol 2`:
 
 | capture | grezzo | PHY+radio |
 |---|---|---|
-| attach | 13558/22130 = 61.27% | 15026/16571 = 90.68% |
+| attach | 15238/20445 = 74.53% | 15026/16571 = 90.68% |
 
 The grezzo counts wl's core operations, which this harness cannot emit:
 since the core reads the shared memory's address back as wl does, the 785
-reads of 0x160 in the window count among them. It counts PHY_VER's reads
-too: b43 and wl make about as many, 313 and 311, every 24 writes, but
-b43's count starts again at every read and wl's follows another rule,
-so the two sides' reads fall at different points and break the blocks
-around them; without them the same streams score 14932/20132 = 74.17%.
+reads of 0x160 in the window count among them, as it counts the reads of
+PHY_VER that flush every 24 writes on both sides, 310 of b43's against
+wl's 311.
 
 The init follows wl's through the tables, the baseband and radio init, the
 hardware TX power control, the channel and the PMU, then the calibration of

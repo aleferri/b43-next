@@ -78,16 +78,11 @@ its own first enable after the PAPD. On 2026-11-18, `--min-block 8
 
 | ops | score |
 |---|---|
-| all | 26649/34936 = 76.28% |
+| all | 27478/34102 = 80.58% |
 | PHY, radio, MACCTL, I/O control | 13949/17675 = 78.92% |
 
 What is left in the control operations, in the order they come:
 
-- **PHY_VER's reads**, every 24 PHY and radio writes on both sides: b43's
-  count starts again at every read (`b43_phy_read()`, `b43_radio_read()`),
-  wl's does not always, and its rule is not known. The reads fall at
-  different points and break the blocks; with b43's left out the window
-  scores 26892/34381 = 78.22%.
 - **The bus scan** (#1-#69): wl reads the chip id and the EROM; the harness
   builds the cores by hand.
 - **The OTP** (#105-#117): wl reads words 0 and 0x14 of the SROM and the OTP
@@ -351,6 +346,11 @@ are on channel 1.
 
 ## Not covered by the capture
 
+- The write flush of the other PHYs: b43's rule in `phy_common.c` (before
+  the 25th write, PHY_VER or MACCTL; every read leaves the count at 1) fits
+  the 3348 flushes of the whole capture, 3340 of PHY_VER and 8 of MACCTL,
+  and is every PHY's; their captures would show whether their wl counts
+  alike.
 - Boards with a FEM: the external PA's TX gain table, the RF power table
   (b43 keeps the older code and its rewrite), the switch control tables of
   the ePA and BT ePA boards, the TSSI after the external PA, the OFDM
