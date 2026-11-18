@@ -44,7 +44,7 @@ On 2026-11-18, `--min-block 8 --gap-tol 2`:
 
 | capture | grezzo | PHY+radio |
 |---|---|---|
-| attach | 15403/20266 = 76.00% | 15201/16383 = 92.79% |
+| attach | 15649/20095 = 77.88% | 15446/16212 = 95.28% |
 
 The grezzo counts wl's core operations, which this harness cannot emit:
 since the core reads the shared memory's address back as wl does, the 785
