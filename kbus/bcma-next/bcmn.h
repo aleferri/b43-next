@@ -33,6 +33,7 @@
 #define bcmn_cc_set32 bcma_cc_set32
 #define bcmn_cc_write32 bcma_cc_write32
 #define bcmn_chipco_chipctl_maskset bcma_chipco_chipctl_maskset
+#define bcmn_chipco_get_alp_clock bcma_chipco_get_alp_clock
 #define bcmn_chipco_gpio_control bcma_chipco_gpio_control
 #define bcmn_chipco_gpio_out bcma_chipco_gpio_out
 #define bcmn_chipco_gpio_outen bcma_chipco_gpio_outen
