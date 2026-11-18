@@ -38,20 +38,21 @@ fail:
  * R/W ops.
  **************************************************/
 
-/* As wl: each word once the SROM controller, from ChipCommon rev 31, is idle */
+/*
+ * As wl reads the words: from the OTP each after a read of SROM_CONTROL, its
+ * check for a SROM, when ChipCommon (rev 31 on) has a SROM interface.
+ */
 static void bcmn_sprom_read(struct bcmn_bus *bus, u16 offset, u16 *sprom,
-			    size_t words)
+			    size_t words, bool otp)
 {
 	struct bcmn_device *cc = bus->drv_cc.core;
-	int i, j;
+	bool srom_check = otp && cc->id.rev >= 31 &&
+			  (bus->drv_cc.capabilities & BCMN_CC_CAP_SPROM);
+	int i;
 
 	for (i = 0; i < words; i++) {
-		for (j = 0; cc->id.rev >= 31 && j < 1000; j++) {
-			if (!(bcmn_read32(cc, BCMN_CC_SROM_CONTROL) &
-			      BCMN_CC_SROM_CONTROL_BUSY))
-				break;
-			udelay(1);
-		}
+		if (srom_check)
+			bcmn_read32(cc, BCMN_CC_SROM_CONTROL);
 		sprom[i] = bcmn_read16(cc, offset + (i * 2));
 	}
 }
@@ -811,6 +812,7 @@ static int bcmn_sprom_onchip_offset(struct bcmn_bus *bus)
 int bcmn_sprom_get(struct bcmn_bus *bus)
 {
 	u16 offset = BCMN_CC_SPROM;
+	bool otp = false;
 	u16 *sprom;
 	static const size_t sprom_sizes[] = {
 		SSBN_SPROMSIZE_WORDS_R4,
@@ -834,6 +836,7 @@ int bcmn_sprom_get(struct bcmn_bus *bus)
 		if (sprom_onchip) {
 			/* determine offset */
 			offset = bcmn_sprom_onchip_offset(bus);
+			otp = true;
 		}
 		if (!offset || !sprom_onchip) {
 			/*
@@ -858,7 +861,7 @@ int bcmn_sprom_get(struct bcmn_bus *bus)
 		if (!sprom)
 			return -ENOMEM;
 
-		bcmn_sprom_read(bus, offset, sprom, words);
+		bcmn_sprom_read(bus, offset, sprom, words, otp);
 		err = bcmn_sprom_valid(bus, sprom, words);
 		if (!err)
 			break;
