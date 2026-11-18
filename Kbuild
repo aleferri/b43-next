@@ -21,8 +21,24 @@ endif
 
 ssbn-opts := SPROM BLOCKIO PCIHOST B43_PCI_BRIDGE DRIVER_PCICORE
 bcmn-opts := HOST_PCI DRIVER_PCI BLOCKIO
+# B43_NEXT_KERNEL_BUS=y: the driver alone, on the kernel's bcma and ssb (kbus/
+# maps the bcma-next and ssb-next names), for the buses the kernel has.
+ifeq ($(B43_NEXT_KERNEL_BUS),y)
+b43n-opts := PCI_AUTOSELECT KERNEL_BUS
+ifneq ($(CONFIG_SSB),)
+b43n-opts += SSB
+endif
+ifneq ($(CONFIG_BCMA),)
+b43n-opts += BCMA
+endif
+else
 b43n-opts := SSB BCMA PCI_AUTOSELECT
+endif
 b43n-opts += PHY_G PHY_N PHY_LP PHY_HT PHY_AC
+# The LP-PHY is on SSB only (as b43's B43_PHY_LP depends on B43_SSB).
+ifeq ($(filter SSB,$(b43n-opts)),)
+b43n-opts := $(filter-out PHY_LP,$(b43n-opts))
+endif
 
 ifneq ($(CONFIG_MMC),)
 ssbn-opts += SDIOHOST
@@ -63,6 +79,9 @@ $(foreach o,$(ssbn-opts),$(eval CONFIG_SSBN_$(o) := y))
 $(foreach o,$(bcmn-opts),$(eval CONFIG_BCMN_$(o) := y))
 $(foreach o,$(b43n-opts),$(eval CONFIG_B43_NEXT_$(o) := y))
 
+ifeq ($(B43_NEXT_KERNEL_BUS),y)
+ccflags-y += -I$(src)/kbus
+endif
 ccflags-y += -I$(src)/include -include $(src)/compat/compat.h
 ccflags-y += $(foreach o,$(ssbn-opts),-DCONFIG_SSBN_$(o)=1)
 ccflags-y += $(foreach o,$(bcmn-opts),-DCONFIG_BCMN_$(o)=1)
@@ -80,6 +99,7 @@ endif
 
 obj-m += b43-next.o
 
+ifneq ($(B43_NEXT_KERNEL_BUS),y)
 b43-next-y := $(addprefix ssb-next/, \
 	main.o scan.o sprom.o driver_chipcommon.o driver_chipcommon_pmu.o)
 b43-next-$(CONFIG_SSBN_PCIHOST) += ssb-next/pci.o ssb-next/pcihost_wrapper.o
@@ -95,6 +115,7 @@ b43-next-$(CONFIG_BCMN_HOST_PCI) += bcma-next/host_pci.o
 b43-next-$(CONFIG_BCMN_HOST_SOC_BCM6362) += bcma-next/host_soc_bcm6362.o
 
 b43-next-$(CONFIG_BCM47XX_NVRAM) += nvram/bcm47xx_sprom.o
+endif
 
 include $(src)/b43-next/files.mk
 b43n-obj = $(addprefix b43-next/,$(1:.c=.o))

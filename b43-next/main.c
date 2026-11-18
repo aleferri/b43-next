@@ -8938,11 +8938,13 @@ static const struct b43_init_step {
 	int (*init)(void);
 	void (*exit)(void);
 } b43_init_steps[] = {
+#ifndef CONFIG_B43_NEXT_KERNEL_BUS
 #ifdef CONFIG_B43_NEXT_SSB
 	{ ssbn_modinit, ssbn_modexit },
 #endif
 #ifdef CONFIG_B43_NEXT_BCMA
 	{ bcmn_modinit, bcmn_modexit },
+#endif
 #endif
 	{ b43_debugfs_step_init, b43_debugfs_exit },
 	{ b43_sdio_init, b43_sdio_exit },
