@@ -100,6 +100,9 @@ static struct b43_wldev *setup(void)
 	sprom.boardflags_hi = ht_nvram("boardflags", 0) >> 16;
 	sprom.boardflags2_lo = ht_nvram("boardflags2", 0) & 0xffff;
 	sprom.boardflags2_hi = ht_nvram("boardflags2", 0) >> 16;
+	sprom.cckbw202gpo = ht_nvram("cckbw202gpo", 0);
+	sprom.legofdmbw202gpo = ht_nvram("legofdmbw202gpo", 0);
+	sprom.mcsbw202gpo = ht_nvram("mcsbw202gpo", 0);
 	for (c = 0; c < 3; c++) {
 		char v[16];
 		int k;

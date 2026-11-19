@@ -1913,8 +1913,64 @@ static void b43_phy_ht_op_pwork_1sec(struct b43_wldev *dev)
 }
 
 /*
+ * The rate blocks wl gives a power offset, in its order: the low nibble of
+ * the PLCP SIGNAL that indexes the CCK or OFDM direct map, and the rate's
+ * index in its row of the PPR.
+ */
+static const struct b43_phy_ht_rate_po_block {
+	bool cck;
+	u8 signal;
+	u8 rate;
+} b43_phy_ht_rate_po_blocks[] = {
+	{ true, 0xa, 0 }, { true, 0x4, 1 }, { true, 0x7, 2 },
+	{ false, 0xb, 0 }, { false, 0xf, 1 }, { true, 0xe, 3 },
+	{ false, 0xa, 2 }, { false, 0xe, 3 }, { false, 0x9, 4 },
+	{ false, 0xd, 5 }, { false, 0x8, 6 }, { false, 0xc, 7 },
+};
+
+/* A rate block's power offset under the target, in half dB */
+#define B43_HT_RT_TXPWR_PO	20
+
+/*
+ * Each legacy rate's distance under the target, in half dB, into its rate
+ * block, CCK on 2.4 GHz only: as wl before it sets the control up again. On
+ * the R6400 at ch 6, 36, 48 and 54 Mb/s at 2, 4 and 6, the nibbles of
+ * legofdmbw202gpo. With the weakest rate's target, every offset is 0.
+ */
+static void b43_phy_ht_rate_po_write(struct b43_wldev *dev)
+{
+	const struct b43_phy_ht *phy_ht = dev->phy.ht;
+	struct b43_ppr dist;
+	unsigned int i;
+
+	b43_ppr_dist(&phy_ht->tx_pwr_ppr, phy_ht->tx_pwr_target[0], &dist);
+	for (i = 0; i < ARRAY_SIZE(b43_phy_ht_rate_po_blocks); i++) {
+		const struct b43_phy_ht_rate_po_block *r =
+			&b43_phy_ht_rate_po_blocks[i];
+		u16 map, block;
+		u8 d;
+
+		if (r->cck && !b43_ppr_has_cck(&dist))
+			continue;
+		if (r->cck) {
+			map = B43_SHM_SH_CCKDIRECT;
+			d = b43_ppr_get_cck(&dist, r->rate);
+		} else {
+			map = B43_SHM_SH_OFDMDIRECT;
+			d = b43_ppr_get_ofdm(&dist, B43_PPR_BW_20, B43_PPR_SISO,
+					     r->rate);
+		}
+		block = 2 * b43_shm_read16(dev, B43_SHM_SHARED,
+					   map + 2 * r->signal);
+		b43_shm_write16(dev, B43_SHM_SHARED, block + B43_HT_RT_TXPWR_PO,
+				b43_ppr_half_db(d));
+	}
+}
+
+/*
  * As wl does when its target changes: it reads each core's estimate at
- * index 2 three times, sets the control up again and turns it on.
+ * index 2 three times, writes the rate offsets, sets the control up again
+ * and turns it on.
  */
 static void b43_phy_ht_op_adjust_txpower(struct b43_wldev *dev)
 {
@@ -1925,6 +1981,7 @@ static void b43_phy_ht_op_adjust_txpower(struct b43_wldev *dev)
 	for (i = 0; i < 3; i++)
 		for (c = 0; c < 3; c++)
 			b43_httab_read(dev, B43_HTTAB8(26 + c, 2));
+	b43_phy_ht_rate_po_write(dev);
 	b43_phy_ht_tx_power_ctl_setup(dev);
 	b43_phy_ht_tx_power_ctl(dev, true);
 	b43_mac_enable(dev);
