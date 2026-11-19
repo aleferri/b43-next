@@ -48,4 +48,43 @@ void b43_actab_read_bulk(struct b43_wldev *dev,
 u16  b43_phy_ac_tbl_write_lock(struct b43_wldev *dev);
 void b43_phy_ac_tbl_write_unlock(struct b43_wldev *dev, u16 saved);
 
+const u16 (*b43_actab_get_tx_gain_table(struct b43_wldev *dev))[3];
+
+extern const u16 b43_actab_rfseq_rx2tx_cmd[16];
+extern const u16 b43_actab_rfseq_tx2rx_cmd[16];
+extern const u16 b43_actab_rfseq_reset2rx_cmd[16];
+extern const u16 b43_actab_rfseq_reset2rx_dly[16];
+extern const u16 b43_actab_rfseq_updl_lpf_hpc[2];
+extern const u16 b43_actab_rfseq_updl_tia_hpc[2];
+extern const u16 b43_actab_rfseq_2_cmd[2][3][8];
+extern const u16 b43_actab_rfseq_2_dly[2][3][8];
+extern const u32 b43_actab_txv_for_spexp[243];
+
+extern const u8 b43_actab_fem_femctrl6[32];
+extern const u8 b43_actab_fem_fem5516_fc1[32];
+extern const u8 b43_actab_fem_x29c_c1_fc2_sub1[32];
+extern const u8 b43_actab_fem_fc3_sub3_c0[32];
+extern const u8 b43_actab_fem_fc3_sub3_c1[32];
+extern const u8 b43_actab_fem_fc3_sub3_c2[32];
+extern const u8 b43_actab_fem_fc3_sub0_c0[32];
+extern const u8 b43_actab_fem_fc3_sub0_c1[32];
+extern const u8 b43_actab_fem_fc3_sub0_c2[32];
+
+struct b43_actab_nshp {
+	u16 nvar[5];
+	u16 nvar_off[3];
+	u16 a8[6], b8[6];
+	u16 a10[7], b10[7];
+};
+
+extern const struct b43_actab_nshp b43_actab_nshp_5g;
+extern const struct b43_actab_nshp b43_actab_nshp_2g;
+extern const u16 b43_actab_glim_a[6];
+extern const u16 b43_actab_glim_b[7];
+
+extern const u16 b43_actab_tbl11_head[12][3];
+
+extern const u16 b43_actab_farrow_vals[196];
+extern const u16 b43_actab_farrow_vals_432x_media_a1[98];
+
 #endif /* B43_TABLES_PHY_AC_H_ */
