@@ -1542,6 +1542,8 @@ static void do_key_write(struct b43_wldev *dev,
 		keymac_write(dev, index, mac_addr);
 
 	dev->key[index].algorithm = algorithm;
+	/* A reused slot is a new aggregation context even at the same index. */
+	b43_dma_ac_epoch_invalidate(dev);
 }
 
 static int b43_key_write(struct b43_wldev *dev,
