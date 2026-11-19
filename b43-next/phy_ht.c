@@ -818,14 +818,14 @@ static void b43_phy_ht_tx_power_ctl_setup(struct b43_wldev *dev)
 		b0[0] = b0[1] = b0[2] = 5612;
 		b1[0] = b1[1] = b1[2] = -1393;
 	}
+	/* Until the first recalculation, the chain's floor, as wl */
+	for (c = 0; c < 3; c++)
+		target[c] = phy_ht->tx_pwr_target[c] ?: INT_TO_Q52(8);
+
 	b43_cal_begin(dev, B43_CAL_TXPWR);
 	for (c = 0; c < 3; c++)
 		b43_cal_report(dev, HT_CAL_TXPWR, c, target[c], a1[c], b0[c],
 			       b1[c]);
-
-	/* Until the first recalculation, the chain's floor, as wl */
-	for (c = 0; c < 3; c++)
-		target[c] = phy_ht->tx_pwr_target[c] ?: INT_TO_Q52(8);
 
 	b43_phy_set(dev, B43_PHY_HT_TSSIMODE, B43_PHY_HT_TSSIMODE_EN);
 	b43_phy_mask(dev, B43_PHY_HT_TXPCTL_CMD_C1,
