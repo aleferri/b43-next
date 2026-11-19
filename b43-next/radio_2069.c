@@ -1452,12 +1452,12 @@ void b43_radio_2069_afecal(struct b43_wldev *dev)
 		 * from here. Same save/restore over the same three registers
 		 * that b43_phy_ac_idle_tssi_meas() does.
 		 */
-		gain_saved[core][0] = b43_phy_read(dev, 0x0739 + pbase);
+		gain_saved[core][0] = b43_phy_read(dev, B43_PHY_AC_AFE_C1_OVER + pbase);
 		gain_saved[core][1] = b43_phy_read(dev, 0x073a + pbase);
-		gain_saved[core][2] = b43_phy_read(dev, 0x0725 + pbase);
+		gain_saved[core][2] = b43_phy_read(dev, B43_PHY_AC_AFE_C1 + pbase);
 
-		b43_phy_maskset(dev, 0x0739 + pbase, (u16)~0x0080, 0x0080);
-		b43_phy_maskset(dev, 0x0725 + pbase, (u16)~0x0004, 0x0004);
+		b43_phy_maskset(dev, B43_PHY_AC_AFE_C1_OVER + pbase, (u16)~0x0080, 0x0080);
+		b43_phy_maskset(dev, B43_PHY_AC_AFE_C1 + pbase, (u16)~0x0004, 0x0004);
 		r2069_mod(dev, R2069_AFE_CAL_CLK | rbase, 0x1000, 0x0000);
 	}
 
@@ -1496,9 +1496,9 @@ void b43_radio_2069_afecal(struct b43_wldev *dev)
 
 		b43_radio_write(dev, R2069_AFE_CAL_CTRL | rbase, ctrl);
 
-		b43_phy_write(dev, 0x0739 + pbase, gain_saved[core][0]);
+		b43_phy_write(dev, B43_PHY_AC_AFE_C1_OVER + pbase, gain_saved[core][0]);
 		b43_phy_write(dev, 0x073a + pbase, gain_saved[core][1]);
-		b43_phy_write(dev, 0x0725 + pbase, gain_saved[core][2]);
+		b43_phy_write(dev, B43_PHY_AC_AFE_C1 + pbase, gain_saved[core][2]);
 	}
 
 	/* Disable the cal block. */
@@ -1556,7 +1556,8 @@ void b43_radio_2069_init(struct b43_wldev *dev)
 	u16 saved_728;
 
 	saved_728 = b43_phy_read_log(dev, 0x0728);
-	b43_phy_read_log(dev, 0x0408);	/* base read before the writes below; logged for HW (absolute write) */
+	/* Read before the writes below, which are absolute. */
+	b43_phy_read_log(dev, B43_PHY_AC_RFCTL_CMD);
 
 	/* --- Prologue: PHY register writes --- */
 	b43_phy_write(dev, 0x0415, 0x0000);

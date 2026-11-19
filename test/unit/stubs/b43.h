@@ -463,6 +463,18 @@ void bcmn_core_set_clockmode(struct bcmn_device *core,
 #define B43_SHM_SH_SLOTT          0x0010
 #define B43_SHM_SH_PRETBTT        0x0096
 #define B43_SHM_SH_TXCORE_AC      0x05D4
+#define B43_SHM_SH_MAXRXFRMLEN    0x0020
+#define B43_SHM_SH_WATCHDOG_8TU   0x003C
+#define B43_SHM_SH_PHYVER         0x0050
+#define B43_SHM_SH_PHYTYPE        0x0052
+#define B43_SHM_SH_KTP            0x0056
+#define B43_SHM_SH_IFSCTL1        0x005A
+#define B43_SHM_SH_PRMAXTIME      0x0074
+#define B43_SHM_SH_JSSIAUX        0x008C
+#define B43_SHM_SH_SPUWKUP        0x0094
+#define B43_SHM_SH_MIMO_MAXSYM    0x00BA
+#define B43_SHM_SH_BEACPHYCTL_AC  0x00CC
+#define B43_SHM_SH_BEACPWROFF_AC  0x00CE
 #define B43_MMIO_MACCTL           0x120
 #define B43_MACCTL_ENABLED        0x00000001	/* b43.h */
 #define B43_MACCTL_PSM_RUN        0x00000002	/* b43.h */

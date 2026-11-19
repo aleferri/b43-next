@@ -6,6 +6,14 @@
 
 struct b43_wldev;
 
+#define B43_ACTAB_RFSEQ			0x07
+#define B43_ACTAB_FEMCTRL		0x0a
+#define B43_ACTAB_IQLOCAL		0x0c
+#define B43_ACTAB_SAMPLE_PLAY		0x0e
+#define B43_ACTAB_TXGAIN		0x20
+#define B43_ACTAB_ESTPWR(core)		(0x40 + 0x20 * (core))
+#define B43_ACTAB_LOFT(core)		(0x42 + 0x20 * (core))
+
 /* Load the AC-PHY init tables into the PHY's table memory. */
 void b43_phy_ac_tables_init(struct b43_wldev *dev);
 
@@ -47,6 +55,7 @@ void b43_actab_read_bulk(struct b43_wldev *dev,
  */
 u16  b43_phy_ac_tbl_write_lock(struct b43_wldev *dev);
 void b43_phy_ac_tbl_write_unlock(struct b43_wldev *dev, u16 saved);
+void b43_phy_ac_tbl_write_gate(struct b43_wldev *dev, bool lock);
 
 const u16 (*b43_actab_get_tx_gain_table(struct b43_wldev *dev))[3];
 

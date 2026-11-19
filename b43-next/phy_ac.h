@@ -33,6 +33,9 @@ struct ieee80211_channel;
 #define  B43_PHY_AC_CLASSCTL_CCKEN		0x0001	/* CCK enable */
 #define  B43_PHY_AC_CLASSCTL_OFDMEN		0x0002	/* OFDM enable */
 #define  B43_PHY_AC_CLASSCTL_WAITEDEN		0x0004	/* Waited enable */
+#define  B43_PHY_AC_CLASSCTL_BW20		0x0800	/* Set at 20 MHz */
+/* Bits the stock driver keeps set, not identified */
+#define  B43_PHY_AC_CLASSCTL_FIXED		0x05f0
 
 
 /* RF Control & RF Sequencer. */

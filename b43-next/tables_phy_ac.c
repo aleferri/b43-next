@@ -11,15 +11,21 @@
 #include "phy_ac.h"
 #include "tables_phy_ac.h"
 
-/* PHY-table-write gate (file-local) */
+/* PHY-table-write gate */
+
+/* Lock or unlock the gate without saving it. */
+void b43_phy_ac_tbl_write_gate(struct b43_wldev *dev, bool lock)
+{
+	b43_phy_maskset(dev, B43_PHY_AC_REG_TBL_WRITE_GATE,
+			(u16)~B43_PHY_AC_TBL_WRITE_GATE_LOCK,
+			lock ? B43_PHY_AC_TBL_WRITE_GATE_LOCK : 0);
+}
 
 u16 b43_phy_ac_tbl_write_lock(struct b43_wldev *dev)
 {
 	u16 saved = b43_phy_read_log(dev, B43_PHY_AC_REG_TBL_WRITE_GATE);
 
-	b43_phy_maskset(dev, B43_PHY_AC_REG_TBL_WRITE_GATE,
-			(u16)~B43_PHY_AC_TBL_WRITE_GATE_LOCK,
-			B43_PHY_AC_TBL_WRITE_GATE_LOCK);
+	b43_phy_ac_tbl_write_gate(dev, true);
 	return saved;
 }
 
@@ -226,24 +232,15 @@ void b43_actab_read_bulk(struct b43_wldev *dev,
 	size_t i;
 	u16 gate;
 
-	/* As in actab_write_bulk(), the 0x019e peek is the saved value for the
-	 * restore at the end of the enclosing scope, tx_lpf or similar. */
-	gate = b43_phy_read_log(dev, B43_PHY_AC_REG_TBL_WRITE_GATE);
-
 	/*
-	 * The vendor's relock -- MOD 0x019e setting bit 1 -- is conditional: it
-	 * appears only when the preceding peek came back with the gate unlocked.
-	 * The captures show both cases, an unlock followed by a peek of 0 and
-	 * then a relock, and a peek that already reads 0x02 followed straight by
-	 * the data write with no relock.
-	 *
-	 * This is specific to actab_read_bulk(); actab_write_bulk() never does
-	 * it, matching the vendor, where a table write always follows peek then
-	 * data write.
+	 * The peek is the value the enclosing scope restores at its end. The
+	 * relock after it is conditional in the stock driver: the captures show
+	 * an unlock, a peek of 0 and a relock, and a peek that finds the gate
+	 * locked followed straight by the data. A table write never relocks.
 	 */
-	if (!(gate & 0x0002))
-		b43_phy_maskset(dev, B43_PHY_AC_REG_TBL_WRITE_GATE,
-				(u16)~0x0002, 0x0002);
+	gate = b43_phy_read_log(dev, B43_PHY_AC_REG_TBL_WRITE_GATE);
+	if (!(gate & B43_PHY_AC_TBL_WRITE_GATE_LOCK))
+		b43_phy_ac_tbl_write_gate(dev, true);
 
 	b43_phy_write(dev, B43_PHY_AC_TABLE_ID, id);
 	b43_phy_write(dev, B43_PHY_AC_TABLE_OFFSET, offset);

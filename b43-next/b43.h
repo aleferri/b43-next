@@ -347,6 +347,7 @@ enum {
 #define B43_SHM_SH_LFFBLIM		0x0046	/* Long frame fallback retry limit */
 #define B43_SHM_SH_BEACPHYCTL		0x0054	/* Beacon PHY TX control word (see PHY TX control) */
 #define B43_SHM_SH_BEACPHYCTL_AC	0x00CC	/* Beacon PHY TX control word, AC microcode */
+#define B43_SHM_SH_BEACPWROFF_AC	0x00CE	/* Beacon TX power offset, AC microcode */
 #define B43_SHM_SH_TXCORE_AC		0x05D4	/* TX core mask per rate class, 5 words, AC microcode */
 #define B43_SHM_SH_EXTNPHYCTL		0x00B0	/* Extended bytes for beacon PHY control (N) */
 #define B43_SHM_SH_BCN_LI		0x00B6	/* beacon listen interval */
