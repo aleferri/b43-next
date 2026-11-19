@@ -40,6 +40,7 @@
 #include "b43.h"
 #include "main.h"
 #include "debugfs.h"
+#include "fwlog.h"
 #include "phy_common.h"
 #include "phy_g.h"
 #include "phy_n.h"
@@ -6468,6 +6469,7 @@ redo:
 	mutex_unlock(&wl->mutex);
 	cancel_delayed_work_sync(&dev->periodic_work);
 	cancel_delayed_work_sync(&dev->radar_work);
+	b43_fwlog_cancel(dev);
 	if (IS_ENABLED(CONFIG_B43_NEXT_PHY_N) && dev->phy.type == B43_PHYTYPE_N)
 		b43_nphy_cancel_perical(dev);
 	cancel_work_sync(&wl->tx_work);
@@ -6572,6 +6574,7 @@ static int b43_wireless_core_start(struct b43_wldev *dev)
 
 	/* Start maintenance work */
 	b43_periodic_tasks_setup(dev);
+	b43_fwlog_start(dev);
 
 	b43_leds_init(dev);
 

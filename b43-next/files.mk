@@ -16,5 +16,5 @@ b43n-phy-ac	:= phy_ac.c tables_phy_ac.c radio_2069.c radar_ac.c
 
 b43n-leds	:= leds.c
 b43n-sdio	:= sdio.c
-b43n-debugfs	:= debugfs.c
+b43n-debugfs	:= debugfs.c fwlog.c
 b43n-calstat	:= calstat.c

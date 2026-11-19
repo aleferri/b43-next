@@ -22,6 +22,7 @@
 #include "main.h"
 #include "debugfs.h"
 #include "calstat.h"
+#include "fwlog.h"
 #include "dma.h"
 #include "xmit.h"
 
@@ -874,6 +875,7 @@ void b43_debugfs_add_device(struct b43_wldev *dev)
 
 	b43_add_dynamic_debug(dev);
 	b43_cal_add(dev, e);
+	b43_fwlog_add(dev, e);
 }
 
 void b43_debugfs_remove_device(struct b43_wldev *dev)
@@ -888,6 +890,7 @@ void b43_debugfs_remove_device(struct b43_wldev *dev)
 
 	debugfs_remove(e->subdir);
 	b43_cal_remove(dev, e);
+	b43_fwlog_remove(e);
 	kfree(e->txstatlog.log);
 	kfree(e);
 }

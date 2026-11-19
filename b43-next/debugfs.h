@@ -73,6 +73,7 @@ struct b43_dfsentry {
 #ifdef CONFIG_B43_NEXT_CALSTAT
 	struct b43_dfs_cal *cal;
 #endif
+	struct b43_fwlog *fwlog;
 };
 
 bool b43_debug(struct b43_wldev *dev, enum b43_dyndbg feature);
