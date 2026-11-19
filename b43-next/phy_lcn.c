@@ -256,13 +256,15 @@ static void b43_radio_2064_init(struct b43_wldev *dev)
 			break;
 		udelay(10);
 	}
-	if (i < 100)
+	if (b43_radio_read(dev, 0x05c) & 0x20)
 		b43_radio_read(dev, 0x05c);
 	else
 		b43err(dev->wl, "Radio 2064 R calibration timed out\n");
 
 	b43_radio_mask(dev, 0x05b, (u16) ~0xff02);
 	b43_radio_mask(dev, 0x057, (u16) ~0xff01);
+	/* wl's (#6100), not brcmsmac's */
+	b43_radio_mask(dev, 0x129, ~0x2);
 
 	b43_phy_write(dev, 0x933, 0x2d6b);
 	b43_phy_write(dev, 0x934, 0x2d6b);
@@ -909,6 +911,8 @@ static void b43_phy_lcn_pwrctrl_rssiparams(struct b43_wldev *dev)
 	u16 vmid = (2 << 8) | (sprom->rssismc2g << 4) | sprom->rssismf2g;
 	u16 rssi = vmid | (sprom->rssisav2g << 12);
 	u16 temp = ((2 << 8) | (8 << 4) | 4) | (2 << 12);
+	/* wl's 0x40b, in every write of the capture; brcmsmac's is temp */
+	u16 temp_40b = ((2 << 8) | (8 << 4)) | (2 << 12);
 
 	b43_phy_mask(dev, 0x4d8, ~0x1);
 	b43_phy_mask(dev, 0x4d8, ~0x2);
@@ -916,7 +920,7 @@ static void b43_phy_lcn_pwrctrl_rssiparams(struct b43_wldev *dev)
 	b43_phy_maskset(dev, 0x4db, ~0x73ff, rssi);
 	b43_phy_maskset(dev, 0x4dc, ~0x73ff, rssi);
 	b43_phy_maskset(dev, 0x40a, ~0x73ff, rssi);
-	b43_phy_maskset(dev, 0x40b, ~0x73ff, temp);
+	b43_phy_maskset(dev, 0x40b, ~0x73ff, temp_40b);
 	b43_phy_maskset(dev, 0x40c, ~0x73ff, temp);
 	b43_radio_set(dev, 0x082, 0x20);
 	b43_radio_set(dev, 0x07c, 0x1);
