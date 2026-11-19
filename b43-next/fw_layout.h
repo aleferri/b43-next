@@ -72,7 +72,7 @@ struct b43_fw_hdr {
 	void (*txstatus_rates)(struct ieee80211_tx_info *report,
 			       const struct b43_txstatus *status);
 	bool txstatus_raw;	/* the status words kept in its raw[] */
-	bool tx_aqm_epoch;	/* TOE prefix bit bounds TX aggregate contexts */
+	bool tx_epoch;	/* TOE prefix bit bounds TX aggregate contexts */
 	u8 tx_len;
 	u8 tx_cookie;
 	u8 tx_rts_plcp;

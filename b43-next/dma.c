@@ -1685,12 +1685,11 @@ void b43_dma_ac_epoch_invalidate(struct b43_wldev *dev)
 	struct b43_dmaring *rings[] = {
 		dev->dma.tx_ring_AC_BK, dev->dma.tx_ring_AC_BE,
 		dev->dma.tx_ring_AC_VI, dev->dma.tx_ring_AC_VO,
-		dev->dma.tx_ring_mcast,
 	};
 	unsigned int i;
 
 	lockdep_assert_held(&dev->wl->mutex);
-	if (!dev->fw.layout.hdr || !dev->fw.layout.hdr->tx_aqm_epoch)
+	if (!dev->fw.layout.hdr || !dev->fw.layout.hdr->tx_epoch)
 		return;
 	for (i = 0; i < ARRAY_SIZE(rings); i++) {
 		if (rings[i])
@@ -1777,7 +1776,8 @@ static int dma_tx_fragment(struct b43_dmaring *ring,
 	struct ieee80211_tx_info *info = IEEE80211_SKB_CB(skb);
 	struct b43_private_tx_info *priv_info = b43_get_priv_tx_info(info);
 	struct b43_ac_tx_epoch ac_epoch;
-	bool ac = ring->dev->fw.layout.hdr->tx_aqm_epoch;
+	bool tx_epoch = ring->dev->fw.layout.hdr->tx_epoch &&
+			ring != ring->dev->dma.tx_ring_mcast;
 	u8 *header;
 	int slot, old_top_slot, old_used_slots;
 	int err;
@@ -1804,7 +1804,7 @@ static int dma_tx_fragment(struct b43_dmaring *ring,
 		return err;
 	}
 
-	if (ac)
+	if (tx_epoch)
 		ac_epoch = b43_dma_ac_epoch_prepare(&ring->ac_epoch, skb,
 					       (void *)header);
 
@@ -1848,7 +1848,7 @@ static int dma_tx_fragment(struct b43_dmaring *ring,
 	 * non-AC software A-MPDU path has its own batch unwind rules.
 	 * Keep failed mappings from changing the next hardware boundary.
 	 */
-	if (ac)
+	if (tx_epoch)
 		ring->ac_epoch = ac_epoch;
 	/* Now transfer the whole frame, or the A-MPDU after its last member. */
 	if (ampdu && !ampdu->last)

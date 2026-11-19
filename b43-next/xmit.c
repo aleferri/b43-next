@@ -2505,7 +2505,7 @@ const struct b43_fw_hdr b43_hdr_598 = {
  * path included; not verified, as they are not visible at the bus.
  */
 const struct b43_fw_hdr b43_ac_hdr_784 = {
-	.tx_aqm_epoch	= true,
+	.tx_epoch	= true,
 	.tx_ldpc	= true,
 	.gen_txhdr	= b43_generate_txhdr_ac,
 	.tx_rates_cut	= true,
