@@ -979,17 +979,16 @@ static void b43_phy_lcn_tssi_setup(struct b43_wldev *dev)
 /* wlc_lcnphy_idle_tssi_est */
 static void b43_phy_lcn_idle_tssi_est(struct b43_wldev *dev)
 {
-	struct b43_phy_lcn *lcn = dev->phy.lcn;
 	u16 save_ctrl = b43_phy_lcn_get_tx_pwr_ctrl(dev);
-	u8 save_idx = lcn->tx_pwr_curr_idx;
 	u16 save_lpfgain, save_afe_switch, save_auxpga, save_aux_en;
 	struct lcn_tx_gains old_gains;
 	bool old_override;
 	u16 tssi;
-	u8 save_bbmult;
+	u8 save_bbmult, save_idx;
 
 	b43_cal_begin(dev, B43_CAL_IDLE_TSSI);
-	b43_phy_lcn_get_tx_pwr_ctrl(dev);
+	/* The index the control is at, as wl (#8458); brcmsmac's cached one */
+	save_idx = b43_phy_lcn_get_current_tx_pwr_idx(dev);
 	save_lpfgain = b43_radio_read(dev, 0x112);
 	save_afe_switch = b43_radio_read(dev, 0x007) & 0x1;
 	save_auxpga = b43_radio_read(dev, 0x0ff) & 0x10;
@@ -1797,15 +1796,17 @@ static void b43_phy_lcn_papd_comp(struct b43_wldev *dev, bool enable)
 				enable ? 0x4 << (4 * i) : 0);
 }
 
-/* wlc_lcnphy_periodic_cal, in wl's order */
+/*
+ * wlc_lcnphy_periodic_cal, in wl's order. wl reads the mode (#8417) and
+ * restores neither it nor an index at the end, where brcmsmac does: each
+ * calibration restores its own.
+ */
 static void b43_phy_lcn_periodic_cal(struct b43_wldev *dev)
 {
 	struct b43_phy_lcn *lcn = dev->phy.lcn;
-	u16 save_ctrl = b43_phy_lcn_get_tx_pwr_ctrl(dev);
-	/* The index the control is at, as wl (#8457); brcmsmac's cached one */
-	u8 index = b43_phy_lcn_get_current_tx_pwr_idx(dev);
 	int i;
 
+	b43_phy_lcn_get_tx_pwr_ctrl(dev);
 	b43_mac_suspend(dev);
 	b43_phy_lcn_deaf_mode(dev, true);
 	b43_phy_lcn_papd_comp(dev, false);
@@ -1825,9 +1826,6 @@ static void b43_phy_lcn_periodic_cal(struct b43_wldev *dev)
 	b43_phy_lcn_txpwrtbl_iqlo_cal(dev);
 	b43_phy_lcn_rx_iq_cal(dev, 40);
 	lcn->cal_done = true;
-	b43_phy_lcn_set_tx_pwr_by_index(dev, index);
-	b43_phy_lcn_set_tx_pwr_ctrl(dev, save_ctrl);
-	b43_phy_lcn_deaf_mode(dev, false);
 	b43_mac_enable(dev);
 }
 
@@ -1853,14 +1851,22 @@ static void b43_phy_lcn_op_set_rx_antenna(struct b43_wldev *dev, int antenna)
  * brings a fixed number of dummy frames to the PAPD calibration's power.
  * There is no stop condition (50 in every warm-up of the CQ57's capture,
  * also when the index settles after 3). Returns the index it settles at.
+ * Every warm-up starts as wl's (#17484, #183905): 0x4a5 read, the control
+ * turned off and on again, from the index and npt of the last estimate.
  */
 #define B43_LCN_PAPD_TARGET		0x40
 #define B43_LCN_PAPD_WARMUP_FRAMES	50
 
 static u8 b43_phy_lcn_tx_pwr_warmup(struct b43_wldev *dev)
 {
+	u16 ctrl;
 	u8 index = 0;
 	int i;
+
+	b43_phy_read(dev, 0x4a5);
+	ctrl = b43_phy_lcn_get_tx_pwr_ctrl(dev);
+	b43_phy_lcn_set_tx_pwr_ctrl(dev, B43_LCN_TX_PWR_CTRL_OFF);
+	b43_phy_lcn_set_tx_pwr_ctrl(dev, ctrl);
 
 	b43_phy_lcn_clear_tx_power_offsets(dev);
 	b43_phy_maskset(dev, 0x4a7, ~0xff, B43_LCN_PAPD_TARGET);
