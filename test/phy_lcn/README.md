@@ -33,18 +33,19 @@ init (those of its two core resets and the init's own: b43 makes the same
 three in flow `full`) to the op before wl's first MAC enable, after its
 calibrations: #1090-#22858. wl's attach tunes channel 1, and b43 runs on it
 the PHY calls of its core in its order: the analog switch of
-`b43_wireless_core_reset()` and of `b43_phy_bringup()`, `b43_phy_init()`, and
-the TX power check of mac80211's first config. `../unit/cmp_skip.py --bus
+`b43_wireless_core_reset()`, `b43_phy_bringup()`'s analog switch,
+`b43_phy_init()` and RX antenna, and the TX power check of mac80211's first
+config. `../unit/cmp_skip.py --bus
 --rmw` scores the two streams; the line to quote is `grezzo`, with its two
 parameters. The second row compares the PHY's and radio's operations only:
 the core's MMIO, shared memory and wrapper accesses are outside a harness
 that compiles no core, and its calls into the core are counted on stderr.
 
-On 2026-11-18, `--min-block 8 --gap-tol 2`:
+On 2026-11-19, `--min-block 8 --gap-tol 2`:
 
 | capture | grezzo | PHY+radio |
 |---|---|---|
-| attach | 15749/20017 = 78.68% | 15549/16131 = 96.39% |
+| attach | 15926/19898 = 80.04% | 15718/16019 = 98.12% |
 
 The grezzo counts wl's core operations, which this harness cannot emit:
 since the core reads the shared memory's address back as wl does, the 785
@@ -60,11 +61,11 @@ mac80211's first config. What b43 does not make yet, in wl's order:
 
 - a few operations of unknown purpose here and there, which no source
   explains: an RMW of 0x4d0 and 0x478 at the start, of 0x55d before the
-  2064's init, of 0x4eb after it, of 0x525 after the TX power control's mode;
+  2064's init and after the RX antenna, of 0x4eb after the 2064's init,
+  and table 7's index 0 read and written back after the recalculation's
+  turn-on;
 - wl polls the I/Q-LO calibration's status (0x451) more often than b43,
-  which offsets the reads around each command;
-- wl reads 0x4a4 once in the I/Q-LO calibration (#11071): every later read
-  of 0x4a4 b43 makes is served the value of the one before it.
+  which offsets the reads around each command.
 
 ## The channel switches
 
@@ -72,17 +73,17 @@ The capture holds wl's scans over channels 1-13 and its associations, all
 on channel 1. `gates.sh` scores every switch of the second scan, where wl
 has its calibration from the init and loads it again on each channel:
 from the switch's first PHY operation to the MAC's enable, flow `switch`,
-with the calibration's results wl holds there (`calres.py`). On 2026-11-17,
+with the calibration's results wl holds there (`calres.py`). On 2026-11-19,
 `--min-block 8 --gap-tol 2`, PHY and radio:
 
 | channels | PHY+radio |
 |---|---|
-| 2-4, 9-12 | 1604/1609 = 99.69% |
-| 5-8 | 1606/1617 = 99.32% |
-| 13 | 1606/1618 = 99.26% |
+| 2-4, 9-12 | 1606/1609 = 99.81% |
+| 5-8 | 1608/1617 = 99.44% |
+| 13 | 1608/1618 = 99.38% |
 
-What b43 does not make there is the RMWs of unknown purpose of 0x6d1 and
-0x525 (`TODO_LCN.md`).
+What b43 does not make there is the RMWs of unknown purpose of 0x6d1
+(`TODO_LCN.md`).
 
 ## The watchdog
 
