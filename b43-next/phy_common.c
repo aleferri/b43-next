@@ -216,6 +216,9 @@ static inline void assert_mac_suspended(struct b43_wldev *dev)
 {
 	if (!B43_DEBUG)
 		return;
+    /* The AC-PHY checks the MAC state at its entry points, as wl runs it */
+    if (dev->phy.type == B43_PHYTYPE_AC)
+    return;
 	if ((b43_status(dev) >= B43_STAT_INITIALIZED) &&
 	    (dev->mac_suspended <= 0)) {
 		b43dbg(dev->wl, "PHY/RADIO register access with "
