@@ -617,14 +617,15 @@ static void b43_phy_lcn_bu_tweaks(struct b43_wldev *dev)
 
 	b43_phy_maskset(dev, 0x4df, (u16) ~0xff00, 0xf700);
 
+	/* wl's: 0x84 in between, 0x09b also below brcmsmac's board rev 0x1204 */
 	b43_phy_set(dev, 0x44a, 0x44);
+	b43_phy_write(dev, 0x44a, 0x84);
 	b43_phy_write(dev, 0x44a, 0x80);
 
 	b43_phy_maskset(dev, 0x434, ~0xff, 0xfd);
 	b43_phy_maskset(dev, 0x420, ~0xff, 0x10);
 
-	if (dev->dev->bus_sprom->board_rev >= 0x1204)
-		b43_radio_set(dev, 0x09b, 0xf0);
+	b43_radio_set(dev, 0x09b, 0xf0);
 
 	b43_phy_write(dev, 0x7d6, 0x0902);
 
