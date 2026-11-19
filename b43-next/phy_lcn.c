@@ -1362,6 +1362,19 @@ static bool b43_phy_lcn_iqcal_wait(struct b43_wldev *dev)
 }
 
 /*
+ * The radio's LO coefficients at 0, wlc_lcnphy_set_tx_iqlo_coeffs()' 0x88:
+ * wl's at the periodic calibration's start (#8437) and before the TX
+ * I/Q-LO calibration's commands (#10786), every time
+ */
+static void b43_phy_lcn_clear_radio_loft(struct b43_wldev *dev)
+{
+	int i;
+
+	for (i = 0; i < 4; i++)
+		b43_radio_write(dev, 0x089 + i, 0x88);
+}
+
+/*
  * wlc_lcnphy_tx_iqlo_cal, a full calibration with the tone stopped after;
  * without target gains, at the current ones
  */
@@ -1388,6 +1401,7 @@ static void b43_phy_lcn_tx_iqlo_cal(struct b43_wldev *dev,
 	b43_phy_set(dev, 0x6da, 0x40);
 	b43_phy_set(dev, 0x6db, 0x3);
 
+	b43_phy_lcn_clear_radio_loft(dev);
 	b43_lcntab_write_bulk(dev, B43_LCNTAB16(0x0, 64), 11, coeffs);
 	b43_phy_write(dev, 0x6da, 0xffff);
 	b43_phy_set(dev, 0x503, 0x8);
@@ -1805,19 +1819,13 @@ static void b43_phy_lcn_papd_comp(struct b43_wldev *dev, bool enable)
 static void b43_phy_lcn_periodic_cal(struct b43_wldev *dev)
 {
 	struct b43_phy_lcn *lcn = dev->phy.lcn;
-	int i;
 
 	b43_phy_lcn_get_tx_pwr_ctrl(dev);
 	b43_mac_suspend(dev);
 	b43_phy_lcn_deaf_mode(dev, true);
 	b43_phy_lcn_papd_comp(dev, false);
-	/*
-	 * The TX I/Q-LO coefficients cleared before they are calibrated
-	 * (#8437), every time: wlc_lcnphy_set_tx_iqlo_coeffs()' radio value
-	 * for 0 is 0x88
-	 */
-	for (i = 0; i < 4; i++)
-		b43_radio_write(dev, 0x089 + i, 0x88);
+	/* The TX I/Q-LO coefficients cleared before they are calibrated */
+	b43_phy_lcn_clear_radio_loft(dev);
 	b43_phy_lcn_set_tx_locc(dev, 0);
 	b43_phy_lcn_set_tx_iqcc(dev, 0, 0);
 	if (lcn->hw_pwr_ctl_capable) {
