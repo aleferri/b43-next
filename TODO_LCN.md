@@ -17,14 +17,50 @@ The scores are in `test/phy_lcn/README.md`.
   PHY's part on a few seconds around its scans. No noise sample: wl never
   writes MACCMD, and nothing of brcmsmac's `calib_modes(PHY_PERICAL_WATCHDOG)`
   (the temperature based recalibration) shows on this board.
-- **The block every 256 ms**: shared memory 0x008e, 0x0e50-0x0e54, a MAC
-  suspend, an RMW of 0x448, table 21 read from entry 0, then 0x6da,
-  0x5a6, 0x5a2, 0x5a5 and 0x583-0x586 written as in #8317-#8381 (#402429
-  on). The writes are the setup of brcmsmac's `wlc_lcnphy_samp_cap()`
-  (0x5a6 = 5, 0x5a2 = mode 3 in both fields, 0x5a5, 0x583-0x586), into
-  table 21, the sample play buffer; the shared memory cells are at the
-  word 0x008e points to, plus 0x26-0x28. What wl does with the samples is
-  not known.
+- **The noise measurement, every 256 ms**: a request to the microcode
+  and its answer, then a change of 0x434's input power offset. What the
+  capture shows, in the order a turn goes:
+  - The PHY's sample capture is armed: 0x6da bits 13 and 3 on (0x2048 at
+    #8362, kept from then on), 0x5a6 = 5, 0x5a2 = 0xc3 (mode 3 in both
+    fields), 0x5a5 = 7, 0x583-0x586 = 0x320, 0, 0x200, 0. These are the
+    registers of brcmsmac's `wlc_lcnphy_samp_cap()`, with other values.
+  - Then the request, in a block of shared memory the word 0x008e points
+    to (0x702 here): +0x26 (0x0e50) a parameter, 5, or 0xfa (250) in the
+    turn after a change of 0x434; +0x27 (0x0e52) a sequence number in bits
+    4-15 and a state in bits 0-3, 1 when requested and 0 when stopped
+    (wl's down, #723, ends with one); +0x28 (0x0e54) the microcode's
+    answer, the sequence number with state 2. Each init starts again from
+    0x10, then 0x21.
+  - The answer is interrupt bit 18, `B43_IRQ_NOISESAMPLE_OK` (#23380).
+    wl reads +0x27 and +0x28, sets MCTRL bit 28 (b43's TBTTHOLD), makes an RMW
+    of 0x448, reads entry 0 of table 21 (16 bits), then all 160 entries
+    (32 bits), and arms the next turn.
+  - The samples: 80 complex ones, I on the even entries and Q on the odd,
+    a 14-bit signed value in bits 4-17; bit 18 is 1 on I and 0 on Q, bits
+    0-3 are 0b0101 on I and 0b1010 on Q. The DC is about +107 on I and -86
+    on Q.
+  - The decision: every 64 turns with samples (65 counted between two, 71
+    after an init), wl reads 0x423, reads 0x434, writes its low byte, and
+    reads 0x423 again (#58444-#58448): 21 of them in the capture, always a
+    write, unchanged or not, between 0xfb and 0xfd and one step at a time.
+    0x423 is 0x2a46 in every read. The higher the samples' power over the
+    64 turns, the lower the offset, but the plain mean does not order the
+    21 decisions (16 inversions): about 4% of the turns hold a burst, some
+    7 dB over the noise with its energy at a random frequency. Which
+    statistic wl takes over the turns, and how it leaves the bursts out, is
+    not known. No other register's writes follow 0x434 in the capture: what
+    the offset changes (RSSI, carrier sense) happens in the PHY.
+  - The switch to channel 13, alone of the spur avoidance channels, sets
+    0x434's low byte to 0xfb after the RMW of 0x416 and 0x420 (#106637,
+    and every other switch to 13); the loop takes it back on channel 1.
+  - The saves: 0x423, 0x550, 0x434 and 0x432 read before the 2064's init
+    (#6045); 0x434 and 0x423 written back with an RMW and 0x550 with the
+    value read there (0x164) at the first arming (#8353-#8357) and after
+    every PAPD outside an init (#187541).
+  b43 makes none of it: arming the capture without the decision would only
+  fill table 21. The decision needs wl's statistic; a capture with other
+  noise (another channel, an
+  interferer) would give more decisions to fit.
 
 ## Firmware
 
@@ -74,13 +110,13 @@ capture (profile `cq57`; bcma reads the SROM off the chip, in
 `bcmn_bus_register()`'s order; the firmware rebuilt from the capture), and
 scores the window from the capture's start to the op before wl's first MAC
 enable (#1-#33281 of the `--no-bulk` decoding) against b43's trace cut at
-its own first enable after the PAPD. On 2026-11-18, `--min-block 8
+its own first enable after the PAPD. On 2026-11-19, `--min-block 8
 --gap-tol 2 --anchor-values`:
 
 | ops | score |
 |---|---|
-| all | 28622/32897 = 87.00% |
-| PHY, radio, MACCTL, I/O control | 15051/16514 = 91.14% |
+| all | 28720/32800 = 87.56% |
+| PHY, radio, MACCTL, I/O control | 15139/16427 = 92.16% |
 
 What is left in the control operations, in the order they come:
 
@@ -104,18 +140,26 @@ wl makes them, b43 does not; no source explains them, and most leave the
 register as it was, so their masks cannot be read off the capture.
 
 - RMW of 0x4d0 and 0x478 at the init's start (#1679).
-- Reads of 0x423, 0x550, 0x434, 0x432 and two RMW of 0x55d before the
-  2064's init (#6045).
+- Two RMW of 0x55d before the 2064's init (#6049), after the noise
+  measurement's saves.
 - Three more accesses of 0x4eb after the 2064's 0x4eb setup (#6069).
 - Reads of 0x4a5, 0x40d and 0x4a2 and an RMW of 0x4a5 in the TSSI setup,
   after 0x4a8 (#7083).
-- RMW of 0x525 after every write of the TX power control's mode.
+- RMW of 0x55d, bit 0 set, after the RX antenna's 0x410 in all four inits
+  of the capture (#21020); it reads 0x2 there, after the 0x3 written before
+  the 2064's init.
+- After the TX power recalculation's turn-on, table 7's index 0 read and
+  written back unchanged: gain (0xc0), I/Q (0x140), RF power (0x240)
+  (#22750, and after the three PAPDs outside an init).
 - RMW of 0x448 after the tune, before the AFE toggle (#8251).
-- The block after the TX filters (#8317-#8381): shared memory reads, RMW
-  of 0x434 and 0x423, 0x550, a pulse of 0x44a, 0x6da = 0x2048, writes of
-  0x5a6, 0x5a2, 0x5a5 and 0x583-0x586.
-- RMW of 0x416 and 0x420 after 0x424/0x425 on the spur avoidance channels
-  (5-8, 13).
+- The pulse of 0x44a after the noise measurement's restore, at its first
+  arming (#8358) and after the PAPDs outside an init.
+- 0x416 and 0x420 after 0x424/0x425 on the spur avoidance channels (5-8,
+  13): RMWs, but not without effect. The first of them after an init
+  takes 0x416 from 0x9ba4 to 0x9da4 and 0x420 from 0x0f10 to 0x1310
+  (#55625); they stay so on every channel until the next init, which
+  writes 0x0f10 and 0x9ba4 again. The harness's switch windows start after
+  the first, so there they look unchanged.
 - Two RMW of 0x6d1 after the calibration's results on a channel switch.
 - wl's MAC writes around the idle TSSI (0x6b4, 0x6b8, 0x6f0): the core's,
   outside the harness.
@@ -149,6 +193,13 @@ what the capture shows, what b43 does with it, and what would tell.
   to 0x9b, the pattern brcmsmac's rev 2 baseband init uses on the same
   register (two byte fields). A board whose register starts elsewhere would
   show whether the masks are the bytes.
+- **0x44a and radio 0x09b in the BU tweaks**: wl writes 0x84 between
+  brcmsmac's 0x44a |= 0x44 and 0x80, in all four inits (#5807), and makes
+  the RMW of 0x09b on this board rev 0x1107, below brcmsmac's 0x1204. The
+  register is 0xff there: neither the mask nor wl's condition shows, b43
+  sets 0xf0 on every board.
+- **The R calibration's end**: radio 0x129 bit 1 cleared after 0x057
+  (#6101), only in the first init, the only one with the calibration.
 - **Radio 0x01e at the end of the 2064's init**: 0x06 to 0x02 (#6120),
   modelled as bit 2 cleared.
 - **The radio writes at the end of the 2064's init** (#6109-#6124): wl's,
@@ -178,6 +229,12 @@ what the capture shows, what b43 does with it, and what would tell.
   `LCN_TARGET_PWR` (60). The rate table is written, there and when the
   control turns on, only once a recalculation has computed it.
 
+- **0x525 after every write of the control's mode**: an RMW that leaves it
+  at 0 in every case of the capture; b43 makes it as a read-back, the bits
+  wl means are not known.
+- **0x40b in the RSSI parameters**: 0x2280, vmid fine 0, in all eight
+  writes of the capture (#7350 the first), where brcmsmac writes 0x40c's
+  0x2284.
 - **0x4d0 bits 6-14 = 0x1f8 in the TSSI setup** (#7289): wl's; brcmsmac
   writes 0.
 - **The TSSI mux after the PA**: brcmsmac's, with wl's write of radio 0x07f
@@ -236,10 +293,13 @@ the switch to channel 2). The values, in qdBm, on the CQ57:
   15 on channels 1-11.
 ### Warm-up and PAPD calibration
 
-After the init's calibration, with the control on (#17725-#20981), as wl:
+After the init's calibration, with the control on (#17725-#21012), as wl:
 brcmsmac has neither, so the capture is the only source, and all 7 of them
 are on channel 1.
 
+- **The warm-up's start**, in all 7 (#17484 the first): 0x4a5 and the mode
+  read, the control turned off and on again, so it starts from the index
+  and npt of the last estimate, before the offsets are cleared.
 - **The warm-up**: the offsets cleared, the target at 0x40, 50 dummy frames
   (`b43_dummy_transmission()`) each followed by the control's index
   (`b43_phy_lcn_get_current_tx_pwr_idx()`), between deaf modes. 50 in every
@@ -276,6 +336,12 @@ are on channel 1.
 - **The registers wl reads after the calibration** (0x671, 0x673-0x676,
   0x679, 0x6da) are written nowhere else in the capture: not a save. b43
   reads them for the calibration statistics only (`papd/regs`).
+- **The PAPD's end**: after the control's turn-on, the pulse of 0x44a and
+  deaf mode off, in all seven PAPDs of the capture (#20983 the first).
+  After the four of an init only, before the RX antenna (#20994-#21012):
+  the control set to HW again, which reads 0x4a4 once, so without reading
+  the mode first, deaf mode off again and the TX gain override off. Which
+  of wl's functions makes them is not known.
 - **Not understood yet**, each with what the capture gives:
   - an RMW of 0x4b0 before the first RX gain (#19587), and of 0x6c9 before
     the setup writes it (#19984): neither changes in the capture;
@@ -318,13 +384,19 @@ are on channel 1.
   and before the first command, in all four of the capture (#11071 the
   first, 0x10b4 every time): wl's, its use not known. b43 makes it too,
   so the harness's later reads of 0x4a4 get their own values.
-- **The periodic calibration starts from the control's index** (0x4a4,
-  0x473, #8457), as wl; brcmsmac takes its cached index.
+- **The idle TSSI starts from the control's index** (0x4a4, 0x473, #8458),
+  which it loads back at its end (#9973, index 90), as wl; brcmsmac takes
+  its cached index.
+- **The periodic calibration's end**: wl reads the mode at its start
+  (#8417) and restores neither it nor an index at its end, where brcmsmac
+  does; each calibration restores its own.
 - **The periodic calibration's preamble** (#8419-#8444), all 4 of the
   capture: deaf, the PAPD compensation off, the TX I/Q-LO coefficients
   cleared (radio 0x089-0x08c = 0x88, `wlc_lcnphy_set_tx_iqlo_coeffs()`'
   value for 0, then LOCC and IQCC). Off, the compensation also keeps the
-  harness's reads of 0x676 in wl's order for the PAPD.
+  harness's reads of 0x676 in wl's order for the PAPD. The radio's four
+  are cleared again before every TX I/Q-LO calibration's commands
+  (#10786).
 - **The order of the init's calibration**: deaf, the idle TSSI estimate and
   the TSSI to power table, the TX I/Q-LO calibration, the RX I/Q one, as
   wl (#8417 on). brcmsmac's `wlc_lcnphy_periodic_cal()` runs the I/Q
