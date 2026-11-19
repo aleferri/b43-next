@@ -525,6 +525,8 @@ static u16 b43_phy_lcn_set_tx_pwr_ctrl(struct b43_wldev *dev, u16 mode)
 		b43_phy_lcn_set_tx_gain_override(dev, true);
 	}
 	b43_phy_maskset(dev, 0x4a4, (u16)~B43_LCN_TX_PWR_CTRL_MASK, mode);
+	/* wl's read-back after every mode write: which bits it means is not known */
+	b43_phy_set(dev, 0x525, 0);
 	return old_mode;
 }
 
