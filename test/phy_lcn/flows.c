@@ -168,14 +168,16 @@ int lcn_run_flow(const char *name)
 	if (!strcmp(name, "full")) {
 		/*
 		 * What b43 runs of the PHY from its init to the BSS up: the
-		 * analog switch of b43_wireless_core_reset() and of
-		 * b43_phy_bringup(), then b43_phy_init().
+		 * analog switch of b43_wireless_core_reset(), then
+		 * b43_phy_bringup()'s analog switch, b43_phy_init() and RX
+		 * antenna.
 		 */
 		dev->phy.chandef = NULL;
 		dev->phy.do_full_init = true;
 		dev->phy.ops->switch_analog(dev, true);
 		dev->phy.ops->switch_analog(dev, true);
 		b43_phy_init(dev);
+		dev->phy.ops->set_rx_antenna(dev, B43_ANTENNA_DEFAULT);
 		/* mac80211's first config sets the power: the check */
 		b43_phy_txpower_check(dev, B43_TXPWR_IGNORE_TIME |
 				      B43_TXPWR_IGNORE_TSSI);
