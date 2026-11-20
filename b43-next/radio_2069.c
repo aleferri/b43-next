@@ -1243,8 +1243,9 @@ static const u8  b43_r2069_rccal_init[3] = { 1, 0, 0 };
 static const u8  b43_r2069_rccal_mode[3] = { 0, 2, 1 };
 static const u8  b43_r2069_rccal_nloop[3] = { 0x1c, 0x70, 0x40 };
 
-/* Pass 0/1 common preamble: program the engine for this pass. */
-/* [capture-ref: router-data/d6220/cold-sweep.zip!cold01-ch36-bw20.txt;
+/*
+ * Pass 0/1 common preamble: program the engine for this pass.
+ * [capture-ref: router-data/d6220/cold-sweep.zip!cold01-ch36-bw20.txt;
  *   911-923, 956-968, 1025-1037]
  * [capture-ref: router-data/d6220/hot-sweep.zip!segmenti/01-up-ch36-bw20.txt;
  *   293-305, 338-350, 401-413]
@@ -1262,8 +1263,9 @@ static void b43_r2069_rccal_setup(struct b43_wldev *dev, unsigned int pass)
 			b43_r2069_rccal_seed[pass]);
 }
 
-/* Kick the engine and poll the done bit. */
-/* [capture-ref: router-data/d6220/cold-sweep.zip!cold01-ch36-bw20.txt;
+/*
+ * Kick the engine and poll the done bit.
+ * [capture-ref: router-data/d6220/cold-sweep.zip!cold01-ch36-bw20.txt;
  *   924-947, 969-994, 1062-1089]
  * [capture-ref: router-data/d6220/hot-sweep.zip!segmenti/01-up-ch36-bw20.txt;
  *   306-329, 351-370, 438-455]
@@ -1543,9 +1545,7 @@ static void b43_r2069_prefregs_init(struct b43_wldev *dev)
  * touches here are the save/restore of 0x0728 and the fixed gating writes
  * around the radio body, the same pattern as b43_radio_2069_afecal in this
  * file.
- */
-
-/* [capture-ref: router-data/d6220/cold-sweep.zip!cold01-ch36-bw20.txt;
+ * [capture-ref: router-data/d6220/cold-sweep.zip!cold01-ch36-bw20.txt;
  *   692-850]
  * [capture-ref: router-data/d6220/hot-sweep.zip!segmenti/01-up-ch36-bw20.txt;
  *   74-232]
@@ -1614,8 +1614,7 @@ void b43_radio_2069_init(struct b43_wldev *dev)
 		}
 	}
 
-	/* --- Epilogue (chip-agnostic), restores the SAVED 0x728 --- */
-	/* radio 0x040c bit4 low, PHY 0x0408 pulse, bit4 high. */
+	/* --- Epilogue, the same on every chip --- */
 	b43_radio_mask(dev, 0x040c, (u16)~0x0010);
 	b43_phy_write(dev, B43_PHY_AC_RFCTL_CMD, 0x0c06);
 	udelay(100);

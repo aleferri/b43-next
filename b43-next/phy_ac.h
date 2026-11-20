@@ -46,12 +46,11 @@ struct ieee80211_channel;
 
 /*
  * Trigger values for RF_SEQ_TRIG (and corresponding bits read from
- * RF_SEQ_STATUS).
+ * RF_SEQ_STATUS). force_rfseq commands 3, 4 and 5 are 0x04, 0x08 and 0x10.
  */
 #define  B43_PHY_AC_RF_SEQ_RX2TX		0x0001	/* force_rfseq cmd 0 */
 #define  B43_PHY_AC_RF_SEQ_TX2RX		0x0002	/* force_rfseq cmd 1 */
 #define  B43_PHY_AC_RF_SEQ_RST2RX		0x0020	/* force_rfseq cmd 2 */
-/* force_rfseq cmd->bit: 0=0x01 1=0x02 2=0x20(RST2RX) 3=0x04 4=0x08 5=0x10 */
 
 /*
  * Status reads before giving up, 10 us apart: the vendor's limits for a
@@ -132,7 +131,7 @@ struct ieee80211_channel;
  * the driver from touching HW in an inconsistent state.
  *
  * Bit assignments mirror the raw HW bits tracked by
- * reverse-tools/annotate_enables.py, so the trace annotator and the
+ * `b43trace annotate-enables`, so the trace annotator and the
  * driver agree on the state model.
  */
 #define B43_PHY_AC_STATE_MAC_EN		0x0001	/* MAC.MCTRL bit 0: MAC running */
@@ -173,8 +172,6 @@ struct ieee80211_channel;
  */
 #define B43_PHY_AC_STATE_COLD_PREAMBLE	0x1000
 #define B43_PHY_AC_STATE_FAULTED	0x8000	/* sticky: a precondition failed */
-
-/* Per-device PHY state. */
 
 /*
  * Hard maximum of RF chains the driver programs. Every per-core array here
@@ -405,7 +402,7 @@ struct b43_phy_ac {
 	 * goes with a first callback within a millisecond of the bring-up tail
 	 * (44 of 44 hot `up` segments, and cold01 only among the cold ones),
 	 * while a callback 1.0-1.3 s later is the sweep alone. The caller sets
-	 * it; reverse-tools/timeline.py reads it from the order of the four
+	 * it; `b43trace timeline` reads it from the order of the four
 	 * cells.
 	 */
 	bool wd_entry_turn;

@@ -8,9 +8,7 @@
  * Copyright (c) 2026 Andreas Wendleder <andreas.wendleder@proton.me>
  * Copyright (c) 2026 Ville Takio <ville+git@takio.fi>
  * Copyright (c) 2026 Erik Conijn <egc112@msn.com>
- */
-
-/*
+ *
  * Transcription conventions for the whole file:
  *
  * - b43_phy_maskset() and b43_radio_maskset() are used even for a plain OR or
@@ -36,7 +34,7 @@
  *
  * The #NNNNN indices are episode positions in a reference capture. The index
  * spaces of the captures overlap, so a bare index can resolve to several ops:
- * check it with `reverse-tools/anchors.py span` before relying on it.
+ * check it with `b43trace anchors span` before relying on it.
  */
 
 #include <linux/slab.h>
@@ -348,8 +346,6 @@ static void b43_phy_ac_init_regs(struct b43_wldev *dev)
 	/*
 	 * First bring-up: one pass with 0x097a/0x08fa. Later ones: two passes
 	 * with 0x03bf/0x0340. Both seen on the d6220 and on agcombo.
-	 *
-	 * TODO: the DSL-3580L, on wl 6.30, writes 0x0395/0x0315 and no 0x1645.
 	 */
 	u16 saved;
 	bool first = dev->phy.do_full_init;
@@ -2215,11 +2211,6 @@ static void b43_phy_ac_txpwrctrl_program(struct b43_wldev *dev,
 		b43_phy_maskset(dev, 0x0644 + core * 0x0200, (u16)~0x007f, 0x0014);
 	}
 
-	/*
-	 * The idle-TSSI base index is written by b43_phy_ac_idle_tssi_meas(),
-	 * which op_switch_channel() calls before this.
-	 */
-
 	/* Target power and control bits: 0xc8. */
 	b43_phy_maskset(dev, 0x0071, (u16)~0x00ff, 0x00c8);
 	b43_phy_maskset(dev, 0x0071, (u16)~0x0700, 0x0400);
@@ -2270,10 +2261,6 @@ static void b43_phy_ac_txpwrctrl_setup(struct b43_wldev *dev, u16 freq)
 
 	b43_phy_ac_txpwrctrl_program(dev, grp);
 }
-
-/**************************************************
- * Open-loop TX gain (fixed index)
- **************************************************/
 
 /*
  * Program the per-chain TX gain from the open-loop txgain LUT at index @idx.
@@ -2333,10 +2320,6 @@ void b43_phy_ac_txpwr_by_index(struct b43_wldev *dev, u8 idx)
 
 	b43_phy_ac_tbl_write_unlock(dev, saved);
 }
-
-/**************************************************
- * RF sequencing
- **************************************************/
 
 /*
  * Run one RF sequencer command as the vendor does: save RFCTL1 and the
@@ -2468,10 +2451,6 @@ b43_phy_ac_reset_cca(struct b43_wldev *dev)
 {
 	b43_phy_ac_cca_pulse(dev);
 }
-
-/**************************************************
- * Various PHY ops
- **************************************************/
 
 /*
  * Clip detector enable/disable, per core: bit 0x4000 of 0x06d4 + core*0x200
@@ -4095,7 +4074,7 @@ static void b43_phy_ac_channel_setup(struct b43_wldev *dev,
 	 * Per-channel PHY 0x371-0x376, the 2069 path of
 	 * set_regtbl_on_chan_change: phy_reg_write(0x371 + i, ci[0x68 + 2*i]),
 	 * entries u16[52..57] of the channel table. Checked against the stock
-	 * sweep on all 16 20 MHz channels by reverse-tools/check_channeltab.py.
+	 * sweep on all 16 20 MHz channels by `b43trace check-channeltab`.
 	 */
 	for (i = 0; i < 6; i++)
 		b43_phy_write(dev, B43_PHY_AC_BW1A + i, e->phy_bw[i]);
@@ -5061,11 +5040,6 @@ static void b43_phy_ac_crs_regs_write(struct b43_wldev *dev, u16 val)
  * the .rodata of the 7.14.89 blob at +0x40e84, +0x40e94 and +0x40ea4; see
  * docs/crs-min-power.md. The agcombo uses the same: on both its sweeps every
  * threshold and every 0x0910 bank value is an entry of these rows.
- *
- * Open: the DSL-3580L's 6.30 blob has the rows at 0x1fa19c, 0x1fa1a8 and
- * 0x1fa1b4, eleven entries each, and the 20 and 80 MHz rows differ (two and
- * nine entries). On that board this table programs wrong values, and the
- * D6220-based gate does not see it.
  */
 static const u8 b43_phy_ac_crs_ladder[3][15] = {
 	/* BW20 */ { 45, 48, 51, 53, 54, 57, 60, 63, 66, 68, 70, 72, 75, 78, 80 },
@@ -6292,16 +6266,6 @@ static int b43_phy_ac_op_init(struct b43_wldev *dev)
 	B43_AC_BLOCK(dev, "init_regs");
 	b43_phy_ac_init_regs(dev);
 
-	/*
-	 * No MHF configuration here on a warm cycle: the attach capture has it
-	 * in the preamble, but a sweep segment has it at the very end
-	 * (#29093-#29114 of 29162), before MAC.MCTRL and the MAC shared-memory
-	 * block, i.e. some 22000 ops after the head of op_init. Whether it is
-	 * the tail of this cycle or the head of the next is not settled, so it
-	 * is left out.
-	 */
-
-	/* Latch the phase; see B43_PHY_AC_STATE_FIRST_BRINGUP. */
 	if (dev->phy.do_full_init)
 		dev->phy.ac->status_mask |= B43_PHY_AC_STATE_FIRST_BRINGUP;
 	else
@@ -6530,9 +6494,8 @@ static void b43_phy_ac_switch_analog_once(struct b43_wldev *dev, bool on,
 	 * above and before the MHF block and the second copy of the unit. One
 	 * op on that register in the cold preamble of both boards, 0x0f00 on
 	 * the 4352 and the 4360 alike. A later bring-up of the d6220 does not
-	 * touch 0x02e4; the DSL (wl 6.30) writes 0x0800 there on its down->up,
-	 * a version difference not reproduced (docs/retrace-todo.md). The
-	 * 0x0800 set_channel writes on the 4360 is a different site.
+	 * touch 0x02e4. The 0x0800 set_channel writes on the 4360 is a
+	 * different site.
 	 */
 	if (!cold)
 		return;
@@ -8847,13 +8810,12 @@ void b43_phy_ac_rxiqcal_meas_post_dds_apply_v2(struct b43_wldev *dev)
  * one round per tone: +-f up to 40 MHz, +-f, +-3f, +-4f at 80.
  *
  * The stock driver's RX IQ calibration on the AC-PHY is the
- * frequency-dependent one (wlc_phy_cal_rx_fdiqi_acphy): per tone the
- * mismatch of b43_iq_mismatch(), the angle and the magnitude averaged over
- * the tones half away from zero, and b43_rx_iq_comp_mismatch() of the
- * means. On the 316 writes of 0x?a1 of reverse-tools/rxiq_points.py
- * (cold d6220, agcombo and tg789vac, d6220 and agcombo hot up) this gives
- * a and b exact on all 316; the plain mean of per-tone (a, b) gave 299
- * and 257.
+ * frequency-dependent one: per tone the mismatch of b43_iq_mismatch(), the
+ * angle and the magnitude averaged over the tones half away from zero, and
+ * b43_rx_iq_comp_mismatch() of the means. On the 316 writes of 0x?a1 of
+ * `b43trace rxiq-points` (cold d6220, agcombo and tg789vac, d6220 and
+ * agcombo hot up) this gives a and b exact on all 316; the plain mean of
+ * per-tone (a, b) gave 299 and 257.
  */
 static void b43_phy_ac_iq_solve(struct b43_phy_ac_iq_acc *acc,
 				s16 *a_out, s16 *b_out)
@@ -9818,25 +9780,6 @@ static void b43_phy_ac_radar_thresh(struct b43_wldev *dev)
 }
 
 /*
- * The channel availability check. On a channel with the radar duty a first
- * bring-up may not transmit until it completes, so the transmitting
- * calibrations do not run (b43_phy_ac_may_calibrate_tx()) and the check
- * does: an arm and a detector poll.
- *
- * The arm is one maskset on PHY 0x02e4, right after the host-flag clear that
- * opens the post-bring-up tail, with the BSS match row suspended and a first
- * poll turn. A turn is mac_suspend, reads of PHY 0x0251 and 0x0252,
- * mac_enable, on a 150 ms timer: on cold05 680 of 705 gaps are 151 ms, the
- * rest 1.3-1.4 s where the tempsense holds the thread. The timer outlives
- * the check (305 of 706 turns fall after it): its condition is the duty, not
- * the calibration gate.
- *
- * 0x0251 and 0x0252 are the fill levels in 16-bit words of the two radar
- * pulse FIFOs, 0x0253 and 0x0254 their data ports: four words a pulse, the
- * levels saturating at 0x05fc. radar_ac.c has the decode and the matching.
- */
-
-/*
  * The radar detector armed or not, where the stock driver writes it on every
  * channel bring-up: after the ADC config write of 0x0339, before the 0x033a
  * ladder. Traced on the RT-AC66U B1 under wl 7.14.164.18 at ch 52/80 with
@@ -9865,12 +9808,6 @@ static void b43_phy_ac_radar_thresh(struct b43_wldev *dev)
  * again; with the flag and SHM 0x0066 at 0, both FIFOs saturate. So SHM goes
  * before the flag on the way in, as wl writes them, and after it on the way
  * out.
- */
-/*
- * The way out writes back only what the arm alone changes: 0x0250 and
- * 0x0261-0x0263 belong to the bandwidth setup, which writes them earlier in
- * the same bring-up for the new width (bw_owned), and 025b, 025d, 0259 and
- * 025f are the same both ways.
  */
 static const struct {
 	u16 reg, on, off;
@@ -9929,8 +9866,11 @@ static void b43_phy_ac_radar_arm(struct b43_wldev *dev, bool on)
 			return;
 		b43_shm_write16(dev, B43_SHM_SHARED, B43_SHM_SH_RADAR, 0);
 		/*
-		 * 0x025b went in for the width of the arm, which may not be
-		 * this bring-up's: it goes back whatever the width.
+		 * Back only what the arm alone changed: the bw_owned registers
+		 * belong to the bandwidth setup, which has written them for this
+		 * bring-up's width, and 025d, 0259 and 025f are the same both
+		 * ways. 0x025b went in for the width of the arm, which may not
+		 * be this bring-up's: it goes back whatever the width.
 		 */
 		for (i = 0; i < ARRAY_SIZE(b43_phy_ac_radar_block); i++)
 			if (!b43_phy_ac_radar_block[i].bw_owned &&
@@ -9980,7 +9920,10 @@ static void b43_phy_ac_radar_fifo(struct b43_wldev *dev, unsigned int fifo,
 
 /*
  * A turn: the levels, the FIFOs drained, the pulses matched. Returns whether
- * they matched a radar type.
+ * they matched a radar type. 0x0251 and 0x0252 are the fill levels in 16-bit
+ * words of the two radar pulse FIFOs, 0x0253 and 0x0254 their data ports:
+ * four words a pulse, the levels saturating at 0x05fc. radar_ac.c has the
+ * decode and the matching.
  */
 static bool b43_phy_ac_cac_poll(struct b43_wldev *dev)
 {
@@ -10024,7 +9967,20 @@ bool b43_phy_ac_radar_poll(struct b43_wldev *dev)
 	return b43_phy_ac_cac_poll(dev) && dev->wl->hw->conf.radar_enabled;
 }
 
-/* Arm the check, and the turn that goes with it. */
+/*
+ * The channel availability check. On a channel with the radar duty a first
+ * bring-up may not transmit until it completes, so the transmitting
+ * calibrations do not run (b43_phy_ac_may_calibrate_tx()) and the check
+ * does: an arm and a detector poll.
+ *
+ * The arm is one maskset on PHY 0x02e4, right after the host-flag clear that
+ * opens the post-bring-up tail, with the BSS match row suspended and a first
+ * poll turn. A turn is mac_suspend, reads of PHY 0x0251 and 0x0252,
+ * mac_enable, on a 150 ms timer: on cold05 680 of 705 gaps are 151 ms, the
+ * rest 1.3-1.4 s where the tempsense holds the thread. The timer outlives
+ * the check (305 of 706 turns fall after it): its condition is the duty, not
+ * the calibration gate.
+ */
 static void b43_phy_ac_cac_arm(struct b43_wldev *dev)
 {
 	if (b43_phy_ac_may_calibrate_tx(dev))
@@ -10123,12 +10079,6 @@ static void b43_phy_ac_post_bringup_tail(struct b43_wldev *dev)
 	b43_phy_ac_cac_arm(dev);
 
 	/*
-	 * The vendor reloads the beacon template here, once or twice, then
-	 * lights the two LEDs (gpio 2, gpio 10 active-low); in b43 both belong
-	 * to the core.
-	 */
-
-	/*
 	 * A cell set to 0xffff once per segment, between the LED GPIOs and the
 	 * window latch. b43.h does not name it and its purpose is unknown; the
 	 * position is invariant.
@@ -10219,14 +10169,6 @@ static void b43_phy_ac_down(struct b43_wldev *dev)
 	gate = b43_phy_ac_tbl_write_lock(dev);
 	b43_phy_ac_txpwrctrl_program(dev, dev->phy.ac->pa5g_grp);
 
-	/*
-	 * Final tail, 72 ops: close the RX-IQ scope and program the per-core
-	 * final coefficients; the steps are labelled in the body. The 0x17xx
-	 * block, a 0x1000 stride over the gain registers 0x1720-0x173e, is a
-	 * different address space, possibly a shadow bank; unverified.
-	 */
-
-	/* Unlock the gate, then the AFE gain registers as in block E. */
 	b43_phy_ac_tbl_write_unlock(dev, gate);
 	b43_phy_ac_afe_gain_regs_reemit(dev);
 
@@ -10686,7 +10628,7 @@ static int b43_phy_ac_op_switch_channel(struct b43_wldev *dev, unsigned int new_
 	B43_AC_BLOCK(dev, "afe_gain");
 	b43_phy_ac_afe_gain_regs(dev, !(dev->phy.ac->status_mask &
 				       B43_PHY_AC_STATE_FIRST_BRINGUP));
-	b43_phy_ac_mhf_maskset(dev, 3, (u16)~0x0040, 0x0040);    /* MHF3 set bit 6 */
+	b43_phy_ac_mhf_maskset(dev, 3, (u16)~0x0040, 0x0040);
 	b43_phy_ac_ofdm_pctl1_readback(dev);
 	/*
 	 * No timeout for the firmware's probe response. Not transcribed: it is what b43_chip_init() writes. It overrides the 1
@@ -10748,7 +10690,7 @@ static int b43_phy_ac_op_switch_channel(struct b43_wldev *dev, unsigned int new_
 	b43_mac_suspend(dev);
 	/* Invariant across all 26 cold segments; purpose unknown. */
 	b43_shm_write16(dev, B43_SHM_SHARED, 0x007c, 0x0320);
-	b43_phy_ac_mhf_maskset(dev, 3, (u16)~0x0020, 0x0020);    /* MHF3 set bit 5 */
+	b43_phy_ac_mhf_maskset(dev, 3, (u16)~0x0020, 0x0020);
 	b43_mac_enable(dev);
 	/*
 	 * Here the stock driver stops forcing the HT clock, which it holds
@@ -10769,7 +10711,7 @@ static int b43_phy_ac_op_switch_channel(struct b43_wldev *dev, unsigned int new_
 	b43_shm_write16(dev, B43_SHM_SHARED, B43_SHM_SH_IFSCTL1, ifs);
 	b43_write16(dev, 0x06c6, ifs);
 	b43_phy_maskset(dev, 0x0042, (u16)~0x8000, 0x8000);
-	b43_phy_ac_mhf_maskset(dev, 1, (u16)~0x0020, 0x0020);    /* MHF1 set bit 5 */
+	b43_phy_ac_mhf_maskset(dev, 1, (u16)~0x0020, 0x0020);
 	b43_mac_suspend(dev);
 	b43_phy_ac_wd_stats_poll_opt(dev, true, 0, true);
 	B43_AC_CORE_SITE(dev, MACFILTER);
@@ -10896,11 +10838,6 @@ const struct b43_phy_operations b43_phyops_ac = {
 	.beacon_rate_set	= b43_phy_ac_op_beacon_rate_set,
 	B43_CAL_OPS(b43_phy_ac_cal_entries)
 };
-
-/* ==========================================================================
- * Farrow resampler setup
- * ==========================================================================
- */
 
 /*
  * Farrow resampler ratio and deltaphase, functions of the centre frequency

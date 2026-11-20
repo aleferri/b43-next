@@ -6,9 +6,6 @@
 
 struct b43_wldev;
 
-/* Per-core register routing for the 2069 radio. */
-
-/* One PHY-side row in the per-channel table. */
 /*
  * One row of the per-channel table for the 2069 radio.
  *
@@ -18,7 +15,7 @@ struct b43_wldev;
  *                  0x11a, 0x11b, 0x719, 0x630, 0x65c and 0x662
  *
  * The rows are chan_tuning_2069rev4 of the 6.30.102.7 blob, 2.4 and 5 GHz,
- * with one register map for both bands. reverse-tools/check_channeltab.py
+ * with one register map for both bands. `b43trace check-channeltab`
  * checks them against the captures' BW20 segments. The symbol of the same
  * name in wlD6220.o (7.14.89, .data + 0x63ef0) has the same 64 rows and
  * 13 more, channels 184 to 216; each of its rows also carries five words,

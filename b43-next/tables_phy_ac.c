@@ -11,8 +11,6 @@
 #include "phy_ac.h"
 #include "tables_phy_ac.h"
 
-/* PHY-table-write gate */
-
 /* Lock or unlock the gate without saving it. */
 void b43_phy_ac_tbl_write_gate(struct b43_wldev *dev, bool lock)
 {
@@ -35,8 +33,6 @@ void b43_phy_ac_tbl_write_unlock(struct b43_wldev *dev, u16 saved)
 			(u16)~B43_PHY_AC_TBL_WRITE_GATE_LOCK,
 			saved & B43_PHY_AC_TBL_WRITE_GATE_LOCK);
 }
-
-/* Bulk table write */
 
 /*
  * One 48-bit cell through the DATA_2 port. The first word selects the port,
@@ -942,8 +938,6 @@ const u16 b43_actab_farrow_vals_432x_media_a1[98] = {
 	0x000a, 0x0009,
 };
 
-/* Table descriptors and data */
-
 /*
  * Sentinel for descriptors that are not per-core (one instance for the whole
  * chip).
@@ -1260,8 +1254,6 @@ static const struct b43_phy_ac_table_desc b43_phy_ac_tables_rev0[] = {
 #undef TBL_ZERO
 #undef TBL_POPULATED_FIRST
 #undef TBL_ZERO_FIRST
-
-/* Init */
 
 /* [capture-ref: router-data/d6220/cold-sweep.zip!cold01-ch36-bw20.txt;
  *   1272-4987]
