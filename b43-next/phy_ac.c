@@ -424,6 +424,578 @@ static void b43_phy_ac_radar_thresh(struct b43_wldev *dev);
 static void b43_phy_ac_radar_arm(struct b43_wldev *dev, bool on);
 
 /*
+ * Low three bits of radio 0x066d, the only per-channel radio value that does
+ * not come through the channel table; the upper bits are 0x18c0 on every
+ * capture. On 5 GHz four codes keyed on the primary channel's frequency
+ * alone (the d6220 sweep gives a channel the same code at 20, 40 and 80 MHz):
+ *
+ *   4  below 5240      3  5240 to 5499      1  5500 to 5539      0  from 5540
+ *
+ * Exact on all 26 sweep configurations. The code skips 2, so this is a
+ * measured step function: a formula in frequency would extrapolate past the
+ * four groups the captures pin. On 2.4 GHz the code is 0 on every channel
+ * (ch1-13 on the MacBook, ch1-11 on the archer-t5e).
+ */
+static u16 b43_radio_2069_cal_066d(u16 freq)
+{
+	u16 code;
+
+	if (freq < 5000)
+		code = 0;
+	else if (freq < 5240)
+		code = 4;
+	else if (freq < 5500)
+		code = 3;
+	else if (freq < 5540)
+		code = 1;
+	else
+		code = 0;
+
+	return 0x18c0 | code;
+}
+
+/*
+ * Per-core AFE and radio-LPF stage setup. The stock driver runs it twice in
+ * a bring-up with this same body, differing only in the 0x3800 field of
+ * 0x0728 (@afe_728): 0x0800 from op_software_rfkill(), right after RC-cal
+ * and the 0x08ea RCCAL_EN cleanup, 0x0000 from channel_setup(). Each caller
+ * has its own preamble (0x08ea write, 0x02d1/0x02d2 mods).
+ *
+ * The radio 0x0049 writes read back 0x0030 or 0x0000 in the trace: results
+ * of clearing fields over differing prior state, not literals, hence plain
+ * field masks. It iterates num_cores, not the coremask: every present core
+ * is powered at that point. Purpose not verified; named for its registers.
+ * [capture-ref: router-data/d6220/cold-sweep.zip!cold01-ch36-bw20.txt;
+ *   1112-1201, 5163-5252]
+ * [capture-ref: router-data/d6220/hot-sweep.zip!segmenti/01-up-ch36-bw20.txt;
+ *   478-567, 833-922]
+ */
+static void b43_radio_2069_afe_lpf_stage(struct b43_wldev *dev, u16 afe_728)
+{
+	B43_AC_FN();
+	static const u16 clr49[] = {
+		0xe000, 0x1800, 0x0400, 0x0300, 0x0040, 0x0080,
+	};
+	u8 core, num_cores = dev->phy.ac->num_cores;
+	unsigned int k;
+
+	for (core = 0; core < num_cores; core++) {
+		u16 co = core * 0x200;
+
+		b43_phy_maskset(dev, 0x0728 + co, (u16)~0x3800, afe_728);
+		b43_phy_maskset(dev, 0x0721 + co, (u16)~0x4000, 0x4000);
+	}
+	for (core = 0; core < num_cores; core++) {
+		u16 co = core * 0x200;
+
+		b43_radio_set(dev, 0x0045 + co, 0x0080);
+		for (k = 0; k < ARRAY_SIZE(clr49); k++)
+			b43_radio_mask(dev, 0x0049 + co, (u16)~clr49[k]);
+	}
+}
+
+/* [capture-ref: router-data/d6220/cold-sweep.zip!cold01-ch36-bw20.txt;
+ *   5024-5127]
+ * [capture-ref: router-data/d6220/hot-sweep.zip!segmenti/01-up-ch36-bw20.txt;
+ *   694-797]
+ */
+static void b43_radio_2069_channel_setup(struct b43_wldev *dev,
+					  const struct b43_phy_ac_channeltab_e_radio2069 *e)
+{
+	B43_AC_FN();
+	if (!e)
+		return;
+
+	/* AFE gate pulse on bit 8 of 0x0728. Present in every d6220 capture --
+	 * attach, attach at 40 MHz, attach on ch44, and down-to-up -- and in
+	 * both agcombo ones, immediately after the RX freeze and before the
+	 * channel-setup radio writes.
+	 *
+	 * The meaning is not established. b43_radio_2069_afe_lpf_stage() also
+	 * touches bit 8 of 0x0728, setting then clearing it, so it is some kind
+	 * of AFE-related trigger. */
+	b43_phy_maskset(dev, 0x0728, (u16)~0x0100, 0x0100);
+	udelay(1);
+	b43_phy_maskset(dev, 0x0728, (u16)~0x0100, 0x0000);
+
+	r2069_upload_chantab(dev, e);
+
+	/* Radio cal constants, right after the channel table writes. */
+	b43_radio_write(dev, 0x066d,
+			b43_radio_2069_cal_066d(dev->phy.ac->cal_freq));
+	b43_radio_write(dev, 0x0893, 0x0001);
+
+	/*
+	 * These two change at 80 MHz only: 0x0185 and 0x00ac at 20 and 40,
+	 * 0x0188 and 0x010c at 80. Constant across every channel of the cold
+	 * sweep within each group.
+	 */
+	if (dev->phy.ac->cal_width == NL80211_CHAN_WIDTH_80) {
+		b43_radio_write(dev, 0x0145, 0x0188);
+		b43_radio_write(dev, 0x0146, 0x010c);
+	} else {
+		b43_radio_write(dev, 0x0145, 0x0185);
+		b43_radio_write(dev, 0x0146, 0x00ac);
+	}
+
+	/* 0x0723 = 0x03e0, channel-invariant across every d6220 and agcombo
+	 * capture, immediately before the 0x0645 maskset. */
+	b43_radio_write(dev, 0x0723, 0x03e0);
+
+	b43_radio_maskset(dev, 0x0645, (u16)~0x7000, 0x7000);
+
+	/* 5 GHz only: on 2.4 GHz the MacBook and the archer-t5e go from the
+	 * 0x0645 maskset straight to 0x0723 = 0x83e0. */
+	if (b43_current_band(dev->wl) == NL80211_BAND_5GHZ) {
+		b43_radio_maskset(dev, 0x08c9, (u16)~0xff00, 0x0000);
+		b43_radio_maskset(dev, 0x08c9, (u16)~0x00ff, 0x0002);
+		b43_radio_write(dev,   0x08ca, 0x0002);
+		b43_radio_maskset(dev, 0x08cc, (u16)~0x00ff, 0x0002);
+		b43_radio_maskset(dev, 0x08cc, (u16)~0xff00, 0xff00);
+		b43_radio_write(dev,   0x08c7, 0xffff);
+		b43_radio_write(dev,   0x08c8, 0xffff);
+	}
+
+	b43_radio_write(dev,   0x0723, 0x83e0);
+
+	/*
+	 * One extra write on the lowest 40 MHz block of the band, right after
+	 * the one above and on the chain below it: 0x83e9 against 0x83e0, the
+	 * same register with the low nibble set. Likely a synthesiser edge case
+	 * rather than configuration: the ch36 block sits against the bottom of
+	 * U-NII-1, centre 5190 MHz.
+	 *
+	 * Twenty-one observations agree (d6220 cold, agcombo cold and hot):
+	 * three positive on ch36/40 and eighteen negative on every other 40 MHz
+	 * channel. ch36 at 80 MHz does not get it, so the width is part of the
+	 * condition. "Lowest 40 MHz block" and "5190 MHz exactly" cannot be
+	 * told apart: no 40 MHz block sits below this one.
+	 */
+	if (dev->phy.ac->cal_width == NL80211_CHAN_WIDTH_40 &&
+	    dev->phy.ac->cal_freq == 5190)
+		b43_radio_write(dev, 0x0523, 0x83e9);
+
+	/*
+	 * VCO and PLL enable. The rfpll writes above set the reference; this
+	 * sequence kicks the loop, and the PLL locks within the roughly 15us of
+	 * the udelays below.
+	 *
+	 * The lock verify, bit 8 of radio 0x090b, lives in adc_reset() instead:
+	 * the vendor emits that peek immediately before the final RX release,
+	 * not inside chanspec_set(). The chip stays in the RX freeze for tens of
+	 * milliseconds while the channel_setup flow runs, so by the time the
+	 * lock is checked it has long since been achieved.
+	 */
+	b43_radio_maskset(dev, 0x08e5, (u16)~0x4000, 0x0000);
+	b43_radio_maskset(dev, 0x08d0, (u16)~0x0001, 0x0000);
+	b43_radio_maskset(dev, 0x08e8, (u16)~0x0040, 0x0000);
+	b43_radio_maskset(dev, 0x08dc, (u16)~0x2000, 0x0000);
+	udelay(11);
+	b43_radio_maskset(dev, 0x08d0, (u16)~0x0001, 0x0001);
+	b43_radio_maskset(dev, 0x08e8, (u16)~0x0040, 0x0040);
+	udelay(1);
+	b43_radio_maskset(dev, 0x08dc, (u16)~0x2000, 0x2000);
+	udelay(60);
+}
+
+#define R2069_RCCAL_POLL_MAX	100
+#define R2069_PWRON_POLL_MAX	100
+
+static inline void r2069_mod(struct b43_wldev *dev, u16 reg, u16 mask, u16 val)
+{
+	b43_radio_maskset(dev, reg, (u16)~mask, val & mask);
+}
+
+/*
+ * Pass 0/1 common preamble: program the engine for this pass.
+ * [capture-ref: router-data/d6220/cold-sweep.zip!cold01-ch36-bw20.txt;
+ *   911-923, 956-968, 1025-1037]
+ * [capture-ref: router-data/d6220/hot-sweep.zip!segmenti/01-up-ch36-bw20.txt;
+ *   293-305, 338-350, 401-413]
+ */
+static void b43_r2069_rccal_setup(struct b43_wldev *dev, unsigned int pass)
+{
+	const struct r2069_rccal_pass *p = &r2069_rccal_passes[pass];
+
+	B43_AC_FN();
+	r2069_mod(dev, R2069_RCCAL_CFG, R2069_RCCAL_CFG_INIT,
+		  p->init ? R2069_RCCAL_CFG_INIT : 0);
+	r2069_mod(dev, R2069_RCCAL_CFG, R2069_RCCAL_CFG_MODE,
+		  (u16)(p->mode << R2069_RCCAL_CFG_MODE_SHIFT));
+	r2069_mod(dev, R2069_RCCAL_KICK, R2069_RCCAL_KICK_NLOOP,
+		  (u16)(p->nloop << R2069_RCCAL_KICK_NLOOP_SHIFT));
+	b43_radio_write(dev, R2069_RCCAL_SEED, p->seed);
+}
+
+/*
+ * Kick the engine and poll the done bit.
+ * [capture-ref: router-data/d6220/cold-sweep.zip!cold01-ch36-bw20.txt;
+ *   924-947, 969-994, 1062-1089]
+ * [capture-ref: router-data/d6220/hot-sweep.zip!segmenti/01-up-ch36-bw20.txt;
+ *   306-329, 351-370, 438-455]
+ */
+static bool b43_r2069_rccal_run(struct b43_wldev *dev)
+{
+	B43_AC_FN();
+	unsigned int i;
+
+	r2069_mod(dev, R2069_RCCAL_CFG, R2069_RCCAL_CFG_START, 0);
+	udelay(1);
+	r2069_mod(dev, R2069_RCCAL_CFG, R2069_RCCAL_CFG_START,
+		  R2069_RCCAL_CFG_START);
+	udelay(35);
+	r2069_mod(dev, R2069_RCCAL_KICK, R2069_RCCAL_KICK_GO, R2069_RCCAL_KICK_GO);
+
+	for (i = 0; i < R2069_RCCAL_POLL_MAX; i++) {
+		udelay(100);
+		if (b43_radio_read(dev, R2069_RCCAL_STAT) & R2069_RCCAL_STAT_DONE)
+			break;
+	}
+
+	r2069_mod(dev, R2069_RCCAL_KICK, R2069_RCCAL_KICK_GO, 0);
+
+	return i < R2069_RCCAL_POLL_MAX;
+}
+
+/* Pass 1: the measured RC code into the per-core trim registers. */
+static void b43_r2069_rccal_apply_code(struct b43_wldev *dev)
+{
+	u16 code = b43_radio_read_log(dev, R2069_RCCAL_G) & R2069_RCCAL_G_CODE;
+	unsigned int core;
+
+	b43_cal_report(dev, AC_CAL_RCCAL_CODE, code);
+
+	/*
+	 * Per silicon core: RC-time-constant trim applies to every powered core,
+	 * incl. the antenna-less core 2 (all three cores).
+	 * Unlike AFE cal (afecal), this is not per-active-chain.
+	 */
+	for (core = 0; core < dev->phy.ac->num_cores; core++) {
+		u16 stride = (u16)(core << 9);
+
+		r2069_mod(dev, R2069_RCCAL_P1_A | stride, R2069_RCCAL_P1_CODE, code);
+		r2069_mod(dev, R2069_RCCAL_P1_B | stride, R2069_RCCAL_P1_CODE, code);
+	}
+}
+
+/*
+ * Pass 2 arm: the fixed per-core trim, before running the engine; the
+ * measurement enable goes off again in b43_r2069_rccal_disarm_p2b().
+ */
+static void b43_r2069_rccal_apply_fixed(struct b43_wldev *dev)
+{
+	unsigned int core;
+
+	/* Per silicon core, as apply_code (all three). */
+	for (core = 0; core < dev->phy.ac->num_cores; core++) {
+		u16 stride = (u16)(core << 9);
+
+		r2069_mod(dev, R2069_RCCAL_P2_A | stride, R2069_RCCAL_P2_A_FAST, 0);
+		r2069_mod(dev, R2069_RCCAL_P2_B | stride, R2069_RCCAL_P2_B_MEAS,
+			  R2069_RCCAL_P2_B_MEAS);
+	}
+}
+
+/* Pass 2 disarm, after the engine has run and dacbuf_cap has been read. */
+static void b43_r2069_rccal_disarm_p2b(struct b43_wldev *dev)
+{
+	unsigned int core;
+
+	for (core = 0; core < dev->phy.ac->num_cores; core++) {
+		u16 stride = (u16)(core << 9);
+
+		r2069_mod(dev, R2069_RCCAL_P2_B | stride, R2069_RCCAL_P2_B_MEAS, 0);
+	}
+}
+
+/* [capture-ref: router-data/d6220/cold-sweep.zip!cold01-ch36-bw20.txt;
+ *   911-1111]
+ * [capture-ref: router-data/d6220/hot-sweep.zip!segmenti/01-up-ch36-bw20.txt;
+ *   293-477]
+ */
+static void b43_radio_2069_rccal(struct b43_wldev *dev)
+{
+	B43_AC_FN();
+	unsigned int pass;
+
+	u16 chipnum = dev->dev->chip_id;
+
+	if (chipnum != 0x4352 && chipnum != 0x4360) {
+		b43warn(dev->wl, "radio 2069: rccal skipped, chipnum 0x%04x not supported\n",
+		       chipnum);
+		return;
+	}
+
+	b43_cal_begin(dev, B43_CAL_RCCAL);
+
+	/*
+	 * First two passes
+	 */
+	for (pass = 0; pass < 2; pass++) {
+		b43_r2069_rccal_setup(dev, pass);
+		if (!b43_r2069_rccal_run(dev)) {
+			b43_cal_report(dev, AC_CAL_RCCAL_TIMEOUT, pass);
+		} else if (pass == 0) {
+			s16 e = b43_radio_read_log(dev, R2069_RCCAL_E);
+			s16 f = b43_radio_read_log(dev, R2069_RCCAL_F);
+			u8 cap = (u8)(((f - e) * 193) >> 8);
+
+			b43_cal_report(dev, AC_CAL_RCCAL_EF, (u16)e, (u16)f);
+			b43_cal_report(dev, AC_CAL_RCCAL_LPF_CAP, cap);
+			dev->phy.ac->lpf_cap0 = cap;
+			dev->phy.ac->lpf_cap1 = cap;
+			b43dbg(dev->wl,
+			       "radio 2069: rccal lpf cap 0x%02x (E=0x%04x F=0x%04x)\n",
+			       cap, (u16)e, (u16)f);
+		} else {
+			b43_r2069_rccal_apply_code(dev);
+		}
+		r2069_mod(dev, R2069_RCCAL_CFG, R2069_RCCAL_CFG_START, 0);
+	}
+
+	/*
+	 * Last pass (dacbuf cap): the engine runs with P2_A/P2_B armed,
+	 * then the measurement-enable bit in P2_B is cleared.
+	 */
+	b43_r2069_rccal_setup(dev, pass);
+	b43_r2069_rccal_apply_fixed(dev);
+	if (!b43_r2069_rccal_run(dev))
+		b43_cal_report(dev, AC_CAL_RCCAL_TIMEOUT, 2);
+	dev->phy.ac->dacbuf_cap = (b43_radio_read(dev, R2069_RCCAL_G) &
+				   R2069_RCCAL_G_DACBUF) >> R2069_RCCAL_G_DACBUF_SHIFT;
+	b43_cal_report(dev, AC_CAL_RCCAL_DACBUF_CAP, dev->phy.ac->dacbuf_cap);
+	b43_r2069_rccal_disarm_p2b(dev);
+
+	r2069_mod(dev, R2069_RCCAL_CFG, R2069_RCCAL_CFG_START, 0);
+	r2069_mod(dev, R2069_RCCAL_EN1, R2069_RCCAL_EN1_CAL, 0);
+}
+
+/*
+ * Per-core analog-front-end calibration for the 2069 radio.
+ *
+ * Two passes over the active chains, faithful to the d6220 bring-up
+ * capture: arm every core (save the three gain regs, route the PHY in, gate
+ * the cal clock off), settle, then launch every core (gate the clock on, set
+ * the AFE_CAL_CTRL enable nibble, poll done/valid, drop the nibble, put the
+ * gain regs back). Completion is two STAT reads per try -- done from the
+ * first, valid from the second.
+ *
+ * Both writes of AFE_CAL_CTRL come from its own readback: the vendor writes
+ * <read>|0x000f to arm and <read> to disarm. The word carries a bandwidth
+ * field in its top bits -- 0x5830 at 20 MHz, 0x5030 at 40, 0x4230 at 80 --
+ * which is why it must not be a constant, and taking it from the register
+ * needs no table.
+ * [capture-ref: router-data/d6220/cold-sweep.zip!cold01-ch36-bw20.txt;
+ *   11237-11298]
+ * [capture-ref: router-data/d6220/hot-sweep.zip!segmenti/01-up-ch36-bw20.txt;
+ *   6907-6968]
+ */
+static void b43_radio_2069_afecal(struct b43_wldev *dev)
+{
+	B43_AC_FN();
+	struct b43_phy_ac *ac = dev->phy.ac;
+	u16 gain_saved[B43_PHY_AC_MAX_CORES][3] = { { 0 } };
+	unsigned int core;
+
+	b43_cal_begin(dev, B43_CAL_AFE);
+	r2069_mod(dev, R2069_RCCAL_EN1, R2069_RCCAL_EN1_CAL, R2069_RCCAL_EN1_CAL);
+
+	/* Pass 1: arm every active core with the cal clock gated off. */
+	for_each_set_bit(core, &ac->coremask, ac->num_cores) {
+		u16 rbase = (u16)(core << 9);	/* per-core radio window */
+		u16 pbase = (u16)(core << 9);	/* per-core PHY window */
+
+		/*
+		 * The three gain regs the arming masksets below perturb, read
+		 * once per core before touching them: pass 2 writes them back
+		 * from here. Same save/restore over the same three registers
+		 * that b43_phy_ac_idle_tssi_meas() does.
+		 */
+		gain_saved[core][0] = b43_phy_read(dev, B43_PHY_AC_AFE_C1_OVER + pbase);
+		gain_saved[core][1] = b43_phy_read(dev, 0x073a + pbase);
+		gain_saved[core][2] = b43_phy_read(dev, B43_PHY_AC_AFE_C1 + pbase);
+
+		b43_phy_maskset(dev, B43_PHY_AC_AFE_C1_OVER + pbase, (u16)~0x0080, 0x0080);
+		b43_phy_maskset(dev, B43_PHY_AC_AFE_C1 + pbase, (u16)~0x0004, 0x0004);
+		r2069_mod(dev, R2069_AFE_CAL_CLK | rbase, R2069_AFE_CAL_CLK_EN, 0);
+	}
+
+	udelay(100);
+
+	/* Pass 2: launch every active core, then finalize its PHY regs. */
+	for_each_set_bit(core, &ac->coremask, ac->num_cores) {
+		u16 rbase = (u16)(core << 9);
+		u16 pbase = (u16)(core << 9);
+		u16 post[2] = { 0, 0 }, ctrl = 0;
+		r2069_mod(dev, R2069_AFE_CAL_CLK | rbase, R2069_AFE_CAL_CLK_EN,
+			  R2069_AFE_CAL_CLK_EN);
+		ctrl = b43_radio_read(dev, R2069_AFE_CAL_CTRL | rbase);
+
+		/*
+		 * The vendor reads STAT only after the arming write, never before:
+		 * a CTRL readback while still disarmed, the CTRL arm write, 10 us,
+		 * two STAT reads, then the CTRL disarm write.
+		 */
+		b43_radio_write(dev, R2069_AFE_CAL_CTRL | rbase,
+				ctrl | R2069_AFE_CAL_CTRL_EN);
+		udelay(10);
+		post[0] = b43_radio_read_log(dev, R2069_AFE_CAL_STAT | rbase);
+		post[1] = b43_radio_read_log(dev, R2069_AFE_CAL_STAT | rbase);
+
+		b43dbg(dev->wl,
+		       "radio 2069: afecal core %u ctrl=0x%04x stat=0x%04x/0x%04x\n",
+		       core, ctrl, post[0], post[1]);
+		b43_cal_report(dev, AC_CAL_AFE_RADIO, core, ctrl, post[0], post[1]);
+
+		b43_radio_write(dev, R2069_AFE_CAL_CTRL | rbase, ctrl);
+
+		b43_phy_write(dev, B43_PHY_AC_AFE_C1_OVER + pbase, gain_saved[core][0]);
+		b43_phy_write(dev, 0x073a + pbase, gain_saved[core][1]);
+		b43_phy_write(dev, B43_PHY_AC_AFE_C1 + pbase, gain_saved[core][2]);
+	}
+
+	r2069_mod(dev, R2069_RCCAL_EN1, R2069_RCCAL_EN1_CAL, 0);
+}
+
+/*
+ * Radio 2069 power-on init. Called once from op_init. The only PHY-register
+ * touches here are the save/restore of 0x0728 and the fixed gating writes
+ * around the radio body, the same pattern as b43_radio_2069_afecal().
+ * [capture-ref: router-data/d6220/cold-sweep.zip!cold01-ch36-bw20.txt;
+ *   692-850]
+ * [capture-ref: router-data/d6220/hot-sweep.zip!segmenti/01-up-ch36-bw20.txt;
+ *   74-232]
+ */
+void b43_radio_2069_init(struct b43_wldev *dev)
+{
+	B43_AC_FN();
+	u16 saved_728;
+
+	saved_728 = b43_phy_read_log(dev, 0x0728);
+	/* Read before the writes below, which are absolute. */
+	b43_phy_read_log(dev, B43_PHY_AC_RFCTL_CMD);
+
+	/* --- Prologue: PHY register writes --- */
+	b43_phy_write(dev, 0x0415, 0x0000);
+	b43_phy_write(dev, 0x040e, 0x0000);
+	b43_phy_write(dev, 0x040c, 0x2000);
+	b43_phy_write(dev, B43_PHY_AC_RFCTL_CMD, 0x0c00);
+	b43_phy_write(dev, 0x0417, 0x0000);
+	b43_phy_write(dev, 0x0416, 0x000d);
+
+	/* 0x728 &= 0x7e7f (clears 0x8000/0x0100/0x0080); wl7 writes 0x720 = 0x03ff. */
+	b43_phy_write(dev, 0x0728, saved_728 & 0x7e7f);
+	b43_phy_read_log(dev, 0x0720);	/* base logged for HW; the write below is absolute */
+	b43_phy_write(dev, 0x0720, 0x03ff);
+	b43_phy_write(dev, B43_PHY_AC_RFCTL_CMD, 0x0c00);
+
+	b43_phy_write(dev, B43_PHY_AC_RFCTL_CMD, 0x0c01);
+	/* Hold armed 1032us for the RF/analog lock to complete. */
+	udelay(1032);
+	b43_phy_write(dev, B43_PHY_AC_RFCTL_CMD, 0x0c00);
+
+	if (dev->phy.radio_rev == 4)
+		r2069_upload_inittabs(dev);
+
+	/* --- Body (acphychipid ∈ {0x4360, 0x4352}) --- */
+	b43_radio_set(dev, 0x096b, 0x0800);
+	b43_radio_set(dev, 0x096b, 0x4000);
+	b43_radio_set(dev, 0x096c, 0x0800);
+	b43_radio_set(dev, 0x096b, 0x8000);
+	b43_radio_set(dev, 0x096b, 0x1000);
+	b43_radio_set(dev, 0x096b, 0x0004);
+	b43_radio_set(dev, 0x0407, 0x0002);
+	b43_radio_set(dev, 0x055e, 0x0010);
+
+	{
+		unsigned int core;
+
+		/*
+		 * All num_cores silicon cores are still powered here: this runs
+		 * at rfkill-time, before channel_setup->rxcore_setstate, which
+		 * only masks the active RX chains (it does not power a core down).
+		 * The wl blob touches every core's radio space at this point
+		 * (incl. core 2 on the 2x2 d6220), so gate
+		 * on presence (num_cores), not on the antenna/active-chain mask.
+		 */
+		for (core = 0; core < dev->phy.ac->num_cores; core++) {
+			u16 stride = (u16)(core * 0x200);
+
+			b43_radio_maskset(dev, 0x0126 + stride, (u16)~0x0300, 0x0100);
+			b43_radio_maskset(dev, 0x0127 + stride, (u16)~0x0003, 0x0002);
+			b43_radio_maskset(dev, 0x006f + stride, (u16)~0x0004, 0x0000);
+			b43_radio_maskset(dev, 0x006f + stride, (u16)~0x0001, 0x0000);
+			b43_radio_maskset(dev, 0x006f + stride, (u16)~0x0002, 0x0000);
+			b43_radio_maskset(dev, 0x0065 + stride, (u16)~0x0001, 0x0000);
+		}
+	}
+
+	/* --- Epilogue, the same on every chip --- */
+	b43_radio_mask(dev, 0x040c, (u16)~0x0010);
+	b43_phy_write(dev, B43_PHY_AC_RFCTL_CMD, 0x0c06);
+	udelay(100);
+	b43_radio_set(dev, 0x040c, 0x0010);
+	b43_phy_write(dev, 0x0417, 0x000d);
+	udelay(100);
+	b43_phy_write(dev, B43_PHY_AC_RFCTL_CMD, 0x0c02);
+	b43_phy_write(dev, 0x0728, saved_728 | 0x0180);
+	b43_phy_write(dev, 0x0417, 0x0004);
+	b43_phy_write(dev, 0x0728, saved_728 & 0xfeff);
+}
+
+/*
+ * Radio power-on sequence, run once right after b43_radio_2069_init
+ * during software-rfkill unblock (op_software_rfkill). Pure radio-register
+ * block, no PHY touches.
+ * [capture-ref: router-data/d6220/cold-sweep.zip!cold01-ch36-bw20.txt;
+ *   851-910]
+ * [capture-ref: router-data/d6220/hot-sweep.zip!segmenti/01-up-ch36-bw20.txt;
+ *   233-292]
+ */
+static void b43_radio_2069_pwron(struct b43_wldev *dev)
+{
+	B43_AC_FN();
+	unsigned int polls;
+	u16 pon;
+
+	b43_radio_set(dev,   R2069_RCCAL_EN1, 0x0040);
+	b43_radio_set(dev,   R2069_RCCAL_EN1, R2069_RCCAL_EN1_CAL);
+	b43_radio_mask(dev,  R2069_RCCAL_EN2, ~R2069_RCCAL_EN2_MODE);
+	b43_radio_mask(dev,  R2069_RCCAL_EN2, ~0x1800);
+	b43_radio_set(dev,   0x0548, 0x0001);
+	b43_radio_write(dev, 0x0549, 0x0000);
+	b43_radio_write(dev, 0x054a, 0x0000);
+	b43_radio_write(dev, 0x054b, 0x0000);
+	b43_radio_write(dev, 0x054c, 0x0000);
+	b43_radio_mask(dev,  R2069_PWRON, ~R2069_PWRON_KICK);
+	udelay(1);
+	b43_radio_set(dev,   R2069_PWRON, R2069_PWRON_KICK);
+
+	/* Polled every 10 us, then read once more, as the vendor does. */
+	for (polls = 1; polls <= R2069_PWRON_POLL_MAX; polls++) {
+		udelay(10);
+		if (b43_radio_read(dev, R2069_PWRON) & R2069_PWRON_DONE)
+			break;
+	}
+	pon = b43_radio_read(dev, R2069_PWRON);
+	if (!(pon & R2069_PWRON_DONE))
+		b43warn(dev->wl, "radio 2069: power-on timeout (0x040b=0x%04x)\n",
+			pon);
+
+	b43_radio_mask(dev,  0x0548, ~0x0001);
+	b43_radio_mask(dev,  R2069_RCCAL_EN1, ~0x0040);
+	b43_radio_mask(dev,  R2069_RCCAL_EN1, ~R2069_RCCAL_EN1_CAL);
+	b43_radio_mask(dev,  R2069_PWRON, ~R2069_PWRON_KICK);
+
+	/* The RC-cal block left enabled for b43_radio_2069_rccal(). */
+	b43_radio_set(dev,     R2069_RCCAL_EN1, R2069_RCCAL_EN1_CAL);
+	b43_radio_maskset(dev, R2069_RCCAL_EN2, (u16)~R2069_RCCAL_EN2_MODE, 0x0400);
+
+	b43dbg(dev->wl, "phy-ac: radio pwron 0x040b readback: %04x after %u polls\n",
+	       pon, polls);
+}
+
+/*
  * Warn once per call site that the driver writes something it cannot
  * derive, and what may go wrong on hardware other than the one the value
  * was measured on.

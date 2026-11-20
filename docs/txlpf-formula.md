@@ -65,7 +65,7 @@ settles it. The TX-LPF is closed.
 
 ## In the code
 
-- `b43_radio_2069_rccal` (`radio_2069.c`) reads `R2069_RCCAL_E/F`, computes the
+- `b43_radio_2069_rccal` (`phy_ac.c`) reads `R2069_RCCAL_E/F`, computes the
   cap and fills `lpf_cap0`/`lpf_cap1`.
 - `set_analog_tx_lpf` uses them as `f9`/`f17`.
 - The RX-LPF path scales `f6` with `rx_k[stage]`.

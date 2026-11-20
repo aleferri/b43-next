@@ -733,6 +733,8 @@ enum {
 
 bool b43_phy_ac_force_rf_sequence(struct b43_wldev *dev, u16 rf_seq);
 
+void b43_radio_2069_init(struct b43_wldev *dev);
+
 /*
  * A read whose value nobody uses, a potential logic error: the log puts
  * address and value where they can be compared with the captured ones.
