@@ -7235,9 +7235,8 @@ void b43_phy_ac_post_rxiqcal_stage2(struct b43_wldev *dev)
 }
 
 /*
- * Keep the result of a commit iteration: only the six offsets that the tail
- * of rxcal_afe_calibrate() duplicates per antenna, since the other
- * iterations' results are not needed afterwards.
+ * Keep a command's result if it is one of the six rxcal_afe_calibrate()
+ * copies to the coefficient cells: each chain's IQ pair and LO word.
  */
 static void b43_phy_ac_afe_res_store(struct b43_wldev *dev, u16 off,
 				     const u16 *v, u8 n)
@@ -7285,10 +7284,10 @@ static void b43_phy_ac_afe_res_store(struct b43_wldev *dev, u16 off,
  *   14438-14535, 14536-14622, 14623-14684, 18881-18975, 18976-19098,
  *   19319-19411, 19412-19490, 19491-19565, 19566-19660]
  */
-void b43_phy_ac_rxcal_afe_iter(struct b43_wldev *dev,
-			       u16 cmd, u16 core_off,
-			       const u16 *pre_clear_offs, u8 n_pre_clear,
-			       u16 rd_off, u8 rw_len, u16 wr_off)
+static void b43_phy_ac_rxcal_afe_iter(struct b43_wldev *dev,
+				      u16 cmd, u16 core_off,
+				      const u16 *pre_clear_offs, u8 n_pre_clear,
+				      u16 rd_off, u8 rw_len, u16 wr_off)
 {
 	B43_AC_FN();
 	B43_PHY_AC_REQUIRE(dev,
@@ -7339,7 +7338,32 @@ void b43_phy_ac_rxcal_afe_iter(struct b43_wldev *dev,
 	b43_phy_ac_afe_res_store(dev, wr_off, result, rw_len);
 }
 
-/* [capture-ref: router-data/d6220/cold-sweep.zip!cold01-ch36-bw20.txt;
+/*
+ * The commands of the TX IQ/LO calibration, the same on each chain. @k is the
+ * cell of the chain's block of IQLOCAL: the result is read at 0x80 +
+ * 7 * core + k and committed at 0x40 + 8 * core + k. The first @n_clr of
+ * the cells 0x43 and 0x44 + 8 * core are cleared before the command.
+ */
+static const struct {
+	u16 cmd;
+	u8 k, len, n_clr;
+} b43_phy_ac_txiqlo_cmds[] = {
+	{ 0x0434, 5, 1, 2 },
+	{ 0x0334, 4, 1, 1 },
+	{ 0x0084, 0, 2, 0 },
+	{ 0x0267, 3, 1, 0 },
+	{ 0x0056, 0, 2, 0 },
+	{ 0x0234, 3, 1, 0 },
+};
+
+/*
+ * b43_phy_ac_txiqlo_cmds[] on each of the three chains whatever the
+ * coremask, the chain in the command's top nibble, with the ladder of
+ * chains 1 and 2 loaded before them, chain 2's on a first bring-up only.
+ * Then each chain's results go to its coefficient cells at 0x60 + 4 * core,
+ * IQ at +0 and LO at +2, and again 0x10 above; the tone stops and each
+ * chain's bbmult goes back.
+ * [capture-ref: router-data/d6220/cold-sweep.zip!cold01-ch36-bw20.txt;
  *   17423-19694]
  * [capture-ref: router-data/d6220/hot-sweep.zip!segmenti/01-up-ch36-bw20.txt;
  *   12837-14822]
@@ -7347,182 +7371,54 @@ void b43_phy_ac_rxcal_afe_iter(struct b43_wldev *dev,
 void b43_phy_ac_rxcal_afe_calibrate(struct b43_wldev *dev)
 {
 	B43_AC_FN();
-	unsigned int i;
+	unsigned int core, i;
 
 	B43_PHY_AC_REQUIRE(dev,
 			   B43_PHY_AC_STATE_RX_WAITED | B43_PHY_AC_STATE_CLIP_ALL_DIS,
 			   B43_PHY_AC_STATE_RX_CCK | B43_PHY_AC_STATE_RX_OFDM |
 			   B43_PHY_AC_STATE_CCA_RESET | B43_PHY_AC_STATE_MAC_EN);
 
-	/*
-	 * 18 iterations, six commands over three cores. The results are read
-	 * back and written by rxcal_afe_iter(); the "result" in the notes below
-	 * is what the capture shows, not a constant.
-	 */
+	for (core = 0; core < B43_PHY_AC_MAX_CORES; core++) {
+		const u16 clr[2] = { 0x43 + 8 * core, 0x44 + 8 * core };
 
-	/* ==== Core 0 (cmd 0x8XXX, RAD.RD 0x0144) ==== */
+		if (core == 1 ||
+		    (core == 2 && (dev->phy.ac->status_mask &
+				   B43_PHY_AC_STATE_FIRST_BRINGUP)))
+			b43_phy_ac_gain_ladder_write(dev, core);
 
-	/* Iter 1: cmd=0x8434, result 0x0301, pre-clears [0x43, 0x44] */
-	{
-		static const u16 pre[] = { 0x0043, 0x0044 };
-		b43_phy_ac_rxcal_afe_iter(dev, 0x8434, 0x0000,
-					  pre, 2, 0x0085, 1, 0x0045);
-	}
-	/* Iter 2: cmd=0x8334, result 0x0102 */
-	{
-		static const u16 pre[] = { 0x0043 };
-		b43_phy_ac_rxcal_afe_iter(dev, 0x8334, 0x0000,
-					  pre, 1, 0x0084, 1, 0x0044);
-	}
-	/* Iter 3: cmd=0x8084, result (0x0060, 0x0000) len=2 */
-	{
-		b43_phy_ac_rxcal_afe_iter(dev, 0x8084, 0x0000,
-					  NULL, 0, 0x0080, 2, 0x0040);
-	}
-	/* Iter 4: cmd=0x8267, result 0xff01 */
-	{
-		b43_phy_ac_rxcal_afe_iter(dev, 0x8267, 0x0000,
-					  NULL, 0, 0x0083, 1, 0x0043);
-	}
-	/* Iter 5: cmd=0x8056, result (0x0064, 0x000e) len=2 */
-	{
-		b43_phy_ac_rxcal_afe_iter(dev, 0x8056, 0x0000,
-					  NULL, 0, 0x0080, 2, 0x0040);
-	}
-	/*
-	 * Iteration 6, cmd 0x8234, observed result 0xfe02. Ends the core-0 group
-	 * with chain 1's ladder; see b43_phy_ac_gain_ladder_write().
-	 */
-	{
-		b43_phy_ac_rxcal_afe_iter(dev, 0x8234, 0x0000,
-					  NULL, 0, 0x0083, 1, 0x0043);
-		b43_phy_ac_gain_ladder_write(dev, 1);
-	}
+		for (i = 0; i < ARRAY_SIZE(b43_phy_ac_txiqlo_cmds); i++) {
+			u8 k = b43_phy_ac_txiqlo_cmds[i].k;
 
-	/* ==== Core 1 (cmd 0x9XXX, RAD.RD 0x0344) ==== */
-
-	/* Iter 7: cmd=0x9434, result 0x0001, pre-clears [0x4b, 0x4c] */
-	{
-		static const u16 pre[] = { 0x004b, 0x004c };
-		b43_phy_ac_rxcal_afe_iter(dev, 0x9434, 0x0200,
-					  pre, 2, 0x008c, 1, 0x004d);
-	}
-	/* Iter 8: cmd=0x9334, result 0x0000 */
-	{
-		static const u16 pre[] = { 0x004b };
-		b43_phy_ac_rxcal_afe_iter(dev, 0x9334, 0x0200,
-					  pre, 1, 0x008b, 1, 0x004c);
-	}
-	/* Iter 9: cmd=0x9084, result (0x0020, 0x0000) len=2 */
-	{
-		b43_phy_ac_rxcal_afe_iter(dev, 0x9084, 0x0200,
-					  NULL, 0, 0x0087, 2, 0x0048);
-	}
-	/* Iter 10: cmd=0x9267, result 0x0100 */
-	{
-		b43_phy_ac_rxcal_afe_iter(dev, 0x9267, 0x0200,
-					  NULL, 0, 0x008a, 1, 0x004b);
-	}
-	/* Iter 11: cmd=0x9056, result (0x0022, 0x0004) len=2 */
-	{
-		b43_phy_ac_rxcal_afe_iter(dev, 0x9056, 0x0200,
-					  NULL, 0, 0x0087, 2, 0x0048);
-	}
-	/*
-	 * Iteration 12, cmd 0x9234, observed result 0x0100. Iteration 13's
-	 * pre-clears at 0x53 and 0x54 come inside iteration 13, after 0x0381.
-	 */
-	{
-		b43_phy_ac_rxcal_afe_iter(dev, 0x9234, 0x0200,
-					  NULL, 0, 0x008a, 1, 0x004b);
-	}
-
-	/* The load before chain 2, on the first bring-up only. */
-	if (dev->phy.ac->status_mask & B43_PHY_AC_STATE_FIRST_BRINGUP)
-		b43_phy_ac_gain_ladder_write(dev, 2);
-
-	/* ==== Core 2 (cmd 0xaXXX, RAD.RD 0x0544) ==== */
-
-	/* Iter 13: cmd=0xa434, result 0xfb03, pre-clears [0x53, 0x54] */
-	{
-		static const u16 pre[] = { 0x0053, 0x0054 };
-		b43_phy_ac_rxcal_afe_iter(dev, 0xa434, 0x0400,
-					  pre, 2, 0x0093, 1, 0x0055);
-	}
-	/* Iter 14: cmd=0xa334, result 0x05fe */
-	{
-		static const u16 pre[] = { 0x0053 };
-		b43_phy_ac_rxcal_afe_iter(dev, 0xa334, 0x0400,
-					  pre, 1, 0x0092, 1, 0x0054);
-	}
-	/* Iter 15: cmd=0xa084, result (0xfee0, 0x0080) len=2 */
-	{
-		b43_phy_ac_rxcal_afe_iter(dev, 0xa084, 0x0400,
-					  NULL, 0, 0x008e, 2, 0x0050);
-	}
-	/* Iter 16: cmd=0xa267, result 0x0d6e */
-	{
-		b43_phy_ac_rxcal_afe_iter(dev, 0xa267, 0x0400,
-					  NULL, 0, 0x0091, 1, 0x0053);
-	}
-	/* Iter 17: cmd=0xa056, result (0xfed6, 0x00b6) len=2 */
-	{
-		b43_phy_ac_rxcal_afe_iter(dev, 0xa056, 0x0400,
-					  NULL, 0, 0x008e, 2, 0x0050);
-	}
-	/* Iter 18: cmd=0xa234, result 0x0764; the tail follows. */
-	{
-		b43_phy_ac_rxcal_afe_iter(dev, 0xa234, 0x0400,
-					  NULL, 0, 0x0091, 1, 0x0053);
-	}
-
-	/*
-	 * Tail of iteration 18, in three parts (a), (b) and (c). Part (a)
-	 * duplicates the commit iterations' results per antenna. Unverified
-	 * reading: (a) gain-override defaults for the second pass, (b) a reset
-	 * of bits set in B4c, (c) a scaling of the gain channels.
-	 */
-
-	/* (a): 12 self-contained writes, six offsets over two antennas. */
-	{
-		/* Destination offset for each of the six commit iterations. */
-		static const u16 dst[6] = {
-			0x60, 0x62, 0x64, 0x66, 0x68, 0x6a,
-		};
-		unsigned int i;
-
-		for (i = 0; i < ARRAY_SIZE(dst); i++) {
-			const u16 *v = dev->phy.ac->afe_res[i].v;
-			u8 n = dev->phy.ac->afe_res[i].n;
-
-			if (!n)
-				continue;
-			b43_actab_write_bulk_scoped(dev, B43_ACTAB_IQLOCAL, dst[i],
-						    16, n, v);
-			b43_actab_write_bulk_scoped(dev, B43_ACTAB_IQLOCAL,
-						    (u16)(dst[i] + 0x10),
-						    16, n, v);
+			b43_phy_ac_rxcal_afe_iter(dev,
+				(u16)((0x8 + core) << 12 |
+				      b43_phy_ac_txiqlo_cmds[i].cmd),
+				(u16)(core * 0x200), clr,
+				b43_phy_ac_txiqlo_cmds[i].n_clr,
+				(u16)(0x80 + 7 * core + k),
+				b43_phy_ac_txiqlo_cmds[i].len,
+				(u16)(0x40 + 8 * core + k));
 		}
 	}
 
-	/* (b): three individual ops */
+	for (i = 0; i < ARRAY_SIZE(dev->phy.ac->afe_res); i++) {
+		const u16 *v = dev->phy.ac->afe_res[i].v;
+		u8 n = dev->phy.ac->afe_res[i].n;
+		u16 off = (u16)(0x60 + 2 * i);
+
+		if (!n)
+			continue;
+		b43_actab_write_bulk_scoped(dev, B43_ACTAB_IQLOCAL, off, 16, n, v);
+		b43_actab_write_bulk_scoped(dev, B43_ACTAB_IQLOCAL, off + 0x10,
+					    16, n, v);
+	}
+
 	b43_phy_read_log(dev, 0x0464);
 	b43_phy_mask(dev, 0x0382, (u16)~0x8000);
 	b43_phy_mask(dev, B43_PHY_AC_SAMP_PLAY_CTL, (u16)~0x0004);
 
-	/* (c): each chain's cal bbmult back into its two cells. */
-	{
-		unsigned int c;
+	for_each_set_bit(core, &dev->phy.ac->coremask, dev->phy.ac->num_cores)
+		b43_phy_ac_bbmult_write(dev, core, &dev->phy.ac->bbmult_cal[core]);
 
-		for_each_set_bit(c, &dev->phy.ac->coremask, dev->phy.ac->num_cores)
-			b43_phy_ac_bbmult_write(dev, c, &dev->phy.ac->bbmult_cal[c]);
-	}
-
-	/*
-	 * Snapshot of the pass-1 results: rxiqcal_run_meas_iters() rewrites the
-	 * same offsets with the second tone's results, but the final
-	 * reapplications use these. See afe_res_cal in phy_ac.h.
-	 */
 	memcpy(dev->phy.ac->afe_res_cal, dev->phy.ac->afe_res,
 	       sizeof(dev->phy.ac->afe_res_cal));
 	for (i = 0; i < ARRAY_SIZE(dev->phy.ac->afe_res_cal); i++)

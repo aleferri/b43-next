@@ -827,16 +827,6 @@ void b43_phy_ac_rxiqcal_teardown_apply_defaults(struct b43_wldev *dev);
 void b43_phy_ac_rxiqcal_finalize(struct b43_wldev *dev, u16 gate);
 
 /*
- * One AFE cal iteration: arm a command on 0x0380, wait on the busy bit,
- * read the result back and rewrite it at @wr_off. @core_off is
- * core * 0x200.
- */
-void b43_phy_ac_rxcal_afe_iter(struct b43_wldev *dev,
-			       u16 cmd, u16 core_off,
-			       const u16 *pre_clear_offs, u8 n_pre_clear,
-			       u16 rd_off, u8 rw_len, u16 wr_off);
-
-/*
  * One round of the loopback gain search. @core_mask selects the round's
  * cores and @r734_vals is indexed by core number.
  */
