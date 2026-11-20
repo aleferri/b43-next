@@ -434,7 +434,7 @@ static void mount_board(const struct board_profile *p)
 	 * Channel of the previous calibration, which in a live driver survives
 	 * from one cycle to the next but which a single-flow run has to be
 	 * told. It selects the irregular first probe group; see
-	 * b43_phy_ac_rxiqcal_finalize.
+	 * b43_phy_ac_cal_restore.
 	 *
 	 * The default matches the flow: a first bring-up has no previous
 	 * calibration, while a later cycle is by default a down-and-up on the
@@ -1241,7 +1241,7 @@ static void run_switch_channel(void)
 	}
 
 	/*
-	 * Risultati della cal AFE RX: rxcal_afe_iter riscrive il valore che ha
+	 * Risultati della cal TX IQ/LO: txiqlo_cmd riscrive il valore che ha
 	 * letto, quindi il plan porta cio' che la cattura ch36 riscrive. Chiavato
 	 * sull'offset di lettura, non sulla posizione nella coda di 0x000f.
 	 */
@@ -1379,7 +1379,7 @@ static void run_switch_channel(void)
 		 *            0x0002 (bit 4 basso, bit 1 alto) senza nessuna WR
 		 *            tracciata: probabile flag di cal completata
 		 *   [6]      guard a 0 per l'iter 3, che legge il mirror stabile
-		 *   [7]      baseline del loop di rxiqcal_finalize, solo peek
+		 *   [7]      baseline del loop di cal_restore, solo peek
 		 *   [8] [9]  RD interne dei maskset, col bit 4 rialzato dall'hw
 		 */
 		static const u16 rad_0017[] = {
@@ -2212,7 +2212,7 @@ int main(int argc, char **argv)
 
 	/*
 	 * R2069 0x001e/0x021e = 0x0014 (per-core radio, HW default board).
-	 * Il vendor arriva a #41190 (B2f di rxiqcal_apply) con 0x0014 già
+	 * Il vendor arriva a #41190 (B2f di txcal_setup) con 0x0014 già
 	 * presente sul registro; il porting non tocca 0x001e prima, quindi
 	 * il pre-seed è necessario per il maskset ~0x0004, 0 di B2f che
 	 * produce WR = 0x0010 (= 0x0014 & 0xfffb).

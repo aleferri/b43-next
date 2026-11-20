@@ -1,7 +1,7 @@
 # RX IQ calibration
 
 What the AC-PHY RX IQ calibration does, as the captures show it and as the port
-implements it (`b43_phy_ac_iq_solve()` and its callers in `b43-next/phy_ac.c`; the
+implements it (`b43_phy_ac_rxiqcal_solve()` and its callers in `b43-next/phy_ac.c`; the
 estimator that validates the solve against the captures is the harness's,
 `test/unit/rxiqcal_phy_ac.c`). The residuals are in `retrace-todo.md`; the LO
 LUT bases and the five series of the 80 MHz eleven-tap bank are tabulated, with
@@ -70,7 +70,7 @@ d        = qq - ii;  e = nb(d) rounded up to even
 mag      = sqrt_int(2^20 + (d << (30 - e)) / (ii >> (e - 10)))   = 2^10 sqrt(qq/ii)
 ```
 
-The solve (`b43_phy_ac_iq_solve()`) averages angle and magnitude over the
+The solve (`b43_phy_ac_rxiqcal_solve()`) averages angle and magnitude over the
 tones, half away from zero, and puts the mean angle through the CORDIC:
 `a = round(mag * sin / 2^16)`, `b = round(mag * cos / 2^16) - 2^10`.
 
@@ -88,13 +88,13 @@ mean are the same thing at the centre; the slope goes to the eleven-tap bank.
 ## Table `0x0c` and the TX LO LUTs
 
 Table `0x0c` (IQLOCAL) holds the TX IQ `{a, b}` at `0x60 + 4*core` and the LO
-leakage word, two signed bytes, at `0x62 + 4*core`; `rxiqcal_finalize()` reads
+leakage word, two signed bytes, at `0x62 + 4*core`; `cal_restore()` reads
 `0x60`–`0x66` back and rewrites them, as for the LO DAC registers
 `0x?002`–`0x?005`.
 
 Tables `0x42`/`0x62`/`0x82` are the LO leakage LUTs of TX power control, one
 entry per power index. The first pass fills all 128 indices with the core's
-fresh LO word plus a per-core base from `afe_res[1]`, `[3]`, `[5]`; the second
+fresh LO word plus a per-core base from `txiqlo_res[1]`, `[3]`, `[5]`; the second
 writes the bare base. The base depends on the pa5g sub-band and each byte of the
 word is subtracted separately.
 

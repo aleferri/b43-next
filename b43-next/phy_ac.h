@@ -65,7 +65,7 @@ struct ieee80211_channel;
  * (brcmsmac 0xc3-0xc6) by behaviour, not by address -- same fields in the same
  * order below NSAMP. NSAMP is verified: it tracks the tone-table length across
  * the three bandwidths (0x27/0x4f/0x9f = num_samps-1), see
- * b43_phy_ac_rxiqcal_kick_len().
+ * b43_phy_ac_tone_nsamp().
  */
 #define B43_PHY_AC_SAMP_PLAY_CTL		0x460	/* start (bit0) / stop (bit1) */
 #define  B43_PHY_AC_SAMP_PLAY_START		0x0001
@@ -447,7 +447,7 @@ struct b43_phy_ac {
 	 */
 	u16 rxgain_saved[B43_PHY_AC_MAX_CORES][14];
 	/*
-	 * Cal state saved in block D of rxiqcal_finalize() and written back by
+	 * Cal state saved in block D of cal_restore() and written back by
 	 * b43_phy_ac_down() at `wl down`: the LO DAC read-back of radio
 	 * 0x?002-0x?005, and per core the TX IQ/LO coefficients of IQLOCAL
 	 * (table 0x000c at 0x60 + 4*core: {a, b} at +0/+1, LO leakage at +2).
@@ -458,11 +458,10 @@ struct b43_phy_ac {
 	 * both with the calibration skipped (hot 09, ch52, writes radio
 	 * 0x0002-0x0005 where cold05 writes nothing).
 	 *
-	 * Then each core's RX gain configuration across the RX-IQ cal (the 25
-	 * registers of b43_phy_ac_rxgain_cfg_regs[] plus 0x073e) and the three
-	 * RFSEQ gain rows 0x0100/0x0103/0x0106 + core, saved by
-	 * rxgain_config_readback(), written back by
-	 * rxiqcal_teardown_apply_defaults().
+	 * Then each core's RX gain configuration across the RX IQ calibration
+	 * (the 25 registers of b43_phy_ac_rxgain_cfg_regs[] plus 0x073e) and the
+	 * three RFSEQ gain rows 0x0100/0x0103/0x0106 + core, saved by
+	 * rxgain_save(), written back by rxgain_restore().
 	 */
 	u16 lo_dac[B43_PHY_AC_MAX_CORES][4];
 	u16 txiqlo_coef[B43_PHY_AC_MAX_CORES][3];
@@ -470,43 +469,42 @@ struct b43_phy_ac {
 	u16 rxgain_cfg_saved[B43_PHY_AC_MAX_CORES][26];
 	u16 rfseq_gain_saved[B43_PHY_AC_MAX_CORES][3];
 	/*
-	 * Radio state saved across the RX-IQ cal: the chain range registers,
-	 * saved by rxiqcal_apply() and by the full radio_chain_range_setup()
-	 * and restored by the next radio_chain_range_setup(); the IQ-cal
-	 * registers, saved by radio_iqcal_config() and restored by
-	 * radio_iqcal_teardown().
+	 * Radio state saved across the calibrations: the chain range registers,
+	 * saved by txcal_setup() and by the full cal_chain_restore() and
+	 * restored by the next cal_chain_restore(); the loopback registers,
+	 * saved by loopback_radio_setup() and restored by
+	 * loopback_radio_restore().
 	 */
 	u16 chain_range_saved[B43_PHY_AC_MAX_CORES][7];
 	u16 iqcal_radio_saved[B43_PHY_AC_MAX_CORES][6];
 	/*
-	 * The table gate and 0x040f as the RX-IQ cal steps find them, saved
-	 * by rxiqcal_apply() and rxgain_perchan_config() and written back by
-	 * the rxgain_defaults_pulse() after each; 0x040f alone saved by
-	 * rxgain_config_readback() and written back by rxiqcal_finalize().
+	 * The table gate and 0x040f as the calibration steps find them, saved
+	 * by txcal_setup() and txiq_setup() and written back by the
+	 * txcal_restore() after each; 0x040f alone saved by
+	 * rxgain_save() and written back by cal_restore().
 	 */
-	u16 rxcal_gate_saved;
-	u16 rxcal_040f_saved;
+	u16 cal_gate_saved;
+	u16 cal_040f_saved;
 	/*
-	 * Results of the AFE cal's commit iterations, indexed by write offset.
-	 * The tail of rxcal_afe_calibrate() duplicates them per antenna.
+	 * The TX IQ/LO results kept, each chain's IQ pair and LO word.
+	 * The tail of txiqlo_run() duplicates them per antenna.
 	 */
 	struct {
 		u16 off;
 		u16 v[2];
 		u8 n;
-	} afe_res[6];
+	} txiqlo_res[6];
 	/*
-	 * Snapshot of afe_res at the end of b43_phy_ac_rxcal_afe_calibrate(),
-	 * the cal's first pass: the blob rewrites the same offsets with the
-	 * second tone's results, applied once, while the final reapplications
-	 * (the finalize kick and rxiqcal_finalize()) use the first pass's
-	 * results again, as the attach capture shows.
+	 * Snapshot of txiqlo_res at the end of b43_phy_ac_txiqlo_run():
+	 * b43_phy_ac_txiq_run() rewrites the IQ pairs, applied for the RX IQ
+	 * calibration only, and b43_phy_ac_cal_restore() puts these back, as
+	 * the attach capture shows.
 	 */
 	struct {
 		u16 off;
 		u16 v[2];
 		u8 n;
-	} afe_res_cal[6];
+	} txiqlo_res_cal[6];
 	/*
 	 * pa5ga/maxp5ga sub-band group (0..3) of the current channel, cached by
 	 * txpwrctrl_setup for the later cal blocks.
@@ -708,8 +706,8 @@ enum {
 	AC_CAL_RCCAL_CODE,
 	AC_CAL_RCCAL_DACBUF_CAP,
 	AC_CAL_AFE_RADIO,
-	AC_CAL_AFE_RES,
-	AC_CAL_AFE_CAL,
+	AC_CAL_TXIQLO_RES,
+	AC_CAL_TXIQLO_CAL,
 	AC_CAL_IDLE_TSSI_PASS,
 	AC_CAL_IDLE_TSSI_SUM,
 	AC_CAL_IDLE_TSSI_IDX,
@@ -789,47 +787,43 @@ void b43_phy_ac_reset_cca(struct b43_wldev *dev);
 bool b43_phy_ac_radar_poll(struct b43_wldev *dev);
 
 /*
- * Post-channel-setup calibrations, in the order
- * b43_phy_ac_calibration_block() calls them. Each is a phase transcribed
- * from a capture, documented at its definition.
+ * The steps of b43_phy_ac_calibrate(): idle TSSI, TX IQ/LO, LOFT LUT fill,
+ * TX IQ, LOFT LUT reset, RX IQ, restore. Each is documented at its
+ * definition.
  */
-void b43_phy_ac_post_cal_finalize(struct b43_wldev *dev);
-void b43_phy_ac_post_cal_finalize_iter3(struct b43_wldev *dev);
-void b43_phy_ac_rxiqcal_apply(struct b43_wldev *dev);
-void b43_phy_ac_post_rxiqcal_stage2(struct b43_wldev *dev);
-void b43_phy_ac_rxcal_afe_calibrate(struct b43_wldev *dev);
-void b43_phy_ac_rxcal_afe_finalize_gain_luts(struct b43_wldev *dev);
+void b43_phy_ac_cal_idle_tssi(struct b43_wldev *dev);
+void b43_phy_ac_cal_idle_tssi_suspended(struct b43_wldev *dev);
+void b43_phy_ac_txcal_setup(struct b43_wldev *dev);
+void b43_phy_ac_txiqlo_run(struct b43_wldev *dev);
+void b43_phy_ac_loft_lut_fill(struct b43_wldev *dev);
 
 /* Open-loop TX power; INDEX_DEFAULT is the captured fixed index. */
 #define B43_PHY_AC_TXPWR_INDEX_DEFAULT	0x40
 void b43_phy_ac_txpwr_by_index(struct b43_wldev *dev, u8 idx);
 
-void b43_phy_ac_rxgain_defaults_pulse(struct b43_wldev *dev);
-void b43_phy_ac_radio_chain_range_setup(struct b43_wldev *dev, bool with_tune);
-void b43_phy_ac_rxgain_perchan_config(struct b43_wldev *dev);
-void b43_phy_ac_rxiqcal_apply_tx_gain_bbmult(struct b43_wldev *dev);
-void b43_phy_ac_rxiqcal_dds_seed(struct b43_wldev *dev);
-void b43_phy_ac_rxiqcal_prep_second_iter(struct b43_wldev *dev);
-void b43_phy_ac_rxiqcal_run_meas_iters(struct b43_wldev *dev);
-void b43_phy_ac_rxiqcal_apply_tx_bbmult_kick(struct b43_wldev *dev);
-void b43_phy_ac_rxiqcal_coeff_tables_reset(struct b43_wldev *dev);
-void b43_phy_ac_rxiqcal_apply_second_stage(struct b43_wldev *dev);
-void b43_phy_ac_rxgain_config_readback(struct b43_wldev *dev);
-void b43_phy_ac_rxgain_config_apply(struct b43_wldev *dev);
-void b43_phy_ac_radio_iqcal_config(struct b43_wldev *dev);
-void b43_phy_ac_rxiqcal_dds_seed_tone(struct b43_wldev *dev, int step);
-void b43_phy_ac_rxiqcal_meas_post_dds_apply(struct b43_wldev *dev);
-void b43_phy_ac_rxiqcal_meas_post_dds_apply_v2(struct b43_wldev *dev);
-void b43_phy_ac_rxiqcal_apply_coefficients(struct b43_wldev *dev);
-void b43_phy_ac_radio_iqcal_teardown(struct b43_wldev *dev);
-void b43_phy_ac_rxiqcal_teardown_apply_defaults(struct b43_wldev *dev);
-void b43_phy_ac_rxiqcal_finalize(struct b43_wldev *dev, u16 gate);
+void b43_phy_ac_txcal_restore(struct b43_wldev *dev);
+void b43_phy_ac_cal_chain_restore(struct b43_wldev *dev, bool with_tune);
+void b43_phy_ac_txiq_setup(struct b43_wldev *dev);
+void b43_phy_ac_txcal_gain_load(struct b43_wldev *dev);
+void b43_phy_ac_txiq_run(struct b43_wldev *dev);
+void b43_phy_ac_loft_lut_reset(struct b43_wldev *dev);
+void b43_phy_ac_rxiqcal_setup(struct b43_wldev *dev);
+void b43_phy_ac_rxgain_save(struct b43_wldev *dev);
+void b43_phy_ac_rxgain_set(struct b43_wldev *dev);
+void b43_phy_ac_loopback_radio_setup(struct b43_wldev *dev);
+void b43_phy_ac_rxiqcal_tone_load(struct b43_wldev *dev, int step);
+void b43_phy_ac_loopback_gain_measure(struct b43_wldev *dev);
+void b43_phy_ac_rxiqcal_tone_measure(struct b43_wldev *dev);
+void b43_phy_ac_rxiqcal_coeffs_write(struct b43_wldev *dev);
+void b43_phy_ac_loopback_radio_restore(struct b43_wldev *dev);
+void b43_phy_ac_rxgain_restore(struct b43_wldev *dev);
+void b43_phy_ac_cal_restore(struct b43_wldev *dev, u16 gate);
 
 /*
  * One round of the loopback gain search. @core_mask selects the round's
  * cores and @r734_vals is indexed by core number.
  */
-void b43_phy_ac_gainctrl_final_apply(struct b43_wldev *dev,
+void b43_phy_ac_loopback_gain_apply(struct b43_wldev *dev,
 				     bool with_peek_preamble,
 				     u8 core_mask,
 				     const u16 r734_vals[3]);

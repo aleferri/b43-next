@@ -188,7 +188,7 @@ static void b43_phy_ac_rxiqcal_coeffs(struct b43_wldev *dev, u8 write,
  * wait), not the tone shape: frequency and amplitude live in the CORDIC table
  * loaded into 0x000e, so the freq_hz/amp parameters are unused here. NSAMP is
  * the 20 MHz value (0x27); the correlator-kick sites use the bandwidth-aware
- * b43_phy_ac_rxiqcal_kick_len() instead.
+ * b43_phy_ac_tone_nsamp() instead.
  */
 static void b43_phy_ac_tx_tone(struct b43_wldev *dev, u32 freq_hz, u16 amp)
 {

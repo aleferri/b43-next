@@ -1152,7 +1152,7 @@ Table `0x21` is written as zeros on 2.4 GHz, as on both boards.
 - **Idle-TSSI iterations under wl 7.14.164.** The R7000's wl measures the
   idle TSSI twice in a calibration, on both bands (`cold-2g20.zip`,
   `cold-5g20.zip`): there is no third iteration
-  (`b43_phy_ac_post_cal_finalize_iter3()`), which the D6220 and the
+  (`b43_phy_ac_cal_idle_tssi_suspended()`), which the D6220 and the
   TG789vac v2 on 7.14.89 run. A version difference; the port follows
   7.14.89.
 

@@ -55,7 +55,7 @@ KNOWN = {
              max=3, cascata=False,
              motivo="coppia enable+suspend interlacciata dal contesto up "
                     "durante l'attesa ~1 s del probe pacing di "
-                    "rxiqcal_finalize: compare solo dopo risvegli in ritardo "
+                    "cal_restore: compare solo dopo risvegli in ritardo "
                     "(gap 1.32 s invece di 1.00 s, es. #28859/#28950) e solo "
                     "nella cattura -up -- assente in attach ch44, attach "
                     "ch36-bw40 e down-to-bss. Il contesto a -6 (peek 0x527, "
