@@ -1571,6 +1571,33 @@ static void b43_phy_ht_op_switch_analog(struct b43_wldev *dev, bool on)
 }
 
 /*
+ * The HT-PHY's stock driver, when the width differs from the one the core
+ * runs, resets the PHY with the core's new width (IOCTL 0x2055, 0x209d,
+ * 0x2093, 0x2095 at 40 MHz on the R6400) and switches the analog on again,
+ * between the analog switch of the PHY init and the radio.
+ */
+static void b43_phy_ht_op_init_width(struct b43_wldev *dev)
+{
+#ifdef CONFIG_B43_NEXT_BCMA
+	u32 bits = b43_is_40mhz(dev) ? B43_BCMA_IOCTL_PHY_BW_40MHZ :
+				       B43_BCMA_IOCTL_PHY_BW_20MHZ;
+	u32 tmp;
+
+	if (dev->dev->bus_type != B43_BUS_BCMA ||
+	    (dev->phy.bw_clkbits ?: B43_BCMA_IOCTL_PHY_BW_20MHZ) == bits)
+		return;
+	dev->phy.bw_clkbits = bits;
+	tmp = bcmn_aread32(dev->dev->bdev, BCMN_IOCTL);
+	tmp &= ~B43_BCMA_IOCTL_PHY_BW;
+	tmp |= bits | B43_BCMA_IOCTL_PHY_RESET;
+	bcmn_awrite32(dev->dev->bdev, BCMN_IOCTL, tmp);
+	udelay(2);
+	b43_phy_take_out_of_reset(dev);
+	dev->phy.ops->switch_analog(dev, true);
+#endif
+}
+
+/*
  * As the AC-PHY's: the radio stays on the channel it is tuned to, which
  * mac80211's configuration after the start asks for again. wl tunes once in
  * its up.
@@ -2591,6 +2618,7 @@ const struct b43_phy_operations b43_phyops_ht = {
 	.radio_write		= b43_phy_ht_op_radio_write,
 	.software_rfkill	= b43_phy_ht_op_software_rfkill,
 	.switch_analog		= b43_phy_ht_op_switch_analog,
+	.init_width		= b43_phy_ht_op_init_width,
 	.switch_channel		= b43_phy_ht_op_switch_channel,
 	.get_default_chan	= b43_phy_ht_op_get_default_chan,
 	.set_cck_rx		= b43_phy_ht_op_set_cck_rx,

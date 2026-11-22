@@ -118,6 +118,9 @@ enum b43_txpwr_result {
  * 			Must not be NULL.
  * @switch_analog:	Turn the Analog on/off.
  * 			Must not be NULL.
+ * @init_width:		Set the PHY to the channel's width before @init.
+ * 			Called with the analog on and the radio still off.
+ * 			Can be NULL, if not required.
  * @switch_channel:	Switch the radio to another channel.
  * 			Must not be NULL.
  * @get_default_chan:	Just returns the default channel number.
@@ -198,6 +201,7 @@ struct b43_phy_operations {
 	bool (*supports_hwpctl)(struct b43_wldev *dev);
 	void (*software_rfkill)(struct b43_wldev *dev, bool blocked);
 	void (*switch_analog)(struct b43_wldev *dev, bool on);
+	void (*init_width)(struct b43_wldev *dev);
 	int (*switch_channel)(struct b43_wldev *dev, unsigned int new_channel);
 	unsigned int (*get_default_chan)(struct b43_wldev *dev);
 	void (*set_rx_antenna)(struct b43_wldev *dev, int antenna);
@@ -490,7 +494,6 @@ void b43_phyop_switch_analog_generic(struct b43_wldev *dev, bool on);
 
 bool b43_is_40mhz(struct b43_wldev *dev);
 unsigned int b43_phy_center_channel(struct b43_wldev *dev);
-void b43_phy_ht_width(struct b43_wldev *dev);
 
 bool b43_phy_force_clock(struct b43_wldev *dev, bool force);
 void b43_phy_bw_clk_set(struct b43_wldev *dev, u32 bits);
