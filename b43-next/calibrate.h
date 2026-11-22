@@ -64,6 +64,9 @@ u16 b43_rxcal_gain_biq1(u16 biq0, u16 biq1, int delta);
 
 void b43_txcal_ladder(unsigned int i, u16 bbmult, u16 *lo, u16 *iq);
 
+/* Division rounded half away from zero */
+s32 b43_div_near(s64 num, s64 den);
+
 void b43_iq_mismatch(s32 iq, u32 ii, u32 qq, s32 *angle_out, u32 *mag_out);
 void b43_rx_iq_comp_mismatch(s32 angle, u32 mag, s16 *a_out, s16 *b_out);
 

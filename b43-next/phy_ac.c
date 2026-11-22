@@ -46,7 +46,6 @@
 #include "main.h"
 #include "rates.h"
 #include "calstat.h"
-#include "qmath.h"
 #include "calibrate.h"
 
 /* The check of B43_PHY_AC_REQUIRE(): true when @func must return. */
