@@ -602,7 +602,8 @@ static void b43_r2069_rccal_setup(struct b43_wldev *dev, unsigned int pass)
 static bool b43_r2069_rccal_run(struct b43_wldev *dev)
 {
 	B43_AC_FN();
-	unsigned int i;
+	u16 stat;
+	bool done;
 
 	r2069_mod(dev, R2069_RCCAL_CFG, R2069_RCCAL_CFG_START, 0);
 	udelay(1);
@@ -611,15 +612,14 @@ static bool b43_r2069_rccal_run(struct b43_wldev *dev)
 	udelay(35);
 	r2069_mod(dev, R2069_RCCAL_KICK, R2069_RCCAL_KICK_GO, R2069_RCCAL_KICK_GO);
 
-	for (i = 0; i < R2069_RCCAL_POLL_MAX; i++) {
-		udelay(100);
-		if (b43_radio_read(dev, R2069_RCCAL_STAT) & R2069_RCCAL_STAT_DONE)
-			break;
-	}
+	done = !read_poll_timeout(b43_radio_read, stat,
+				  stat & R2069_RCCAL_STAT_DONE, 100,
+				  100 * R2069_RCCAL_POLL_MAX, true,
+				  dev, R2069_RCCAL_STAT);
 
 	r2069_mod(dev, R2069_RCCAL_KICK, R2069_RCCAL_KICK_GO, 0);
 
-	return i < R2069_RCCAL_POLL_MAX;
+	return done;
 }
 
 /* Pass 1: the measured RC code into the per-core trim registers. */
@@ -785,7 +785,7 @@ static void b43_radio_2069_afecal(struct b43_wldev *dev)
 		r2069_mod(dev, R2069_AFE_CAL_CLK | rbase, R2069_AFE_CAL_CLK_EN, 0);
 	}
 
-	udelay(100);
+	fsleep(100);
 
 	/* Pass 2: launch every active core, then finalize its PHY regs. */
 	for_each_set_bit(core, &ac->coremask, ac->num_cores) {
@@ -855,7 +855,7 @@ void b43_radio_2069_init(struct b43_wldev *dev)
 
 	b43_phy_write(dev, B43_PHY_AC_RFCTL_CMD, 0x0c01);
 	/* Hold armed 1032us for the RF/analog lock to complete. */
-	udelay(1032);
+	fsleep(1032);
 	b43_phy_write(dev, B43_PHY_AC_RFCTL_CMD, 0x0c00);
 
 	if (dev->phy.radio_rev == 4)
@@ -897,10 +897,10 @@ void b43_radio_2069_init(struct b43_wldev *dev)
 	/* --- Epilogue, the same on every chip --- */
 	b43_radio_mask(dev, 0x040c, (u16)~0x0010);
 	b43_phy_write(dev, B43_PHY_AC_RFCTL_CMD, 0x0c06);
-	udelay(100);
+	fsleep(100);
 	b43_radio_set(dev, 0x040c, 0x0010);
 	b43_phy_write(dev, 0x0417, 0x000d);
-	udelay(100);
+	fsleep(100);
 	b43_phy_write(dev, B43_PHY_AC_RFCTL_CMD, 0x0c02);
 	b43_phy_write(dev, 0x0728, saved_728 | 0x0180);
 	b43_phy_write(dev, 0x0417, 0x0004);
@@ -2200,7 +2200,7 @@ static void b43_phy_ac_idle_tssi_meas(struct b43_wldev *dev)
 
 		/* The bbmult cells as they stand mid-sequence, written back. */
 		b43_phy_ac_tbl_write_unlock(dev, gate);
-		udelay(100);
+		fsleep(100);
 		for_each_set_bit(c, &ac->coremask, ac->num_cores) {
 			b43_actab_read_bulk(dev, B43_ACTAB_IQLOCAL, (u16)(0x0063 + 4 * c),
 					    16, 1, &st[c].inner);
@@ -2211,7 +2211,7 @@ static void b43_phy_ac_idle_tssi_meas(struct b43_wldev *dev)
 
 		b43_phy_ac_cca_pulse(dev);
 		b43_phy_ac_run_samples(dev, 0x0000, false);
-		udelay(100);
+		fsleep(100);
 
 		/* Gain override on every chain, then put back in reverse. */
 		for_each_set_bit(c, &ac->coremask, ac->num_cores) {
@@ -2234,7 +2234,7 @@ static void b43_phy_ac_idle_tssi_meas(struct b43_wldev *dev)
 			b43_phy_write(dev, 0x073a + s, st[c].r73a);
 			b43_phy_write(dev, B43_PHY_AC_AFE_C1_OVER + s, st[c].r739);
 		}
-		udelay(100);
+		fsleep(100);
 		/*
 		 * Sample the measurement and average it. Each pass arms the
 		 * measurement and reads 0x0013 then 0x0012; a pass with a zero
@@ -3067,11 +3067,11 @@ static void b43_phy_ac_rxcore_setstate(struct b43_wldev *dev, u8 coremask)
 	/*
 	 * RX-gain override companion of 0x06d8, bracketing the core-state
 	 * change: forced wide open (0xffff) before, set back to what 0x06d8
-	 * read after. The capture delays 5848 us after the wide-open write;
-	 * mdelay(), since ARM refuses a udelay() constant above 2 ms.
+	 * read after. The capture delays 5848 us after the wide-open write,
+	 * rounded up here to 6 ms.
 	 */
 	b43_phy_write(dev, 0x16d8, 0xffff);
-	mdelay(6);
+	fsleep(6000);
 
 	b43_phy_maskset(dev, 0x0160, (u16)~0x0007, coremask);
 	b43_phy_maskset(dev, B43_PHY_AC_RF_SEQ_MODE, (u16)~0x0070,
