@@ -41,15 +41,6 @@ enum ht_rssi_type {
 	HT_RSSI_TBD = 6,
 };
 
-/* The channel a 40 MHz block is centred on, the primary one at 20 MHz */
-static int b43_phy_ht_centre_chan(struct b43_wldev *dev)
-{
-	const struct cfg80211_chan_def *cd = dev->phy.chandef;
-	u32 f = b43_is_40mhz(dev) ? cd->center_freq1 : cd->chan->center_freq;
-
-	return f < 5000 ? (f - 2407) / 5 : (f - 5000) / 5;
-}
-
 /**************************************************
  * Radio 2059.
  **************************************************/
@@ -1164,7 +1155,7 @@ lna_done:
 					    2, 0, 0);
 	}
 	if (b43_is_40mhz(dev)) {
-		phy_ht->t25_off = t25_off40[b43_phy_ht_centre_chan(dev) % 4];
+		phy_ht->t25_off = t25_off40[b43_phy_center_channel(dev) % 4];
 		phy_ht->t25_off2 = phy_ht->t25_off - 0x41;
 	} else {
 		phy_ht->t25_off = t25_off[channel->hw_value % 4];
