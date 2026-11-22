@@ -733,7 +733,6 @@ struct wireless_dev *ieee80211_vif_to_wdev(struct ieee80211_vif *vif)
 const struct b43_phy_operations *b43_phyops_g;
 const struct b43_phy_operations *b43_phyops_n;
 const struct b43_phy_operations *b43_phyops_lp;
-void b43_nphy_cancel_perical(struct b43_wldev *dev) { }
 
 /*
  * I work item si eseguono in linea, non si accodano.

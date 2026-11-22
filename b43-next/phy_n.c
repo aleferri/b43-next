@@ -8467,7 +8467,7 @@ out:
 }
 
 /* Called without wl->mutex, as the work takes it */
-void b43_nphy_cancel_perical(struct b43_wldev *dev)
+static void b43_nphy_op_cancel_work(struct b43_wldev *dev)
 {
 	cancel_delayed_work_sync(&dev->phy.n->perical_work);
 }
@@ -9630,6 +9630,7 @@ const struct b43_phy_operations b43_phyops_n = {
 	.get_default_chan	= b43_nphy_op_get_default_chan,
 	.recalc_txpower		= b43_nphy_op_recalc_txpower,
 	.pwork_15sec		= b43_nphy_op_pwork_15sec,
+	.cancel_work		= b43_nphy_op_cancel_work,
 	.noise_sample_done	= b43_nphy_op_noise_sample_done,
 	.channel_calibrate	= b43_nphy_op_channel_calibrate,
 	.ofdm_tx		= b43_nphy_op_ofdm_tx,

@@ -157,6 +157,9 @@ enum b43_txpwr_result {
  * 			Can be NULL, if not required.
  * @pwork_60sec:	Periodic work. Called every 60 seconds.
  * 			Can be NULL, if not required.
+ * @cancel_work:	Cancel the PHY's own deferred work. Called when the
+ * 			core stops, without wl->mutex, as the work takes it.
+ * 			Can be NULL, if not required.
  * @channel_calibrate:	Calibrations of the channel. Called by the core with
  * 			the MAC suspended, in place of its b43_mac_enable():
  * 			the hook re-enables the MAC itself at the point its
@@ -218,6 +221,7 @@ struct b43_phy_operations {
 	void (*pwork_1sec)(struct b43_wldev *dev);
 	void (*pwork_15sec)(struct b43_wldev *dev);
 	void (*pwork_60sec)(struct b43_wldev *dev);
+	void (*cancel_work)(struct b43_wldev *dev);
 	void (*channel_calibrate)(struct b43_wldev *dev, bool cac_done);
 	void (*noise_sample_done)(struct b43_wldev *dev);
 	bool (*radar_poll)(struct b43_wldev *dev);
