@@ -960,13 +960,7 @@ static void b43_write_mac_bssid_templates(struct b43_wldev *dev)
  * same packing b43_macfilter_set() uses for the MACFILTER port. */
 static void b43_shm_macaddr_set(struct b43_wldev *dev, const u8 *mac)
 {
-	static const u8 zero_addr[ETH_ALEN] = { 0 };
 	unsigned int i;
-
-	if (dev->phy.type != B43_PHYTYPE_AC)
-		return;
-	if (!mac)
-		mac = zero_addr;
 
 	for (i = 0; i < ETH_ALEN; i += 2)
 		b43_shm_write16(dev, B43_SHM_SHARED, B43_SHM_SH_AC_MACADDR + i,
@@ -1227,9 +1221,10 @@ static void b43_upload_card_macaddress(struct b43_wldev *dev)
 	b43_mbss_shm_upload(dev);
 	b43_write_mac_bssid_templates(dev);
 	b43_macfilter_set(dev, B43_MACFILTER_SELF, dev->wl->mac_addr);
-	if (dev->phy.type == B43_PHYTYPE_AC)
+	if (dev->phy.type == B43_PHYTYPE_AC) {
 		b43_write_macaddr_template_ac(dev, dev->wl->mac_addr);
-	b43_shm_macaddr_set(dev, dev->wl->mac_addr);
+		b43_shm_macaddr_set(dev, dev->wl->mac_addr);
+	}
 }
 
 static void b43_set_slot_time(struct b43_wldev *dev, u16 slot_time)
