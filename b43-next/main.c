@@ -1950,9 +1950,7 @@ void b43_wireless_core_reset(struct b43_wldev *dev, bool gmode)
 #define B43_TXST_AC_INTERMEDIATE	0x00000004
 #define B43_TXST_AC_PM_INDICATED	0x00000008
 #define B43_TXST_AC_SUPP		0x000000f0
-#define B43_TXST_AC_SUPP_SHIFT		4
 #define B43_TXST_AC_MPDUS		0x00007f00
-#define B43_TXST_AC_MPDUS_SHIFT		8
 #define B43_TXST_AC_ACKED		0x00008000
 
 /*
@@ -2001,13 +1999,13 @@ static bool b43_txstatus_read_ac(struct b43_wldev *dev,
 	stat->acked = !!(w[0] & B43_TXST_AC_ACKED);
 	stat->intermediate = !!(w[0] & B43_TXST_AC_INTERMEDIATE);
 	stat->pm_indicated = !!(w[0] & B43_TXST_AC_PM_INDICATED);
-	stat->supp_reason = (w[0] & B43_TXST_AC_SUPP) >> B43_TXST_AC_SUPP_SHIFT;
+	stat->supp_reason = FIELD_GET(B43_TXST_AC_SUPP, w[0]);
 	stat->frame_count = w[2] & 0xff;
 	stat->rate_tries[0] = w[2] & 0xff;
 	stat->rate_tries[1] = (w[2] >> 16) & 0xff;
 	stat->rate_tries[2] = w[3] & 0xff;
 	stat->rate_tries[3] = (w[3] >> 16) & 0xff;
-	stat->mpdus = (w[0] & B43_TXST_AC_MPDUS) >> B43_TXST_AC_MPDUS_SHIFT;
+	stat->mpdus = FIELD_GET(B43_TXST_AC_MPDUS, w[0]);
 	stat->mpdus_acked = ((w[2] >> 8) & 0xff) + ((w[2] >> 24) & 0xff) +
 			    ((w[3] >> 8) & 0xff) + ((w[3] >> 24) & 0xff);
 	stat->ba_ssn = w[1] & IEEE80211_MAX_SN;
