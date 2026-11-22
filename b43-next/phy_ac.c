@@ -44,6 +44,7 @@
 #include "tables_phy_ac.h"
 #include "radio_2069.h"
 #include "main.h"
+#include "rates.h"
 #include "calstat.h"
 #include "qmath.h"
 #include "calibrate.h"
@@ -1199,14 +1200,16 @@ static unsigned int b43_phy_ac_meas_passes(struct b43_wldev *dev)
 #define B43_AC_RT_RATE_PO	14		/* mcsbw*po nibble, << 3 */
 #define B43_AC_RT_OFDM_PCTL1	18		/* M_RT_OFDM_PCTL1_POS */
 
-static const u8 b43_phy_ac_ofdm_dirmap[8] = { 11, 15, 10, 14, 9, 13, 8, 12 };
+static const u8 b43_phy_ac_ofdm_rates[8] = {
+	B43_OFDM_RATE_6MB, B43_OFDM_RATE_9MB, B43_OFDM_RATE_12MB,
+	B43_OFDM_RATE_18MB, B43_OFDM_RATE_24MB, B43_OFDM_RATE_36MB,
+	B43_OFDM_RATE_48MB, B43_OFDM_RATE_54MB,
+};
 
-static u16 b43_phy_ac_rate_shm_offset(struct b43_wldev *dev, unsigned int rate)
+/* The slot of OFDM rate @i in the direct and basic maps. */
+static unsigned int b43_phy_ac_ofdm_slot(unsigned int i)
 {
-	u16 ptr = b43_shm_read16(dev, B43_SHM_SHARED, B43_SHM_SH_OFDMDIRECT +
-				 b43_phy_ac_ofdm_dirmap[rate] * 2);
-
-	return (u16)(2 * ptr);
+	return b43_plcp_get_ratecode_ofdm(b43_phy_ac_ofdm_rates[i]);
 }
 
 /*
@@ -1224,8 +1227,8 @@ static void b43_phy_ac_ofdm_pctl1_readback(struct b43_wldev *dev)
 {
 	unsigned int i;
 
-	for (i = 0; i < ARRAY_SIZE(b43_phy_ac_ofdm_dirmap); i++) {
-		u16 cell = b43_phy_ac_rate_shm_offset(dev, i) +
+	for (i = 0; i < ARRAY_SIZE(b43_phy_ac_ofdm_rates); i++) {
+		u16 cell = b43_rate_block(dev, b43_phy_ac_ofdm_rates[i]) +
 			   B43_AC_RT_OFDM_PCTL1;
 		u16 cur = b43_shm_read16(dev, B43_SHM_SHARED, cell);
 
@@ -1281,30 +1284,28 @@ static void b43_phy_ac_shm_readback_block(struct b43_wldev *dev)
 
 /*
  * The twelve rates of the rateset in increasing bitrate, the order the stock
- * driver visits the blocks, CCK interleaved with OFDM. @dirmap is the index
- * in the direct-map table (the SIGNAL low nibble), @idx the rate's index in
- * its class: for b43_ppr_get_ofdm(), 0 = 6 Mbit/s to 7 = 54, for
+ * driver visits the blocks, CCK interleaved with OFDM. @idx is the rate's
+ * index in its class: for b43_ppr_get_ofdm(), 0 = 6 Mbit/s to 7 = 54, for
  * b43_ppr_get_cck(), 0 = 1 Mbit/s to 3 = 11.
  */
 struct b43_phy_ac_prb_rsp_rate {
-	u8 dirmap;
+	u8 rate;
 	u8 idx;
-	bool cck;
 };
 
 static const struct b43_phy_ac_prb_rsp_rate b43_phy_ac_prb_rsp_rates[12] = {
-	{ 10, 0, true  },	/*  1 Mbit/s */
-	{  4, 1, true  },	/*  2 */
-	{  7, 2, true  },	/*  5.5 */
-	{ 11, 0, false },	/*  6 */
-	{ 15, 1, false },	/*  9 */
-	{ 14, 3, true  },	/* 11 */
-	{ 10, 2, false },	/* 12 */
-	{ 14, 3, false },	/* 18 */
-	{  9, 4, false },	/* 24 */
-	{ 13, 5, false },	/* 36 */
-	{  8, 6, false },	/* 48 */
-	{ 12, 7, false },	/* 54 */
+	{ B43_CCK_RATE_1MB, 0 },
+	{ B43_CCK_RATE_2MB, 1 },
+	{ B43_CCK_RATE_5MB, 2 },
+	{ B43_OFDM_RATE_6MB, 0 },
+	{ B43_OFDM_RATE_9MB, 1 },
+	{ B43_CCK_RATE_11MB, 3 },
+	{ B43_OFDM_RATE_12MB, 2 },
+	{ B43_OFDM_RATE_18MB, 3 },
+	{ B43_OFDM_RATE_24MB, 4 },
+	{ B43_OFDM_RATE_36MB, 5 },
+	{ B43_OFDM_RATE_48MB, 6 },
+	{ B43_OFDM_RATE_54MB, 7 },
 };
 
 /*
@@ -1365,7 +1366,7 @@ static void b43_phy_ac_basic_rate_map(struct b43_wldev *dev)
 	for (i = 0; i < ARRAY_SIZE(basic_of); i++)
 		b43_shm_write16(dev, B43_SHM_SHARED,
 				B43_SHM_SH_OFDMBASIC +
-				b43_phy_ac_ofdm_dirmap[i] * 2,
+				2 * b43_phy_ac_ofdm_slot(i),
 				dev->phy.ac->rate_ptr[basic_of[i]]);
 }
 
@@ -1789,24 +1790,22 @@ static void b43_phy_ac_prb_rsp_rate_po(struct b43_wldev *dev,
 	for (i = 0; i < ARRAY_SIZE(b43_phy_ac_prb_rsp_rates); i++) {
 		const struct b43_phy_ac_prb_rsp_rate *r =
 			&b43_phy_ac_prb_rsp_rates[i];
-		u16 tab = r->cck ? B43_SHM_SH_CCKDIRECT : B43_SHM_SH_OFDMDIRECT;
-		u16 ptr = b43_shm_read16(dev, B43_SHM_SHARED,
-					 tab + r->dirmap * 2);
-		u16 cell = (u16)(2 * ptr + B43_AC_RT_RATE_PO);
+		bool cck = b43_is_cck_rate(r->rate);
+		u16 cell = b43_rate_block(dev, r->rate) + B43_AC_RT_RATE_PO;
 		u16 val;
 
-		if (r->cck && b43_ppr_has_cck(&ac->txpwr_spacing))
+		if (cck && b43_ppr_has_cck(&ac->txpwr_spacing))
 			val = ac->rate_po_cck = b43_phy_ac_rate_po(ac,
 				b43_ppr_get_cck(&ac->txpwr_spacing_dist,
 						r->idx), 0);
-		else if (r->cck)
+		else if (cck)
 			val = ac->rate_po_cck = b43_phy_ac_cck_rate_po(ac);
 		else
 			val = b43_phy_ac_rate_po(ac,
 				b43_ppr_get_ofdm(dist, bw, B43_PPR_SISO,
 						 r->idx), cap);
 
-		if (!r->cck)
+		if (!cck)
 			ac->rate_po_ofdm[r->idx] = val;
 		b43_shm_read16(dev, B43_SHM_SHARED, cell);
 		b43_shm_write16(dev, B43_SHM_SHARED, cell, val);
@@ -10969,9 +10968,9 @@ static int b43_phy_ac_op_switch_channel(struct b43_wldev *dev, unsigned int new_
 		u16 v = b43_shm_read16(dev, B43_SHM_SHARED, off);
 		unsigned int k;
 
-		for (k = 0; k < ARRAY_SIZE(b43_phy_ac_ofdm_dirmap); k++)
+		for (k = 0; k < ARRAY_SIZE(b43_phy_ac_ofdm_rates); k++)
 			if (B43_SHM_SH_OFDMDIRECT +
-			    b43_phy_ac_ofdm_dirmap[k] * 2 == off)
+			    2 * b43_phy_ac_ofdm_slot(k) == off)
 				dev->phy.ac->rate_ptr[k] = v;
 	}
 	for (off = B43_SHM_SH_CCKDIRECT;

@@ -463,6 +463,19 @@ void bcmn_core_set_clockmode(struct bcmn_device *core,
 #define B43_SHM_SH_OFDMDIRECT     0x01C0
 #define B43_SHM_SH_OFDMBASIC      0x01E0
 #define B43_SHM_SH_CCKDIRECT      0x0200
+
+#define B43_CCK_RATE_1MB          0x02
+#define B43_CCK_RATE_2MB          0x04
+#define B43_CCK_RATE_5MB          0x0B
+#define B43_CCK_RATE_11MB         0x16
+#define B43_OFDM_RATE_6MB         0x0C
+#define B43_OFDM_RATE_9MB         0x12
+#define B43_OFDM_RATE_12MB        0x18
+#define B43_OFDM_RATE_18MB        0x24
+#define B43_OFDM_RATE_24MB        0x30
+#define B43_OFDM_RATE_36MB        0x48
+#define B43_OFDM_RATE_48MB        0x60
+#define B43_OFDM_RATE_54MB        0x6C
 #define B43_SHM_SH_SLOTT          0x0010
 #define B43_SHM_SH_PRETBTT        0x0096
 #define B43_SHM_SH_TXCORE_AC      0x05D4
