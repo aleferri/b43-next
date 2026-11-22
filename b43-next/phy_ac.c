@@ -10552,7 +10552,7 @@ static int b43_phy_ac_op_switch_channel(struct b43_wldev *dev, unsigned int new_
 	enum nl80211_chan_width width = b43_phy_ac_width(chandef);
 	const struct b43_phy_ac_channeltab_e_radio2069 *e2069;
 	struct b43_phy *phy = &dev->phy;
-	u16 off, ifs, gate;
+	u16 off, ifs, gate, freq;
 	bool stale;
 
 	/*
@@ -10587,9 +10587,9 @@ static int b43_phy_ac_op_switch_channel(struct b43_wldev *dev, unsigned int new_
 	 * synthesiser (radio 0x08dc in the cold sweep takes radio_raw[3] from
 	 * this row).
 	 */
-	e2069 = b43_phy_ac_get_channeltab_e_r2069(dev,
-			width == NL80211_CHAN_WIDTH_20 ? channel->center_freq
-						       : chandef->center_freq1);
+	freq = width == NL80211_CHAN_WIDTH_20 ? channel->center_freq
+					      : chandef->center_freq1;
+	e2069 = b43_phy_ac_get_channeltab_e_r2069(dev, freq);
 	if (!e2069)
 		return -ESRCH;
 
@@ -10628,8 +10628,7 @@ static int b43_phy_ac_op_switch_channel(struct b43_wldev *dev, unsigned int new_
 	dev->phy.ac->tuned = false;
 	dev->phy.ac->cal_channel = channel->hw_value;
 	dev->phy.ac->cal_width = width;
-	dev->phy.ac->cal_freq = width == NL80211_CHAN_WIDTH_20
-				? channel->center_freq : chandef->center_freq1;
+	dev->phy.ac->cal_freq = freq;
 	B43_AC_BLOCK(dev, "channel_state");
 	b43_phy_ac_crs_note_channel(dev);
 	b43_phy_ac_txpwr_recalc(dev);
