@@ -1092,24 +1092,11 @@ static void b43_phy_ac_adc_hold(struct b43_wldev *dev, bool hold)
 }
 
 /*
- * Bandwidth step: 0 at 20 MHz, 1 at 40, 2 at 80.
- *
- * Several registers move by a fixed amount per step. Each user says which
- * law it follows: the law is fitted to three measured points and is a
- * compact way of writing them, not a prediction. There is no 160 MHz
- * capture.
+ * Several registers move by a fixed amount per bandwidth step, b43_ppr_bw():
+ * 0 at 20 MHz, 1 at 40, 2 at 80. Each user says which law it follows: the
+ * law is a compact way of writing the three measured points. There is no
+ * 160 MHz capture.
  */
-static unsigned int b43_phy_ac_bw_step(struct b43_wldev *dev)
-{
-	switch (dev->phy.ac->cal_width) {
-	case NL80211_CHAN_WIDTH_80:
-		return 2;
-	case NL80211_CHAN_WIDTH_40:
-		return 1;
-	default:
-		return 0;
-	}
-}
 
 /*
  * The sample count of a calibration tone's play: 0x27 at 20 MHz, 0x4f at 40,
@@ -1118,7 +1105,7 @@ static unsigned int b43_phy_ac_bw_step(struct b43_wldev *dev)
  */
 static u16 b43_phy_ac_tone_nsamp(struct b43_wldev *dev)
 {
-	return (u16)(0x28 * (1u << b43_phy_ac_bw_step(dev)) - 1);
+	return (u16)((0x28 << b43_ppr_bw(dev->phy.ac->cal_width)) - 1);
 }
 
 /*
@@ -1142,7 +1129,8 @@ static void b43_phy_ac_tone_table_write(struct b43_wldev *dev, u16 amp,
 	unsigned int n, i;
 	s32 angle;
 
-	n = B43_PHY_AC_TONE_PERIOD << (b43_phy_ac_bw_step(dev) + 1);
+	n = B43_PHY_AC_TONE_PERIOD <<
+	    (b43_ppr_bw(dev->phy.ac->cal_width) + 1);
 	if (B43_WARN_ON(n > ARRAY_SIZE(tone)))
 		return;
 
@@ -1176,7 +1164,8 @@ static const int b43_phy_ac_tone_steps[] = { 1, -1, 3, -3, 4, -4 };
 /* Measurement passes: two up to 40 MHz, six at 80. */
 static unsigned int b43_phy_ac_meas_passes(struct b43_wldev *dev)
 {
-	unsigned int n = b43_phy_ac_bw_step(dev) == 2 ? 6 : 2;
+	unsigned int n =
+		dev->phy.ac->cal_width == NL80211_CHAN_WIDTH_80 ? 6 : 2;
 
 	return n < ARRAY_SIZE(b43_phy_ac_tone_steps)
 	       ? n : ARRAY_SIZE(b43_phy_ac_tone_steps);
@@ -2004,7 +1993,7 @@ static void b43_phy_ac_classctl_write(struct b43_wldev *dev, bool arm)
 		if (b43_current_band(dev->wl) == NL80211_BAND_2GHZ)
 			val |= B43_PHY_AC_CLASSCTL_CCKEN;
 	}
-	if (b43_phy_ac_bw_step(dev))
+	if (b43_ppr_bw(phy_ac->cal_width) != B43_PPR_BW_20)
 		val &= ~B43_PHY_AC_CLASSCTL_BW20;
 	b43_phy_write(dev, B43_PHY_AC_CLASSCTL, val);
 	phy_ac->status_mask = (phy_ac->status_mask & ~B43_PHY_AC_STATE_RX_ANY) |
@@ -2506,18 +2495,7 @@ static u16 b43_phy_ac_reg_ceiling(struct b43_wldev *dev)
 	if (!chandef->chan)
 		return 0;
 
-	switch (ac->cal_width) {
-	case NL80211_CHAN_WIDTH_80:
-		span = 4;
-		break;
-	case NL80211_CHAN_WIDTH_40:
-		span = 2;
-		break;
-	default:
-		span = 1;
-		break;
-	}
-
+	span = 1 << b43_ppr_bw(ac->cal_width);
 	antgain = b43_phy_ac_antgain(dev);
 
 	/*
@@ -3661,22 +3639,6 @@ static void b43_phy_ac_radio_percore_setup_1(struct b43_wldev *dev)
 }
 
 /*
- * Bandwidth in MHz, used as a scale factor: a number of PHY parameters are
- * sample counts or durations and double as the bandwidth doubles.
- */
-static unsigned int b43_phy_ac_bw_mhz(struct b43_wldev *dev)
-{
-	switch (dev->wl->hw->conf.chandef.width) {
-	case NL80211_CHAN_WIDTH_80:
-		return 80;
-	case NL80211_CHAN_WIDTH_40:
-		return 40;
-	default:
-		return 20;
-	}
-}
-
-/*
  * Coefficient bank init, 48 ops. It is the same across channels within
  * 5 GHz at a given width (d6220 ch36/ch44) and across chips (agcombo and
  * d6220 ch36), and differs per width: one LUT per width, each constant over
@@ -3690,7 +3652,7 @@ static unsigned int b43_phy_ac_bw_mhz(struct b43_wldev *dev)
 static void b43_phy_ac_coeff_bank_init(struct b43_wldev *dev)
 {
 	B43_AC_FN();
-	const unsigned int bw = b43_phy_ac_bw_mhz(dev);
+	const enum b43_ppr_bw bw = b43_ppr_bw(dev->wl->hw->conf.chandef.width);
 	static const u16 lut_bw20[21] = {
 		/* 0x0180 */ 0x0015,  /* mask=0x001f, the rest 0x07ff */
 		/* 0x0181 */ 0x0146,
@@ -3748,7 +3710,7 @@ static void b43_phy_ac_coeff_bank_init(struct b43_wldev *dev)
 	 * agree.
 	 */
 	{
-		u16 idx = (u16)(b43_phy_ac_bw_step(dev) + 1);
+		u16 idx = (u16)(b43_ppr_bw(dev->phy.ac->cal_width) + 1);
 		u16 narrow = (idx == 1) ? ~0 : 0;
 
 		b43_phy_maskset(dev, 0x0076, (u16)~0x0007, idx);
@@ -3779,15 +3741,16 @@ static void b43_phy_ac_coeff_bank_init(struct b43_wldev *dev)
 	 *
 	 * 0x0261 follows the same pattern, 0x14 at 20 MHz and 0x28 from 40 on;
 	 * 0x01b5 is 0x8b at 40 MHz and 0x97 at 20 and 80. 0x025b is written
-	 * only by the DSL, not by the d6220.
+	 * only by the DSL.
 	 */
-	b43_phy_maskset(dev, 0x01b5, (u16)~0x00ff, bw == 40 ? 0x008b : 0x0097);
+	b43_phy_maskset(dev, 0x01b5, (u16)~0x00ff,
+			bw == B43_PPR_BW_40 ? 0x008b : 0x0097);
 	/*
 	 * On 2.4 GHz wl 7.14 keeps the 20 MHz values at 40 MHz (RT-AC66U B1,
 	 * ch6/20 and ch6/40); the doubling is a 5 GHz one.
 	 */
 	{
-		bool wide = bw != 20 &&
+		bool wide = bw != B43_PPR_BW_20 &&
 			    b43_current_band(dev->wl) != NL80211_BAND_2GHZ;
 
 		b43_phy_maskset(dev, 0x0250, (u16)~0x00ff, wide ? 50 : 25);
@@ -3800,8 +3763,10 @@ static void b43_phy_ac_coeff_bank_init(struct b43_wldev *dev)
 	 * These two drop at 80 MHz only: 0x13 at 20 and 40 MHz, 0x09 at 80, in
 	 * the low byte of 0x0312 and the high byte of 0x0313.
 	 */
-	b43_phy_maskset(dev, 0x0312, (u16)~0x00ff, bw == 80 ? 0x0009 : 0x0013);
-	b43_phy_maskset(dev, 0x0313, (u16)~0xff00, bw == 80 ? 0x0900 : 0x1300);
+	b43_phy_maskset(dev, 0x0312, (u16)~0x00ff,
+			bw == B43_PPR_BW_80 ? 0x0009 : 0x0013);
+	b43_phy_maskset(dev, 0x0313, (u16)~0xff00,
+			bw == B43_PPR_BW_80 ? 0x0900 : 0x1300);
 
 	/*
 	 * The 0x034d-0x0353 ladder (13 bits each) with 0x028d and 0x04d7/0x04db.
@@ -3821,7 +3786,7 @@ static void b43_phy_ac_coeff_bank_init(struct b43_wldev *dev)
 					   0x0320, 0x0384, 0x03b6 };
 		static const u16 hi[7] = { 0x001e, 0x0055, 0x0080, 0x00aa,
 					   0x02bc, 0x0320, 0x0384 };
-		bool use_hi = bw == 80 &&
+		bool use_hi = bw == B43_PPR_BW_80 &&
 			      b43_current_band(dev->wl) == NL80211_BAND_5GHZ;
 		const u16 *ladder = use_hi ? hi : lo;
 		unsigned int i;
@@ -3839,7 +3804,8 @@ static void b43_phy_ac_coeff_bank_init(struct b43_wldev *dev)
 
 		/* 0x0a at 20 MHz, 0x14 from 40 on. */
 		b43_phy_maskset(dev, 0x06ed + stride,
-				(u16)~0x00ff, bw == 20 ? 0x000a : 0x0014);
+				(u16)~0x00ff,
+				bw == B43_PPR_BW_20 ? 0x000a : 0x0014);
 		/*
 		 * In the D6220 sweep 0x06ef[7:0] takes two values per
 		 * bandwidth, so there are two writes:
@@ -3851,11 +3817,12 @@ static void b43_phy_ac_coeff_bank_init(struct b43_wldev *dev)
 		 * Only the second doubles.
 		 */
 		b43_phy_maskset(dev, 0x06ef + stride, (u16)~0x00ff,
-				bw == 20 ? 0x0017 : (bw == 40 ? 0x002a : 0x0054));
+				bw == B43_PPR_BW_20 ? 0x0017 :
+				bw == B43_PPR_BW_40 ? 0x002a : 0x0054);
 		/* The high byte: 0x0e, 0x16, 0x2c. */
 		b43_phy_maskset(dev, 0x06ef + stride, (u16)~0xff00,
-				bw == 20 ? 0x0e00
-					 : (bw == 40 ? 0x1600 : 0x2c00));
+				bw == B43_PPR_BW_20 ? 0x0e00 :
+				bw == B43_PPR_BW_40 ? 0x1600 : 0x2c00);
 	}
 
 	/* 5. Per-core 0x06ef[7:0], second write: 15 / 30 / 60. */
@@ -3863,7 +3830,7 @@ static void b43_phy_ac_coeff_bank_init(struct b43_wldev *dev)
 		u16 stride = (u16)(core * 0x200);
 
 		b43_phy_maskset(dev, 0x06ef + stride, (u16)~0x00ff,
-				(u16)(15 * (bw / 20)));
+				(u16)(15 << bw));
 	}
 }
 
@@ -4520,7 +4487,7 @@ static void b43_phy_ac_channel_setup(struct b43_wldev *dev,
 	inner = b43_phy_ac_tbl_write_lock(dev);
 	{
 		static const u16 stage8_base[3] = { 0x00db, 0x0123, 0x016b };
-		u16 base = stage8_base[b43_phy_ac_bw_step(dev)];
+		u16 base = stage8_base[b43_ppr_bw(dev->phy.ac->cal_width)];
 
 		b43_phy_ac_set_analog_tx_lpf_locked(dev, 0x100,
 						    base & 7,
@@ -5250,7 +5217,7 @@ static const struct b43_phy_ac_rxgain_bw b43_phy_ac_rxgain_bw_tab[3] = {
 static const struct b43_phy_ac_rxgain_bw *
 b43_phy_ac_rxgain_bw(struct b43_wldev *dev)
 {
-	return &b43_phy_ac_rxgain_bw_tab[b43_phy_ac_bw_step(dev)];
+	return &b43_phy_ac_rxgain_bw_tab[b43_ppr_bw(dev->phy.ac->cal_width)];
 }
 
 /*
@@ -5670,7 +5637,7 @@ static const u8 b43_phy_ac_crs_noise_anchor[3] = { 0, 2, 2 };
 static void b43_phy_ac_crs_note_noise(struct b43_wldev *dev, const u16 *sample)
 {
 	struct b43_phy_ac *ac = dev->phy.ac;
-	unsigned int bw = b43_phy_ac_bw_step(dev);
+	unsigned int bw = b43_ppr_bw(ac->cal_width);
 	unsigned int slot = ac->crs_ring_head;
 	unsigned int core;
 
@@ -5780,7 +5747,7 @@ static bool b43_phy_ac_crs_moved(struct b43_wldev *dev)
 static u8 b43_phy_ac_crs_min_pwr(struct b43_wldev *dev, unsigned int idx,
 				 bool cold)
 {
-	u8 crs = b43_phy_ac_crs_ladder[b43_phy_ac_bw_step(dev)][idx];
+	u8 crs = b43_phy_ac_crs_ladder[b43_ppr_bw(dev->phy.ac->cal_width)][idx];
 
 	if (cold || dev->phy.rev <= 1)
 		crs = (u8)(crs + 4);	/* cold bump */
@@ -5832,7 +5799,8 @@ static void b43_phy_ac_op_pwork_60sec(struct b43_wldev *dev)
  */
 static void b43_phy_ac_prog_bank_0910(struct b43_wldev *dev)
 {
-	const u8 *row = b43_phy_ac_crs_ladder[b43_phy_ac_bw_step(dev)];
+	const u8 *row =
+		b43_phy_ac_crs_ladder[b43_ppr_bw(dev->phy.ac->cal_width)];
 	unsigned int ref = row[b43_phy_ac_crs_index(dev, 0)];
 	unsigned int core;
 	unsigned long others = dev->phy.ac->coremask & ~BIT(0);
@@ -5945,7 +5913,7 @@ static void b43_phy_ac_chanspec_tail(struct b43_wldev *dev)
 		 */
 		static const u8 first_idx[3] = { 4, 6, 7 };
 
-		crs_idx = first_idx[b43_phy_ac_bw_step(dev)];
+		crs_idx = first_idx[b43_ppr_bw(dev->phy.ac->cal_width)];
 	} else
 		crs_idx = b43_phy_ac_crs_index(dev, 0);
 	crs = b43_phy_ac_crs_min_pwr(dev, crs_idx, true);
@@ -6108,9 +6076,7 @@ static void b43_phy_ac_pwr_report(struct b43_wldev *dev)
 	if (!b43_cal_on(dev))
 		return;
 
-	bw = ac->cal_width == NL80211_CHAN_WIDTH_80 ? B43_PPR_BW_80 :
-	     ac->cal_width == NL80211_CHAN_WIDTH_40 ? B43_PPR_BW_40 :
-	     B43_PPR_BW_20;
+	bw = b43_ppr_bw(ac->cal_width);
 	sb = b43_ppr_sprom_r11_subband(ac->cal_channel, ac->cal_width);
 
 	b43_cal_report(dev, AC_CAL_TXPWR_TARGET, ac->txpwr_calc_ceiling,
@@ -7255,8 +7221,7 @@ struct b43_ac_b2j_op {
 	u16 val;
 	/*
 	 * Added to the value per bandwidth step, in the field's weight: [2:0]
-	 * grows by 1, [10:8] by 0x100, [13:11] by 0x800. See
-	 * b43_phy_ac_bw_step().
+	 * grows by 1, [10:8] by 0x100, [13:11] by 0x800. See b43_ppr_bw().
 	 */
 	u16 bw_step;
 	/*
@@ -7414,7 +7379,7 @@ static void b43_phy_ac_cal_rfctrl_core(struct b43_wldev *dev,
 
 		if (op->bw_step)
 			val = (u16)(val + op->bw_step *
-				    b43_phy_ac_bw_step(dev));
+				    b43_ppr_bw(dev->phy.ac->cal_width));
 		val = op->from == B2J_SITE ? site_0736 :
 		      b43_phy_ac_rxgain_field(g, op->from, val);
 
@@ -7768,7 +7733,8 @@ static void b43_phy_ac_txiqlo_cmd(struct b43_wldev *dev,
 	 * 40, 0x7998 at 80.
 	 */
 	b43_phy_write(dev, 0x0381,
-		      (u16)(0x7976 + 0x11 * b43_phy_ac_bw_step(dev)));
+		      (u16)(0x7976 +
+			    0x11 * b43_ppr_bw(dev->phy.ac->cal_width)));
 	for (i = 0; i < n_pre_clear; i++)
 		b43_actab_write_bulk_scoped(dev, B43_ACTAB_IQLOCAL, pre_clear_offs[i],
 					    16, 1, &zero);
@@ -8506,7 +8472,7 @@ void b43_phy_ac_rxgain_set(struct b43_wldev *dev)
 		{ 0x0729, 0x0100, 0x0100 }, { 0x0721, 0x0100, 0x0100 },
 	};
 	const struct b43_phy_ac_rxgain_bw *g = b43_phy_ac_rxgain_bw(dev);
-	unsigned int bw = b43_phy_ac_bw_step(dev);
+	unsigned int bw = b43_ppr_bw(dev->phy.ac->cal_width);
 	struct b43_phy_ac *ac = dev->phy.ac;
 	unsigned int core, i;
 	u16 lpf;
@@ -9068,7 +9034,8 @@ static void rxiqcal_meas_peek_c0_c5(struct b43_wldev *dev, unsigned int core)
 static void rxiqcal_meas_setup(struct b43_wldev *dev)
 {
 	b43_phy_write(dev,   0x0272,
-		      b43_phy_ac_bw_step(dev) == 2 ? 0x3000 : 0x4000);
+		      dev->phy.ac->cal_width == NL80211_CHAN_WIDTH_80 ?
+		      0x3000 : 0x4000);
 	b43_phy_maskset(dev, 0x0271, (u16)~0x00ff, 0x0020);
 	b43_phy_maskset(dev, 0x0270, (u16)~0x0002, 0);
 }
@@ -10279,11 +10246,11 @@ static const struct {
 /* An entry's value with the radar on, at this channel's width. */
 static u16 b43_phy_ac_radar_on(struct b43_wldev *dev, unsigned int i)
 {
-	unsigned int bw = b43_phy_ac_bw_mhz(dev), k = bw / 20;
+	unsigned int k = 1 << b43_ppr_bw(dev->wl->hw->conf.chandef.width);
 
 	switch (b43_phy_ac_radar_block[i].reg) {
 	case 0x025b:
-		return bw == 80 ? 0x001f : 0x0008 * k;
+		return k == 4 ? 0x001f : 0x0008 * k;
 	case 0x0262:
 		return 200 * k;
 	case 0x0263:
@@ -10339,8 +10306,7 @@ static void b43_phy_ac_radar_arm(struct b43_wldev *dev, bool on)
 	b43_phy_ac_mhf_maskset(dev, 0, (u16)~B43_HF_RADARW, B43_HF_RADARW);
 	ac->radar_armed = true;
 	b43_radar_reset(&ac->radar);
-	ac->radar.shift = b43_phy_ac_bw_mhz(dev) == 20 ? 2 :
-			  b43_phy_ac_bw_mhz(dev) == 40 ? 1 : 0;
+	ac->radar.shift = 2 - b43_ppr_bw(dev->wl->hw->conf.chandef.width);
 }
 
 /*
