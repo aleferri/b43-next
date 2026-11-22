@@ -48,6 +48,23 @@
 #include "qmath.h"
 #include "calibrate.h"
 
+/* The check of B43_PHY_AC_REQUIRE(): true when @func must return. */
+bool b43_phy_ac_require_failed(struct b43_wldev *dev, u16 want, u16 forbid,
+			       const char *func)
+{
+	u16 sm = b43_phy_ac_status(dev);
+
+	if (sm & B43_PHY_AC_STATE_FAULTED)
+		return true;
+	if ((sm & want) == want && !(sm & forbid))
+		return false;
+	b43err(dev->wl, "phy_ac: %s precondition failed: "
+	       "status=0x%04x want=0x%04x forbid=0x%04x\n",
+	       func, sm, want, forbid);
+	dev->phy.ac->status_mask |= B43_PHY_AC_STATE_FAULTED;
+	return true;
+}
+
 /*
  * Update one of the five HOSTFn slots.
  *

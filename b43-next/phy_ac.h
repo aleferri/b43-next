@@ -648,7 +648,7 @@ struct b43_phy_ac {
  * means no requirement). On mismatch log an error, set FAULTED and return;
  * once FAULTED every later REQUIRE returns at once, so a broken invariant
  * does not cascade into the hardware. REQUIRE() is for void functions,
- * REQUIRE_RET() for the others; `dev` is evaluated more than once.
+ * REQUIRE_RET() for the others.
  *
  * STATE_PHY_RUN mirrors BBCFG[15] for annotate_enables.py; no captured op
  * touches that bit and nothing sets it, so it must not appear in `want` or
@@ -659,34 +659,17 @@ struct b43_phy_ac {
 	((dev)->phy.ac->status_mask |					\
 	 ((dev)->mac_suspended == 0 ? B43_PHY_AC_STATE_MAC_EN : 0))
 
+bool b43_phy_ac_require_failed(struct b43_wldev *dev, u16 want, u16 forbid,
+			       const char *func);
+
 #define B43_PHY_AC_REQUIRE(dev, want, forbid) do {			\
-	struct b43_phy_ac *__ac = (dev)->phy.ac;			\
-	u16 __sm = b43_phy_ac_status(dev);				\
-	if (__sm & B43_PHY_AC_STATE_FAULTED)				\
+	if (b43_phy_ac_require_failed((dev), (want), (forbid), __func__)) \
 		return;							\
-	if ((__sm & (want)) != (want) || (__sm & (forbid))) {		\
-		b43err((dev)->wl,					\
-		       "phy_ac: %s precondition failed: "		\
-		       "status=0x%04x want=0x%04x forbid=0x%04x\n",	\
-		       __func__, __sm, (u16)(want), (u16)(forbid));	\
-		__ac->status_mask |= B43_PHY_AC_STATE_FAULTED;		\
-		return;							\
-	}								\
 } while (0)
 
 #define B43_PHY_AC_REQUIRE_RET(dev, want, forbid, ret) do {		\
-	struct b43_phy_ac *__ac = (dev)->phy.ac;			\
-	u16 __sm = b43_phy_ac_status(dev);				\
-	if (__sm & B43_PHY_AC_STATE_FAULTED)				\
+	if (b43_phy_ac_require_failed((dev), (want), (forbid), __func__)) \
 		return (ret);						\
-	if ((__sm & (want)) != (want) || (__sm & (forbid))) {		\
-		b43err((dev)->wl,					\
-		       "phy_ac: %s precondition failed: "		\
-		       "status=0x%04x want=0x%04x forbid=0x%04x\n",	\
-		       __func__, __sm, (u16)(want), (u16)(forbid));	\
-		__ac->status_mask |= B43_PHY_AC_STATE_FAULTED;		\
-		return (ret);						\
-	}								\
 } while (0)
 
 extern const struct b43_phy_operations b43_phyops_ac;
