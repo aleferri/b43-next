@@ -62,6 +62,27 @@ void b43_shm_write16(struct b43_wldev *dev, u16 routing, u16 offset, u16 value)
 	ht_shm_write16(routing, offset, value);
 }
 
+/*
+ * main.c's, which is not linked: the rate block a rate's direct map entry
+ * points at. The slots are the low nibbles of xmit.c's PLCP rate codes.
+ */
+u16 b43_rate_block(struct b43_wldev *dev, u16 hw_value)
+{
+	static const u8 slot[] = {
+		[B43_CCK_RATE_1MB] = 0xa, [B43_CCK_RATE_2MB] = 0x4,
+		[B43_CCK_RATE_5MB] = 0x7, [B43_CCK_RATE_11MB] = 0xe,
+		[B43_OFDM_RATE_6MB] = 0xb, [B43_OFDM_RATE_9MB] = 0xf,
+		[B43_OFDM_RATE_12MB] = 0xa, [B43_OFDM_RATE_18MB] = 0xe,
+		[B43_OFDM_RATE_24MB] = 0x9, [B43_OFDM_RATE_36MB] = 0xd,
+		[B43_OFDM_RATE_48MB] = 0x8, [B43_OFDM_RATE_54MB] = 0xc,
+	};
+	u16 map = b43_is_cck_rate(hw_value) ? B43_SHM_SH_CCKDIRECT
+					    : B43_SHM_SH_OFDMDIRECT;
+
+	return 2 * b43_shm_read16(dev, B43_SHM_SHARED,
+				  map + 2 * slot[hw_value]);
+}
+
 static struct b43_wldev *setup(void)
 {
 	int c;
