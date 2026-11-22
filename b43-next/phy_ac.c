@@ -1100,14 +1100,7 @@ static void b43_phy_ac_adc_hold(struct b43_wldev *dev, bool hold)
  */
 static unsigned int b43_phy_ac_bw_step(struct b43_wldev *dev)
 {
-	switch (dev->phy.ac->cal_width) {
-	case NL80211_CHAN_WIDTH_80:
-		return 2;
-	case NL80211_CHAN_WIDTH_40:
-		return 1;
-	default:
-		return 0;
-	}
+	return b43_ppr_bw(dev->phy.ac->cal_width);
 }
 
 /*
@@ -2505,18 +2498,7 @@ static u16 b43_phy_ac_reg_ceiling(struct b43_wldev *dev)
 	if (!chandef->chan)
 		return 0;
 
-	switch (ac->cal_width) {
-	case NL80211_CHAN_WIDTH_80:
-		span = 4;
-		break;
-	case NL80211_CHAN_WIDTH_40:
-		span = 2;
-		break;
-	default:
-		span = 1;
-		break;
-	}
-
+	span = 1 << b43_phy_ac_bw_step(dev);
 	antgain = b43_phy_ac_antgain(dev);
 
 	/*
@@ -3647,14 +3629,7 @@ static void b43_phy_ac_radio_percore_setup_1(struct b43_wldev *dev)
  */
 static unsigned int b43_phy_ac_bw_mhz(struct b43_wldev *dev)
 {
-	switch (dev->wl->hw->conf.chandef.width) {
-	case NL80211_CHAN_WIDTH_80:
-		return 80;
-	case NL80211_CHAN_WIDTH_40:
-		return 40;
-	default:
-		return 20;
-	}
+	return 20 << b43_ppr_bw(dev->wl->hw->conf.chandef.width);
 }
 
 /*
@@ -6087,9 +6062,7 @@ static void b43_phy_ac_pwr_report(struct b43_wldev *dev)
 	if (!b43_cal_on(dev))
 		return;
 
-	bw = ac->cal_width == NL80211_CHAN_WIDTH_80 ? B43_PPR_BW_80 :
-	     ac->cal_width == NL80211_CHAN_WIDTH_40 ? B43_PPR_BW_40 :
-	     B43_PPR_BW_20;
+	bw = b43_ppr_bw(ac->cal_width);
 	sb = b43_ppr_sprom_r11_subband(ac->cal_channel, ac->cal_width);
 
 	b43_cal_report(dev, AC_CAL_TXPWR_TARGET, ac->txpwr_calc_ceiling,
