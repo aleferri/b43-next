@@ -10,5 +10,6 @@ extern void udelay(unsigned long us);
 extern void mdelay(unsigned long ms);
 extern void msleep(unsigned int ms);
 extern void usleep_range(unsigned long min_us, unsigned long max_us);
+extern void fsleep(unsigned long us);
 
 #endif
