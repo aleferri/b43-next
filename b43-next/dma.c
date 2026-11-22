@@ -2189,7 +2189,7 @@ bool b43_dma_ampdu_complete(struct b43_wldev *dev,
 	struct b43_dmaring *ring;
 	struct b43_dmadesc_meta *meta;
 	struct sk_buff *skb;
-	unsigned int n = 0, acked = 0;
+	unsigned int n = 0;
 	int slot, firstused;
 	bool last = false;
 
@@ -2241,7 +2241,12 @@ bool b43_dma_ampdu_complete(struct b43_wldev *dev,
 		ring->used_slots -= 2;
 		slot = next_slot(ring, next_slot(ring, slot));
 		n++;
-		acked += b43_txstatus_mpdu_acked(status, skb);
+#ifdef CONFIG_B43_NEXT_DEBUG
+		if (b43_txstatus_mpdu_acked(status, skb))
+			ring->nr_succeed_tx_packets++;
+		else
+			ring->nr_failed_tx_packets++;
+#endif
 		__skb_queue_tail(mpdus, skb);
 	}
 	if (ring->ampdu_pending)
@@ -2250,8 +2255,6 @@ bool b43_dma_ampdu_complete(struct b43_wldev *dev,
 		b43_ampdu_tx_mpdus_adjust(ring,
 				status->supp_reason == B43_TXST_SUPP_PREV, n);
 #ifdef CONFIG_B43_NEXT_DEBUG
-	ring->nr_succeed_tx_packets += acked;
-	ring->nr_failed_tx_packets += n - acked;
 	ring->nr_total_packet_tries += n;
 #endif
 	dma_tx_wake(dev, ring);
