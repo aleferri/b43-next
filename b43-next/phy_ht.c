@@ -1546,7 +1546,7 @@ static void b43_phy_ht_op_software_rfkill(struct b43_wldev *dev,
 		else
 			B43_WARN_ON(1);
 
-		dev->phy.ht->tuned = false;
+		dev->phy.ht->tuned_channel = 0;
 		b43_switch_channel(dev, dev->phy.channel);
 	}
 }
@@ -1615,15 +1615,14 @@ static int b43_phy_ht_op_switch_channel(struct b43_wldev *dev,
 	    (new_channel < 1 || new_channel > 14))
 		return -EINVAL;
 
-	if (phy_ht->tuned && phy_ht->tuned_channel == channel->hw_value &&
+	if (phy_ht->tuned_channel == channel->hw_value &&
 	    phy_ht->tuned_type == channel_type)
 		return 0;
 
-	phy_ht->tuned = false;
+	phy_ht->tuned_channel = 0;
 	err = b43_phy_ht_set_channel(dev, channel, channel_type);
 	if (err)
 		return err;
-	phy_ht->tuned = true;
 	phy_ht->tuned_channel = channel->hw_value;
 	phy_ht->tuned_type = channel_type;
 	return 0;
