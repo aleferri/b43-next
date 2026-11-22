@@ -5,7 +5,7 @@
 b43n-core	:= main.c beacon.c bus.c fw_layout.c sysfs.c xmit.c dma.c pio.c \
 		   rfkill.c ampdu.c
 # What every PHY links against
-b43n-phy	:= phy_common.c ppr.c qmath.c calibrate.c
+b43n-phy	:= phy_common.c ppr.c calibrate.c
 
 b43n-phy-g	:= phy_g.c tables.c lo.c wa.c
 b43n-phy-n	:= phy_n.c tables_nphy.c radio_2055.c radio_2056.c radio_2057.c
