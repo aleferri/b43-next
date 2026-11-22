@@ -171,22 +171,6 @@ b43_cal_slot(const struct b43_calstat *cs, unsigned int entry,
 	return (void *)(cs->mem + r->off + i * r->slot);
 }
 
-/* The values of a slot: their number, or -ENOENT */
-int b43_cal_fetch(struct b43_calstat *cs, unsigned int entry,
-		  unsigned int age, u32 *buf, unsigned int count)
-{
-	const struct b43_cal_slot *s;
-
-	if (entry >= cs->nr_entries)
-		return -EINVAL;
-	s = b43_cal_slot(cs, entry, age);
-	if (!s)
-		return -ENOENT;
-	count = min_t(unsigned int, count, s->n);
-	memcpy(buf, s->v, count * sizeof(u32));
-	return count;
-}
-
 static int b43_cal_format_value(const struct b43_cal_field *f, u32 v,
 				char *buf, size_t size)
 {

@@ -149,8 +149,6 @@ void b43_cal_report_values(struct b43_wldev *dev, unsigned int entry,
 void b43_cal_report_vec16(struct b43_wldev *dev, unsigned int entry,
 			  const u32 *head, unsigned int nhead,
 			  const u16 *vec, unsigned int nvec);
-int b43_cal_fetch(struct b43_calstat *cs, unsigned int entry,
-		  unsigned int age, u32 *buf, unsigned int count);
 int b43_cal_format(struct b43_calstat *cs, unsigned int entry,
 		   unsigned int age, unsigned int flags, char *buf,
 		   size_t size);
