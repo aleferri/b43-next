@@ -470,6 +470,7 @@ static inline const void *b43_rxhdr_at(const struct b43_rxhdr_fw4 *rxhdr,
 
 u8 b43_plcp_get_ratecode_cck(const u8 bitrate);
 u8 b43_plcp_get_ratecode_ofdm(const u8 bitrate);
+u16 b43_ofdm_airtime(u8 rate, unsigned int octets);
 
 void b43_generate_plcp_hdr(struct b43_plcp_hdr4 *plcp,
 			   const u16 octets, const u8 bitrate);

@@ -4067,15 +4067,6 @@ static void b43_aqm_init_rev42(struct b43_wldev *dev)
 }
 
 /*
- * Airtime of an OFDM frame of @len bytes at 5 GHz, preamble and SIGNAL
- * included, from the bits per symbol of its rate.
- */
-static u16 b43_ofdm_airtime(unsigned int len, unsigned int ndbps)
-{
-	return 20 + 4 * DIV_ROUND_UP(16 + 8 * len + 6, ndbps);
-}
-
-/*
  * What the AC cores' stock driver writes after the band initvals, the same
  * on the agcombo (7.14) and on the MacBookAir6,1 (6.30), where it repeats
  * on every band init:
@@ -4095,12 +4086,10 @@ static u16 b43_ofdm_airtime(unsigned int len, unsigned int ndbps)
 
 static void b43_bsinit_ac(struct b43_wldev *dev)
 {
-	static const struct {
-		u8 signal;
-		u8 ndbps;
-	} rates[] = {
-		{ 0xb, 24 }, { 0xf, 36 }, { 0xa, 48 }, { 0xe, 72 },
-		{ 0x9, 96 }, { 0xd, 144 }, { 0x8, 192 }, { 0xc, 216 },
+	static const u8 rates[] = {
+		B43_OFDM_RATE_6MB, B43_OFDM_RATE_9MB, B43_OFDM_RATE_12MB,
+		B43_OFDM_RATE_18MB, B43_OFDM_RATE_24MB, B43_OFDM_RATE_36MB,
+		B43_OFDM_RATE_48MB, B43_OFDM_RATE_54MB,
 	};
 	unsigned int i;
 
@@ -4110,25 +4099,23 @@ static void b43_bsinit_ac(struct b43_wldev *dev)
 	b43_shm_write16(dev, B43_SHM_SHARED, 0x17d4, 0x0100);
 
 	for (i = 0; i < ARRAY_SIZE(rates); i++) {
+		u8 signal = b43_plcp_get_ratecode_ofdm(rates[i]);
 		u16 block = 2 * b43_shm_read16(dev, B43_SHM_SHARED,
 					       B43_SHM_SH_OFDMDIRECT +
-					       2 * rates[i].signal);
+					       2 * signal);
 
-		if (rates[i].signal == 0xf) {
+		if (rates[i] == B43_OFDM_RATE_9MB) {
 			b43_shm_write16(dev, B43_SHM_SHARED, block, 0x0014);
 			b43_shm_write16(dev, B43_SHM_SHARED, block + 2,
-					0x01c0 | rates[i].signal);
+					0x01c0 | signal);
 			b43_shm_write16(dev, B43_SHM_SHARED, block + 4, 0x0002);
 		}
 		b43_shm_write16(dev, B43_SHM_SHARED, block + B43_RT_ACK_TIME,
-				B43_SIFS_5GHZ +
-				b43_ofdm_airtime(14, rates[i].ndbps));
+				B43_SIFS_5GHZ + b43_ofdm_airtime(rates[i], 14));
 		b43_shm_write16(dev, B43_SHM_SHARED, block + B43_RT_BA_TIME,
-				B43_SIFS_5GHZ +
-				b43_ofdm_airtime(32, rates[i].ndbps));
+				B43_SIFS_5GHZ + b43_ofdm_airtime(rates[i], 32));
 		b43_shm_write16(dev, B43_SHM_SHARED, block + B43_RT_RTS_TIME,
-				B43_SIFS_5GHZ +
-				b43_ofdm_airtime(20, rates[i].ndbps));
+				B43_SIFS_5GHZ + b43_ofdm_airtime(rates[i], 20));
 	}
 }
 

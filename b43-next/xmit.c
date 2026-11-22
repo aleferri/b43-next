@@ -431,6 +431,15 @@ static unsigned int b43_tx_airtime(const struct b43_tx_rate *r,
 	}
 }
 
+/* Airtime of @octets at a legacy OFDM rate, B43_OFDM_RATE_*, at 5 GHz */
+u16 b43_ofdm_airtime(u8 rate, unsigned int octets)
+{
+	struct b43_tx_rate r;
+
+	b43_tx_rate_legacy(&r, rate, false);
+	return b43_tx_airtime(&r, octets, false);
+}
+
 /*
  * The SIG of an HT or VHT rate: the first four bytes of the HT-SIG (the
  * MCS, 40 MHz, the length, smoothing, not sounding and the reserved bit
