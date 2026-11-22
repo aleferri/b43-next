@@ -4004,15 +4004,13 @@ static void b43_txfifo_alloc(struct b43_wldev *dev, u16 rqpri, u16 txptr,
 static int b43_txfifo_init_rev42(struct b43_wldev *dev)
 {
 	const unsigned int n = B43_TXFIFO_BLOCKS_REV42;
-	unsigned int i, fifo, tries;
+	unsigned int i, fifo;
+	u16 v;
 
 	b43_write16(dev, B43_MMIO_XMTFIFOFLUSH, 0x0600);
 	b43_write16(dev, B43_MMIO_XMTFIFOCMD, 0x0005);
-	for (tries = 0; b43_read16(dev, B43_MMIO_XMTFIFOCMD) & 0x0001; tries++) {
-		if (tries >= 100)
-			break;
-		udelay(10);
-	}
+	read_poll_timeout_atomic(b43_read16, v, !(v & 0x0001), 10, 1000, false,
+				 dev, B43_MMIO_XMTFIFOCMD);
 	if (b43_read16(dev, B43_MMIO_XMTFIFOCMD) & 0x0001)
 		return -ETIMEDOUT;
 
@@ -4026,18 +4024,13 @@ static int b43_txfifo_init_rev42(struct b43_wldev *dev)
 		b43_write16(dev, B43_MMIO_AGGFIFODATA1, min(3u, n - i));
 		b43_write16(dev, B43_MMIO_AGGFIFODATA0,
 			    B43_TXFIFO_CHAIN_GO | (i << 4) | B43_TXFIFO_CHAIN_CMD);
-		for (tries = 0; ; tries++) {
-			u16 v = b43_read16(dev, B43_MMIO_AGGFIFODATA0);
-
-			if (!(v & B43_TXFIFO_CHAIN_CMD))
-				break;
-			if (tries == B43_TXFIFO_CHAIN_RETRIES) {
-				if (v & B43_TXFIFO_CHAIN_GO)
-					return -ETIMEDOUT;
-				break;
-			}
-			udelay(10);
-		}
+		if (read_poll_timeout_atomic(b43_read16, v,
+					     !(v & B43_TXFIFO_CHAIN_CMD), 10,
+					     10 * B43_TXFIFO_CHAIN_RETRIES,
+					     false, dev,
+					     B43_MMIO_AGGFIFODATA0) &&
+		    (v & B43_TXFIFO_CHAIN_GO))
+			return -ETIMEDOUT;
 	}
 	return 0;
 }
