@@ -3525,15 +3525,33 @@ static u16 b43_phy_ac_chanspec(const struct cfg80211_chan_def *chandef)
 }
 
 /*
+ * The MAC's operating width, @bw the chanspec's width field
+ * (B43_PHY_AC_CHANSPEC_BW*).
+ * At the bus the stock driver reads MACCONTROL, clears PHY0 (0x3e6), sets
+ * the PHY bandwidth clock of the core's IOCTL and reads MACCONTROL again.
+ */
+static void b43_mac_bw_set(struct b43_wldev *dev, u32 bw)
+{
+	u32 clk = bw == B43_PHY_AC_CHANSPEC_BW80 ? B43_BCMA_IOCTL_PHY_BW_80MHZ :
+		  bw == B43_PHY_AC_CHANSPEC_BW40 ? B43_BCMA_IOCTL_PHY_BW_40MHZ :
+						   B43_BCMA_IOCTL_PHY_BW_20MHZ;
+
+	b43_read32(dev, B43_MMIO_MACCTL);
+	b43_write16(dev, B43_MMIO_PHY0, 0);
+	b43_phy_bw_clk_set(dev, clk);
+	b43_read32(dev, B43_MMIO_MACCTL);
+}
+
+/*
  * Write the chanspec the ucode reads out of shared memory.
  *
  * On the AC-PHY the core leaves B43_SHM_SH_CHAN to the PHY, which writes it
  * at the head of the RF bring-up and, when it changes, at the head of a
  * channel switch, as the stock driver does.
  *
- * The values come from phy.chandef, not from the cal_* fields: at the head
- * of the RF bring-up no channel setup has run yet, so cal_* are stale or
- * zero. b43_phy_init() points phy.chandef at the hardware config before
+ * The values come from phy.chandef: at the head of the RF bring-up no
+ * channel setup has run yet, so the cal_* fields are stale or zero.
+ * b43_phy_init() points phy.chandef at the hardware config before
  * switch_analog() and b43_software_rfkill() (which calls this), and
  * b43_op_config() repoints it on every channel change.
  *
