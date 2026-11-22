@@ -1185,8 +1185,8 @@ static unsigned int b43_phy_ac_meas_passes(struct b43_wldev *dev)
 /*
  * The per-rate blocks in shared memory, and how to reach one of their fields.
  *
- * The address is read, not computed: the rate's pointer from the direct-map
- * table, doubled, as brcmsmac's brcms_b_rate_shm_offset():
+ * The address is the rate's pointer from the direct-map table, doubled, as
+ * brcmsmac's brcms_b_rate_shm_offset():
  *
  *     block = 2 * shm_read(M_RT_DIRMAP_A + index * 2)
  *
@@ -1194,15 +1194,12 @@ static unsigned int b43_phy_ac_meas_passes(struct b43_wldev *dev)
  * 36, 48 and 54 Mbit/s are at indices 11, 15, 10, 14, 9, 13, 8 and 12.
  *
  * The blocks happen to be 0x14 apart on this board, but the rate table is
- * driver state, not ucode state: the DSL-3580L has its pointers at
- * 0x49e-0x4e4 where the d6220 has them at 0x4c6-0x50c. A fixed stride would
- * hit the right cells only for one rateset, and no gate would notice.
+ * driver state: the DSL-3580L has its pointers at 0x49e-0x4e4 where the
+ * d6220 has them at 0x4c6-0x50c. A fixed stride would hit the right cells
+ * only for one rateset, and no gate would notice.
  *
  * Offsets within a block are in bytes, like brcmsmac's M_RT_*.
  */
-#define B43_AC_RT_DIRMAP_A	0x01c0		/* M_RT_DIRMAP_A, 0xe0 * 2 */
-#define B43_AC_RT_DIRMAP_B	0x0200		/* M_RT_DIRMAP_B, 0x100 * 2 */
-#define B43_AC_RT_BBRSMAP_A	0x01e0		/* M_RT_BBRSMAP_A, 0xf0 * 2 */
 /*
  * The block layout differs from brcmsmac's for some fields: SIGNAL is at +8
  * and +10 and the duration at +12, where brcmsmac has PLCP_POS 10 and
@@ -1217,7 +1214,7 @@ static const u8 b43_phy_ac_ofdm_dirmap[8] = { 11, 15, 10, 14, 9, 13, 8, 12 };
 
 static u16 b43_phy_ac_rate_shm_offset(struct b43_wldev *dev, unsigned int rate)
 {
-	u16 ptr = b43_shm_read16(dev, B43_SHM_SHARED, B43_AC_RT_DIRMAP_A +
+	u16 ptr = b43_shm_read16(dev, B43_SHM_SHARED, B43_SHM_SH_OFDMDIRECT +
 				 b43_phy_ac_ofdm_dirmap[rate] * 2);
 
 	return (u16)(2 * ptr);
@@ -1378,7 +1375,7 @@ static void b43_phy_ac_basic_rate_map(struct b43_wldev *dev)
 
 	for (i = 0; i < ARRAY_SIZE(basic_of); i++)
 		b43_shm_write16(dev, B43_SHM_SHARED,
-				B43_AC_RT_BBRSMAP_A +
+				B43_SHM_SH_OFDMBASIC +
 				b43_phy_ac_ofdm_dirmap[i] * 2,
 				dev->phy.ac->rate_ptr[basic_of[i]]);
 }
@@ -1805,7 +1802,7 @@ static void b43_phy_ac_prb_rsp_rate_po(struct b43_wldev *dev,
 	for (i = 0; i < ARRAY_SIZE(b43_phy_ac_prb_rsp_rates); i++) {
 		const struct b43_phy_ac_prb_rsp_rate *r =
 			&b43_phy_ac_prb_rsp_rates[i];
-		u16 tab = r->cck ? B43_AC_RT_DIRMAP_B : B43_AC_RT_DIRMAP_A;
+		u16 tab = r->cck ? B43_SHM_SH_CCKDIRECT : B43_SHM_SH_OFDMDIRECT;
 		u16 ptr = b43_shm_read16(dev, B43_SHM_SHARED,
 					 tab + r->dirmap * 2);
 		u16 cell = (u16)(2 * ptr + B43_AC_RT_RATE_PO);
@@ -10995,16 +10992,18 @@ static int b43_phy_ac_op_switch_channel(struct b43_wldev *dev, unsigned int new_
 	 * b43_phy_ac_basic_rate_map(); the rest is read because the stock
 	 * driver reads it.
 	 */
-	for (off = B43_AC_RT_DIRMAP_A; off <= B43_AC_RT_DIRMAP_A + 0x1e; off += 2) {
+	for (off = B43_SHM_SH_OFDMDIRECT;
+	     off <= B43_SHM_SH_OFDMDIRECT + 0x1e; off += 2) {
 		u16 v = b43_shm_read16(dev, B43_SHM_SHARED, off);
 		unsigned int k;
 
 		for (k = 0; k < ARRAY_SIZE(b43_phy_ac_ofdm_dirmap); k++)
-			if (B43_AC_RT_DIRMAP_A +
+			if (B43_SHM_SH_OFDMDIRECT +
 			    b43_phy_ac_ofdm_dirmap[k] * 2 == off)
 				dev->phy.ac->rate_ptr[k] = v;
 	}
-	for (off = B43_AC_RT_DIRMAP_B; off <= B43_AC_RT_DIRMAP_B + 0x1e; off += 2)
+	for (off = B43_SHM_SH_CCKDIRECT;
+	     off <= B43_SHM_SH_CCKDIRECT + 0x1e; off += 2)
 		b43_shm_read16(dev, B43_SHM_SHARED, off);
 	b43_shm_read16(dev, B43_SHM_SHARED, B43_SHM_SH_KTP);
 	/*

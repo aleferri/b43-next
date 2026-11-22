@@ -460,6 +460,9 @@ void bcmn_core_set_clockmode(struct bcmn_device *core,
 #define B43_SHM_SH_RFATT          0x0064
 #define B43_SHM_SH_CHAN           0x00A0
 #define B43_SHM_SH_CTS_DURATION   0x00B8
+#define B43_SHM_SH_OFDMDIRECT     0x01C0
+#define B43_SHM_SH_OFDMBASIC      0x01E0
+#define B43_SHM_SH_CCKDIRECT      0x0200
 #define B43_SHM_SH_SLOTT          0x0010
 #define B43_SHM_SH_PRETBTT        0x0096
 #define B43_SHM_SH_TXCORE_AC      0x05D4

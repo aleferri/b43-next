@@ -309,11 +309,6 @@ struct b43_phy_ac_txpwr_limits {
 
 void b43_phy_ac_write_chanspec(struct b43_wldev *dev);
 
-/* MAC bandwidth register, written when the operating width changes. */
-#define B43_MAC_BW_20				0x1000
-#define B43_MAC_BW_40				0x1800
-#define B43_MAC_BW_80				0x2000
-
 /*
  * Measurement field of PHY 0x0012, the idle-TSSI readback. Bit 11 is set on
  * every sample the captures contain; a sample whose measurement field is zero
