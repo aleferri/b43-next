@@ -1401,10 +1401,7 @@ static void b43_phy_ac_basic_rate_map(struct b43_wldev *dev)
 void b43_phy_ac_rxiqcal_tone_load(struct b43_wldev *dev, int step)
 {
 	B43_AC_FN();
-	B43_PHY_AC_REQUIRE(dev,
-			   B43_PHY_AC_STATE_RX_WAITED | B43_PHY_AC_STATE_CLIP_ALL_DIS,
-			   B43_PHY_AC_STATE_RX_CCK | B43_PHY_AC_STATE_RX_OFDM |
-			   B43_PHY_AC_STATE_CCA_RESET | B43_PHY_AC_STATE_MAC_EN);
+	B43_PHY_AC_REQUIRE_HELD(dev, B43_PHY_AC_STATE_MAC_EN);
 
 	b43_phy_ac_tone_table_write(dev, B43_PHY_AC_RXIQ_TONE_AMP, step);
 }
@@ -2838,10 +2835,7 @@ void b43_phy_ac_txpwr_by_index(struct b43_wldev *dev, u8 idx)
 	unsigned int core;
 	u16 saved;
 
-	B43_PHY_AC_REQUIRE(dev,
-			   B43_PHY_AC_STATE_RX_WAITED | B43_PHY_AC_STATE_CLIP_ALL_DIS,
-			   B43_PHY_AC_STATE_RX_CCK | B43_PHY_AC_STATE_RX_OFDM |
-			   B43_PHY_AC_STATE_CCA_RESET | B43_PHY_AC_STATE_MAC_EN);
+	B43_PHY_AC_REQUIRE_HELD(dev, B43_PHY_AC_STATE_MAC_EN);
 
 	/*
 	 * The side effects some stock call sites wrap around this sequence
@@ -3697,10 +3691,7 @@ static void b43_phy_ac_coeff_bank_init(struct b43_wldev *dev)
 	 * Called from channel_setup(): channel_switch_prep() has frozen RX
 	 * (RX_WAITED plus CLIP_ALL_DIS) and the MAC is still enabled.
 	 */
-	B43_PHY_AC_REQUIRE(dev,
-			   B43_PHY_AC_STATE_RX_WAITED | B43_PHY_AC_STATE_CLIP_ALL_DIS,
-			   B43_PHY_AC_STATE_RX_CCK | B43_PHY_AC_STATE_RX_OFDM |
-			   B43_PHY_AC_STATE_CCA_RESET);
+	B43_PHY_AC_REQUIRE_HELD(dev, 0);
 
 	/*
 	 * 1. Bandwidth selector: the field in 0x0076 is the width index (1 at
@@ -4331,10 +4322,7 @@ static void b43_phy_ac_channel_setup(struct b43_wldev *dev,
 	unsigned int i;
 	u16 gate, inner;
 
-	B43_PHY_AC_REQUIRE(dev,
-			   B43_PHY_AC_STATE_RX_WAITED | B43_PHY_AC_STATE_CLIP_ALL_DIS,
-			   B43_PHY_AC_STATE_RX_CCK | B43_PHY_AC_STATE_RX_OFDM |
-			   B43_PHY_AC_STATE_CCA_RESET | B43_PHY_AC_STATE_AFE_OFF);
+	B43_PHY_AC_REQUIRE_HELD(dev, B43_PHY_AC_STATE_AFE_OFF);
 
 	if (!e) {
 		b43err(dev->wl, "AC-PHY: no channel table entry, skipping setup\n");
@@ -4726,10 +4714,7 @@ static void b43_phy_ac_chan_tables(struct b43_wldev *dev)
 	u16 saved, fill[3];
 	unsigned int k;
 
-	B43_PHY_AC_REQUIRE(dev,
-			   B43_PHY_AC_STATE_RX_WAITED | B43_PHY_AC_STATE_CLIP_ALL_DIS,
-			   B43_PHY_AC_STATE_RX_CCK | B43_PHY_AC_STATE_RX_OFDM |
-			   B43_PHY_AC_STATE_CCA_RESET | B43_PHY_AC_STATE_MAC_EN);
+	B43_PHY_AC_REQUIRE_HELD(dev, B43_PHY_AC_STATE_MAC_EN);
 
 	/*
 	 * Table 0x11, one 48-bit cell per table write, so id and offset are
@@ -4785,10 +4770,7 @@ static void b43_phy_ac_rx_evm_shaping_override(struct b43_wldev *dev)
 	const u16 *blk_lo = narrow ? narrow_lo : wide;
 	const u16 *blk_hi = narrow ? narrow_hi : wide;
 
-	B43_PHY_AC_REQUIRE(dev,
-			   B43_PHY_AC_STATE_RX_WAITED | B43_PHY_AC_STATE_CLIP_ALL_DIS,
-			   B43_PHY_AC_STATE_RX_CCK | B43_PHY_AC_STATE_RX_OFDM |
-			   B43_PHY_AC_STATE_CCA_RESET);
+	B43_PHY_AC_REQUIRE_HELD(dev, 0);
 
 	b43_actab_write_bulk(dev, 0x04, 0x0001, 16, 3, blk_lo);
 	b43_actab_write_bulk(dev, 0x04, 0x003d, 16, 3, blk_hi);
@@ -5169,10 +5151,7 @@ static void b43_phy_ac_post_noise_shaping_rx_regprog(struct b43_wldev *dev)
 	unsigned int core;
 	u8 num_cores = dev->phy.ac->num_cores;
 
-	B43_PHY_AC_REQUIRE(dev,
-			   B43_PHY_AC_STATE_RX_WAITED | B43_PHY_AC_STATE_CLIP_ALL_DIS,
-			   B43_PHY_AC_STATE_RX_CCK | B43_PHY_AC_STATE_RX_OFDM |
-			   B43_PHY_AC_STATE_CCA_RESET);
+	B43_PHY_AC_REQUIRE_HELD(dev, 0);
 
 	for (core = 0; core < num_cores; core++) {
 		b43_phy_ac_post_noise_shaping_rx_regprog_core(dev, core);
@@ -5377,10 +5356,7 @@ static void b43_phy_ac_adc_reset(struct b43_wldev *dev)
 	B43_AC_FN();
 	u8 c, num_cores = dev->phy.ac->num_cores;
 
-	B43_PHY_AC_REQUIRE(dev,
-			   B43_PHY_AC_STATE_RX_WAITED | B43_PHY_AC_STATE_CLIP_ALL_DIS,
-			   B43_PHY_AC_STATE_RX_CCK | B43_PHY_AC_STATE_RX_OFDM |
-			   B43_PHY_AC_STATE_CCA_RESET | B43_PHY_AC_STATE_MAC_EN);
+	B43_PHY_AC_REQUIRE_HELD(dev, B43_PHY_AC_STATE_MAC_EN);
 
 	/*
 	 * The RX-chain arm/restore on 0x0739/0x0725/0x073a is not part of this:
@@ -7584,10 +7560,7 @@ static void b43_phy_ac_txcal_tone_stop(struct b43_wldev *dev)
 	unsigned int core;
 
 	B43_AC_FN();
-	B43_PHY_AC_REQUIRE(dev,
-			   B43_PHY_AC_STATE_RX_WAITED | B43_PHY_AC_STATE_CLIP_ALL_DIS,
-			   B43_PHY_AC_STATE_RX_CCK | B43_PHY_AC_STATE_RX_OFDM |
-			   B43_PHY_AC_STATE_CCA_RESET | B43_PHY_AC_STATE_MAC_EN);
+	B43_PHY_AC_REQUIRE_HELD(dev, B43_PHY_AC_STATE_MAC_EN);
 
 	b43_phy_read_log(dev, 0x0464);
 	b43_phy_mask(dev, 0x0382, (u16)~0x8000);
@@ -7618,10 +7591,7 @@ static void b43_phy_ac_txcal_tone_stop(struct b43_wldev *dev)
 static void b43_phy_ac_txcal_tone_play(struct b43_wldev *dev, bool lo)
 {
 	B43_AC_FN();
-	B43_PHY_AC_REQUIRE(dev,
-			   B43_PHY_AC_STATE_RX_WAITED | B43_PHY_AC_STATE_CLIP_ALL_DIS,
-			   B43_PHY_AC_STATE_RX_CCK | B43_PHY_AC_STATE_RX_OFDM |
-			   B43_PHY_AC_STATE_CCA_RESET | B43_PHY_AC_STATE_MAC_EN);
+	B43_PHY_AC_REQUIRE_HELD(dev, B43_PHY_AC_STATE_MAC_EN);
 
 	static const u16 zero[2];
 	unsigned int c;
@@ -7711,10 +7681,7 @@ static void b43_phy_ac_txiqlo_cmd(struct b43_wldev *dev,
 				      u16 rd_off, u8 rw_len, u16 wr_off)
 {
 	B43_AC_FN();
-	B43_PHY_AC_REQUIRE(dev,
-			   B43_PHY_AC_STATE_RX_WAITED | B43_PHY_AC_STATE_CLIP_ALL_DIS,
-			   B43_PHY_AC_STATE_RX_CCK | B43_PHY_AC_STATE_RX_OFDM |
-			   B43_PHY_AC_STATE_CCA_RESET | B43_PHY_AC_STATE_MAC_EN);
+	B43_PHY_AC_REQUIRE_HELD(dev, B43_PHY_AC_STATE_MAC_EN);
 
 	static const u16 zero = 0;
 	u8 i;
@@ -7793,10 +7760,7 @@ void b43_phy_ac_txiqlo_run(struct b43_wldev *dev)
 	B43_AC_FN();
 	unsigned int core, i;
 
-	B43_PHY_AC_REQUIRE(dev,
-			   B43_PHY_AC_STATE_RX_WAITED | B43_PHY_AC_STATE_CLIP_ALL_DIS,
-			   B43_PHY_AC_STATE_RX_CCK | B43_PHY_AC_STATE_RX_OFDM |
-			   B43_PHY_AC_STATE_CCA_RESET | B43_PHY_AC_STATE_MAC_EN);
+	B43_PHY_AC_REQUIRE_HELD(dev, B43_PHY_AC_STATE_MAC_EN);
 
 	for (core = 0; core < B43_PHY_AC_MAX_CORES; core++) {
 		const u16 clr[2] = { 0x43 + 8 * core, 0x44 + 8 * core };
@@ -7917,10 +7881,7 @@ static u16 b43_phy_ac_loft_lut_base(struct b43_wldev *dev, unsigned int core,
 void b43_phy_ac_loft_lut_fill(struct b43_wldev *dev)
 {
 	B43_AC_FN();
-	B43_PHY_AC_REQUIRE(dev,
-			   B43_PHY_AC_STATE_RX_WAITED | B43_PHY_AC_STATE_CLIP_ALL_DIS,
-			   B43_PHY_AC_STATE_RX_CCK | B43_PHY_AC_STATE_RX_OFDM |
-			   B43_PHY_AC_STATE_CCA_RESET | B43_PHY_AC_STATE_MAC_EN);
+	B43_PHY_AC_REQUIRE_HELD(dev, B43_PHY_AC_STATE_MAC_EN);
 
 	u16 lo[3];
 	unsigned int core, i;
@@ -7952,10 +7913,7 @@ void b43_phy_ac_txcal_restore(struct b43_wldev *dev)
 {
 	B43_AC_FN();
 	b43_phy_ac_txpwr_by_index(dev, B43_PHY_AC_TXPWR_INDEX_DEFAULT);
-	B43_PHY_AC_REQUIRE(dev,
-			   B43_PHY_AC_STATE_RX_WAITED | B43_PHY_AC_STATE_CLIP_ALL_DIS,
-			   B43_PHY_AC_STATE_RX_CCK | B43_PHY_AC_STATE_RX_OFDM |
-			   B43_PHY_AC_STATE_CCA_RESET | B43_PHY_AC_STATE_MAC_EN);
+	B43_PHY_AC_REQUIRE_HELD(dev, B43_PHY_AC_STATE_MAC_EN);
 
 	static const struct { u16 off; u16 val; } gain_cfg[16] = {
 		{ 0x073e, 0x0000 },
@@ -8006,10 +7964,7 @@ void b43_phy_ac_txcal_restore(struct b43_wldev *dev)
 void b43_phy_ac_cal_chain_restore(struct b43_wldev *dev, bool with_tune)
 {
 	B43_AC_FN();
-	B43_PHY_AC_REQUIRE(dev,
-			   B43_PHY_AC_STATE_RX_WAITED | B43_PHY_AC_STATE_CLIP_ALL_DIS,
-			   B43_PHY_AC_STATE_RX_CCK | B43_PHY_AC_STATE_RX_OFDM |
-			   B43_PHY_AC_STATE_CCA_RESET | B43_PHY_AC_STATE_MAC_EN);
+	B43_PHY_AC_REQUIRE_HELD(dev, B43_PHY_AC_STATE_MAC_EN);
 
 	unsigned int core, k;
 
@@ -8134,10 +8089,7 @@ static void b43_phy_ac_rxgain_perchan_tail(struct b43_wldev *dev)
 void b43_phy_ac_txiq_setup(struct b43_wldev *dev)
 {
 	B43_AC_FN();
-	B43_PHY_AC_REQUIRE(dev,
-			   B43_PHY_AC_STATE_RX_WAITED | B43_PHY_AC_STATE_CLIP_ALL_DIS,
-			   B43_PHY_AC_STATE_RX_CCK | B43_PHY_AC_STATE_RX_OFDM |
-			   B43_PHY_AC_STATE_CCA_RESET | B43_PHY_AC_STATE_MAC_EN);
+	B43_PHY_AC_REQUIRE_HELD(dev, B43_PHY_AC_STATE_MAC_EN);
 
 	struct b43_phy_ac *ac = dev->phy.ac;
 	unsigned int core;
@@ -8213,10 +8165,7 @@ static void b43_phy_ac_tx_gain_bbmult_load(struct b43_wldev *dev)
 void b43_phy_ac_txcal_gain_load(struct b43_wldev *dev)
 {
 	B43_AC_FN();
-	B43_PHY_AC_REQUIRE(dev,
-			   B43_PHY_AC_STATE_RX_WAITED | B43_PHY_AC_STATE_CLIP_ALL_DIS,
-			   B43_PHY_AC_STATE_RX_CCK | B43_PHY_AC_STATE_RX_OFDM |
-			   B43_PHY_AC_STATE_CCA_RESET | B43_PHY_AC_STATE_MAC_EN);
+	B43_PHY_AC_REQUIRE_HELD(dev, B43_PHY_AC_STATE_MAC_EN);
 
 	b43_phy_ac_tx_gain_bbmult_load(dev);
 }
@@ -8234,10 +8183,7 @@ void b43_phy_ac_txcal_gain_load(struct b43_wldev *dev)
 void b43_phy_ac_txiq_run(struct b43_wldev *dev)
 {
 	B43_AC_FN();
-	B43_PHY_AC_REQUIRE(dev,
-			   B43_PHY_AC_STATE_RX_WAITED | B43_PHY_AC_STATE_CLIP_ALL_DIS,
-			   B43_PHY_AC_STATE_RX_CCK | B43_PHY_AC_STATE_RX_OFDM |
-			   B43_PHY_AC_STATE_CCA_RESET | B43_PHY_AC_STATE_MAC_EN);
+	B43_PHY_AC_REQUIRE_HELD(dev, B43_PHY_AC_STATE_MAC_EN);
 
 	static const u16 cmds[] = { 0x0084, 0x0056 };
 	unsigned int core, i;
@@ -8264,10 +8210,7 @@ void b43_phy_ac_txiq_run(struct b43_wldev *dev)
 void b43_phy_ac_loft_lut_reset(struct b43_wldev *dev)
 {
 	B43_AC_FN();
-	B43_PHY_AC_REQUIRE(dev,
-			   B43_PHY_AC_STATE_RX_WAITED | B43_PHY_AC_STATE_CLIP_ALL_DIS,
-			   B43_PHY_AC_STATE_RX_CCK | B43_PHY_AC_STATE_RX_OFDM |
-			   B43_PHY_AC_STATE_CCA_RESET | B43_PHY_AC_STATE_MAC_EN);
+	B43_PHY_AC_REQUIRE_HELD(dev, B43_PHY_AC_STATE_MAC_EN);
 
 	unsigned int off, core;
 
@@ -8293,10 +8236,7 @@ void b43_phy_ac_loft_lut_reset(struct b43_wldev *dev)
 void b43_phy_ac_rxiqcal_setup(struct b43_wldev *dev)
 {
 	B43_AC_FN();
-	B43_PHY_AC_REQUIRE(dev,
-			   B43_PHY_AC_STATE_RX_WAITED | B43_PHY_AC_STATE_CLIP_ALL_DIS,
-			   B43_PHY_AC_STATE_RX_CCK | B43_PHY_AC_STATE_RX_OFDM |
-			   B43_PHY_AC_STATE_CCA_RESET | B43_PHY_AC_STATE_MAC_EN);
+	B43_PHY_AC_REQUIRE_HELD(dev, B43_PHY_AC_STATE_MAC_EN);
 
 	unsigned int c;
 
@@ -8362,10 +8302,7 @@ static u16 b43_phy_ac_rxgain_cfg_saved(const struct b43_phy_ac *ac,
 void b43_phy_ac_rxgain_save(struct b43_wldev *dev)
 {
 	B43_AC_FN();
-	B43_PHY_AC_REQUIRE(dev,
-			   B43_PHY_AC_STATE_RX_WAITED | B43_PHY_AC_STATE_CLIP_ALL_DIS,
-			   B43_PHY_AC_STATE_RX_CCK | B43_PHY_AC_STATE_RX_OFDM |
-			   B43_PHY_AC_STATE_CCA_RESET | B43_PHY_AC_STATE_MAC_EN);
+	B43_PHY_AC_REQUIRE_HELD(dev, B43_PHY_AC_STATE_MAC_EN);
 
 	static const u16 bbmult_off[B43_PHY_AC_MAX_CORES] = {
 		0x0063, 0x0067, 0x006b
@@ -8409,10 +8346,7 @@ void b43_phy_ac_rxgain_save(struct b43_wldev *dev)
 void b43_phy_ac_rxgain_set(struct b43_wldev *dev)
 {
 	B43_AC_FN();
-	B43_PHY_AC_REQUIRE(dev,
-			   B43_PHY_AC_STATE_RX_WAITED | B43_PHY_AC_STATE_CLIP_ALL_DIS,
-			   B43_PHY_AC_STATE_RX_CCK | B43_PHY_AC_STATE_RX_OFDM |
-			   B43_PHY_AC_STATE_CCA_RESET | B43_PHY_AC_STATE_MAC_EN);
+	B43_PHY_AC_REQUIRE_HELD(dev, B43_PHY_AC_STATE_MAC_EN);
 
 	/*
 	 * Phase 1: per-core MODs, as core 0's registers (+0x200 per core), in
@@ -8564,10 +8498,7 @@ static const struct b43_phy_ac_rad_mod_op b43_phy_ac_iqcal_config_2g[10] = {
 void b43_phy_ac_loopback_radio_setup(struct b43_wldev *dev)
 {
 	B43_AC_FN();
-	B43_PHY_AC_REQUIRE(dev,
-			   B43_PHY_AC_STATE_RX_WAITED | B43_PHY_AC_STATE_CLIP_ALL_DIS,
-			   B43_PHY_AC_STATE_RX_CCK | B43_PHY_AC_STATE_RX_OFDM |
-			   B43_PHY_AC_STATE_CCA_RESET | B43_PHY_AC_STATE_MAC_EN);
+	B43_PHY_AC_REQUIRE_HELD(dev, B43_PHY_AC_STATE_MAC_EN);
 
 	const struct b43_phy_ac_rad_mod_op *configs =
 		b43_current_band(dev->wl) == NL80211_BAND_2GHZ ?
@@ -8614,10 +8545,7 @@ void b43_phy_ac_loopback_gain_apply(struct b43_wldev *dev,
 				     const u16 r734_vals[3])
 {
 	B43_AC_FN();
-	B43_PHY_AC_REQUIRE(dev,
-			   B43_PHY_AC_STATE_RX_WAITED | B43_PHY_AC_STATE_CLIP_ALL_DIS,
-			   B43_PHY_AC_STATE_RX_CCK | B43_PHY_AC_STATE_RX_OFDM |
-			   B43_PHY_AC_STATE_CCA_RESET | B43_PHY_AC_STATE_MAC_EN);
+	B43_PHY_AC_REQUIRE_HELD(dev, B43_PHY_AC_STATE_MAC_EN);
 
 	bool band_2g = b43_current_band(dev->wl) == NL80211_BAND_2GHZ;
 	u16 r730 = band_2g ? 0x0080 : 0x00b0;
@@ -8730,10 +8658,7 @@ static void b43_phy_ac_iqest_wait(struct b43_wldev *dev)
 void b43_phy_ac_loopback_gain_measure(struct b43_wldev *dev)
 {
 	B43_AC_FN();
-	B43_PHY_AC_REQUIRE(dev,
-			   B43_PHY_AC_STATE_RX_WAITED | B43_PHY_AC_STATE_CLIP_ALL_DIS,
-			   B43_PHY_AC_STATE_RX_CCK | B43_PHY_AC_STATE_RX_OFDM |
-			   B43_PHY_AC_STATE_CCA_RESET | B43_PHY_AC_STATE_MAC_EN);
+	B43_PHY_AC_REQUIRE_HELD(dev, B43_PHY_AC_STATE_MAC_EN);
 
 	unsigned int c;
 
@@ -9064,10 +8989,7 @@ static void rxiqcal_meas_arm_all(struct b43_wldev *dev, bool measurement)
 void b43_phy_ac_rxiqcal_tone_measure(struct b43_wldev *dev)
 {
 	B43_AC_FN();
-	B43_PHY_AC_REQUIRE(dev,
-			   B43_PHY_AC_STATE_RX_WAITED | B43_PHY_AC_STATE_CLIP_ALL_DIS,
-			   B43_PHY_AC_STATE_RX_CCK | B43_PHY_AC_STATE_RX_OFDM |
-			   B43_PHY_AC_STATE_CCA_RESET | B43_PHY_AC_STATE_MAC_EN);
+	B43_PHY_AC_REQUIRE_HELD(dev, B43_PHY_AC_STATE_MAC_EN);
 
 	unsigned int c;
 
@@ -9284,10 +9206,7 @@ static void b43_phy_ac_rxiqcal_fir_write(struct b43_wldev *dev)
 void b43_phy_ac_rxiqcal_coeffs_write(struct b43_wldev *dev)
 {
 	B43_AC_FN();
-	B43_PHY_AC_REQUIRE(dev,
-			   B43_PHY_AC_STATE_RX_WAITED | B43_PHY_AC_STATE_CLIP_ALL_DIS,
-			   B43_PHY_AC_STATE_RX_CCK | B43_PHY_AC_STATE_RX_OFDM |
-			   B43_PHY_AC_STATE_CCA_RESET | B43_PHY_AC_STATE_MAC_EN);
+	B43_PHY_AC_REQUIRE_HELD(dev, B43_PHY_AC_STATE_MAC_EN);
 
 	unsigned int c;
 
@@ -9315,10 +9234,7 @@ void b43_phy_ac_rxiqcal_coeffs_write(struct b43_wldev *dev)
 void b43_phy_ac_loopback_radio_restore(struct b43_wldev *dev)
 {
 	B43_AC_FN();
-	B43_PHY_AC_REQUIRE(dev,
-			   B43_PHY_AC_STATE_RX_WAITED | B43_PHY_AC_STATE_CLIP_ALL_DIS,
-			   B43_PHY_AC_STATE_RX_CCK | B43_PHY_AC_STATE_RX_OFDM |
-			   B43_PHY_AC_STATE_CCA_RESET | B43_PHY_AC_STATE_MAC_EN);
+	B43_PHY_AC_REQUIRE_HELD(dev, B43_PHY_AC_STATE_MAC_EN);
 
 	unsigned int c, i;
 
@@ -9344,10 +9260,7 @@ void b43_phy_ac_loopback_radio_restore(struct b43_wldev *dev)
 void b43_phy_ac_rxgain_restore(struct b43_wldev *dev)
 {
 	B43_AC_FN();
-	B43_PHY_AC_REQUIRE(dev,
-			   B43_PHY_AC_STATE_RX_WAITED | B43_PHY_AC_STATE_CLIP_ALL_DIS,
-			   B43_PHY_AC_STATE_RX_CCK | B43_PHY_AC_STATE_RX_OFDM |
-			   B43_PHY_AC_STATE_CCA_RESET | B43_PHY_AC_STATE_MAC_EN);
+	B43_PHY_AC_REQUIRE_HELD(dev, B43_PHY_AC_STATE_MAC_EN);
 
 	u16 bbmult_val;
 
@@ -9960,10 +9873,7 @@ void b43_phy_ac_cal_restore(struct b43_wldev *dev, u16 gate)
 	 * in the canonical calibration state: classifier in RX_WAITED, clip
 	 * detect disabled on every core.
 	 */
-	B43_PHY_AC_REQUIRE(dev,
-			   B43_PHY_AC_STATE_RX_WAITED | B43_PHY_AC_STATE_CLIP_ALL_DIS,
-			   B43_PHY_AC_STATE_RX_CCK | B43_PHY_AC_STATE_RX_OFDM |
-			   B43_PHY_AC_STATE_CCA_RESET | B43_PHY_AC_STATE_MAC_EN);
+	B43_PHY_AC_REQUIRE_HELD(dev, B43_PHY_AC_STATE_MAC_EN);
 
 	/*
 	 * Block A, 10 ops: 0x040f as rxgain_save() found it, the
@@ -10901,11 +10811,9 @@ static int b43_phy_ac_op_switch_channel(struct b43_wldev *dev, unsigned int new_
 	 */
 	B43_AC_BLOCK(dev, "idle_tssi");
 	if (b43_phy_ac_may_calibrate_tx(dev)) {
-		B43_PHY_AC_REQUIRE_RET(dev,
-				       B43_PHY_AC_STATE_RX_WAITED | B43_PHY_AC_STATE_CLIP_ALL_DIS,
-				       B43_PHY_AC_STATE_RX_CCK | B43_PHY_AC_STATE_RX_OFDM |
-				       B43_PHY_AC_STATE_CCA_RESET | B43_PHY_AC_STATE_MAC_EN,
-				       -EINVAL);
+		B43_PHY_AC_REQUIRE_RET(dev, B43_PHY_AC_STATE_HELD,
+				       B43_PHY_AC_STATE_HELD_FORBID |
+				       B43_PHY_AC_STATE_MAC_EN, -EINVAL);
 		b43_phy_ac_idle_tssi_meas(dev);
 
 		/*
@@ -11297,10 +11205,7 @@ static void b43_phy_ac_farrow_setup(struct b43_wldev *dev,
 	u32 ratio, dphase;
 	u16 mu;
 
-	B43_PHY_AC_REQUIRE(dev,
-			   B43_PHY_AC_STATE_RX_WAITED | B43_PHY_AC_STATE_CLIP_ALL_DIS,
-			   B43_PHY_AC_STATE_RX_CCK | B43_PHY_AC_STATE_RX_OFDM |
-			   B43_PHY_AC_STATE_CCA_RESET);
+	B43_PHY_AC_REQUIRE_HELD(dev, 0);
 
 	/*
 	 * 2.4 GHz uses its own mode at 20 and 40 MHz: wl 7.14 on the

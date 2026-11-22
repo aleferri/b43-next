@@ -151,6 +151,16 @@ struct ieee80211_channel;
 #define B43_PHY_AC_STATE_CCA_RESET	0x0100	/* BBCFG bit 0x4000 (RSTCCA active) */
 #define B43_PHY_AC_STATE_AFE_OFF		0x0200	/* RF front-end powered down (enable_afe OFF); 0x1720 bit 9 */
 /*
+ * The PHY held for reconfiguration: the WAITED classifier alone and every
+ * core's clip detector frozen, with CCA out of reset. The channel setup and
+ * the calibrations run in it, most of them with the MAC suspended.
+ */
+#define B43_PHY_AC_STATE_HELD		(B43_PHY_AC_STATE_RX_WAITED | \
+					 B43_PHY_AC_STATE_CLIP_ALL_DIS)
+#define B43_PHY_AC_STATE_HELD_FORBID	(B43_PHY_AC_STATE_RX_CCK | \
+					 B43_PHY_AC_STATE_RX_OFDM | \
+					 B43_PHY_AC_STATE_CCA_RESET)
+/*
  * First bring-up. b43_phy_init() clears phy->do_full_init between ops->init
  * and set_channel, so from set_channel on that flag is always false. op_init
  * latches it here while it is still valid, for the constants the stock driver
@@ -671,6 +681,11 @@ bool b43_phy_ac_require_failed(struct b43_wldev *dev, u16 want, u16 forbid,
 	if (b43_phy_ac_require_failed((dev), (want), (forbid), __func__)) \
 		return (ret);						\
 } while (0)
+
+/* The PHY held, and none of the @forbid bits set either */
+#define B43_PHY_AC_REQUIRE_HELD(dev, forbid)				\
+	B43_PHY_AC_REQUIRE(dev, B43_PHY_AC_STATE_HELD,			\
+			   B43_PHY_AC_STATE_HELD_FORBID | (forbid))
 
 extern const struct b43_phy_operations b43_phyops_ac;
 
