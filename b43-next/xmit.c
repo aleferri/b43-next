@@ -1769,8 +1769,8 @@ static int b43_rx_rate_ac(struct b43_plcp_hdr6 *plcp, u16 phystat0,
 	case B43_RX_PHYST0_HT:
 		return b43_rx_rate_ht(p, status);
 	case B43_RX_PHYST0_VHT:
-		a1 = p[0] | (p[1] << 8) | (p[2] << 16);
-		a2 = p[3] | (p[4] << 8) | (p[5] << 16);
+		a1 = get_unaligned_le24(p);
+		a2 = get_unaligned_le24(p + 3);
 		mcs = (a2 >> 4) & 0xf;
 		if (mcs > 9)
 			return -1;

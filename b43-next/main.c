@@ -842,12 +842,8 @@ static void b43_amt_write(struct b43_wldev *dev, u16 index, const u8 *addr,
 	old_hi = b43_shm_read32(dev, B43_SHM_RCMTA, (index * 2) + 1);
 
 	if (addr) {
-		lo = addr[0];
-		lo |= ((u32)addr[1] << 8);
-		lo |= ((u32)addr[2] << 16);
-		lo |= ((u32)addr[3] << 24);
-		hi = addr[4];
-		hi |= ((u32)addr[5] << 8);
+		lo = get_unaligned_le32(addr);
+		hi = get_unaligned_le16(addr + 4);
 	}
 
 	if (flags == B43_AMT_KEEP_FLAGS)
@@ -919,10 +915,9 @@ static void b43_write_macaddr_template_ac(struct b43_wldev *dev, const u8 *mac)
 	};
 
 	b43_ram_seq_write(dev, &seq, B43_TPL_AC_MACADDR,
-			  (u32)mac[0] | (u32)mac[1] << 8 |
-			  (u32)mac[2] << 16 | (u32)mac[3] << 24);
+			  get_unaligned_le32(mac));
 	b43_ram_seq_write(dev, &seq, B43_TPL_AC_MACADDR + sizeof(u32),
-			  (u32)mac[4] | (u32)mac[5] << 8);
+			  get_unaligned_le16(mac + 4));
 }
 
 static void b43_write_mac_bssid_templates(struct b43_wldev *dev)
@@ -973,12 +968,9 @@ static void b43_shm_macaddr_set(struct b43_wldev *dev, const u8 *mac)
 	if (!mac)
 		mac = zero_addr;
 
-	for (i = 0; i < ETH_ALEN; i += 2) {
-		u16 data = mac[i] | (mac[i + 1] << 8);
-
-		b43_shm_write16(dev, B43_SHM_SHARED,
-				B43_SHM_SH_AC_MACADDR + i, data);
-	}
+	for (i = 0; i < ETH_ALEN; i += 2)
+		b43_shm_write16(dev, B43_SHM_SHARED, B43_SHM_SH_AC_MACADDR + i,
+				get_unaligned_le16(mac + i));
 }
 
 static u8 b43_txbf_txchain(struct b43_wldev *dev)
@@ -1018,11 +1010,11 @@ static void b43_txbf_write_slot(struct b43_wldev *dev, unsigned int slot)
 	b43_shm_write16(dev, B43_SHM_SHARED, b + 0x0a, 0x0002);
 	b43_shm_write16(dev, B43_SHM_SHARED, b + 0x0c, w0c);
 	b43_shm_write16(dev, B43_SHM_SHARED, b + 0x12,
-			l->addr[0] | l->addr[1] << 8);
+			get_unaligned_le16(l->addr));
 	b43_shm_write16(dev, B43_SHM_SHARED, b + 0x14,
-			l->addr[2] | l->addr[3] << 8);
+			get_unaligned_le16(l->addr + 2));
 	b43_shm_write16(dev, B43_SHM_SHARED, b + 0x16,
-			l->addr[4] | l->addr[5] << 8);
+			get_unaligned_le16(l->addr + 4));
 }
 
 /*
@@ -1209,9 +1201,9 @@ static void b43_mbss_shm_upload(struct b43_wldev *dev)
 		return;
 	}
 	b43_shm_write16(dev, B43_SHM_SHARED, B43_SHM_SH_MBSS_BASE,
-			m[0] | m[1] << 8);
+			get_unaligned_le16(m));
 	b43_shm_write16(dev, B43_SHM_SHARED, B43_SHM_SH_MBSS_BASE + 2,
-			m[2] | m[3] << 8);
+			get_unaligned_le16(m + 2));
 	b43_shm_write16(dev, B43_SHM_SHARED, B43_SHM_SH_MBSS_BASE + 4,
 			m[4] | (m[5] & ~mask) << 8);
 	b43_shm_write16(dev, B43_SHM_SHARED, B43_SHM_SH_MBSS_MASK, mask);
