@@ -408,17 +408,24 @@ static void mount_board(const struct board_profile *p)
 	 */
 	g_wldev.phy.chandef    = &g_hw.conf.chandef;
 	/*
-	 * The width the MAC was last told about, which the chanspec write
-	 * compares against: AC_MAC_WIDTH seeds it (gates.sh passes 0 on a
-	 * segment that carries MAC.BW, the segment's own width otherwise), so
-	 * a segment run on its own does not repeat a write the chain made.
+	 * The width the MAC was last told about, the width field of the last
+	 * chanspec, which the chanspec write compares against: AC_MAC_WIDTH
+	 * seeds it (gates.sh passes 0 on a segment that carries MAC.BW, the
+	 * segment's own width otherwise), so a segment run on its own does not
+	 * repeat a write the chain made.
 	 */
 	{
 		const char *mw = getenv("AC_MAC_WIDTH");
+		enum nl80211_chan_width w = mw ? (enum nl80211_chan_width)
+					    strtoul(mw, NULL, 0)
+					  : g_hw.conf.chandef.width;
 
-		g_ac.mac_width = mw ? (enum nl80211_chan_width)
-				      strtoul(mw, NULL, 0)
-				    : g_hw.conf.chandef.width;
+		if (w == NL80211_CHAN_WIDTH_80)
+			g_ac.chanspec = B43_PHY_AC_CHANSPEC_BW80;
+		else if (w == NL80211_CHAN_WIDTH_40)
+			g_ac.chanspec = B43_PHY_AC_CHANSPEC_BW40;
+		else if (w)
+			g_ac.chanspec = B43_PHY_AC_CHANSPEC_BW20;
 	}
 	/*
 	 * Primo bring-up per default: e' la fase che le catture attach
