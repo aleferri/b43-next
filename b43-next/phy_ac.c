@@ -199,6 +199,7 @@ static unsigned int b43_phy_ac_op_get_default_chan(struct b43_wldev *dev)
 }
 
 static void b43_phy_ac_txpwrctrl_setup(struct b43_wldev *dev, u16 freq);
+static bool b43_phy_ac_txpwr_recalc(struct b43_wldev *dev);
 
 /*
  * The periodic work, split the way the b43 core splits it:
@@ -440,6 +441,7 @@ static bool b43_phy_ac_may_calibrate_tx(struct b43_wldev *dev);
 static void b43_phy_ac_radar_thresh(struct b43_wldev *dev);
 static void b43_phy_ac_radar_arm(struct b43_wldev *dev, bool on);
 static void b43_phy_ac_calibrate(struct b43_wldev *dev);
+static void b43_phy_ac_loopback_radio_restore(struct b43_wldev *dev);
 
 /*
  * Low three bits of radio 0x066d, the only per-channel radio value that does
@@ -1398,7 +1400,7 @@ static void b43_phy_ac_basic_rate_map(struct b43_wldev *dev)
  *   23572-23658, 23944-24030, 24320-24406, 24645-24731, 24868-24954,
  *   25292-25378]
  */
-void b43_phy_ac_rxiqcal_tone_load(struct b43_wldev *dev, int step)
+static void b43_phy_ac_rxiqcal_tone_load(struct b43_wldev *dev, int step)
 {
 	B43_AC_FN();
 	B43_PHY_AC_REQUIRE_HELD(dev, B43_PHY_AC_STATE_MAC_EN);
@@ -2579,7 +2581,7 @@ static u16 b43_phy_ac_reg_ceiling(struct b43_wldev *dev)
  *
  * Returns whether the target changed since the last computation.
  */
-bool b43_phy_ac_txpwr_recalc(struct b43_wldev *dev)
+static bool b43_phy_ac_txpwr_recalc(struct b43_wldev *dev)
 {
 	B43_AC_FN();
 	const struct ssbn_sprom *sprom = dev->dev->bus_sprom;
@@ -2883,7 +2885,7 @@ void b43_phy_ac_txpwr_by_index(struct b43_wldev *dev, u8 idx)
  * [capture-ref: router-data/d6220/hot-sweep.zip!segmenti/01-up-ch36-bw20.txt;
  *   2589-2601, 2602-2612, 25897-25907]
  */
-bool b43_phy_ac_force_rf_sequence(struct b43_wldev *dev, u16 rf_seq)
+static bool b43_phy_ac_force_rf_sequence(struct b43_wldev *dev, u16 rf_seq)
 {
 	B43_AC_FN();
 	u16 rfctl1 = b43_phy_read_log(dev, B43_PHY_AC_RFCTL1);
@@ -2952,7 +2954,7 @@ static void b43_phy_ac_run_samples(struct b43_wldev *dev, u16 nsamp,
  *   PHY.MOD addr=0x0001 val=0x0000 mask=0x4000
  *   PHY.FGC val=0x0000
  *
- * so there is one function; b43_phy_ac_reset_cca() is its exported name.
+ * so there is one function; b43_phy_ac_reset_cca() is the name it is called by.
  * [capture-ref: router-data/d6220/cold-sweep.zip!cold01-ch36-bw20.txt;
  *   11398-11399, 11444-11445, 11709-11710, 11795-11796, 12038-12039,
  *   12124-12125, 14979-14980, 15244-15245, 15330-15331, 15573-15574,
@@ -2996,8 +2998,8 @@ static void b43_phy_ac_cca_pulse(struct b43_wldev *dev)
  * [capture-ref: router-data/d6220/hot-sweep.zip!segmenti/01-up-ch36-bw20.txt;
  *   692-693, 816-817, 6905-6906]
  */
-void
-b43_phy_ac_reset_cca(struct b43_wldev *dev)
+static void
+       b43_phy_ac_reset_cca(struct b43_wldev *dev)
 {
 	b43_phy_ac_cca_pulse(dev);
 }
@@ -7077,7 +7079,7 @@ static void b43_phy_ac_cal_rx_gate(struct b43_wldev *dev)
  * each time; iteration 2 gives 0x0207 on core 0 where iteration 1 gave
  * 0x0206, and 0x0200 on core 1.
  */
-void b43_phy_ac_cal_idle_tssi(struct b43_wldev *dev)
+static void b43_phy_ac_cal_idle_tssi(struct b43_wldev *dev)
 {
 	B43_PHY_AC_REQUIRE(dev,
 			   B43_PHY_AC_STATE_MAC_EN | B43_PHY_AC_STATE_RX_OFDM |
@@ -7129,7 +7131,7 @@ static void b43_phy_ac_cal_mac_suspend(struct b43_wldev *dev)
  * [capture-ref: router-data/d6220/hot-sweep.zip!segmenti/01-up-ch36-bw20.txt;
  *   11142-11917]
  */
-void b43_phy_ac_cal_idle_tssi_suspended(struct b43_wldev *dev)
+static void b43_phy_ac_cal_idle_tssi_suspended(struct b43_wldev *dev)
 {
 	B43_AC_FN();
 	unsigned int c;
@@ -7436,7 +7438,7 @@ static void b43_phy_ac_cal_040f_save(struct b43_wldev *dev)
  * [capture-ref: router-data/d6220/hot-sweep.zip!segmenti/01-up-ch36-bw20.txt;
  *   11918-12387]
  */
-void b43_phy_ac_txcal_setup(struct b43_wldev *dev)
+static void b43_phy_ac_txcal_setup(struct b43_wldev *dev)
 {
 	B43_AC_FN();
 	B43_PHY_AC_REQUIRE(dev,
@@ -7755,7 +7757,7 @@ static const struct {
  * [capture-ref: router-data/d6220/hot-sweep.zip!segmenti/01-up-ch36-bw20.txt;
  *   12837-14822]
  */
-void b43_phy_ac_txiqlo_run(struct b43_wldev *dev)
+static void b43_phy_ac_txiqlo_run(struct b43_wldev *dev)
 {
 	B43_AC_FN();
 	unsigned int core, i;
@@ -7878,7 +7880,7 @@ static u16 b43_phy_ac_loft_lut_base(struct b43_wldev *dev, unsigned int core,
  * [capture-ref: router-data/d6220/hot-sweep.zip!segmenti/01-up-ch36-bw20.txt;
  *   14823-17897]
  */
-void b43_phy_ac_loft_lut_fill(struct b43_wldev *dev)
+static void b43_phy_ac_loft_lut_fill(struct b43_wldev *dev)
 {
 	B43_AC_FN();
 	B43_PHY_AC_REQUIRE_HELD(dev, B43_PHY_AC_STATE_MAC_EN);
@@ -7909,7 +7911,7 @@ void b43_phy_ac_loft_lut_fill(struct b43_wldev *dev)
  * [capture-ref: router-data/d6220/hot-sweep.zip!segmenti/01-up-ch36-bw20.txt;
  *   17898-18005, 22772-22879]
  */
-void b43_phy_ac_txcal_restore(struct b43_wldev *dev)
+static void b43_phy_ac_txcal_restore(struct b43_wldev *dev)
 {
 	B43_AC_FN();
 	b43_phy_ac_txpwr_by_index(dev, B43_PHY_AC_TXPWR_INDEX_DEFAULT);
@@ -7961,7 +7963,7 @@ void b43_phy_ac_txcal_restore(struct b43_wldev *dev)
  * [capture-ref: router-data/d6220/hot-sweep.zip!segmenti/01-up-ch36-bw20.txt;
  *   18006-18155, 22880-22921]
  */
-void b43_phy_ac_cal_chain_restore(struct b43_wldev *dev, bool with_tune)
+static void b43_phy_ac_cal_chain_restore(struct b43_wldev *dev, bool with_tune)
 {
 	B43_AC_FN();
 	B43_PHY_AC_REQUIRE_HELD(dev, B43_PHY_AC_STATE_MAC_EN);
@@ -8086,7 +8088,7 @@ static void b43_phy_ac_rxgain_perchan_tail(struct b43_wldev *dev)
  * [capture-ref: router-data/d6220/hot-sweep.zip!segmenti/01-up-ch36-bw20.txt;
  *   18156-18377]
  */
-void b43_phy_ac_txiq_setup(struct b43_wldev *dev)
+static void b43_phy_ac_txiq_setup(struct b43_wldev *dev)
 {
 	B43_AC_FN();
 	B43_PHY_AC_REQUIRE_HELD(dev, B43_PHY_AC_STATE_MAC_EN);
@@ -8162,7 +8164,7 @@ static void b43_phy_ac_tx_gain_bbmult_load(struct b43_wldev *dev)
  * [capture-ref: router-data/d6220/hot-sweep.zip!segmenti/01-up-ch36-bw20.txt;
  *   18378-18505]
  */
-void b43_phy_ac_txcal_gain_load(struct b43_wldev *dev)
+static void b43_phy_ac_txcal_gain_load(struct b43_wldev *dev)
 {
 	B43_AC_FN();
 	B43_PHY_AC_REQUIRE_HELD(dev, B43_PHY_AC_STATE_MAC_EN);
@@ -8180,7 +8182,7 @@ void b43_phy_ac_txcal_gain_load(struct b43_wldev *dev)
  * [capture-ref: router-data/d6220/hot-sweep.zip!segmenti/01-up-ch36-bw20.txt;
  *   18881-19660]
  */
-void b43_phy_ac_txiq_run(struct b43_wldev *dev)
+static void b43_phy_ac_txiq_run(struct b43_wldev *dev)
 {
 	B43_AC_FN();
 	B43_PHY_AC_REQUIRE_HELD(dev, B43_PHY_AC_STATE_MAC_EN);
@@ -8207,7 +8209,7 @@ void b43_phy_ac_txiq_run(struct b43_wldev *dev)
  * [capture-ref: router-data/d6220/hot-sweep.zip!segmenti/01-up-ch36-bw20.txt;
  *   19700-22771]
  */
-void b43_phy_ac_loft_lut_reset(struct b43_wldev *dev)
+static void b43_phy_ac_loft_lut_reset(struct b43_wldev *dev)
 {
 	B43_AC_FN();
 	B43_PHY_AC_REQUIRE_HELD(dev, B43_PHY_AC_STATE_MAC_EN);
@@ -8233,7 +8235,7 @@ void b43_phy_ac_loft_lut_reset(struct b43_wldev *dev)
  * [capture-ref: router-data/d6220/hot-sweep.zip!segmenti/01-up-ch36-bw20.txt;
  *   22922-22980]
  */
-void b43_phy_ac_rxiqcal_setup(struct b43_wldev *dev)
+static void b43_phy_ac_rxiqcal_setup(struct b43_wldev *dev)
 {
 	B43_AC_FN();
 	B43_PHY_AC_REQUIRE_HELD(dev, B43_PHY_AC_STATE_MAC_EN);
@@ -8299,7 +8301,7 @@ static u16 b43_phy_ac_rxgain_cfg_saved(const struct b43_phy_ac *ac,
  * [capture-ref: router-data/d6220/hot-sweep.zip!segmenti/01-up-ch36-bw20.txt;
  *   22981-23142]
  */
-void b43_phy_ac_rxgain_save(struct b43_wldev *dev)
+static void b43_phy_ac_rxgain_save(struct b43_wldev *dev)
 {
 	B43_AC_FN();
 	B43_PHY_AC_REQUIRE_HELD(dev, B43_PHY_AC_STATE_MAC_EN);
@@ -8343,7 +8345,7 @@ void b43_phy_ac_rxgain_save(struct b43_wldev *dev)
  * [capture-ref: router-data/d6220/hot-sweep.zip!segmenti/01-up-ch36-bw20.txt;
  *   23144-23296]
  */
-void b43_phy_ac_rxgain_set(struct b43_wldev *dev)
+static void b43_phy_ac_rxgain_set(struct b43_wldev *dev)
 {
 	B43_AC_FN();
 	B43_PHY_AC_REQUIRE_HELD(dev, B43_PHY_AC_STATE_MAC_EN);
@@ -8495,7 +8497,7 @@ static const struct b43_phy_ac_rad_mod_op b43_phy_ac_iqcal_config_2g[10] = {
  * [capture-ref: router-data/d6220/hot-sweep.zip!segmenti/01-up-ch36-bw20.txt;
  *   23297-23412]
  */
-void b43_phy_ac_loopback_radio_setup(struct b43_wldev *dev)
+static void b43_phy_ac_loopback_radio_setup(struct b43_wldev *dev)
 {
 	B43_AC_FN();
 	B43_PHY_AC_REQUIRE_HELD(dev, B43_PHY_AC_STATE_MAC_EN);
@@ -8525,9 +8527,10 @@ void b43_phy_ac_loopback_radio_setup(struct b43_wldev *dev)
 }
 
 /*
- * Gain control final apply (129 ops). @core_mask is the search round's
- * set, not the board's coremask: the stock driver emits core 2 on a
- * two-chain board too.
+ * Gain control final apply (129 ops), one round of the loopback gain
+ * search. @core_mask is the search round's set, not the board's coremask:
+ * the stock driver emits core 2 on a two-chain board too. @r734_vals is
+ * indexed by core number.
  *
  * The loopback gains and the TX gain entry the tone goes out at follow the
  * band: 0x?730 = 0x00b0, 0x?731 = 0x0004 and entry 0 of table 0x20 on
@@ -8539,10 +8542,10 @@ void b43_phy_ac_loopback_radio_setup(struct b43_wldev *dev)
  * [capture-ref: router-data/d6220/hot-sweep.zip!segmenti/01-up-ch36-bw20.txt;
  *   23413-23571, 23791-23943, 24167-24319, 24543-24644]
  */
-void b43_phy_ac_loopback_gain_apply(struct b43_wldev *dev,
-				     bool with_peek_preamble,
-				     u8 core_mask,
-				     const u16 r734_vals[3])
+static void b43_phy_ac_loopback_gain_apply(struct b43_wldev *dev,
+					    bool with_peek_preamble,
+					    u8 core_mask,
+					    const u16 r734_vals[3])
 {
 	B43_AC_FN();
 	B43_PHY_AC_REQUIRE_HELD(dev, B43_PHY_AC_STATE_MAC_EN);
@@ -8655,7 +8658,7 @@ static void b43_phy_ac_iqest_wait(struct b43_wldev *dev)
  * [capture-ref: router-data/d6220/hot-sweep.zip!segmenti/01-up-ch36-bw20.txt;
  *   23659-23790, 24031-24166, 24407-24542, 24732-24867]
  */
-void b43_phy_ac_loopback_gain_measure(struct b43_wldev *dev)
+static void b43_phy_ac_loopback_gain_measure(struct b43_wldev *dev)
 {
 	B43_AC_FN();
 	B43_PHY_AC_REQUIRE_HELD(dev, B43_PHY_AC_STATE_MAC_EN);
@@ -8986,7 +8989,7 @@ static void rxiqcal_meas_arm_all(struct b43_wldev *dev, bool measurement)
  * [capture-ref: router-data/d6220/hot-sweep.zip!segmenti/01-up-ch36-bw20.txt;
  *   24955-25291, 25379-25663]
  */
-void b43_phy_ac_rxiqcal_tone_measure(struct b43_wldev *dev)
+static void b43_phy_ac_rxiqcal_tone_measure(struct b43_wldev *dev)
 {
 	B43_AC_FN();
 	B43_PHY_AC_REQUIRE_HELD(dev, B43_PHY_AC_STATE_MAC_EN);
@@ -9203,7 +9206,7 @@ static void b43_phy_ac_rxiqcal_fir_write(struct b43_wldev *dev)
  * [capture-ref: router-data/d6220/hot-sweep.zip!segmenti/01-up-ch36-bw20.txt;
  *   25664-25667]
  */
-void b43_phy_ac_rxiqcal_coeffs_write(struct b43_wldev *dev)
+static void b43_phy_ac_rxiqcal_coeffs_write(struct b43_wldev *dev)
 {
 	B43_AC_FN();
 	B43_PHY_AC_REQUIRE_HELD(dev, B43_PHY_AC_STATE_MAC_EN);
@@ -9231,7 +9234,7 @@ void b43_phy_ac_rxiqcal_coeffs_write(struct b43_wldev *dev)
  * [capture-ref: router-data/d6220/hot-sweep.zip!segmenti/01-up-ch36-bw20.txt;
  *   25668-25679]
  */
-void b43_phy_ac_loopback_radio_restore(struct b43_wldev *dev)
+static void b43_phy_ac_loopback_radio_restore(struct b43_wldev *dev)
 {
 	B43_AC_FN();
 	B43_PHY_AC_REQUIRE_HELD(dev, B43_PHY_AC_STATE_MAC_EN);
@@ -9257,7 +9260,7 @@ void b43_phy_ac_loopback_radio_restore(struct b43_wldev *dev)
  * [capture-ref: router-data/d6220/hot-sweep.zip!segmenti/01-up-ch36-bw20.txt;
  *   25680-25895]
  */
-void b43_phy_ac_rxgain_restore(struct b43_wldev *dev)
+static void b43_phy_ac_rxgain_restore(struct b43_wldev *dev)
 {
 	B43_AC_FN();
 	B43_PHY_AC_REQUIRE_HELD(dev, B43_PHY_AC_STATE_MAC_EN);

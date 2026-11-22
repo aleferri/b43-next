@@ -719,9 +719,6 @@ enum {
 	AC_CAL_TXPWR_PDOFF,
 };
 
-
-bool b43_phy_ac_force_rf_sequence(struct b43_wldev *dev, u16 rf_seq);
-
 void b43_radio_2069_init(struct b43_wldev *dev);
 
 /*
@@ -766,8 +763,6 @@ void b43_radio_2069_init(struct b43_wldev *dev);
 			__id, (u16)(__off + __i), __buf[__i]);		\
 } while (0)
 
-void b43_phy_ac_reset_cca(struct b43_wldev *dev);
-
 /*
  * One turn of the radar detector poll: mac_suspend, the levels of the two
  * pulse FIFOs (PHY 0x0251 and 0x0252), draining the non-empty ones,
@@ -777,47 +772,11 @@ void b43_phy_ac_reset_cca(struct b43_wldev *dev);
  */
 bool b43_phy_ac_radar_poll(struct b43_wldev *dev);
 
-/*
- * The steps of b43_phy_ac_calibrate(): idle TSSI, TX IQ/LO, LOFT LUT fill,
- * TX IQ, LOFT LUT reset, RX IQ, restore. Each is documented at its
- * definition.
- */
-void b43_phy_ac_cal_idle_tssi(struct b43_wldev *dev);
-void b43_phy_ac_cal_idle_tssi_suspended(struct b43_wldev *dev);
-void b43_phy_ac_txcal_setup(struct b43_wldev *dev);
-void b43_phy_ac_txiqlo_run(struct b43_wldev *dev);
-void b43_phy_ac_loft_lut_fill(struct b43_wldev *dev);
-
 /* Open-loop TX power; INDEX_DEFAULT is the captured fixed index. */
 #define B43_PHY_AC_TXPWR_INDEX_DEFAULT	0x40
 void b43_phy_ac_txpwr_by_index(struct b43_wldev *dev, u8 idx);
 
-void b43_phy_ac_txcal_restore(struct b43_wldev *dev);
-void b43_phy_ac_cal_chain_restore(struct b43_wldev *dev, bool with_tune);
-void b43_phy_ac_txiq_setup(struct b43_wldev *dev);
-void b43_phy_ac_txcal_gain_load(struct b43_wldev *dev);
-void b43_phy_ac_txiq_run(struct b43_wldev *dev);
-void b43_phy_ac_loft_lut_reset(struct b43_wldev *dev);
-void b43_phy_ac_rxiqcal_setup(struct b43_wldev *dev);
-void b43_phy_ac_rxgain_save(struct b43_wldev *dev);
-void b43_phy_ac_rxgain_set(struct b43_wldev *dev);
-void b43_phy_ac_loopback_radio_setup(struct b43_wldev *dev);
-void b43_phy_ac_rxiqcal_tone_load(struct b43_wldev *dev, int step);
-void b43_phy_ac_loopback_gain_measure(struct b43_wldev *dev);
-void b43_phy_ac_rxiqcal_tone_measure(struct b43_wldev *dev);
-void b43_phy_ac_rxiqcal_coeffs_write(struct b43_wldev *dev);
-void b43_phy_ac_loopback_radio_restore(struct b43_wldev *dev);
-void b43_phy_ac_rxgain_restore(struct b43_wldev *dev);
 void b43_phy_ac_cal_restore(struct b43_wldev *dev, u16 gate);
-
-/*
- * One round of the loopback gain search. @core_mask selects the round's
- * cores and @r734_vals is indexed by core number.
- */
-void b43_phy_ac_loopback_gain_apply(struct b43_wldev *dev,
-				     bool with_peek_preamble,
-				     u8 core_mask,
-				     const u16 r734_vals[3]);
 
 /*
  * One watchdog turn, once a second from the bring-up to the radio going
@@ -826,7 +785,6 @@ void b43_phy_ac_loopback_gain_apply(struct b43_wldev *dev,
  * its own counters; the caller only ticks it.
  */
 void b43_phy_ac_watchdog(struct b43_wldev *dev);
-bool b43_phy_ac_txpwr_recalc(struct b43_wldev *dev);
 
 /*
  * Completion of the noise sample, called by the core from its interrupt
