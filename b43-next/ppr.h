@@ -120,11 +120,6 @@ bool b43_ppr_band(const struct ieee80211_channel *chan, enum b43_band *band);
  * power the rate offsets are taken from, 0 when the SROM has none for the
  * band.
  *
- * _legacy reads the single-chain fields, maxpwr_bg/al/a/ah, and the CCK and
- * OFDM offsets of rev 8 (zero in older layouts): the G-PHY, the LP-PHY and
- * the LCN-PHY. @ht also loads the 20 MHz MCS of one stream, from the first
- * two words of mcs*po, for the LCN-PHY.
- *
  * _r8 reads the per-core maxima of rev 8 to 10, at the lowest over
  * @coremask, and the OFDM and 20 MHz MCS offsets of every mode of rev 8: the
  * N-PHY and the HT-PHY. @cdd_stbc_po also takes the cddpo and stbcpo nibbles
@@ -141,10 +136,6 @@ bool b43_ppr_band(const struct ieee80211_channel *chan, enum b43_band *band);
  *
  * _r11 is in the comments of ppr.c, by the SROM layout.
  */
-u8 b43_ppr_load_sprom_legacy(struct b43_ppr *ppr,
-			     const struct ssbn_sprom *sprom,
-			     enum b43_band band, bool ht);
-
 u8 b43_ppr_sprom_r8_maxpwr(const struct ssbn_sprom *sprom, enum b43_band band,
 			   u8 coremask);
 /*

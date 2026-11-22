@@ -241,60 +241,6 @@ static u8 *b43_ppr_load_mcs(struct b43_ppr *ppr, enum b43_ppr_bw bw,
 	return ppr->mcs[bw][mode];
 }
 
-u8 b43_ppr_load_sprom_legacy(struct b43_ppr *ppr,
-			     const struct ssbn_sprom *sprom,
-			     enum b43_band band, bool ht)
-{
-	u8 maxp, *ofdm, *mcs;
-	u32 ofdm_po;
-	const u16 *mcs_po;
-	unsigned int i;
-
-	b43_ppr_clear(ppr);
-
-	switch (band) {
-	case B43_BAND_2G:
-		maxp = sprom->maxpwr_bg;
-		ofdm_po = sprom->ofdm2gpo;
-		mcs_po = sprom->mcs2gpo;
-		break;
-	case B43_BAND_5G_LO:
-		maxp = sprom->maxpwr_al;
-		ofdm_po = sprom->ofdm5glpo;
-		mcs_po = sprom->mcs5glpo;
-		break;
-	case B43_BAND_5G_MI:
-		maxp = sprom->maxpwr_a;
-		ofdm_po = sprom->ofdm5gpo;
-		mcs_po = sprom->mcs5gpo;
-		break;
-	case B43_BAND_5G_HI:
-		maxp = sprom->maxpwr_ah;
-		ofdm_po = sprom->ofdm5ghpo;
-		mcs_po = sprom->mcs5ghpo;
-		break;
-	default:
-		WARN_ON_ONCE(1);
-		return 0;
-	}
-
-	if (band == B43_BAND_2G)
-		b43_ppr_load_cck(ppr, maxp, sprom->cck2gpo);
-	ofdm = b43_ppr_load_ofdm(ppr, B43_PPR_BW_20, B43_PPR_SISO);
-	for (i = 0; i < B43_PPR_OFDM_RATES; i++)
-		ofdm[i] = b43_ppr_sub(maxp, b43_ppr_off(ofdm_po, i));
-
-	if (ht) {
-		ppr->mcs_num = 8;
-		mcs = b43_ppr_load_mcs(ppr, B43_PPR_BW_20, B43_PPR_SISO);
-		for (i = 0; i < 8; i++)
-			mcs[i] = b43_ppr_sub(maxp,
-					     b43_ppr_off(mcs_po[i / 4], i % 4));
-	}
-
-	return maxp;
-}
-
 u8 b43_ppr_sprom_r8_maxpwr(const struct ssbn_sprom *sprom, enum b43_band band,
 			   u8 coremask)
 {
