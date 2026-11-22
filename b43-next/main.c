@@ -4120,7 +4120,7 @@ static void b43_bsinit_ac(struct b43_wldev *dev)
 	unsigned int i;
 
 	b43_shm_write16(dev, B43_SHM_SHARED, 0x000c, 0x00c0);
-	b43_shm_write16(dev, B43_SHM_SHARED, 0x000e, 0x000a);
+	b43_shm_write16(dev, B43_SHM_SHARED, B43_SHM_SH_EDCFSTAT, 0x000a);
 	b43_shm_write16(dev, B43_SHM_SHARED, 0x17d2, 0x042b);
 	b43_shm_write16(dev, B43_SHM_SHARED, 0x17d4, 0x0100);
 
