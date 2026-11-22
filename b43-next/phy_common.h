@@ -124,6 +124,9 @@ enum b43_txpwr_result {
  * 			Must not be NULL.
  * @set_rx_antenna:	Set the antenna used for RX.
  * 			Can be NULL, if not supported.
+ * @set_cck_rx:		Turn CCK (802.11b) reception on or off, also for
+ * 			later PHY inits.
+ * 			Can be NULL, if not supported.
  * @interf_mitigation:	Switch the Interference Mitigation mode.
  * 			Can be NULL, if not supported.
  *
@@ -198,6 +201,7 @@ struct b43_phy_operations {
 	int (*switch_channel)(struct b43_wldev *dev, unsigned int new_channel);
 	unsigned int (*get_default_chan)(struct b43_wldev *dev);
 	void (*set_rx_antenna)(struct b43_wldev *dev, int antenna);
+	void (*set_cck_rx)(struct b43_wldev *dev, bool on);
 	int (*interf_mitigation)(struct b43_wldev *dev,
 				 enum b43_interference_mitigation new_mode);
 

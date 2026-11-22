@@ -180,12 +180,4 @@ struct b43_phy_ht {
 struct b43_phy_operations;
 extern const struct b43_phy_operations b43_phyops_ht;
 
-#ifdef CONFIG_B43_NEXT_PHY_HT
-void b43_phy_ht_set_cck_rx(struct b43_wldev *dev, bool on);
-#else
-static inline void b43_phy_ht_set_cck_rx(struct b43_wldev *dev, bool on)
-{
-}
-#endif
-
 #endif /* B43_PHY_HT_H_ */

@@ -5754,7 +5754,7 @@ static void b43_update_cck_rx(struct b43_wldev *dev, struct ieee80211_sta *sta,
 	bool on = true;
 	int i;
 
-	if (dev->phy.type != B43_PHYTYPE_HT)
+	if (!dev->phy.ops->set_cck_rx)
 		return;
 
 	/* At 5 GHz the PHY receives no CCK whatever is set */
@@ -5774,7 +5774,7 @@ static void b43_update_cck_rx(struct b43_wldev *dev, struct ieee80211_sta *sta,
 		     (sta && present &&
 		      (sta->deflink.supp_rates[NL80211_BAND_2GHZ] & peers.cck));
 	}
-	b43_phy_ht_set_cck_rx(dev, on);
+	dev->phy.ops->set_cck_rx(dev, on);
 }
 
 /* Write the short and long frame retry limit values. */

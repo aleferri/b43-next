@@ -281,7 +281,7 @@ static u16 b43_phy_ht_classifier(struct b43_wldev *dev, u16 mask, u16 val)
 }
 
 /* Turn CCK (802.11b) reception on or off, also for later PHY inits */
-void b43_phy_ht_set_cck_rx(struct b43_wldev *dev, bool on)
+static void b43_phy_ht_op_set_cck_rx(struct b43_wldev *dev, bool on)
 {
 	struct b43_phy_ht *phy_ht = dev->phy.ht;
 
@@ -2593,6 +2593,7 @@ const struct b43_phy_operations b43_phyops_ht = {
 	.switch_analog		= b43_phy_ht_op_switch_analog,
 	.switch_channel		= b43_phy_ht_op_switch_channel,
 	.get_default_chan	= b43_phy_ht_op_get_default_chan,
+	.set_cck_rx		= b43_phy_ht_op_set_cck_rx,
 	.recalc_txpower		= b43_phy_ht_op_recalc_txpower,
 	.adjust_txpower		= b43_phy_ht_op_adjust_txpower,
 	.pwork_1sec		= b43_phy_ht_op_pwork_1sec,
