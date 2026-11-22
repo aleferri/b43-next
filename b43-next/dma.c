@@ -2458,6 +2458,15 @@ static bool dma_rx_frame_complete(struct b43_dmaring *ring, int slot,
 	return need <= done;
 }
 
+/* A frame copied out of the ring into @skb, its RX header first, to b43_rx() */
+static void dma_rx_deliver(struct b43_dmaring *ring, struct sk_buff *skb)
+{
+	struct b43_rxhdr_fw4 *rxhdr = (struct b43_rxhdr_fw4 *)skb->data;
+
+	skb_pull(skb, ring->frameoffset);
+	b43_rx(ring->dev, skb, rxhdr);
+}
+
 /*
  * A frame longer than one uncached slot: copied out of the slots it takes
  * into a new skb, each slot poisoned again for the device. *slot is left at
@@ -2466,7 +2475,6 @@ static bool dma_rx_frame_complete(struct b43_dmaring *ring, int slot,
 static void dma_rx_uncached_multi(struct b43_dmaring *ring, int *slot, u16 len)
 {
 	size_t left = ring->frameoffset + len;
-	struct b43_rxhdr_fw4 *rxhdr;
 	struct sk_buff *skb;
 	size_t n;
 	u8 *buf;
@@ -2487,9 +2495,7 @@ static void dma_rx_uncached_multi(struct b43_dmaring *ring, int *slot, u16 len)
 		ring->dev->rx_ht_valid = false;
 		return;
 	}
-	rxhdr = (struct b43_rxhdr_fw4 *)skb->data;
-	skb_pull(skb, ring->frameoffset);
-	b43_rx(ring->dev, skb, rxhdr);
+	dma_rx_deliver(ring, skb);
 }
 
 /*
@@ -2541,9 +2547,7 @@ static bool dma_rx_uncached(struct b43_dmaring *ring, int *slot,
 	memcpy(skb_put(skb, len + ring->frameoffset), buf,
 	       len + ring->frameoffset);
 	b43_poison_rx_buf(ring, buf);
-	rxhdr = (struct b43_rxhdr_fw4 *)skb->data;
-	skb_pull(skb, ring->frameoffset);
-	b43_rx(ring->dev, skb, rxhdr);
+	dma_rx_deliver(ring, skb);
 	return true;
 
 recycle:
@@ -2559,7 +2563,6 @@ static void dma_rx_multi(struct b43_dmaring *ring, int *slot, u16 len)
 {
 	const struct b43_dma_ops *ops = ring->ops;
 	struct b43_dmadesc_meta *meta;
-	struct b43_rxhdr_fw4 *rxhdr;
 	struct sk_buff *skb;
 	size_t left = ring->frameoffset + len;
 	size_t n;
@@ -2583,9 +2586,7 @@ static void dma_rx_multi(struct b43_dmaring *ring, int *slot, u16 len)
 		ring->dev->rx_ht_valid = false;
 		return;
 	}
-	rxhdr = (struct b43_rxhdr_fw4 *)skb->data;
-	skb_pull(skb, ring->frameoffset);
-	b43_rx(ring->dev, skb, rxhdr);
+	dma_rx_deliver(ring, skb);
 }
 
 /*
