@@ -3478,8 +3478,7 @@ static void b43_phy_ac_rx_evm_shaping_override(struct b43_wldev *dev);
  * The width the PHY and the MAC run at. 20 MHz with HT and without it are
  * one configuration to both; mac80211 tells them apart for what the BSS
  * announces. The PHY code takes its width from here, so it never sees
- * NL80211_CHAN_WIDTH_20_NOHT, which is also the zero "never" of
- * b43_phy_ac::mac_width.
+ * NL80211_CHAN_WIDTH_20_NOHT.
  */
 static enum nl80211_chan_width
 b43_phy_ac_width(const struct cfg80211_chan_def *chandef)
@@ -3547,14 +3546,13 @@ void b43_phy_ac_write_chanspec(struct b43_wldev *dev)
 	const struct cfg80211_chan_def *chandef = dev->phy.chandef;
 	struct b43_phy_ac *ac = dev->phy.ac;
 	u16 spec = b43_phy_ac_chanspec(chandef);
+	u16 old = ac->chanspec;
 
 	b43_shm_write16(dev, B43_SHM_SHARED, B43_SHM_SH_CHAN, spec);
 	ac->chanspec = spec;
 
-	if (ac->mac_width != b43_phy_ac_width(chandef)) {
+	if ((spec ^ old) & B43_PHY_AC_CHANSPEC_BW_MASK)
 		b43_mac_bw_set(dev, spec & B43_PHY_AC_CHANSPEC_BW_MASK);
-		ac->mac_width = b43_phy_ac_width(chandef);
-	}
 }
 
 static void b43_phy_ac_chanspec_tail(struct b43_wldev *dev);

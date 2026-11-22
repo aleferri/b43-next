@@ -537,11 +537,9 @@ struct b43_phy_ac {
 	/* CRS value chanspec_tail() last wrote, for the statistics. */
 	u8 crs_written;
 	/*
-	 * Operating width the MAC was last told about, as b43_phy_ac_width()
-	 * gives it; 0 when never.
+	 * Chanspec last written to B43_SHM_SH_CHAN, 0 when never. Its width
+	 * field is the one the MAC was last told about.
 	 */
-	enum nl80211_chan_width mac_width;
-	/* Chanspec last written to B43_SHM_SH_CHAN, 0 when never. */
 	u16 chanspec;
 	/* The TX core table as last written, by enum b43_phy_ac_txcore. */
 	u16 txcore[B43_PHY_AC_TXCORE_NUM];
