@@ -2522,6 +2522,15 @@ static u16 b43_rate_map_slot(u16 hw_value, u16 *direct, u16 *basic)
 	return b43_plcp_get_ratecode_ofdm(hw_value) & 0xF;
 }
 
+/* The byte offset of the rate block the direct map points a rate at. */
+u16 b43_rate_block(struct b43_wldev *dev, u16 hw_value)
+{
+	u16 direct, basic, slot;
+
+	slot = b43_rate_map_slot(hw_value, &direct, &basic);
+	return 2 * b43_shm_read16(dev, B43_SHM_SHARED, direct + 2 * slot);
+}
+
 /*
  * What the AC microcode builds its own frames from: the beacon's PHY control
  * words, the TX core table, the probe-response cells and, for each rate of
@@ -4093,9 +4102,7 @@ static void b43_bsinit_ac(struct b43_wldev *dev)
 
 	for (i = 0; i < ARRAY_SIZE(rates); i++) {
 		u8 signal = b43_plcp_get_ratecode_ofdm(rates[i]);
-		u16 block = 2 * b43_shm_read16(dev, B43_SHM_SHARED,
-					       B43_SHM_SH_OFDMDIRECT +
-					       2 * signal);
+		u16 block = b43_rate_block(dev, rates[i]);
 
 		if (rates[i] == B43_OFDM_RATE_9MB) {
 			b43_shm_write16(dev, B43_SHM_SHARED, block, 0x0014);
