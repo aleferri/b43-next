@@ -42,6 +42,8 @@
 
 #include "b43.h"
 #include "phy_ac.h"
+#include "main.h"
+#include "xmit.h"
 #include "test_harness.h"
 
 /* ============ write mirror (fallback for unscripted reads) ============ */
@@ -1664,6 +1666,51 @@ void mdelay(unsigned long ms)         { (void)ms; }
 void msleep(unsigned int ms)          { (void)ms; }
 void usleep_range(unsigned long a, unsigned long b) { (void)a; (void)b; }
 void fsleep(unsigned long us)         { (void)us; }
+
+/* ============ rate maps ============
+ * xmit.c's PLCP rate codes and main.c's b43_rate_block(), which phy_ac.c
+ * calls: neither file is built here. The direct map is read through the SHM
+ * wrap, so the read is in the trace as on the hardware.
+ */
+u8 b43_plcp_get_ratecode_cck(const u8 bitrate)
+{
+	switch (bitrate) {
+	case B43_CCK_RATE_1MB:	return 0x0A;
+	case B43_CCK_RATE_2MB:	return 0x14;
+	case B43_CCK_RATE_5MB:	return 0x37;
+	case B43_CCK_RATE_11MB:	return 0x6E;
+	}
+	abort();
+}
+
+u8 b43_plcp_get_ratecode_ofdm(const u8 bitrate)
+{
+	switch (bitrate) {
+	case B43_OFDM_RATE_6MB:		return 0xB;
+	case B43_OFDM_RATE_9MB:		return 0xF;
+	case B43_OFDM_RATE_12MB:	return 0xA;
+	case B43_OFDM_RATE_18MB:	return 0xE;
+	case B43_OFDM_RATE_24MB:	return 0x9;
+	case B43_OFDM_RATE_36MB:	return 0xD;
+	case B43_OFDM_RATE_48MB:	return 0x8;
+	case B43_OFDM_RATE_54MB:	return 0xC;
+	}
+	abort();
+}
+
+u16 b43_rate_block(struct b43_wldev *dev, u16 hw_value)
+{
+	u16 direct, slot;
+
+	if (b43_is_cck_rate(hw_value)) {
+		direct = B43_SHM_SH_CCKDIRECT;
+		slot = b43_plcp_get_ratecode_cck(hw_value) & 0xF;
+	} else {
+		direct = B43_SHM_SH_OFDMDIRECT;
+		slot = b43_plcp_get_ratecode_ofdm(hw_value) & 0xF;
+	}
+	return 2 * b43_shm_read16(dev, B43_SHM_SHARED, direct + 2 * slot);
+}
 
 /* ============ bcma chipcommon (no wrap: definitions, not wraps) ============
  * These accessors are called directly by phy_ac.c (op_init, rfkill,
