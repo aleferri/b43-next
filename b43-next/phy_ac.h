@@ -328,6 +328,13 @@ void b43_phy_ac_write_chanspec(struct b43_wldev *dev);
 /* Bit 11 of the same readback, surviving the shift by two. */
 #define B43_PHY_AC_IDLE_TSSI_BASE		0x0200
 
+/* A TX IQ/LO calibration result: @n words at @off of the IQ/LO table. */
+struct b43_phy_ac_txiqlo_res {
+	u16 off;
+	u16 v[2];
+	u8 n;
+};
+
 struct b43_phy_ac {
 	/* physical core count (PHY reg 0x0b & 0x07), set by probe_cores */
 	u8 num_cores;
@@ -494,22 +501,14 @@ struct b43_phy_ac {
 	 * The TX IQ/LO results kept, each chain's IQ pair and LO word.
 	 * The tail of txiqlo_run() duplicates them per antenna.
 	 */
-	struct {
-		u16 off;
-		u16 v[2];
-		u8 n;
-	} txiqlo_res[6];
+	struct b43_phy_ac_txiqlo_res txiqlo_res[6];
 	/*
 	 * Snapshot of txiqlo_res at the end of b43_phy_ac_txiqlo_run():
 	 * b43_phy_ac_txiq_run() rewrites the IQ pairs, applied for the RX IQ
 	 * calibration only, and b43_phy_ac_cal_restore() puts these back, as
 	 * the attach capture shows.
 	 */
-	struct {
-		u16 off;
-		u16 v[2];
-		u8 n;
-	} txiqlo_res_cal[6];
+	struct b43_phy_ac_txiqlo_res txiqlo_res_cal[6];
 	/*
 	 * pa5ga/maxp5ga sub-band group (0..3) of the current channel, cached by
 	 * txpwrctrl_setup for the later cal blocks.
