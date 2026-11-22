@@ -1454,27 +1454,33 @@ static const struct b43_ppr_locale b43_phy_ac_local_max_80[] = {
 	{ 100, 132, 132 },
 };
 
+/* A table of limits per bandwidth, indexed by b43_ppr_bw() */
+struct b43_phy_ac_locales {
+	const struct b43_ppr_locale *rows;
+	unsigned int n;
+};
+
+#define B43_PHY_AC_LOCALES(a)	{ .rows = (a), .n = ARRAY_SIZE(a) }
+
+static u8 b43_phy_ac_locale_at(const struct b43_phy_ac_locales *set,
+			       enum nl80211_chan_width width, u16 chan)
+{
+	const struct b43_phy_ac_locales *l = &set[b43_ppr_bw(width)];
+
+	return b43_ppr_locale_limit(l->rows, l->n, chan);
+}
+
+static const struct b43_phy_ac_locales b43_phy_ac_local_max_bw[] = {
+	[B43_PPR_BW_20] = B43_PHY_AC_LOCALES(b43_phy_ac_local_max_20),
+	[B43_PPR_BW_40] = B43_PHY_AC_LOCALES(b43_phy_ac_local_max_40),
+	[B43_PPR_BW_80] = B43_PHY_AC_LOCALES(b43_phy_ac_local_max_80),
+};
+
 static u16 b43_phy_ac_local_max(struct b43_phy_ac *ac,
 				enum nl80211_chan_width width)
 {
-	const struct b43_ppr_locale *rows;
-	unsigned int n;
-
-	switch (width) {
-	case NL80211_CHAN_WIDTH_80:
-		rows = b43_phy_ac_local_max_80;
-		n = ARRAY_SIZE(b43_phy_ac_local_max_80);
-		break;
-	case NL80211_CHAN_WIDTH_40:
-		rows = b43_phy_ac_local_max_40;
-		n = ARRAY_SIZE(b43_phy_ac_local_max_40);
-		break;
-	default:
-		rows = b43_phy_ac_local_max_20;
-		n = ARRAY_SIZE(b43_phy_ac_local_max_20);
-		break;
-	}
-	return b43_ppr_locale_limit(rows, n, ac->cal_channel);
+	return b43_phy_ac_locale_at(b43_phy_ac_local_max_bw, width,
+				    ac->cal_channel);
 }
 
 enum b43_phy_ac_chain_site {
@@ -1687,6 +1693,12 @@ static const struct b43_ppr_locale b43_phy_ac_legacy_80[] = {
 	{ 132, 144, 98 },
 };
 
+static const struct b43_phy_ac_locales b43_phy_ac_legacy_bw[] = {
+	[B43_PPR_BW_20] = B43_PHY_AC_LOCALES(b43_phy_ac_legacy_20),
+	[B43_PPR_BW_40] = B43_PHY_AC_LOCALES(b43_phy_ac_legacy_40),
+	[B43_PPR_BW_80] = B43_PHY_AC_LOCALES(b43_phy_ac_legacy_80),
+};
+
 static void b43_phy_ac_chain_pair(struct b43_wldev *dev,
 				  enum b43_phy_ac_chain_site site,
 				  enum nl80211_chan_width width, u16 *out);
@@ -1703,28 +1715,14 @@ static u16 b43_phy_ac_legacy_cap(struct b43_wldev *dev,
 {
 	static const u8 off_cdd[] = { 0, 0, 12, 20 };
 	struct b43_phy_ac *ac = dev->phy.ac;
-	const struct b43_ppr_locale *rows;
-	unsigned int n, chains;
+	unsigned int chains;
 	u16 pair[2];
 	u8 limit;
 
-	switch (width) {
-	case NL80211_CHAN_WIDTH_80:
-		rows = b43_phy_ac_legacy_80;
-		n = ARRAY_SIZE(b43_phy_ac_legacy_80);
-		break;
-	case NL80211_CHAN_WIDTH_40:
-		rows = b43_phy_ac_legacy_40;
-		n = ARRAY_SIZE(b43_phy_ac_legacy_40);
-		break;
-	default:
-		rows = b43_phy_ac_legacy_20;
-		n = ARRAY_SIZE(b43_phy_ac_legacy_20);
-		break;
-	}
 	b43_phy_ac_chain_pair(dev, site, pair_width, pair);
 	chains = min_t(unsigned int, hweight8((u8)pair[0]), 3);
-	limit = b43_ppr_locale_limit(rows, n, ac->cal_channel);
+	limit = b43_phy_ac_locale_at(b43_phy_ac_legacy_bw, width,
+				     ac->cal_channel);
 	return limit ? limit - off_cdd[chains] : 0;
 }
 
@@ -2426,6 +2424,12 @@ static const struct b43_ppr_locale b43_phy_ac_locale_80[] = {
 	{ 100, 100, 82 },
 };
 
+static const struct b43_phy_ac_locales b43_phy_ac_locale_bw[] = {
+	[B43_PPR_BW_20] = B43_PHY_AC_LOCALES(b43_phy_ac_locale_20),
+	[B43_PPR_BW_40] = B43_PHY_AC_LOCALES(b43_phy_ac_locale_40),
+	[B43_PPR_BW_80] = B43_PHY_AC_LOCALES(b43_phy_ac_locale_80),
+};
+
 /*
  * The same locale's limit for a 20 MHz channel inside a bonded one, which
  * the TX power adjust after the channel switch applies to the operating
@@ -2441,24 +2445,8 @@ static const struct b43_ppr_locale b43_phy_ac_locale_20in[] = {
 
 static u16 b43_phy_ac_locale_ceiling(struct b43_phy_ac *ac)
 {
-	const struct b43_ppr_locale *rows;
-	unsigned int n;
-
-	switch (ac->cal_width) {
-	case NL80211_CHAN_WIDTH_80:
-		rows = b43_phy_ac_locale_80;
-		n = ARRAY_SIZE(b43_phy_ac_locale_80);
-		break;
-	case NL80211_CHAN_WIDTH_40:
-		rows = b43_phy_ac_locale_40;
-		n = ARRAY_SIZE(b43_phy_ac_locale_40);
-		break;
-	default:
-		rows = b43_phy_ac_locale_20;
-		n = ARRAY_SIZE(b43_phy_ac_locale_20);
-		break;
-	}
-	return b43_ppr_locale_limit(rows, n, ac->cal_channel);
+	return b43_phy_ac_locale_at(b43_phy_ac_locale_bw, ac->cal_width,
+				    ac->cal_channel);
 }
 
 static u16 b43_phy_ac_locale_20in_ceiling(struct b43_phy_ac *ac)
