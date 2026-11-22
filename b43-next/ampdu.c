@@ -440,6 +440,7 @@ void b43_ampdu_txstatus(struct b43_wldev *dev,
 	struct ieee80211_tx_info *info, rc = {};
 	struct ieee80211_tx_rate rate = { .idx = -1 };
 	unsigned int n = 0, acked = 0;
+	unsigned long flags;
 	u8 tid = 0;
 
 	__skb_queue_head_init(&mpdus);
@@ -524,8 +525,9 @@ void b43_ampdu_txstatus(struct b43_wldev *dev,
 	if (bar)
 		IEEE80211_SKB_CB(bar)->flags |= IEEE80211_TX_STAT_AMPDU_NO_BACK;
 	/* Reported by b43_rx_deliver(), outside wl->mutex. */
-	while ((skb = __skb_dequeue(&done)))
-		skb_queue_tail(&wl->txstatus_queue, skb);
+	spin_lock_irqsave(&wl->txstatus_queue.lock, flags);
+	skb_queue_splice_tail_init(&done, &wl->txstatus_queue);
+	spin_unlock_irqrestore(&wl->txstatus_queue.lock, flags);
 }
 
 /*
