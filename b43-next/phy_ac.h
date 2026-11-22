@@ -535,8 +535,6 @@ struct b43_phy_ac {
 	 * write, common threshold plus bank. See b43_phy_ac_crs_moved().
 	 */
 	u8 crs_prog[B43_PHY_AC_MAX_CORES];
-	/* CRS value chanspec_tail() last wrote, reused by the Block E site. */
-	u8 crs_written;
 	/*
 	 * Operating width the MAC was last told about, as b43_phy_ac_width()
 	 * gives it; 0 when never.
