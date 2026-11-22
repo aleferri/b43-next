@@ -48,7 +48,8 @@ static void actab_write_cell48(struct b43_wldev *dev, u16 w0, u16 w1, u16 w2)
 
 /*
  * Shared body of the bulk writes: write a contiguous run of values into one of
- * the PHY's internal tables. @peek decides whether to re-read the 0x019e gate
+ * the PHY's internal tables, zeros when @data is NULL. @peek decides whether
+ * to re-read the 0x019e gate
  * before the id/offset/data sequence. The stock driver re-reads it for every
  * bulk emitted with the gate unlocked, but not when the caller holds it locked
  * across a run -- in a table load there is one peek, at the lock.
@@ -70,32 +71,40 @@ static void actab_write_bulk_common(struct b43_wldev *dev,
 		const u8 *p = data;
 
 		for (i = 0; i < len; i++)
-			b43_phy_write(dev, B43_PHY_AC_TABLE_DATA_LO, p[i]);
+			b43_phy_write(dev, B43_PHY_AC_TABLE_DATA_LO,
+				      p ? p[i] : 0);
 		break;
 	}
 	case 16: {
 		const u16 *p = data;
 
 		for (i = 0; i < len; i++)
-			b43_phy_write(dev, B43_PHY_AC_TABLE_DATA_LO, p[i]);
+			b43_phy_write(dev, B43_PHY_AC_TABLE_DATA_LO,
+				      p ? p[i] : 0);
 		break;
 	}
 	case 32: {
 		const u32 *p = data;
 
 		for (i = 0; i < len; i++) {
+			u32 v = p ? p[i] : 0;
+
 			b43_phy_write(dev, B43_PHY_AC_TABLE_DATA_HI,
-				      (u16)(p[i] >> 16));
+				      (u16)(v >> 16));
 			b43_phy_write(dev, B43_PHY_AC_TABLE_DATA_LO,
-				      (u16)(p[i] & 0xffff));
+				      (u16)(v & 0xffff));
 		}
 		break;
 	}
 	case 48: {
+		static const u16 zero[3];
 		const u16 *p = data;	/* three halfwords per entry, low first */
 
-		for (i = 0; i < len; i++)
-			actab_write_cell48(dev, p[i * 3], p[i * 3 + 1], p[i * 3 + 2]);
+		for (i = 0; i < len; i++) {
+			const u16 *e = p ? &p[i * 3] : zero;
+
+			actab_write_cell48(dev, e[0], e[1], e[2]);
+		}
 		break;
 	}
 	default:
@@ -125,52 +134,16 @@ void b43_actab_write_bulk_locked(struct b43_wldev *dev,
 	actab_write_bulk_common(dev, id, offset, width, len, data, false);
 }
 
-static void actab_zerofill_common(struct b43_wldev *dev, u16 id, u16 offset,
-				  u8 width, size_t len, bool peek)
-{
-	size_t i;
-
-	/* Same prologue as actab_write_bulk_common: see the note on `peek`. */
-	if (peek)
-		b43_phy_read_log(dev, B43_PHY_AC_REG_TBL_WRITE_GATE);
-
-	b43_phy_write(dev, B43_PHY_AC_TABLE_ID, id);
-	b43_phy_write(dev, B43_PHY_AC_TABLE_OFFSET, offset);
-
-	switch (width) {
-	case 8:
-	case 16:
-		for (i = 0; i < len; i++)
-			b43_phy_write(dev, B43_PHY_AC_TABLE_DATA_LO, 0);
-		break;
-	case 32:
-		for (i = 0; i < len; i++) {
-			b43_phy_write(dev, B43_PHY_AC_TABLE_DATA_HI, 0);
-			b43_phy_write(dev, B43_PHY_AC_TABLE_DATA_LO, 0);
-		}
-		break;
-	case 48:
-		for (i = 0; i < len; i++)
-			actab_write_cell48(dev, 0, 0, 0);
-		break;
-	default:
-		b43warn(dev->wl,
-			"actab_zerofill: unsupported width %u (id=0x%x len=%zu)\n",
-			width, id, len);
-		break;
-	}
-}
-
 void b43_actab_zerofill(struct b43_wldev *dev,
 			u16 id, u16 offset, u8 width, size_t len)
 {
-	actab_zerofill_common(dev, id, offset, width, len, true);
+	actab_write_bulk_common(dev, id, offset, width, len, NULL, true);
 }
 
 void b43_actab_zerofill_locked(struct b43_wldev *dev,
 			       u16 id, u16 offset, u8 width, size_t len)
 {
-	actab_zerofill_common(dev, id, offset, width, len, false);
+	actab_write_bulk_common(dev, id, offset, width, len, NULL, false);
 }
 
 /*
@@ -178,46 +151,14 @@ void b43_actab_zerofill_locked(struct b43_wldev *dev,
  * gate scope, b43_phy_ac_tbl_write_lock() and unlock() around it. This is the
  * pattern for callers that do not hold an outer lock across several
  * consecutive operations.
- *
- * Supports width 16, data through DATA_LO, and width 32, data through DATA_HI
- * then DATA_LO, high half first as in write_bulk's 32-bit case.
  */
 void b43_actab_write_bulk_scoped(struct b43_wldev *dev,
 				 u16 id, u16 offset, u8 width,
 				 size_t len, const void *data)
 {
-	size_t i;
 	u16 saved = b43_phy_ac_tbl_write_lock(dev);
 
-	b43_phy_write(dev, B43_PHY_AC_TABLE_ID, id);
-	b43_phy_write(dev, B43_PHY_AC_TABLE_OFFSET, offset);
-
-	switch (width) {
-	case 16: {
-		const u16 *p = data;
-
-		for (i = 0; i < len; i++)
-			b43_phy_write(dev, B43_PHY_AC_TABLE_DATA_LO, p[i]);
-		break;
-	}
-	case 32: {
-		const u32 *p = data;
-
-		for (i = 0; i < len; i++) {
-			b43_phy_write(dev, B43_PHY_AC_TABLE_DATA_HI,
-				      (u16)(p[i] >> 16));
-			b43_phy_write(dev, B43_PHY_AC_TABLE_DATA_LO,
-				      (u16)(p[i] & 0xffff));
-		}
-		break;
-	}
-	default:
-		b43warn(dev->wl,
-			"actab_write_bulk_scoped: unsupported width %u\n",
-			width);
-		break;
-	}
-
+	actab_write_bulk_common(dev, id, offset, width, len, data, false);
 	b43_phy_ac_tbl_write_unlock(dev, saved);
 }
 
