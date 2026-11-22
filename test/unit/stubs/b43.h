@@ -460,6 +460,8 @@ void bcmn_core_set_clockmode(struct bcmn_device *core,
 #define B43_SHM_SH_RFATT          0x0064
 #define B43_SHM_SH_CHAN           0x00A0
 #define B43_SHM_SH_CTS_DURATION   0x00B8
+#define B43_SHM_SH_AGING_THRSH    0x007C
+#define B43_SHM_SH_MBURST_TXOP    0x0082
 #define B43_SHM_SH_SLOTT          0x0010
 #define B43_SHM_SH_PRETBTT        0x0096
 #define B43_SHM_SH_TXCORE_AC      0x05D4
