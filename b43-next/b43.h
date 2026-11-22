@@ -361,6 +361,9 @@ enum {
 #define B43_SHM_SH_PRPHYCTL		0x0188	/* Probe Response PHY TX control word */
 /* SHM_SHARED station address, AC PHY: three words, low byte first */
 #define B43_SHM_SH_AC_MACADDR		0x078C
+/* SHM_SHARED cells the AC PHY code writes, brcmsmac's names */
+#define B43_SHM_SH_AGING_THRSH		0x007C	/* Max time waiting for the medium before TX (brcmsmac M_AGING_THRSH) */
+#define B43_SHM_SH_MBURST_TXOP		0x0082	/* Max frame burst TXOP in us (brcmsmac M_MBURST_TXOP) */
 /* SHM_SHARED rate tables */
 #define B43_SHM_SH_OFDMDIRECT		0x01C0	/* Pointer to OFDM direct map */
 #define B43_SHM_SH_OFDMBASIC		0x01E0	/* Pointer to OFDM basic rate map */

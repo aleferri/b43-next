@@ -11067,11 +11067,11 @@ static int b43_phy_ac_op_switch_channel(struct b43_wldev *dev, unsigned int new_
 	B43_AC_BLOCK(dev, "shm_tail");
 	b43_shm_write16(dev, B43_SHM_SHARED, B43_SHM_SH_PRMAXTIME, 0x0000);
 	/*
-	 * Only the first of the map's two passes carries these. 0x0082 is
-	 * invariant across all 26 segments, purpose unknown; the other two are
-	 * what b43_chip_init_mac() writes on an HT core.
+	 * Only the first of the map's two passes carries these. MBURST_TXOP
+	 * (10 ms) is invariant across all 26 segments; the other two are what
+	 * b43_chip_init_mac() writes on an HT core.
 	 */
-	b43_shm_write16(dev, B43_SHM_SHARED, 0x0082, 0x2710);
+	b43_shm_write16(dev, B43_SHM_SHARED, B43_SHM_SH_MBURST_TXOP, 0x2710);
 	b43_shm_write16(dev, B43_SHM_SHARED, B43_SHM_SH_MIMO_MAXSYM, 0xffff);
 	b43_shm_write16(dev, B43_SHM_SHARED, B43_SHM_SH_WATCHDOG_8TU, 0x000a);
 	b43_phy_ac_chainmask_block(dev, B43_PHY_AC_CHAIN_SETUP);
@@ -11117,8 +11117,8 @@ static int b43_phy_ac_op_switch_channel(struct b43_wldev *dev, unsigned int new_
 	if (stale)
 		b43_phy_ac_mhf_write(dev, 1);
 	b43_mac_suspend(dev);
-	/* Invariant across all 26 cold segments; purpose unknown. */
-	b43_shm_write16(dev, B43_SHM_SHARED, 0x007c, 0x0320);
+	/* Invariant across all 26 cold segments: an aging threshold of 800. */
+	b43_shm_write16(dev, B43_SHM_SHARED, B43_SHM_SH_AGING_THRSH, 0x0320);
 	b43_phy_ac_mhf_maskset(dev, 3, (u16)~0x0020, 0x0020);
 	b43_mac_enable(dev);
 	/*
