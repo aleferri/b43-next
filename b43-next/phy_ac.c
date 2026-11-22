@@ -37,6 +37,7 @@
  * check it with `b43trace anchors span` before relying on it.
  */
 
+#include <linux/iopoll.h>
 #include <linux/slab.h>
 #include "b43.h"
 #include "phy_ac.h"
@@ -991,11 +992,11 @@ static void b43_radio_2069_pwron(struct b43_wldev *dev)
 	b43_radio_set(dev,   R2069_PWRON, R2069_PWRON_KICK);
 
 	/* Polled every 10 us, then read once more, as the vendor does. */
-	for (polls = 1; polls <= R2069_PWRON_POLL_MAX; polls++) {
-		udelay(10);
-		if (b43_radio_read(dev, R2069_PWRON) & R2069_PWRON_DONE)
-			break;
-	}
+	polls = 0;
+	poll_timeout_us_atomic((polls++,
+				pon = b43_radio_read(dev, R2069_PWRON)),
+			       pon & R2069_PWRON_DONE,
+			       10, 10 * R2069_PWRON_POLL_MAX, true);
 	pon = b43_radio_read(dev, R2069_PWRON);
 	if (!(pon & R2069_PWRON_DONE))
 		b43warn(dev->wl, "radio 2069: power-on timeout (0x040b=0x%04x)\n",
@@ -3436,17 +3437,16 @@ static void b43_phy_ac_set_analog_tx_lpf(struct b43_wldev *dev, u16 stages,
 /*
  * Wait for the RF sequencer to clear @busy in 0x0403: the bit of the command
  * kicked in 0x0402, bit 0 for the sample play. One read, then 10 us and
- * another while busy, for at most @turns reads.
+ * another while busy, for up to @turns times 10 us.
  */
 static bool b43_phy_ac_rfseq_wait_done(struct b43_wldev *dev, u16 busy,
 				       unsigned int turns)
 {
-	while (turns--) {
-		if (!(b43_phy_read_log(dev, B43_PHY_AC_RF_SEQ_STATUS) & busy))
-			return true;
-		udelay(10);
-	}
-	return false;
+	u16 stat;
+
+	return !read_poll_timeout_atomic(b43_phy_read_log, stat, !(stat & busy),
+					 10, 10 * turns, false,
+					 dev, B43_PHY_AC_RF_SEQ_STATUS);
 }
 
 static void b43_phy_ac_chan_tables(struct b43_wldev *dev);
@@ -5464,16 +5464,11 @@ static void b43_phy_ac_txpwrctrl_enable(struct b43_wldev *dev)
 	 * PLL has not locked.
 	 */
 	{
-		unsigned int tries;
-		u16 stat = 0;
+		u16 stat;
 
-		for (tries = 0; tries < 100; tries++) {
-			udelay(10);
-			stat = b43_radio_read(dev, 0x090b);
-			if (stat & 0x0100)
-				break;
-		}
-		if (!(stat & 0x0100))
+		if (read_poll_timeout_atomic(b43_radio_read, stat,
+					     stat & 0x0100, 10, 1000, true,
+					     dev, 0x090b))
 			b43warn(dev->wl,
 			       "radio 2069: PLL lock timeout (0x90b=0x%04x)\n",
 			       stat);
@@ -7722,14 +7717,10 @@ static void b43_phy_ac_txiqlo_cmd(struct b43_wldev *dev,
 	 * the calibration but is not fatal.
 	 */
 	{
-		unsigned int tries;
+		u16 v;
 
-		for (tries = 0; tries < 1000; tries++) {
-			if (!(b43_phy_read(dev, 0x0380) & 0x8000))
-				break;
-			udelay(1);
-		}
-		if (tries == 1000)
+		if (read_poll_timeout_atomic(b43_phy_read, v, !(v & 0x8000),
+					     1, 1000, false, dev, 0x0380))
 			b43err(dev->wl,
 			       "AC-PHY: TX IQ/LO cal busy timeout (0x0380 stuck, cmd=0x%04x)\n",
 			       cmd);
@@ -8656,14 +8647,12 @@ static void b43_phy_ac_rx_tone_play(struct b43_wldev *dev)
  */
 static void b43_phy_ac_iqest_wait(struct b43_wldev *dev)
 {
-	unsigned int tries;
+	u16 v;
 
-	for (tries = 0; tries < 1000; tries++) {
-		if (!(b43_phy_read(dev, 0x0270) & 0x0001))
-			return;
-		udelay(1);
-	}
-	b43err(dev->wl, "AC-PHY: IQ estimator busy timeout (0x0270 stuck)\n");
+	if (read_poll_timeout_atomic(b43_phy_read, v, !(v & 0x0001), 1, 1000,
+				     false, dev, 0x0270))
+		b43err(dev->wl,
+		       "AC-PHY: IQ estimator busy timeout (0x0270 stuck)\n");
 }
 
 /*
