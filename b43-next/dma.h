@@ -341,6 +341,10 @@ struct b43_dmaring {
 	struct b43_ac_tx_epoch ac_epoch;
 	/* Number of A-MPDUs awaiting TX status. */
 	u8 ampdu_pending;
+	/* A-MPDU TX statuses so far, and their count at the last stall check
+	 * (b43_ampdu_kick_work()). */
+	u32 ampdu_done;
+	u32 ampdu_done_seen;
 	/* A-MPDU preload in bytes, the FIFO's underflow counter at its last
 	 * read and the underflows since the preload last grew. */
 	u16 ampdu_preload;

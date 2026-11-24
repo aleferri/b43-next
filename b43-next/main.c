@@ -4569,6 +4569,8 @@ static void b43_radar_work_handler(struct work_struct *work)
 	mutex_unlock(&wl->mutex);
 }
 
+static void b43_ampdu_kick_work(struct work_struct *work);
+
 static void b43_periodic_tasks_setup(struct b43_wldev *dev)
 {
 	struct delayed_work *work = &dev->periodic_work;
@@ -4580,6 +4582,7 @@ static void b43_periodic_tasks_setup(struct b43_wldev *dev)
 				     b43_periodic_ticks_per_15sec(dev) > 1 ? HZ : 0);
 
 	INIT_DELAYED_WORK(&dev->radar_work, b43_radar_work_handler);
+	INIT_DELAYED_WORK(&dev->ampdu_kick_work, b43_ampdu_kick_work);
 }
 
 /* Check if communication with the device works correctly. */
@@ -5162,6 +5165,68 @@ static void b43_ps_send(struct b43_wl *wl, struct sk_buff *skb, bool pm)
 static void b43_ps_send_null(struct b43_wl *wl, bool pm)
 {
 	b43_ps_send(wl, ieee80211_nullfunc_get(wl->hw, wl->vif, -1, true), pm);
+}
+
+/*
+ * BCM4331 (ucode 784) at 2.4 GHz: now and then an A-MPDU gets no TX status
+ * and the microcode sends nothing more on its FIFO until a frame goes out
+ * on another FIFO. The cause is not known.
+ *
+ * So while an A-MPDU is out, check every B43_AMPDU_KICK_MS whether any
+ * A-MPDU TX status came; if one is pending and none came, send the AP a
+ * null frame on VO. Not while dozing (the null frame would wake the station
+ * at the AP) and not as an AP, where no stall was seen.
+ */
+static bool b43_ampdu_kick_wanted(struct b43_wl *wl)
+{
+	return wl->vif && wl->vif->type == NL80211_IFTYPE_STATION &&
+	       wl->vif->cfg.assoc;
+}
+
+void b43_ampdu_kick_arm(struct b43_wldev *dev)
+{
+	if (!b43_ampdu_kick_wanted(dev->wl))
+		return;
+	ieee80211_queue_delayed_work(dev->wl->hw, &dev->ampdu_kick_work,
+				     msecs_to_jiffies(B43_AMPDU_KICK_MS));
+}
+
+static void b43_ampdu_kick_work(struct work_struct *work)
+{
+	struct b43_wldev *dev = container_of(work, struct b43_wldev,
+					     ampdu_kick_work.work);
+	struct b43_wl *wl = dev->wl;
+	struct b43_dmaring *rings[] = {
+		dev->dma.tx_ring_AC_BK, dev->dma.tx_ring_AC_BE,
+		dev->dma.tx_ring_AC_VI, dev->dma.tx_ring_AC_VO,
+	};
+	bool pending = false, stuck = false;
+	unsigned int i;
+
+	mutex_lock(&wl->mutex);
+	if (b43_status(dev) < B43_STAT_STARTED ||
+	    b43_using_pio_transfers(dev) || !b43_ampdu_kick_wanted(wl))
+		goto out;
+	for (i = 0; i < ARRAY_SIZE(rings); i++) {
+		struct b43_dmaring *ring = rings[i];
+
+		if (!ring)
+			continue;
+		if (ring->ampdu_pending) {
+			pending = true;
+			if (ring->ampdu_done == ring->ampdu_done_seen)
+				stuck = true;
+		}
+		ring->ampdu_done_seen = ring->ampdu_done;
+	}
+	if (stuck && !dev->ps) {
+		b43dbg(wl, "A-MPDU TX status overdue, a null frame on VO\n");
+		b43_ps_send_null(wl, false);
+	}
+	if (pending)
+		b43_ampdu_kick_arm(dev);
+out:
+	mutex_unlock(&wl->mutex);
 }
 
 /* The AP has acknowledged the null frame with PM=1: doze. */
@@ -6473,6 +6538,8 @@ redo:
 	if (IS_ENABLED(CONFIG_B43_NEXT_PHY_N) && dev->phy.type == B43_PHYTYPE_N)
 		b43_nphy_cancel_perical(dev);
 	cancel_work_sync(&wl->tx_work);
+	/* After the TX work, which arms it */
+	cancel_delayed_work_sync(&dev->ampdu_kick_work);
 	cancel_delayed_work_sync(&wl->ps_work);
 	b43_leds_stop(dev);
 	mutex_lock(&wl->mutex);

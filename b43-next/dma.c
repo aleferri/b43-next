@@ -2147,6 +2147,8 @@ unsigned int b43_dma_tx_ampdu(struct b43_wldev *dev, u8 queue_prio,
 		}
 	}
 	ring->ampdu_pending++;
+	if (dev->phy.type == B43_PHYTYPE_HT)
+		b43_ampdu_kick_arm(dev);
 	if (free_slots(ring) < TX_SLOTS_MAX) {
 		b43_stop_queue(dev, queue_prio);
 		dev->wl->tx_queue_stopped[queue_prio] = true;
@@ -2281,6 +2283,7 @@ bool b43_dma_ampdu_complete(struct b43_wldev *dev,
 	}
 	if (ring->ampdu_pending)
 		ring->ampdu_pending--;
+	ring->ampdu_done++;
 	if (dev->phy.type == B43_PHYTYPE_HT)
 		b43_ampdu_tx_mpdus_adjust(ring,
 				status->supp_reason == B43_TXST_SUPP_PREV, n);

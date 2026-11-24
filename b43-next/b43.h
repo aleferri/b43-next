@@ -737,6 +737,9 @@ enum {
 
 #define B43_PHY_TX_BADNESS_LIMIT	1000
 
+/* How often to check for an A-MPDU whose TX status is overdue */
+#define B43_AMPDU_KICK_MS		50
+
 /* Max size of a security key */
 #define B43_SEC_KEYSIZE			16
 /* Max number of group keys */
@@ -1078,6 +1081,8 @@ struct b43_wldev {
 	struct delayed_work periodic_work;
 	unsigned int periodic_state;
 	struct delayed_work radar_work;
+	/* The check for an A-MPDU whose TX status is overdue (b43_ampdu_kick_work()) */
+	struct delayed_work ampdu_kick_work;
 
 	/*
 	 * AC PHY: a channel availability check holds transmission back, and
