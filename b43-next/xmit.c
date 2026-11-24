@@ -1960,7 +1960,8 @@ void b43_rx(struct b43_wldev *dev, struct sk_buff *skb, const void *_rxhdr)
 	memset(&status, 0, sizeof(status));
 
 	if (fh->rx_amsdu &&
-	    (b43_nphy_ht_enabled(dev) || !fh->rx_amsdu_ht_only) &&
+	    (b43_nphy_ht_enabled(dev) || dev->phy.type == B43_PHYTYPE_HT ||
+	     !fh->rx_amsdu_ht_only) &&
 	    (get_unaligned_le32(b43_rxhdr_at(rxhdr, fh->rx_mac_status)) &
 	     B43_RX_MAC_AMSDU)) {
 		skb = b43_rx_amsdu(dev, skb, &_rxhdr);
