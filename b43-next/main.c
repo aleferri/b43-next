@@ -5240,7 +5240,7 @@ void b43_ps_tx_status(struct b43_wldev *dev, struct sk_buff *skb, bool acked)
 			 msecs_to_jiffies(max(b43_ps_timeout(wl), 10)));
 }
 
-/* Called for frames from the AP while power save is enabled. In power save
+/* Handles the frames from the AP while power save is enabled. In power save
  * the TSF follows the AP's from the first beacon after association, which
  * may come after power save started. When the TSF jumps, the timer start
  * does not follow if it is more than 2^31 us behind the new TSF, and
@@ -5262,6 +5262,10 @@ void b43_ps_rx(struct b43_wldev *dev, struct sk_buff *skb)
 	const struct element *tim;
 	int len;
 
+	if (!wl->ps_enabled || ieee80211_is_ctl(fc) ||
+	    skb->len < sizeof(struct ieee80211_hdr_3addr) ||
+	    !ether_addr_equal(mgmt->sa, wl->bssid))
+		return;
 	if (ieee80211_is_beacon(fc)) {
 		len = skb->len - FCS_LEN -
 		      offsetof(struct ieee80211_mgmt, u.beacon.variable);
@@ -5309,6 +5313,8 @@ static void b43_ps_update(struct b43_wldev *dev, bool enabled)
 {
 	struct b43_wl *wl = dev->wl;
 
+	if (!dev->phy.nphy_ht || !b43_is_mode(wl, NL80211_IFTYPE_STATION))
+		return;
 	wl->ps_enabled = enabled;
 	wl->ps_null_acked = false;
 	if (enabled) {
@@ -5324,6 +5330,54 @@ static void b43_ps_update(struct b43_wldev *dev, bool enabled)
 	else
 		dev->hwps = false;
 	b43_power_saving_ctl_bits(dev, 0);
+}
+
+static void b43_ps_disable(struct b43_wl *wl)
+{
+	wl->ps_enabled = false;
+}
+
+/* mac80211 announces power save to the AP before leaving its
+ * channel, and the station stays awake until the scan completes.
+ */
+static void b43_ps_scan_start(struct b43_wl *wl)
+{
+	struct b43_wldev *dev = wl->current_dev;
+
+	wl->ps_scanning = true;
+	cancel_delayed_work(&wl->ps_work);
+	if (dev && b43_status(dev) >= B43_STAT_STARTED && dev->ps) {
+		dev->ps = false;
+		b43_power_saving_ctl_bits(dev, 0);
+	}
+}
+
+static void b43_ps_scan_complete(struct b43_wl *wl)
+{
+	wl->ps_scanning = false;
+	if (wl->ps_enabled) {
+		wl->ps_last = jiffies;
+		schedule_delayed_work(&wl->ps_work,
+				      msecs_to_jiffies(b43_ps_timeout(wl)));
+	}
+}
+
+static void b43_ps_init(struct b43_wl *wl)
+{
+	INIT_DELAYED_WORK(&wl->ps_work, b43_ps_work);
+}
+
+static void b43_ps_reset(struct b43_wldev *dev)
+{
+	dev->ps = false;
+	dev->hwps = false;
+	dev->ps_tbtt = false;
+	dev->ps_poll = false;
+}
+
+static void b43_ps_cancel(struct b43_wl *wl)
+{
+	cancel_delayed_work_sync(&wl->ps_work);
 }
 
 static void b43_op_wake_tx_queue(struct ieee80211_hw *hw,
@@ -6240,8 +6294,7 @@ static void b43_op_bss_info_changed(struct ieee80211_hw *hw,
 
 	b43_mac_enable(dev);
 
-	if (changed & BSS_CHANGED_PS && dev->phy.nphy_ht &&
-	    b43_is_mode(wl, NL80211_IFTYPE_STATION))
+	if (changed & BSS_CHANGED_PS)
 		b43_ps_update(dev, vif->cfg.ps);
 out_unlock_mutex:
 	mutex_unlock(&wl->mutex);
@@ -6471,7 +6524,7 @@ redo:
 	if (IS_ENABLED(CONFIG_B43_NEXT_PHY_N) && dev->phy.type == B43_PHYTYPE_N)
 		b43_nphy_cancel_perical(dev);
 	cancel_work_sync(&wl->tx_work);
-	cancel_delayed_work_sync(&wl->ps_work);
+	b43_ps_cancel(wl);
 	b43_leds_stop(dev);
 	mutex_lock(&wl->mutex);
 	dev = wl->current_dev;
@@ -6837,10 +6890,7 @@ static void setup_struct_wldev_for_init(struct b43_wldev *dev)
 {
 	dev->dfq_valid = false;
 	dev->rx_ht_valid = false;
-	dev->ps = false;
-	dev->hwps = false;
-	dev->ps_tbtt = false;
-	dev->ps_poll = false;
+	b43_ps_reset(dev);
 
 	/* Assume the radio is enabled. If it's not enabled, the state will
 	 * immediately get fixed on the first periodic work run. */
@@ -7546,7 +7596,7 @@ static void b43_op_remove_interface(struct ieee80211_hw *hw,
 		return;
 	}
 	wl->vif = NULL;
-	wl->ps_enabled = false;
+	b43_ps_disable(wl);
 
 	wl->operating = false;
 
@@ -7634,7 +7684,7 @@ out_unlock:
 	mutex_unlock(&wl->mutex);
 out:
 	cancel_work_sync(&(wl->txpower_adjust_work));
-	cancel_delayed_work_sync(&wl->ps_work);
+	b43_ps_cancel(wl);
 }
 
 static int b43_op_beacon_set_tim(struct ieee80211_hw *hw,
@@ -7727,15 +7777,7 @@ static void b43_op_sw_scan_start_notifier(struct ieee80211_hw *hw,
 		wl->cck_scanning = true;
 		b43_update_cck_rx(dev, NULL, false);
 	}
-	/* mac80211 announces power save to the AP before leaving its
-	 * channel, and the station stays awake until the scan completes.
-	 */
-	wl->ps_scanning = true;
-	cancel_delayed_work(&wl->ps_work);
-	if (dev && b43_status(dev) >= B43_STAT_STARTED && dev->ps) {
-		dev->ps = false;
-		b43_power_saving_ctl_bits(dev, 0);
-	}
+	b43_ps_scan_start(wl);
 	mutex_unlock(&wl->mutex);
 }
 
@@ -7753,12 +7795,7 @@ static void b43_op_sw_scan_complete_notifier(struct ieee80211_hw *hw,
 		wl->cck_scanning = false;
 		b43_update_cck_rx(dev, NULL, false);
 	}
-	wl->ps_scanning = false;
-	if (wl->ps_enabled) {
-		wl->ps_last = jiffies;
-		schedule_delayed_work(&wl->ps_work,
-				      msecs_to_jiffies(b43_ps_timeout(wl)));
-	}
+	b43_ps_scan_complete(wl);
 	mutex_unlock(&wl->mutex);
 }
 
@@ -8689,7 +8726,7 @@ static struct b43_wl *b43_wireless_init(struct b43_bus_dev *dev)
 	b43_beacon_init(wl);
 	INIT_WORK(&wl->txpower_adjust_work, b43_phy_txpower_adjust_work);
 	INIT_WORK(&wl->tx_work, b43_tx_work);
-	INIT_DELAYED_WORK(&wl->ps_work, b43_ps_work);
+	b43_ps_init(wl);
 
 	/* Initialize queues and flags. */
 	for (queue_num = 0; queue_num < B43_QOS_QUEUE_NUM; queue_num++) {
