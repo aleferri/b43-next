@@ -2291,23 +2291,26 @@ static void handle_irq_atim_end(struct b43_wldev *dev)
 /* Entries read from the power management queue before the handler gives up. */
 #define B43_PMQ_DRAIN_MAX	256
 
+/*
+ * Pop the power management queue: the head entry's word (bit 3 while there
+ * is one), then its station address, which moves the read pointer on, then
+ * a 16-bit delete of the entries before the read pointer.
+ */
 static void handle_irq_pmq(struct b43_wldev *dev)
 {
 	unsigned int i;
 	u32 tmp;
 
-	//TODO: AP mode.
-
 	for (i = 0; i < B43_PMQ_DRAIN_MAX; i++) {
 		tmp = b43_read32(dev, B43_MMIO_PS_STATUS);
-		if (!(tmp & 0x00000008))
-			break;
+		if (!(tmp & B43_PMQ_NOT_EMPTY))
+			return;
+		b43_read32(dev, B43_MMIO_PMQ_ADDR_LO);
+		b43_read32(dev, B43_MMIO_PMQ_ADDR_HI);
+		/* 16bit write is odd, but correct. */
+		b43_write16(dev, B43_MMIO_PS_STATUS, B43_PMQ_DEL_MULT);
 	}
-	if (i == B43_PMQ_DRAIN_MAX)
-		b43warn(dev->wl, "Power management queue not drained: 0x%08x\n",
-			tmp);
-	/* 16bit write is odd, but correct. */
-	b43_write16(dev, B43_MMIO_PS_STATUS, 0x0002);
+	b43warn(dev->wl, "Power management queue not drained: 0x%08x\n", tmp);
 }
 
 /* Check if the use of the antenna that ieee80211 told us to
@@ -3876,15 +3879,11 @@ static void b43_adjust_opmode(struct b43_wldev *dev)
 	}
 
 	/*
-	 * The power management queue: b43 drains it on its interrupt
-	 * (handle_irq_pmq()) and otherwise keeps it discarded. The HT-PHY's
-	 * stock driver takes it on an AP (MACCONTROL 0x0416040x on the R6400
-	 * v1), where it discards it before.
+	 * Keep the power management queue discarded, also on an AP: mac80211
+	 * follows the stations' power save from their frames, and a queue
+	 * taken fills up without B43_IRQ_PMQ and then stops reception.
 	 */
-	if ((ctl & B43_MACCTL_AP) && dev->phy.type == B43_PHYTYPE_HT)
-		b43_macctl_maskset(dev, ~B43_MACCTL_DISCPMQ, 0);
-	else
-		b43_macctl_maskset(dev, ~0, B43_MACCTL_DISCPMQ);
+	b43_macctl_maskset(dev, ~0, B43_MACCTL_DISCPMQ);
 }
 
 static void b43_rate_memory_write(struct b43_wldev *dev, u16 rate, int is_ofdm)
