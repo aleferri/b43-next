@@ -1841,7 +1841,8 @@ static unsigned int b43_rx_amsdu_len(const struct sk_buff *head,
  * last one the last subframe, the MIC and the FCS (a OnePlus Nord 2's
  * uplink). Put together they are the MPDU as it was sent, which goes on
  * under the first piece's receive header; a piece in error spoils it.
- * Returns that MPDU, or NULL while it is incomplete or dropped.
+ * Returns that MPDU, or NULL while it is incomplete or dropped. Any other
+ * frame is returned as it is.
  *
  * The BCM43227 does the same outside A-MPDUs, but each of its pieces has
  * padding of its own, and only the last one carries the status of the
@@ -1852,15 +1853,23 @@ static struct sk_buff *b43_rx_amsdu(struct b43_wldev *dev,
 				    struct sk_buff *skb, const void **rxhdr)
 {
 	struct b43_rxhdr_fw4 *first = (struct b43_rxhdr_fw4 *)dev->rx_amsdu_hdr;
-	u32 macstat = le32_to_cpu(((const struct b43_rxhdr_fw4 *)*rxhdr)->
-				  format_598.mac_status);
-	unsigned int type = (macstat & B43_RX_MAC_AGGTYPE) >>
-			    B43_RX_MAC_AGGTYPE_SHIFT;
+	const struct b43_fw_hdr *fh = dev->fw.layout.hdr;
 	const u32 err = B43_RX_MAC_FCSERR | B43_RX_MAC_DECERR;
 	struct sk_buff *head = dev->rx_amsdu;
+	unsigned int type;
+	u32 macstat;
 	int need;
 
 	BUILD_BUG_ON(sizeof(*first) > sizeof(dev->rx_amsdu_hdr));
+	if (!fh->rx_amsdu ||
+	    (fh->rx_amsdu_ht_only && !b43_nphy_ht_enabled(dev) &&
+	     dev->phy.type != B43_PHYTYPE_HT))
+		return skb;
+	macstat = le32_to_cpu(((const struct b43_rxhdr_fw4 *)*rxhdr)->
+			      format_598.mac_status);
+	if (!(macstat & B43_RX_MAC_AMSDU))
+		return skb;
+	type = (macstat & B43_RX_MAC_AGGTYPE) >> B43_RX_MAC_AGGTYPE_SHIFT;
 	if (type == B43_RX_AGG_FIRST || type == B43_RX_AGG_SINGLE) {
 		if (head)
 			dev_kfree_skb_any(head);
@@ -1944,7 +1953,7 @@ void b43_rx(struct b43_wldev *dev, struct sk_buff *skb, const void *_rxhdr)
 	struct b43_plcp_hdr6 *plcp;
 	const u8 *ht_plcp = NULL;
 	struct ieee80211_hdr *wlhdr;
-	const struct b43_rxhdr_fw4 *rxhdr = _rxhdr;
+	const struct b43_rxhdr_fw4 *rxhdr;
 	const struct b43_fw_hdr *fh = dev->fw.layout.hdr;
 	__le16 fctl;
 	u16 phystat0, phystat3;
@@ -1958,16 +1967,10 @@ void b43_rx(struct b43_wldev *dev, struct sk_buff *skb, const void *_rxhdr)
 
 	memset(&status, 0, sizeof(status));
 
-	if (fh->rx_amsdu &&
-	    (b43_nphy_ht_enabled(dev) || dev->phy.type == B43_PHYTYPE_HT ||
-	     !fh->rx_amsdu_ht_only) &&
-	    (get_unaligned_le32(b43_rxhdr_at(rxhdr, fh->rx_mac_status)) &
-	     B43_RX_MAC_AMSDU)) {
-		skb = b43_rx_amsdu(dev, skb, &_rxhdr);
-		if (!skb)
-			return;
-		rxhdr = _rxhdr;
-	}
+	skb = b43_rx_amsdu(dev, skb, &_rxhdr);
+	if (!skb)
+		return;
+	rxhdr = _rxhdr;
 
 	/* Get metadata about the frame from the header. */
 	phystat0 = le16_to_cpu(rxhdr->phy_status0);
