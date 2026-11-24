@@ -565,7 +565,8 @@ int b43_ampdu_action(struct ieee80211_hw *hw, struct ieee80211_vif *vif,
 			ok = b43_status(dev) >= B43_STAT_STARTED &&
 			     (vif->type == NL80211_IFTYPE_STATION ||
 			      vif->type == NL80211_IFTYPE_AP ||
-			      vif->type == NL80211_IFTYPE_ADHOC) &&
+			      vif->type == NL80211_IFTYPE_ADHOC ||
+			      vif->type == NL80211_IFTYPE_MESH_POINT) &&
 			     (rx || (!b43_using_pio_transfers(dev) &&
 				     (params->tid == 0 || params->tid == 3 ||
 				      params->tid == 4 || params->tid == 5)));
