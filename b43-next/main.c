@@ -4919,19 +4919,6 @@ static void b43_op_tx(struct ieee80211_hw *hw,
  * ieee80211_handle_wake_tx_queue(), which pushes every frame to
  * b43_op_tx().
  */
-/*
- * Only full-size MSDUs go into an A-MSDU: with a OnePlus Nord 2 two rooms
- * away, aggregating everything took its uplink from 121 to 85 Mbit/s (the
- * TCP ACKs we send it wait for a partner), aggregating MSDUs of 1000
- * bytes and more kept it (125) and its downlink (172 against 173).
- */
-static bool b43_op_can_aggregate_in_amsdu(struct ieee80211_hw *hw,
-					  struct sk_buff *head,
-					  struct sk_buff *skb)
-{
-	return skb->len >= 1000;
-}
-
 static bool b43_tx_pulls(struct b43_wldev *dev)
 {
 	return dev && !b43_using_pio_transfers(dev) &&
