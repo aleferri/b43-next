@@ -1058,8 +1058,7 @@ static void b43_phy_ac_wd_flat_sweep(struct b43_wldev *dev)
 
 static void b43_phy_ac_wd_stats_poll_opt(struct b43_wldev *dev,
 					 bool head_sweep,
-					 unsigned int ctr32_passes,
-					 bool ctr32_tail);
+					 unsigned int ctr32_passes);
 static void b43_phy_ac_txpwr_target_write(struct b43_wldev *dev);
 static void b43_phy_ac_farrow_setup(struct b43_wldev *dev,
 				    struct ieee80211_channel *channel);
@@ -3479,8 +3478,7 @@ static void b43_phy_ac_rx_evm_shaping_override(struct b43_wldev *dev);
  * The width the PHY and the MAC run at. 20 MHz with HT and without it are
  * one configuration to both; mac80211 tells them apart for what the BSS
  * announces. The PHY code takes its width from here, so it never sees
- * NL80211_CHAN_WIDTH_20_NOHT, which is also the zero "never" of
- * b43_phy_ac::mac_width.
+ * NL80211_CHAN_WIDTH_20_NOHT.
  */
 static enum nl80211_chan_width
 b43_phy_ac_width(const struct cfg80211_chan_def *chandef)
@@ -3548,14 +3546,13 @@ void b43_phy_ac_write_chanspec(struct b43_wldev *dev)
 	const struct cfg80211_chan_def *chandef = dev->phy.chandef;
 	struct b43_phy_ac *ac = dev->phy.ac;
 	u16 spec = b43_phy_ac_chanspec(chandef);
+	u16 old = ac->chanspec;
 
 	b43_shm_write16(dev, B43_SHM_SHARED, B43_SHM_SH_CHAN, spec);
 	ac->chanspec = spec;
 
-	if (ac->mac_width != b43_phy_ac_width(chandef)) {
+	if ((spec ^ old) & B43_PHY_AC_CHANSPEC_BW_MASK)
 		b43_mac_bw_set(dev, spec & B43_PHY_AC_CHANSPEC_BW_MASK);
-		ac->mac_width = b43_phy_ac_width(chandef);
-	}
 }
 
 static void b43_phy_ac_chanspec_tail(struct b43_wldev *dev);
@@ -5936,6 +5933,9 @@ static void b43_phy_ac_chanspec_tail(struct b43_wldev *dev)
 	crs = b43_phy_ac_crs_min_pwr(dev, crs_idx, true);
 
 	dev->phy.ac->crs_written = (u8)crs;
+	b43_cal_begin(dev, B43_CAL_CRS);
+	b43_cal_report(dev, AC_CAL_CRS_WRITTEN, crs_idx,
+		       dev->phy.ac->crs_written);
 
 	/*
 	 * The clear of 0x0164 bit 4 is skipped at 80 MHz, where the bandwidth
@@ -9638,8 +9638,7 @@ static void b43_phy_ac_wd_sample_phase_opt(struct b43_wldev *dev, bool peek,
  */
 static void b43_phy_ac_wd_stats_poll_opt(struct b43_wldev *dev,
 					 bool head_sweep,
-					 unsigned int ctr32_passes,
-					 bool ctr32_tail)
+					 unsigned int ctr32_passes)
 {
 	B43_AC_FN();
 	static const u16 ctr32[6] = {
@@ -9663,14 +9662,7 @@ static void b43_phy_ac_wd_stats_poll_opt(struct b43_wldev *dev,
 			b43_phy_ac_wd_shm_peek32(dev, ctr32[i]);
 	}
 
-	/*
-	 * @ctr32_tail closes the poll with the three counters outside the list.
-	 * A beacon reload can fall between the two passes, so the caller may
-	 * split the poll and put the tail on the second half only.
-	 */
-	if (!ctr32_tail)
-		return;
-
+	/* The poll closes with the three counters outside the list. */
 	b43_phy_ac_wd_shm_peek32(dev, 0x07e0);
 	b43_phy_ac_wd_shm_peek32(dev, 0x07e4);
 	b43_phy_ac_wd_shm_peek32(dev, 0x07dc);
@@ -9712,7 +9704,7 @@ static void b43_phy_ac_wd_stats_tail(struct b43_wldev *dev)
 
 static void b43_phy_ac_wd_stats_poll(struct b43_wldev *dev)
 {
-	b43_phy_ac_wd_stats_poll_opt(dev, true, 2, true);
+	b43_phy_ac_wd_stats_poll_opt(dev, true, 2);
 }
 
 /*
@@ -11025,7 +11017,7 @@ static int b43_phy_ac_op_switch_channel(struct b43_wldev *dev, unsigned int new_
 	b43_phy_ac_mhf_maskset(dev, 0, (u16)~0x4000, 0);
 	b43_phy_ac_shm_mac_config_block(dev);
 	/* Second half of the poll with a single pass: no head and no sweep. */
-	b43_phy_ac_wd_stats_poll_opt(dev, false, 1, true);
+	b43_phy_ac_wd_stats_poll_opt(dev, false, 1);
 	/*
 	 * Invariant across all 26 segments; purpose unknown. Between these and
 	 * the poll below the capture has a TPL.RAMW, the core's template RAM.
@@ -11033,7 +11025,7 @@ static int b43_phy_ac_op_switch_channel(struct b43_wldev *dev, unsigned int new_
 	b43_shm_write16(dev, B43_SHM_SHARED, 0x018a, 0xffce);
 	b43_shm_write16(dev, B43_SHM_SHARED, 0x018c, 0xffba);
 	B43_AC_CORE_SITE(dev, MACFILTER_FIRST);
-	b43_phy_ac_wd_stats_poll_opt(dev, true, 0, true);
+	b43_phy_ac_wd_stats_poll_opt(dev, true, 0);
 	/* After the sweep and the four CCK blocks not understood yet. */
 	b43_phy_ac_chainmask_block(dev, B43_PHY_AC_CHAIN_SETUP);
 	b43_phy_ac_prb_rsp_rate_po(dev, B43_PHY_AC_CHAIN_SETUP);
@@ -11086,7 +11078,7 @@ static int b43_phy_ac_op_switch_channel(struct b43_wldev *dev, unsigned int new_
 	 */
 	for (off = 0x0300; off <= 0x0306; off += 2)
 		b43_shm_read16(dev, B43_SHM_SHARED, off);
-	b43_phy_ac_wd_stats_poll_opt(dev, true, 0, true);
+	b43_phy_ac_wd_stats_poll_opt(dev, true, 0);
 	/*
 	 * HOSTF5 bit 15 hands the probe requests to the microcode: 784 reads
 	 * it at 0x0AF2 and 0x0CAC on the RX path of a probe request, and with
@@ -11142,7 +11134,7 @@ static int b43_phy_ac_op_switch_channel(struct b43_wldev *dev, unsigned int new_
 	b43_phy_maskset(dev, 0x0042, (u16)~0x8000, 0x8000);
 	b43_phy_ac_mhf_maskset(dev, 1, (u16)~0x0020, 0x0020);
 	b43_mac_suspend(dev);
-	b43_phy_ac_wd_stats_poll_opt(dev, true, 0, true);
+	b43_phy_ac_wd_stats_poll_opt(dev, true, 0);
 	B43_AC_CORE_SITE(dev, MACFILTER);
 	b43_phy_ac_basic_rate_map(dev);
 
@@ -11241,6 +11233,8 @@ B43_CAL_TABLE(b43_phy_ac_cal_entries) = {
 		      B43_CAL_XV(pdoff40, 4, 2), B43_CAL_XV(pdoff80, 4, 2),
 		      B43_CAL_XV(pdoff2g40, 2, 2), B43_CAL_U(valid),
 		      B43_CAL_X(chipctl_set, 8)),
+	B43_CAL_ENTRY(AC_CAL_CRS_WRITTEN, CRS, "written", COMPUTED, 4,
+		      B43_CAL_U(idx), B43_CAL_X(crs, 2)),
 };
 
 const struct b43_phy_operations b43_phyops_ac = {

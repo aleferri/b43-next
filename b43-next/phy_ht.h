@@ -170,8 +170,7 @@ struct b43_phy_ht {
 	unsigned int home_channel;
 	enum nl80211_channel_type home_type;
 
-	/* The channel the radio is tuned to since it came on */
-	bool tuned;
+	/* The channel the radio is tuned to since it came on, 0 when none */
 	unsigned int tuned_channel;
 	enum nl80211_channel_type tuned_type;
 };

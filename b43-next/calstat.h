@@ -30,7 +30,8 @@ struct b43_wldev;
 	C(TEMP,		"temp")			\
 	C(LO,		"lo")			\
 	C(NRSSI,	"nrssi")		\
-	C(TXPWR,	"txpwr")
+	C(TXPWR,	"txpwr")		\
+	C(CRS,		"crs")
 
 #define B43_CAL_GROUP_ENUM(id, name)	B43_CAL_##id,
 enum b43_cal_group {

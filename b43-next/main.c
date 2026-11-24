@@ -6069,7 +6069,7 @@ static int b43_op_config(struct ieee80211_hw *hw, int radio_idx, u32 changed)
 
 		if (ac && dev->cac_pending != cac_was)
 			b43_ac_cac_match_gate(dev, !dev->cac_pending);
-		if (ac && dev->radar_arm && phy->ops->radar_poll)
+		if (dev->radar_arm && phy->ops->radar_poll)
 			ieee80211_queue_delayed_work(hw, &dev->radar_work,
 				msecs_to_jiffies(B43_RADAR_POLL_MS));
 	}
@@ -8297,7 +8297,7 @@ static int b43_setup_bands(struct b43_wldev *dev,
 	 * channel without radar duty cfg80211 does not look at the widths.
 	 */
 	if (IS_ENABLED(CONFIG_B43_NEXT_DFS) && have_5ghz_phy &&
-	    dev->phy.type == B43_PHYTYPE_AC && dev->phy.ops->radar_poll) {
+	    dev->phy.ops->radar_poll) {
 		hw->wiphy->iface_combinations = &b43_if_comb_dfs;
 		hw->wiphy->n_iface_combinations = 1;
 	}
