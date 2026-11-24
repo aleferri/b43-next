@@ -294,6 +294,8 @@ struct b43_dmaring {
 	const struct b43_dma_ops *ops;
 	/* RX buffers, when the kernel has page pools (b43_rx_pool_create()). */
 	struct page_pool *rx_pool;
+	/* The pool maps its pages for the device, for the life of the ring. */
+	bool rx_pool_dma;
 	/* Kernel virtual base address of the ring memory. */
 	void *descbase;
 	/* Cache of TX headers for each TX frame.
