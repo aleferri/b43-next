@@ -44,6 +44,9 @@
 #define B43_MMIO_DMA5_IRQ_MASK		0x4C
 #define B43_MMIO_MACCTL			0x120	/* MAC control */
 #define B43_MMIO_MACCMD			0x124	/* MAC command */
+#define B43_MMIO_RX_LAZY		0x100	/* RX interrupt coalescing */
+#define  B43_RX_LAZY_TIMEOUT		0x00FFFFFF	/* in us */
+#define  B43_RX_LAZY_FRAMES_SHIFT	24
 #define B43_MMIO_GEN_IRQ_REASON		0x128
 #define B43_MMIO_GEN_IRQ_MASK		0x12C
 #define B43_MMIO_RAM_CONTROL		0x130

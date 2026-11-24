@@ -129,6 +129,10 @@ static int b43_modparam_pio;
 module_param_named(pio, b43_modparam_pio, int, 0644);
 MODULE_PARM_DESC(pio, "Use PIO accesses by default: 0=DMA, 1=PIO");
 
+static unsigned int modparam_rx_lazy = 300;
+module_param_named(rx_lazy, modparam_rx_lazy, uint, 0444);
+MODULE_PARM_DESC(rx_lazy, "Delay the RX interrupt by up to this many us, to receive frames in batches (default 300, 0 = off)");
+
 static int modparam_allhwsupport = 1;
 module_param_named(allhwsupport, modparam_allhwsupport, int, 0444);
 MODULE_PARM_DESC(allhwsupport, "Enable support for all hardware (even it if overlaps with the brcmsmac driver)");
@@ -7142,6 +7146,24 @@ static int b43_txfifo_init_ht(struct b43_wldev *dev)
 	return -EIO;
 }
 
+/*
+ * Coalesce the RX interrupt, which the DMA engine raises for every frame by
+ * default: raise it rx_lazy us (at most 10 ms) after the first frame, or
+ * once 32 frames are in. brcmsmac programs it on cores 16 to 30 only.
+ */
+static void b43_rx_lazy_init(struct b43_wldev *dev)
+{
+	u32 timeout = min(modparam_rx_lazy, 10000U);
+	u32 frames = timeout ? 32 : 1;
+
+	if (b43_using_pio_transfers(dev) || dev->dev->core_rev < 16 ||
+	    dev->phy.type == B43_PHYTYPE_AC)
+		return;
+	b43_write32(dev, B43_MMIO_RX_LAZY,
+		    (frames << B43_RX_LAZY_FRAMES_SHIFT) |
+		    (timeout & B43_RX_LAZY_TIMEOUT));
+}
+
 /* Initialize a wireless core */
 static int b43_wireless_core_init(struct b43_wldev *dev)
 {
@@ -7348,6 +7370,7 @@ static int b43_wireless_core_init(struct b43_wldev *dev)
 	}
 	if (err)
 		goto err_chip_exit;
+	b43_rx_lazy_init(dev);
 	/* The microcode drops longer frames, by default those over 2352
 	 * bytes: a QoS data frame with CCMP and a 2304-byte MSDU is longer.
 	 * DMA receives them into several buffers. */
