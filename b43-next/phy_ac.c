@@ -5935,6 +5935,9 @@ static void b43_phy_ac_chanspec_tail(struct b43_wldev *dev)
 	crs = b43_phy_ac_crs_min_pwr(dev, crs_idx, true);
 
 	dev->phy.ac->crs_written = (u8)crs;
+	b43_cal_begin(dev, B43_CAL_CRS);
+	b43_cal_report(dev, AC_CAL_CRS_WRITTEN, crs_idx,
+		       dev->phy.ac->crs_written);
 
 	/*
 	 * The clear of 0x0164 bit 4 is skipped at 80 MHz, where the bandwidth
@@ -11232,6 +11235,8 @@ B43_CAL_TABLE(b43_phy_ac_cal_entries) = {
 		      B43_CAL_XV(pdoff40, 4, 2), B43_CAL_XV(pdoff80, 4, 2),
 		      B43_CAL_XV(pdoff2g40, 2, 2), B43_CAL_U(valid),
 		      B43_CAL_X(chipctl_set, 8)),
+	B43_CAL_ENTRY(AC_CAL_CRS_WRITTEN, CRS, "written", COMPUTED, 4,
+		      B43_CAL_U(idx), B43_CAL_X(crs, 2)),
 };
 
 const struct b43_phy_operations b43_phyops_ac = {
