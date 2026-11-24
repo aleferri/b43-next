@@ -165,10 +165,6 @@ enum b43_txpwr_result {
  * 			interrupt thread, in place of the core's own
  * 			link-quality sampling.
  * 			Can be NULL, if not required.
- * @radar_poll:		Read the radar detector. Called every 150 ms while
- * 			mac80211 asks for radar detection. Returns true when
- * 			a radar pulse has arrived since the previous call.
- * 			Can be NULL, if the PHY has no detector.
  * @beacon_rate_set:	The beacon goes out at a CCK rate or not, from the
  *			beacon template writer. Can be NULL.
  * @ofdm_tx:		OFDM or HT frames are about to be queued for
@@ -213,7 +209,6 @@ struct b43_phy_operations {
 	void (*pwork_60sec)(struct b43_wldev *dev);
 	void (*channel_calibrate)(struct b43_wldev *dev, bool cac_done);
 	void (*noise_sample_done)(struct b43_wldev *dev);
-	bool (*radar_poll)(struct b43_wldev *dev);
 	void (*beacon_rate_set)(struct b43_wldev *dev, bool cck);
 	void (*ofdm_tx)(struct b43_wldev *dev);
 

@@ -747,7 +747,7 @@ void b43_radio_2069_init(struct b43_wldev *dev);
 /*
  * One turn of the radar detector poll: mac_suspend, the levels of the two
  * pulse FIFOs (PHY 0x0251 and 0x0252), draining the non-empty ones,
- * mac_enable. The core calls it every 150 ms while an AP is on a channel
+ * mac_enable. The PHY's work calls it every 150 ms while an AP is on a channel
  * with the radar duty, the check and after it. Returns whether the pulses
  * matched a radar type while mac80211 asks for radar detection.
  */

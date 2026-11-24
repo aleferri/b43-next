@@ -26,7 +26,7 @@ top-level README.
 | `recalc_txpower` / `adjust_txpower` | `b43_phy_txpower_check()` | per-rate table from the SROM (`b43-next/ppr.c`), target `0x0646` per core |
 | `pwork_1sec` | the 1 s periodic work in `b43-next/main.c` | one watchdog turn while the PHY is in its run state; the bss-up once the availability check is over |
 | `pwork_60sec` | b43 periodic work | CRS minimum-power threshold, written only when it changes |
-| `radar_poll` | `radar_work`, every 150 ms while `conf->radar_enabled` | the detector read (`PHY 0x0251`/`0x0252`) |
+| `b43_phy_ac_radar_poll()` | the PHY's work, every 150 ms while `dev->radar_arm` | the detector read (`PHY 0x0251`/`0x0252`) |
 | `noise_sample_done` | `handle_irq_noise()` on `B43_IRQ_NOISESAMPLE_OK` | the background noise sample |
 
 The availability check is `dev->cac_pending`, recomputed by `b43_op_config()`

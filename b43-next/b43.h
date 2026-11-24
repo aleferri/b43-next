@@ -1081,7 +1081,6 @@ struct b43_wldev {
 	/* Periodic tasks */
 	struct delayed_work periodic_work;
 	unsigned int periodic_state;
-	struct delayed_work radar_work;
 	/* The check for an A-MPDU whose TX status is overdue (b43_ampdu_kick_work()) */
 	struct delayed_work ampdu_kick_work;
 
@@ -1093,7 +1092,7 @@ struct b43_wldev {
 	struct cfg80211_chan_def tuned_chandef;
 	/*
 	 * AC PHY: the AP on the tuned channel detects radars, which arms the
-	 * detector on the PHY and keeps radar_work polling it. Set with the
+	 * detector on the PHY and keeps its work polling it. Set with the
 	 * tune, see b43_ac_radar_arm_wanted().
 	 */
 	bool radar_arm;
