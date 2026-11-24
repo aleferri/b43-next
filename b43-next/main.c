@@ -5723,14 +5723,15 @@ static int b43_switch_bandwidth(struct b43_wldev *dev)
  * HT-PHY: the receiver locks onto any CCK frame it detects, also a weak
  * one of a distant BSS, and stays on it to its end: a 1 Mbit/s broadcast
  * of 200 bytes keeps it deaf for 2 ms, and a much stronger frame of our
- * own BSS that starts meanwhile is lost. Turn CCK reception off as an AP,
- * or while associated as a station, when nothing of the BSS is sent in
- * CCK: no basic rate is CCK, and no peer supports a CCK rate. mac80211
- * sends management frames and EAPOL to a peer at the lowest rate it
- * supports, not at a basic rate, and a CCK frame is answered in CCK. A
- * station is added with the mandatory rates, CCK ones among them, and
- * keeps them until it associates. Keep CCK reception while scanning, as
- * other APs beacon at 1 Mbit/s, and while a monitor interface is up.
+ * own BSS that starts meanwhile is lost. Turn CCK reception off as an AP
+ * when nothing of the BSS is sent in CCK: no basic rate is CCK, and no
+ * peer supports a CCK rate. mac80211 sends management frames and EAPOL to
+ * a peer at the lowest rate it supports, not at a basic rate, and a CCK
+ * frame is answered in CCK. A station is added with the mandatory rates,
+ * CCK ones among them, and keeps them until it associates. Keep CCK
+ * reception while scanning, as other APs beacon at 1 Mbit/s, and while a
+ * monitor interface is up. Not as a station: what its AP sends in CCK is up
+ * to the AP, whatever rates it announces.
  */
 struct b43_cck_peers {
 	/* A station that changes state, counted as @present says */
@@ -5769,8 +5770,7 @@ static void b43_update_cck_rx(struct b43_wldev *dev, struct ieee80211_sta *sta,
 	if (vif && !wl->radiotap_enabled && !wl->cck_scanning &&
 	    b43_current_band(wl) == NL80211_BAND_2GHZ &&
 	    vif->bss_conf.basic_rates &&
-	    (vif->type == NL80211_IFTYPE_AP ||
-	     (vif->type == NL80211_IFTYPE_STATION && vif->cfg.assoc))) {
+	    vif->type == NL80211_IFTYPE_AP) {
 		sband = wl->hw->wiphy->bands[NL80211_BAND_2GHZ];
 		for (i = 0; sband && i < sband->n_bitrates; i++)
 			if (b43_is_cck_rate(sband->bitrates[i].hw_value))
