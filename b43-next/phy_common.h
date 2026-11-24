@@ -4,6 +4,7 @@
 
 #include <linux/types.h>
 #include <linux/nl80211.h>
+#include <linux/workqueue.h>
 
 struct b43_wldev;
 struct b43_cal_entry;
@@ -234,6 +235,9 @@ struct b43_phy {
 	u32 bw_clkbits;
 	/* Hardware operation callbacks. */
 	const struct b43_phy_operations *ops;
+	/* The PHY's own deferred work, if its allocate op sets one up. The
+	 * core stop cancels it, without wl->mutex, as the work takes it. */
+	struct delayed_work work;
 
 	/* Most hardware context information is stored in the standard-
 	 * specific data structures pointed to by the pointers below.

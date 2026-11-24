@@ -977,8 +977,6 @@ struct b43_phy_n {
 	u16 mphase_txcal_bestcoeffs[11];
 	struct nphy_txgains cal_target_gain;
 	unsigned long perical_last;
-	struct b43_wldev *dev;
-	struct delayed_work perical_work;
 
 	bool txpwrctrl;
 	bool pwg_gain_5ghz;
@@ -1039,6 +1037,5 @@ struct b43_phy_operations;
 extern const struct b43_phy_operations b43_phyops_n;
 
 bool b43_nphy_2057_rev14_epa(struct b43_wldev *dev);
-void b43_nphy_cancel_perical(struct b43_wldev *dev);
 
 #endif /* B43_NPHY_H_ */

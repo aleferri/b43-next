@@ -6601,8 +6601,8 @@ redo:
 	mutex_unlock(&wl->mutex);
 	cancel_delayed_work_sync(&dev->periodic_work);
 	cancel_delayed_work_sync(&dev->radar_work);
-	if (IS_ENABLED(CONFIG_B43_NEXT_PHY_N) && dev->phy.type == B43_PHYTYPE_N)
-		b43_nphy_cancel_perical(dev);
+	if (dev->phy.work.work.func)
+		cancel_delayed_work_sync(&dev->phy.work);
 	cancel_work_sync(&wl->tx_work);
 	/* After the TX work, which arms it */
 	cancel_delayed_work_sync(&dev->ampdu_kick_work);
