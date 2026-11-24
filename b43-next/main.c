@@ -3248,15 +3248,8 @@ error:
 	return err;
 }
 
-static int b43_one_core_attach(struct b43_bus_dev *dev, struct b43_wl *wl);
-static void b43_one_core_detach(struct b43_bus_dev *dev);
-static int b43_rng_init(struct b43_wl *wl);
-
-static void b43_request_firmware(struct work_struct *work)
+static int b43_load_firmware(struct b43_wldev *dev)
 {
-	struct b43_wl *wl = container_of(work,
-			    struct b43_wl, firmware_load);
-	struct b43_wldev *dev = wl->current_dev;
 	struct b43_request_fw_context *ctx;
 	unsigned int i;
 	int err;
@@ -3264,13 +3257,13 @@ static void b43_request_firmware(struct work_struct *work)
 
 	ctx = kzalloc_obj(*ctx);
 	if (!ctx)
-		return;
+		return -ENOMEM;
 	ctx->dev = dev;
 
 	ctx->req_type = B43_FWTYPE_PROPRIETARY;
 	err = b43_try_request_fw(ctx);
 	if (!err)
-		goto start_ieee80211; /* Successfully loaded it. */
+		goto out; /* Successfully loaded it. */
 	/* Was fw version known? */
 	if (ctx->fatal_failure)
 		goto out;
@@ -3279,7 +3272,7 @@ static void b43_request_firmware(struct work_struct *work)
 	ctx->req_type = B43_FWTYPE_OPENSOURCE;
 	err = b43_try_request_fw(ctx);
 	if (!err)
-		goto start_ieee80211; /* Successfully loaded it. */
+		goto out; /* Successfully loaded it. */
 	if(ctx->fatal_failure)
 		goto out;
 
@@ -3290,9 +3283,27 @@ static void b43_request_firmware(struct work_struct *work)
 			b43err(dev->wl, "%s", errmsg);
 	}
 	b43_print_fw_helptext(dev->wl, 1);
-	goto out;
 
-start_ieee80211:
+out:
+	kfree(ctx);
+	return err;
+}
+
+static int b43_one_core_attach(struct b43_bus_dev *dev, struct b43_wl *wl);
+static void b43_one_core_detach(struct b43_bus_dev *dev);
+static int b43_rng_init(struct b43_wl *wl);
+
+static void b43_request_firmware(struct work_struct *work)
+{
+	struct b43_wl *wl = container_of(work,
+			    struct b43_wl, firmware_load);
+	struct b43_wldev *dev = wl->current_dev;
+	int err;
+
+	err = b43_load_firmware(dev);
+	if (err)
+		return;
+
 	/* mac80211 needs four queues for HT */
 	wl->hw->queues = B43_QOS_QUEUE_NUM;
 	if (!modparam_qos || dev->fw.opensource)
@@ -3300,15 +3311,12 @@ start_ieee80211:
 
 	err = ieee80211_register_hw(wl->hw);
 	if (err)
-		goto out;
+		return;
 	wl->hw_registered = true;
 	b43_leds_register(wl->current_dev);
 
 	/* Register HW RNG driver */
 	b43_rng_init(wl);
-
-out:
-	kfree(ctx);
 }
 
 static int b43_upload_microcode(struct b43_wldev *dev)
