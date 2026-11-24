@@ -924,23 +924,6 @@ enum b43_firmware_file_type {
 	B43_NR_FWTYPES,
 };
 
-/* Context data for fetching firmware. */
-struct b43_request_fw_context {
-	/* The device we are requesting the fw for. */
-	struct b43_wldev *dev;
-	/* a pointer to the firmware object */
-	const struct firmware *blob;
-	/* The type of firmware to request. */
-	enum b43_firmware_file_type req_type;
-	/* Error messages for each firmware type. */
-	char errors[B43_NR_FWTYPES][128];
-	/* Temporary buffer for storing the firmware name. */
-	char fwname[64];
-	/* A fatal error occurred while requesting. Firmware request
-	 * can not continue, as any other request will also fail. */
-	int fatal_failure;
-};
-
 /* In-memory representation of a cached microcode file. */
 struct b43_firmware_file {
 	const char *filename;
