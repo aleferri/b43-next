@@ -1251,8 +1251,12 @@ static int b43_phy_ht_set_channel(struct b43_wldev *dev,
 		chent_r2059 = b43_phy_ht_get_channeltab_e_r2059(dev,
 				b43_is_40mhz(dev) ? phy->chandef->center_freq1 :
 						    channel->center_freq);
-		if (!chent_r2059)
+		if (!chent_r2059) {
+			b43err(dev->wl, "HT-PHY: no radio 2059 entry for %u MHz\n",
+			       b43_is_40mhz(dev) ? phy->chandef->center_freq1 :
+						   channel->center_freq);
 			return -ESRCH;
+		}
 	} else {
 		return -ESRCH;
 	}
