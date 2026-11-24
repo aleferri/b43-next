@@ -3827,7 +3827,12 @@ static void b43_adjust_opmode(struct b43_wldev *dev)
 
 	if (wl->filter_flags & FIF_CONTROL)
 		ctl |= B43_MACCTL_KEEP_CTL;
-	if ((wl->filter_flags & FIF_FCSFAIL) || b43_nphy_ht_enabled(dev))
+	/*
+	 * A mesh point runs the microcode as an AP, which drops a mesh peer's
+	 * group-addressed data (from-DS set) unless bad frames are kept.
+	 */
+	if ((wl->filter_flags & FIF_FCSFAIL) || b43_nphy_ht_enabled(dev) ||
+	    b43_is_mode(wl, NL80211_IFTYPE_MESH_POINT))
 		ctl |= B43_MACCTL_KEEP_BAD;
 	if (wl->filter_flags & FIF_PLCPFAIL)
 		ctl |= B43_MACCTL_KEEP_BADPLCP;
