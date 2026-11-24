@@ -3839,6 +3839,13 @@ static void b43_adjust_opmode(struct b43_wldev *dev)
 	if (wl->filter_flags & FIF_BCN_PRBRESP_PROMISC)
 		ctl |= B43_MACCTL_BEACPROMISC;
 	/*
+	 * Frames of other BSSes and control frames not addressed to us, as
+	 * FIF_PROMISC_IN_BSS asked for before mac80211 folded it into
+	 * FIF_OTHER_BSS.
+	 */
+	if (wl->filter_flags & FIF_OTHER_BSS)
+		ctl |= B43_MACCTL_PROMISC;
+	/*
 	 * The AC and HT cores' stock driver runs an AP with beacon
 	 * promiscuity on (MACCONTROL 0x0416040x at the bus on every board
 	 * captured, the R6400 v1 too); it sets it wherever an AP is active on
