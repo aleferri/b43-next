@@ -42,6 +42,7 @@
 #include "phy_ac.h"
 #include "dma.h"
 #include "pio.h"
+#include "ps.h"
 #include <linux/ktime.h>
 #include <linux/unaligned.h>
 

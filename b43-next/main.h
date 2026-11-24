@@ -101,14 +101,10 @@ void b43_generate_noise_sample(struct b43_wldev *dev);
 void b43_noise_pwr_report(struct b43_wldev *dev, const u32 *pwr,
 			  unsigned int cores);
 
-#define B43_PS_ENABLED	(1 << 0)	/* Force enable hardware power saving */
-#define B43_PS_DISABLED	(1 << 1)	/* Force disable hardware power saving */
-#define B43_PS_AWAKE	(1 << 2)	/* Force device awake */
-#define B43_PS_ASLEEP	(1 << 3)	/* Force device asleep */
-void b43_power_saving_ctl_bits(struct b43_wldev *dev, unsigned int ps_flags);
-void b43_ps_rx(struct b43_wldev *dev, struct sk_buff *skb);
-void b43_ps_tx_status(struct b43_wldev *dev, struct sk_buff *skb, bool acked);
-void b43_tx_update_hwps(struct b43_wldev *dev, struct sk_buff *skb);
+bool b43_tx_empty(struct b43_wldev *dev);
+void b43_op_tx(struct ieee80211_hw *hw,
+	       struct ieee80211_tx_control *control,
+	       struct sk_buff *skb);
 
 void b43_wireless_core_phy_pll_reset(struct b43_wldev *dev);
 

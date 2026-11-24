@@ -23,6 +23,7 @@
 #include "phy_ac.h"
 #include "b43.h"
 #include "main.h"
+#include "ps.h"
 
 
 int b43_phy_allocate(struct b43_wldev *dev)

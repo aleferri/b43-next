@@ -15,6 +15,7 @@
 #include "ampdu.h"
 #include "dma.h"
 #include "main.h"
+#include "ps.h"
 #include "xmit.h"
 
 /* Driver retransmissions of an unacknowledged A-MPDU member; after
