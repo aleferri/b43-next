@@ -446,8 +446,9 @@ static void b43_op_bss_info_changed(struct ieee80211_hw *hw,
 				    u64 changed);
 
 /* mac80211 reports the channel and global limit in conf.power_level, and
- * the interface's user and AP (power constraint) limit in bss_conf.txpower. */
-static void b43_update_txpower(struct b43_wldev *dev)
+ * the interface's user and AP (power constraint) limit in bss_conf.txpower.
+ * @force checks the TX power even when the limit stays. */
+static void b43_update_txpower(struct b43_wldev *dev, bool force)
 {
 	struct b43_wl *wl = dev->wl;
 	int power = wl->hw->conf.power_level;
@@ -457,9 +458,11 @@ static void b43_update_txpower(struct b43_wldev *dev)
 				wl->vif->bss_conf.txpower;
 	if (power && power != dev->phy.desired_txpower) {
 		dev->phy.desired_txpower = power;
+		force = true;
+	}
+	if (force)
 		b43_phy_txpower_check(dev, B43_TXPWR_IGNORE_TIME |
 					   B43_TXPWR_IGNORE_TSSI);
-	}
 }
 
 static int b43_ratelimit(struct b43_wl *wl)
@@ -6086,8 +6089,12 @@ static int b43_op_config(struct ieee80211_hw *hw, int radio_idx, u32 changed)
 	dev->wl->radiotap_enabled = !!(conf->flags & IEEE80211_CONF_MONITOR);
 	b43_update_cck_rx(dev, NULL, false);
 
-	/* Adjust the desired TX power level. */
-	b43_update_txpower(dev);
+	/*
+	 * Adjust the desired TX power level. After an AC-PHY switch the
+	 * adjust also rewrites the beacon's PHY control word 1, which the down
+	 * of b43_phy_recycle() left with the previous channel's subband.
+	 */
+	b43_update_txpower(dev, ac && switched);
 
 	/* Antennas for RX and management frame TX. */
 	antenna = B43_ANTENNA_DEFAULT;
@@ -6210,7 +6217,7 @@ static void b43_op_bss_info_changed(struct ieee80211_hw *hw,
 	}
 
 	if (changed & BSS_CHANGED_TXPOWER)
-		b43_update_txpower(dev);
+		b43_update_txpower(dev, false);
 
 	b43_mac_suspend(dev);
 
