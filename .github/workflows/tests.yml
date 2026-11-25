@@ -42,7 +42,13 @@ jobs:
           scripts/config --module B43
           make -j4 olddefconfig modules_prepare
       - run: make -C test/txhdr check
-      - run: test/phy_ht/run.sh
+      - name: phy_ht
+        run: |
+          test/linked.sh TRACES bcm4331-rev2/r6400v1
+          test/linked.sh TRACE_TOOLS src
+          make -C test/phy_ht ht-trace
+          test/phy_ht/check.sh
+          test/phy_ht/gates.sh --min-block 8 --gap-tol 2
       - name: phy_n
         run: |
           test/linked.sh TRACES bcm43217-rev0/rt-ac56u
