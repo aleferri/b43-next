@@ -317,6 +317,13 @@ struct b43_phy_ac_txpwr_limits {
 #define B43_PHY_AC_CHANSPEC_BW80		0x2000
 #define B43_PHY_AC_CHANSPEC_BAND_5G		0xc000
 
+/* The primary's position in the block, the subband of PHY control word 1. */
+static inline u16 b43_phy_ac_chanspec_sb(u16 chanspec)
+{
+	return (chanspec & B43_PHY_AC_CHANSPEC_SB_MASK) >>
+	       B43_PHY_AC_CHANSPEC_SB_SHIFT;
+}
+
 void b43_phy_ac_write_chanspec(struct b43_wldev *dev);
 
 /* MAC bandwidth register, written when the operating width changes. */

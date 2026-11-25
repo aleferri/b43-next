@@ -60,7 +60,7 @@ void b43_test_mac_reset(void);
 
 /* The PHY's share of core writes, defined in phy_ac_test.c. */
 u16 b43_phy_ac_bss_cc(struct b43_wldev *dev);
-u16 b43_phy_ac_beacon_pwr_offset(struct b43_wldev *dev);
+u16 b43_phy_ac_bss_beacon_phyctl1(struct b43_wldev *dev);
 void b43_phy_ac_prb_rsp_plcp_pass(struct b43_wldev *dev, unsigned int ssid_len);
 
 #endif

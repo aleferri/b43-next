@@ -29,9 +29,9 @@ u16 b43_phy_ac_bss_cc(struct b43_wldev *dev)
 }
 
 /* shm 0x00ce of the BSS configuration, at the setup site. */
-u16 b43_phy_ac_beacon_pwr_offset(struct b43_wldev *dev)
+u16 b43_phy_ac_bss_beacon_phyctl1(struct b43_wldev *dev)
 {
-	return b43_phy_ac_beacon_pwr_offset_at(dev, B43_PHY_AC_CHAIN_SETUP);
+	return b43_phy_ac_beacon_phyctl1(dev, B43_PHY_AC_CHAIN_SETUP);
 }
 
 /*

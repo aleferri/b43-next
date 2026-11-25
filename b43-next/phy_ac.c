@@ -1859,9 +1859,6 @@ static void b43_phy_ac_prb_rsp_rate_po(struct b43_wldev *dev,
  * Verified on the 43 cold segments: it equals the 6 Mbit/s per-rate field on
  * 37, and the other six are exactly the 40 and 80 MHz ones where the 20 MHz
  * and operating rows differ. The legacy limit applies here too.
- *
- * The stock driver overlays a field masked 0x700, left at zero here: no
- * capture shows the cell above 0x100, so its meaning is unknown.
  */
 static u16 b43_phy_ac_beacon_pwr_offset_at(struct b43_wldev *dev,
 					   enum b43_phy_ac_chain_site site)
@@ -1891,6 +1888,17 @@ static u16 b43_phy_ac_beacon_pwr_offset_at(struct b43_wldev *dev,
 }
 
 /*
+ * shm 0x00ce, the beacon's PHY control word 1: its power offset above the
+ * primary's subband, as b43_txhdr_ac_legacy() fills a frame's.
+ */
+static u16 b43_phy_ac_beacon_phyctl1(struct b43_wldev *dev,
+				     enum b43_phy_ac_chain_site site)
+{
+	return b43_phy_ac_beacon_pwr_offset_at(dev, site) |
+	       b43_phy_ac_chanspec_sb(dev->phy.ac->chanspec);
+}
+
+/*
  * The beacon's rate class, from the template writer: on 2.4 GHz a CCK
  * beacon's power offset is the 1 Mbit/s field, rewritten here when the
  * class changes the field.
@@ -1904,7 +1912,7 @@ static void b43_phy_ac_op_beacon_rate_set(struct b43_wldev *dev, bool cck)
 	ac->beacon_cck = cck;
 	if (b43_ppr_has_cck(&ac->txpwr_spacing))
 		b43_shm_write16(dev, B43_SHM_SHARED, B43_SHM_SH_BEACPWROFF_AC,
-				b43_phy_ac_beacon_pwr_offset_at(dev,
+				b43_phy_ac_beacon_phyctl1(dev,
 						B43_PHY_AC_CHAIN_TXPWR));
 }
 
@@ -6291,7 +6299,7 @@ static void b43_phy_ac_txpwr_adjust(struct b43_wldev *dev)
 
 	b43_phy_ac_bss_cc_update(dev, B43_PHY_AC_CHAIN_TXPWR);
 	b43_shm_write16(dev, B43_SHM_SHARED, B43_SHM_SH_BEACPWROFF_AC,
-			b43_phy_ac_beacon_pwr_offset_at(dev, B43_PHY_AC_CHAIN_TXPWR));
+			b43_phy_ac_beacon_phyctl1(dev, B43_PHY_AC_CHAIN_TXPWR));
 	b43_shm_write16(dev, B43_SHM_SHARED, 0x00d0, 0x0000);
 
 	/* Second pass of the twelve-rate loop. */
@@ -10503,7 +10511,7 @@ static void b43_phy_ac_down(struct b43_wldev *dev)
 	 */
 	b43_phy_ac_bss_cc_update(dev, B43_PHY_AC_CHAIN_SETUP);
 	b43_shm_write16(dev, B43_SHM_SHARED, B43_SHM_SH_BEACPWROFF_AC,
-			b43_phy_ac_beacon_pwr_offset_at(dev, B43_PHY_AC_CHAIN_SETUP));
+			b43_phy_ac_beacon_phyctl1(dev, B43_PHY_AC_CHAIN_SETUP));
 	b43_shm_write16(dev, B43_SHM_SHARED, 0x00d0, 0x0000);
 	b43_phy_ac_chainmask_block(dev, B43_PHY_AC_CHAIN_SETUP);
 	b43_phy_ac_prb_rsp_rate_po(dev, B43_PHY_AC_CHAIN_SETUP);

@@ -117,8 +117,9 @@ word whose eight nibbles all differ, which fixes every row).
   (0xd0 at 56, 0xe0 at 60, 0xe8 at 62, 0xf0 at 64, 0xf8 from 66). The one
   exception is the D6220's UNII-3, `maxp5ga` 0, where the vendor writes 0xf8
   and the rule gives 0.
-- `0x00ce`, the beacon power offset (`b43_phy_ac_beacon_pwr_offset()`), has the
-  same form on the 20 MHz row, the legacy limit included.
+- `0x00ce`, the beacon's PHY control word 1, holds a power offset of the same
+  form on the 20 MHz row, the legacy limit included
+  (`b43_phy_ac_beacon_pwr_offset_at()`), above the primary's subband.
 - The block address is `2 * shm_read(DIRMAP + index * 2)`, as
   `brcms_b_rate_shm_offset()`; `M_RT_DIRMAP_A` = `0x01c0`, the index is the low
   nibble of the PLCP SIGNAL field.

@@ -735,8 +735,7 @@ static u16 b43_txhdr_ac_cores(const struct b43_phy_ac *ac,
  */
 static u16 b43_txhdr_ac_subband(const struct b43_phy_ac *ac, unsigned int bw)
 {
-	return ((ac->chanspec & B43_PHY_AC_CHANSPEC_SB_MASK) >>
-		B43_PHY_AC_CHANSPEC_SB_SHIFT) >> bw;
+	return b43_phy_ac_chanspec_sb(ac->chanspec) >> bw;
 }
 
 /*
