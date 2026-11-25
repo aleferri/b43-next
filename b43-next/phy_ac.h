@@ -151,6 +151,16 @@ struct ieee80211_channel;
 #define B43_PHY_AC_STATE_CCA_RESET	0x0100	/* BBCFG bit 0x4000 (RSTCCA active) */
 #define B43_PHY_AC_STATE_AFE_OFF		0x0200	/* RF front-end powered down (enable_afe OFF); 0x1720 bit 9 */
 /*
+ * The PHY held for reconfiguration: the WAITED classifier alone and every
+ * core's clip detector frozen, with CCA out of reset. The channel setup and
+ * the calibrations run in it, most of them with the MAC suspended.
+ */
+#define B43_PHY_AC_STATE_HELD		(B43_PHY_AC_STATE_RX_WAITED | \
+					 B43_PHY_AC_STATE_CLIP_ALL_DIS)
+#define B43_PHY_AC_STATE_HELD_FORBID	(B43_PHY_AC_STATE_RX_CCK | \
+					 B43_PHY_AC_STATE_RX_OFDM | \
+					 B43_PHY_AC_STATE_CCA_RESET)
+/*
  * First bring-up. b43_phy_init() clears phy->do_full_init between ops->init
  * and set_channel, so from set_channel on that flag is always false. op_init
  * latches it here while it is still valid, for the constants the stock driver
@@ -652,46 +662,34 @@ struct b43_phy_ac {
  * means no requirement). On mismatch log an error, set FAULTED and return;
  * once FAULTED every later REQUIRE returns at once, so a broken invariant
  * does not cascade into the hardware. REQUIRE() is for void functions,
- * REQUIRE_RET() for the others; `dev` is evaluated more than once.
+ * REQUIRE_RET() for the others.
  *
  * STATE_PHY_RUN mirrors BBCFG[15] for annotate_enables.py; no captured op
  * touches that bit and nothing sets it, so it must not appear in `want` or
- * `forbid`. STATE_MAC_EN is not stored but read at check time from the
- * core's dev->mac_suspended.
+ * `forbid`. STATE_MAC_EN is read at check time from the core's
+ * dev->mac_suspended.
  */
 #define b43_phy_ac_status(dev)						\
 	((dev)->phy.ac->status_mask |					\
 	 ((dev)->mac_suspended == 0 ? B43_PHY_AC_STATE_MAC_EN : 0))
 
+bool b43_phy_ac_require_failed(struct b43_wldev *dev, u16 want, u16 forbid,
+			       const char *func);
+
 #define B43_PHY_AC_REQUIRE(dev, want, forbid) do {			\
-	struct b43_phy_ac *__ac = (dev)->phy.ac;			\
-	u16 __sm = b43_phy_ac_status(dev);				\
-	if (__sm & B43_PHY_AC_STATE_FAULTED)				\
+	if (b43_phy_ac_require_failed((dev), (want), (forbid), __func__)) \
 		return;							\
-	if ((__sm & (want)) != (want) || (__sm & (forbid))) {		\
-		b43err((dev)->wl,					\
-		       "phy_ac: %s precondition failed: "		\
-		       "status=0x%04x want=0x%04x forbid=0x%04x\n",	\
-		       __func__, __sm, (u16)(want), (u16)(forbid));	\
-		__ac->status_mask |= B43_PHY_AC_STATE_FAULTED;		\
-		return;							\
-	}								\
 } while (0)
 
 #define B43_PHY_AC_REQUIRE_RET(dev, want, forbid, ret) do {		\
-	struct b43_phy_ac *__ac = (dev)->phy.ac;			\
-	u16 __sm = b43_phy_ac_status(dev);				\
-	if (__sm & B43_PHY_AC_STATE_FAULTED)				\
+	if (b43_phy_ac_require_failed((dev), (want), (forbid), __func__)) \
 		return (ret);						\
-	if ((__sm & (want)) != (want) || (__sm & (forbid))) {		\
-		b43err((dev)->wl,					\
-		       "phy_ac: %s precondition failed: "		\
-		       "status=0x%04x want=0x%04x forbid=0x%04x\n",	\
-		       __func__, __sm, (u16)(want), (u16)(forbid));	\
-		__ac->status_mask |= B43_PHY_AC_STATE_FAULTED;		\
-		return (ret);						\
-	}								\
 } while (0)
+
+/* The PHY held, and none of the @forbid bits set either */
+#define B43_PHY_AC_REQUIRE_HELD(dev, forbid)				\
+	B43_PHY_AC_REQUIRE(dev, B43_PHY_AC_STATE_HELD,			\
+			   B43_PHY_AC_STATE_HELD_FORBID | (forbid))
 
 extern const struct b43_phy_operations b43_phyops_ac;
 
@@ -725,9 +723,6 @@ enum {
 	AC_CAL_TXPWR_PDOFF,
 	AC_CAL_CRS_WRITTEN,
 };
-
-
-bool b43_phy_ac_force_rf_sequence(struct b43_wldev *dev, u16 rf_seq);
 
 void b43_radio_2069_init(struct b43_wldev *dev);
 
@@ -773,8 +768,6 @@ void b43_radio_2069_init(struct b43_wldev *dev);
 			__id, (u16)(__off + __i), __buf[__i]);		\
 } while (0)
 
-void b43_phy_ac_reset_cca(struct b43_wldev *dev);
-
 /*
  * One turn of the radar detector poll: mac_suspend, the levels of the two
  * pulse FIFOs (PHY 0x0251 and 0x0252), draining the non-empty ones,
@@ -784,47 +777,11 @@ void b43_phy_ac_reset_cca(struct b43_wldev *dev);
  */
 bool b43_phy_ac_radar_poll(struct b43_wldev *dev);
 
-/*
- * The steps of b43_phy_ac_calibrate(): idle TSSI, TX IQ/LO, LOFT LUT fill,
- * TX IQ, LOFT LUT reset, RX IQ, restore. Each is documented at its
- * definition.
- */
-void b43_phy_ac_cal_idle_tssi(struct b43_wldev *dev);
-void b43_phy_ac_cal_idle_tssi_suspended(struct b43_wldev *dev);
-void b43_phy_ac_txcal_setup(struct b43_wldev *dev);
-void b43_phy_ac_txiqlo_run(struct b43_wldev *dev);
-void b43_phy_ac_loft_lut_fill(struct b43_wldev *dev);
-
 /* Open-loop TX power; INDEX_DEFAULT is the captured fixed index. */
 #define B43_PHY_AC_TXPWR_INDEX_DEFAULT	0x40
 void b43_phy_ac_txpwr_by_index(struct b43_wldev *dev, u8 idx);
 
-void b43_phy_ac_txcal_restore(struct b43_wldev *dev);
-void b43_phy_ac_cal_chain_restore(struct b43_wldev *dev, bool with_tune);
-void b43_phy_ac_txiq_setup(struct b43_wldev *dev);
-void b43_phy_ac_txcal_gain_load(struct b43_wldev *dev);
-void b43_phy_ac_txiq_run(struct b43_wldev *dev);
-void b43_phy_ac_loft_lut_reset(struct b43_wldev *dev);
-void b43_phy_ac_rxiqcal_setup(struct b43_wldev *dev);
-void b43_phy_ac_rxgain_save(struct b43_wldev *dev);
-void b43_phy_ac_rxgain_set(struct b43_wldev *dev);
-void b43_phy_ac_loopback_radio_setup(struct b43_wldev *dev);
-void b43_phy_ac_rxiqcal_tone_load(struct b43_wldev *dev, int step);
-void b43_phy_ac_loopback_gain_measure(struct b43_wldev *dev);
-void b43_phy_ac_rxiqcal_tone_measure(struct b43_wldev *dev);
-void b43_phy_ac_rxiqcal_coeffs_write(struct b43_wldev *dev);
-void b43_phy_ac_loopback_radio_restore(struct b43_wldev *dev);
-void b43_phy_ac_rxgain_restore(struct b43_wldev *dev);
 void b43_phy_ac_cal_restore(struct b43_wldev *dev, u16 gate);
-
-/*
- * One round of the loopback gain search. @core_mask selects the round's
- * cores and @r734_vals is indexed by core number.
- */
-void b43_phy_ac_loopback_gain_apply(struct b43_wldev *dev,
-				     bool with_peek_preamble,
-				     u8 core_mask,
-				     const u16 r734_vals[3]);
 
 /*
  * One watchdog turn, once a second from the bring-up to the radio going
@@ -833,7 +790,6 @@ void b43_phy_ac_loopback_gain_apply(struct b43_wldev *dev,
  * its own counters; the caller only ticks it.
  */
 void b43_phy_ac_watchdog(struct b43_wldev *dev);
-bool b43_phy_ac_txpwr_recalc(struct b43_wldev *dev);
 
 /*
  * Completion of the noise sample, called by the core from its interrupt
