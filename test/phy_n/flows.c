@@ -3,7 +3,7 @@
  * Driver side of the N-PHY harness, built against the kernel headers like
  * the driver. It compiles phy_n.c into this file to reach its static
  * functions, puts a BCM43217 (N-PHY rev 17, radio 2057 rev 14) on a bus
- * whose accesses go to trace.c, and runs one flow. Nothing of b43 is
+ * whose accesses go to trace.cpp, and runs one flow. Nothing of b43 is
  * modified.
  */
 #include "n_trace.h"

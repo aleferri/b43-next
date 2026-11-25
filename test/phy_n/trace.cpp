@@ -12,11 +12,15 @@
  * With -o the flow's ops go to TRACE, for ../unit/cmp_skip.py --bus, and
  * the reads it took from the window are summed up on stderr.
  */
+#include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <regex.h>
 #include <unistd.h>
+#include <string>
+#include <unordered_map>
+#include <vector>
 #include "n_trace.h"
 
 #define PHY_VER		0x3e0
@@ -30,6 +34,7 @@
 
 #define MAX_OPS		65536
 #define LINE		256
+#define MAX_KEYS	16384
 
 struct op {
 	char text[LINE];
@@ -40,21 +45,15 @@ static int nref, nout, nlog;
 
 /* One queue of read values per register, in the capture's order. */
 struct queue {
-	char key[24];
-	unsigned int *vals;
-	int n, cap, pos;
+	std::vector<unsigned int> vals;
+	size_t pos = 0;
 };
 /* Per register, and per table cell: thousands */
-static struct queue queues[16384];
-static int nqueues, exhausted;
+static std::unordered_map<std::string, queue> queues;
+static int exhausted;
 
 /* Last value written per register, for a read the capture does not have. */
-struct cell {
-	char key[24];
-	unsigned int val;
-};
-static struct cell cells[16384];
-static int ncells;
+static std::unordered_map<std::string, unsigned int> cells;
 
 static unsigned int phy_addr, radio_addr;
 
@@ -107,74 +106,42 @@ static struct {
 } peek_save;
 static char phy_last;
 
-static struct queue *queue(const char *key, int create)
+static void push(const char *key, unsigned int v)
 {
-	int i;
+	auto [entry, inserted] = queues.try_emplace(key);
 
-	for (i = 0; i < nqueues; i++)
-		if (!strcmp(queues[i].key, key))
-			return &queues[i];
-	if (!create)
-		return NULL;
-	if (nqueues == (int)(sizeof(queues) / sizeof(queues[0]))) {
+	if (inserted && queues.size() > MAX_KEYS) {
 		fprintf(stderr, "too many read queues\n");
 		exit(2);
 	}
-	snprintf(queues[nqueues].key, sizeof(queues[0].key), "%s", key);
-	return &queues[nqueues++];
-}
-
-static void push(const char *key, unsigned int v)
-{
-	struct queue *q = queue(key, 1);
-
-	if (q->n == q->cap) {
-		q->cap = q->cap ? 2 * q->cap : 16;
-		q->vals = realloc(q->vals, q->cap * sizeof(*q->vals));
-		if (!q->vals)
-			exit(2);
-	}
-	q->vals[q->n++] = v;
+	entry->second.vals.push_back(v);
 }
 
 static void store(const char *key, unsigned int val)
 {
-	int i;
-
-	for (i = 0; i < ncells; i++)
-		if (!strcmp(cells[i].key, key))
-			break;
-	if (i == ncells) {
-		if (ncells == (int)(sizeof(cells) / sizeof(cells[0]))) {
-			fprintf(stderr, "too many cells\n");
-			exit(2);
-		}
-		snprintf(cells[ncells++].key, sizeof(cells[0].key), "%s", key);
+	if (cells.insert_or_assign(key, val).second && cells.size() > MAX_KEYS) {
+		fprintf(stderr, "too many cells\n");
+		exit(2);
 	}
-	cells[i].val = val;
 }
 
 static unsigned int serve(const char *key)
 {
-	struct queue *q = queue(key, 0);
-	int i;
+	if (!peek) {
+		auto entry = queues.find(key);
 
-	if (peek) {
-		for (i = 0; i < ncells; i++)
-			if (!strcmp(cells[i].key, key))
-				return cells[i].val;
-		return 0;
+		if (entry != queues.end()) {
+			auto &q = entry->second;
+			if (q.pos < q.vals.size())
+				return q.vals[q.pos++];
+		}
+		exhausted++;
+		if (getenv("N_DEBUG"))
+			fprintf(stderr, "read past the window: %s (op %d)\n", key, nout + 1);
 	}
 
-	if (q && q->pos < q->n)
-		return q->vals[q->pos++];
-	exhausted++;
-	if (getenv("N_DEBUG"))
-		fprintf(stderr, "read past the window: %s (op %d)\n", key, nout + 1);
-	for (i = 0; i < ncells; i++)
-		if (!strcmp(cells[i].key, key))
-			return cells[i].val;
-	return 0;
+	auto entry = cells.find(key);
+	return entry == cells.end() ? 0 : entry->second;
 }
 
 static void emit(const char *fmt, const char *cls, unsigned int a,
@@ -378,7 +345,7 @@ static void load_syms(void)
 		if (sscanf(line, "%lx %c %63s", &a, &t, name) != 3 ||
 		    (t != 't' && t != 'T'))
 			continue;
-		syms = realloc(syms, (nsyms + 1) * sizeof(*syms));
+		syms = static_cast<struct sym *>(realloc(syms, (nsyms + 1) * sizeof(*syms)));
 		syms[nsyms].addr = a;
 		snprintf(syms[nsyms++].name, sizeof(syms[0].name), "%s", name);
 	}
@@ -444,8 +411,7 @@ void n_report(const char *line)
 }
 
 /* The kernel's string formatting, for the driver side: libc's */
-#include <stdarg.h>
-int vscnprintf(char *buf, size_t size, const char *fmt, va_list args)
+extern "C" int vscnprintf(char *buf, size_t size, const char *fmt, va_list args)
 {
 	int n;
 
@@ -455,7 +421,7 @@ int vscnprintf(char *buf, size_t size, const char *fmt, va_list args)
 	return n < 0 ? 0 : ((size_t)n >= size ? (int)size - 1 : n);
 }
 
-int scnprintf(char *buf, size_t size, const char *fmt, ...)
+extern "C" int scnprintf(char *buf, size_t size, const char *fmt, ...)
 {
 	va_list ap;
 	int n;
@@ -607,7 +573,8 @@ int main(int argc, char **argv)
 {
 	int i, verbose = argc > 5 && !strcmp(argv[5], "-v");
 	const char *trace = argc > 6 && !strcmp(argv[5], "-o") ? argv[6] : NULL;
-	int unread = 0, excepted = 0, r = 1;
+	size_t unread = 0;
+	int excepted = 0, r = 1;
 
 	if (argc < 5) {
 		fprintf(stderr, "usage: %s FLOW OPS FIRST LAST [-v]\n", argv[0]);
@@ -620,8 +587,8 @@ int main(int argc, char **argv)
 		fprintf(stderr, "unknown flow %s\n", argv[1]);
 		return 2;
 	}
-	for (i = 0; i < nqueues; i++)
-		unread += queues[i].n - queues[i].pos;
+	for (const auto &entry : queues)
+		unread += entry.second.vals.size() - entry.second.pos;
 
 	if (verbose)
 		for (i = 0; i < nout; i++)
@@ -638,7 +605,7 @@ int main(int argc, char **argv)
 				out[i].text);
 		fclose(f);
 		fprintf(stderr, "%d ops; reads past the window %d, window reads "
-			"not taken %d, b43 messages %d, radio accesses through "
+			"not taken %zu, b43 messages %d, radio accesses through "
 			"0x3f6/0x3fa %d\n", nout, exhausted, unread, nlog,
 			old_radio);
 		for (i = 0; i < ncore; i++)
@@ -665,7 +632,7 @@ int main(int argc, char **argv)
 	if (i < nref || i < nout)
 		printf("     wl: %s\n     b43: %s\n", i < nref ? ref[i].text : "(end)",
 		       i < nout ? out[i].text : "(end)");
-	printf("     reads past the capture %d, capture reads not taken %d, "
+	printf("     reads past the capture %d, capture reads not taken %zu, "
 	       "b43 messages %d\n", exhausted, unread, nlog);
 	return 1;
 }

@@ -1,10 +1,14 @@
 /* SPDX-License-Identifier: GPL-2.0 */
 /*
  * What the driver side (flows.c, built against the kernel headers) and the
- * user side (trace.c, built against libc) share: plain C types only.
+ * user side (trace.cpp) share: plain C types only.
  */
 #ifndef N_TRACE_H
 #define N_TRACE_H
+
+#ifdef __cplusplus
+extern "C" {
+#endif
 
 unsigned short n_mmio_read16(unsigned short offset);
 void n_mmio_write16(unsigned short offset, unsigned short value);
@@ -33,5 +37,9 @@ void n_core(const char *fn);
 
 /* Driver side: run one flow; nonzero if the name is unknown. */
 int n_run_flow(const char *name);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif
