@@ -129,7 +129,8 @@ for c in $caps; do
 				HT_TX_GAIN_IDX=$gain HT_WD_TURNS=$turns HT_GLITCH_HIGH=$glitch \
 				HT_WD_TICK0=$tick0 HT_RCCAL0=$rc0 \
 				HT_RCCAL1=$rc1 HT_RCCAL2=$rc2 HT_T25=$t25 HT_T25B=$t25b \
-				./ht-trace ap_start "$ops" "$a" "$z" -o "$T/$c.$seg.trace" 2>/dev/null
+				./ht-trace ap_start "$ops" "$a" "$z" -o "$T/$c.$seg.trace" \
+				2>/dev/null || exit 1
 			python3 ../unit/cmp_skip.py "$ops" "$T/$c.$seg.trace" "$a:$z" \
 				--board r6400v1 --bus $B | grep -A2 '^grezzo'
 			grep -E "$PHYSEL" "$T/$c.$seg.trace" > "$T/$c.$seg.phy.trace"
@@ -138,5 +139,5 @@ for c in $caps; do
 				sed '1s/^grezzo       /PHY+radio+MAC/'
 		fi
 		before=$ch gain=10
-	done
+	done || exit 1
 done
