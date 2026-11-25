@@ -552,6 +552,12 @@ static int load(const char *path, long first, long last)
 		unsigned int a, v;
 		long n;
 
+		r = strchr(line, '#');
+		if (!r)
+			continue;
+		n = strtol(r + 1, NULL, 10);
+		if ((n < first || n > last) && !strchr(r + 1, '#'))
+			continue;
 		line[strcspn(line, "\n")] = 0;
 		if (regexec(&re, line, 4, m, 0))
 			continue;
