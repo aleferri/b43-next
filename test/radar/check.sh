@@ -13,6 +13,8 @@
 #    each with 30 % of the pulses missed in each FIFO, all radars with every
 #    region's types matched and with their own region's (replay -r), and 60 s
 #    of random pulses at 20-2000 a second, none in any region (synth.py).
+#
+#   check.sh [synth]      synth: the synthetic bursts only, without captures
 set -eu
 cd "$(dirname "$0")"
 REPO=../..
@@ -20,25 +22,17 @@ REPO=../..
 W=build
 rm -rf "$W"
 mkdir -p "$W/fifo" "$W/agc"
-unzip -q -d "$W/fifo" "$TRACES/rt-ac66u-b1/radar-fifo.zip" \
-	'runs-wl/std-*.txt' 'runs-b43/idle5s.txt' 'runs-b43/noise10.txt'
-unzip -q -d "$W/agc" "$TRACES/vd625-agcombo/bss-up.zip"
-unzip -q -d "$W/widths" "$TRACES/rt-ac66u-b1/radar-widths.zip" 'fifo-*'
-python3 -I agcombo.py "$W/agc/bss-up-ch100-bw80.txt" > "$W/agcombo.txt"
 MISS=0.3 SEEDS=100 python3 -I synth.py "$W/syn"
 
 fail=0
 expect() {	# expect radar|none [-w MHz] [-r region] FILE...
 	want=$1; shift
-	./replay "$@" | grep -v '^  poll' | while read -r f got _; do
+	{ ./replay "$@" || echo replay; } | grep -v '^  poll' | while read -r f got _; do
 		case $want:$got in
-		radar:none | none:[!n]*) echo "FAIL $f $got" >&2; echo x ;;
+		radar:none | none:[!n]* | *:) echo "FAIL $f $got" >&2; echo x ;;
 		esac
 	done | grep -c '^x' || true
 }
-n=$(expect radar "$W"/fifo/runs-wl/std-*.txt); fail=$((fail + n))
-n=$(expect none "$W/fifo/runs-b43/idle5s.txt" "$W/fifo/runs-b43/noise10.txt" \
-	"$W/agcombo.txt"); fail=$((fail + n))
 # Every type with all regions' types matched, and with only its region's.
 for t in fcc0 fcc1 fcc2 fcc3 fcc4 fcc5 fcc6 etsi1 etsi2 etsi3 etsi4 etsi5 etsi6; do
 	n=$(expect radar "$W"/syn/$t-*.txt); fail=$((fail + n))
@@ -47,6 +41,19 @@ done
 for r in all fcc etsi; do
 	n=$(expect none -r $r "$W"/syn/noise-*.txt "$W"/syn/long-*.txt); fail=$((fail + n))
 done
+if [ "${1:-}" = synth ]; then
+	echo "$fail failed"
+	exit $((fail != 0))
+fi
+
+unzip -q -d "$W/fifo" "$TRACES/rt-ac66u-b1/radar-fifo.zip" \
+	'runs-wl/std-*.txt' 'runs-b43/idle5s.txt' 'runs-b43/noise10.txt'
+unzip -q -d "$W/agc" "$TRACES/vd625-agcombo/bss-up.zip"
+unzip -q -d "$W/widths" "$TRACES/rt-ac66u-b1/radar-widths.zip" 'fifo-*'
+python3 -I agcombo.py "$W/agc/bss-up-ch100-bw80.txt" > "$W/agcombo.txt"
+n=$(expect radar "$W"/fifo/runs-wl/std-*.txt); fail=$((fail + n))
+n=$(expect none "$W/fifo/runs-b43/idle5s.txt" "$W/fifo/runs-b43/noise10.txt" \
+	"$W/agcombo.txt"); fail=$((fail + n))
 # 20 and 40 MHz (radar-widths.zip).
 for w in 20 40; do
 	F=$W/widths/fifo-$w/w$w
