@@ -23,6 +23,7 @@ Uso: cmp_skip.py vendor.txt test.txt lo:hi --min-block N --gap-tol M
      [--board agcombo] [--bus] [--verbose]
 """
 import argparse
+from functools import lru_cache
 import re
 import importlib.util
 import os
@@ -390,6 +391,7 @@ def chiavi(ops):
     return out
 
 
+@lru_cache(maxsize=32768)
 def ident(o):
     """Identita' di un'op senza il valore: classe e registro, o la sola classe
     per quelle che un registro non lo hanno (MAC.MCTRL, GPIO.*)."""
@@ -428,7 +430,7 @@ def _pair_gap(kv, kt, V, a, b, c, d):
     return jolly, wrong, (b - a) - paired, (d - c) - paired
 
 
-def segments(V, T, C, bus, anchor=False):
+def segments(V, T, ops_equal, bus, anchor=False):
     """L'allineamento come sequenza di tratti, nell'ordine dei due flussi.
 
     ('run', n): n coppie di op corrispondenti, consecutive su entrambi i lati.
@@ -457,8 +459,8 @@ def segments(V, T, C, bus, anchor=False):
         # (test/integration), o l'harness contro una cattura al bus
         # (reverse-tools/mmio2ops.py). Il lato bus non ha ne' jolly ne'
         # maschere, quindi provare i due versi non allarga il confronto.
-        return (C.ops_equal(v.replace('val=*', 'val=UNDEFINED'), t) or
-                C.ops_equal(t.replace('val=*', 'val=UNDEFINED'), v))
+        return (ops_equal(v.replace('val=*', 'val=UNDEFINED'), t) or
+                ops_equal(t.replace('val=*', 'val=UNDEFINED'), v))
 
     kv, kt = (None, None) if bus else (chiavi(V), chiavi(T))
     av, at = ([ident(o) for o in V], [ident(o) for o in T]) if bus else (V, T)
@@ -598,6 +600,7 @@ def main():
     if off > 0:
         t = t[off:]
 
+    @lru_cache(maxsize=32768)
     def canon(o):
         o = C.RET_SUFFIX.sub('', o)
         if 'val=UNDEFINED' in o or C.val_nondet(o):
@@ -620,8 +623,10 @@ def main():
     if args.rmw:
         V0, T = fold_rmw(V0), fold_rmw(T)
 
+    ops_equal = lru_cache(maxsize=32768)(C.ops_equal)
+
     def stats(V, T):
-        segs, diff = segments(V, T, C, args.bus, args.anchor_values)
+        segs, diff = segments(V, T, ops_equal, args.bus, args.anchor_values)
         eq, nblk, lost, tol = score(segs, args.min_block, args.gap_tol)
         cls = [sum(sg[i] for sg in segs if sg[0] == 'gap') for i in (4, 5, 6)]
         return eq, nblk, diff, (lost, tol), cls
