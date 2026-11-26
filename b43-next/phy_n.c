@@ -9469,7 +9469,7 @@ static void b43_nphy_op_noise_sample_done(struct b43_wldev *dev)
 
 static void b43_nphy_op_pwork_15sec(struct b43_wldev *dev)
 {
-	if (time_after_eq(jiffies, dev->phy.n->perical_last + 120 * HZ))
+	if (time_after_eq(jiffies, dev->phy.n->perical_last + secs_to_jiffies(120)))
 		b43_nphy_perical(dev, B43_NPHY_PERICAL_WATCHDOG);
 	b43_nphy_txpwr_papd_cal(dev);
 }

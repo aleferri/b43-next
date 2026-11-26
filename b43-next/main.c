@@ -2518,7 +2518,7 @@ static __printf(2, 3) void b43_ac_state_print(struct b43_wl *wl,
 	va_end(args);
 }
 
-#define B43_AC_TXERR_DUMP_INTERVAL	(60 * HZ)
+#define B43_AC_TXERR_DUMP_INTERVAL	secs_to_jiffies(60)
 /* Words of a rate block: the direct maps point ten words apart. */
 #define B43_AC_RT_BLOCK_WORDS		10
 
@@ -4523,7 +4523,7 @@ out_requeue:
 	else if (b43_periodic_ticks_per_15sec(dev) > 1)
 		delay = HZ;
 	else
-		delay = round_jiffies_relative(HZ * 15);
+		delay = round_jiffies_relative(secs_to_jiffies(15));
 	ieee80211_queue_delayed_work(wl->hw, &dev->periodic_work, delay);
 out:
 	mutex_unlock(&wl->mutex);

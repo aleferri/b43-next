@@ -531,7 +531,7 @@ void b43_phy_txpower_check(struct b43_wldev *dev, unsigned int flags)
 			return; /* Not yet */
 	}
 	/* The next check will be needed in two seconds, or later. */
-	phy->next_txpwr_check_time = round_jiffies(now + (HZ * 2));
+	phy->next_txpwr_check_time = round_jiffies(now + secs_to_jiffies(2));
 
 	if ((dev->dev->board_vendor == SSBN_BOARDVENDOR_BCM) &&
 	    (dev->dev->board_type == SSBN_BOARD_BU4306))

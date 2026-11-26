@@ -66,9 +66,9 @@ struct b43_txpower_lo_control {
  * Timeouts must be multiple of 15 seconds. To make sure
  * the item really expired when the 15 second timer hits, we
  * subtract two additional seconds from the timeout. */
-#define B43_LO_CALIB_EXPIRE	(HZ * (30 - 2))
-#define B43_LO_PWRVEC_EXPIRE	(HZ * (30 - 2))
-#define B43_LO_TXCTL_EXPIRE	(HZ * (180 - 4))
+#define B43_LO_CALIB_EXPIRE	secs_to_jiffies(30 - 2)
+#define B43_LO_PWRVEC_EXPIRE	secs_to_jiffies(30 - 2)
+#define B43_LO_TXCTL_EXPIRE	secs_to_jiffies(180 - 4)
 
 
 /* Adjust the Local Oscillator to the saved attenuation
