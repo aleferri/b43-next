@@ -47,6 +47,7 @@
 #include "dma.h"
 #include "pio.h"
 #include "sysfs.h"
+#include "rates.h"
 #include "xmit.h"
 #include "radar_ac.h"
 #include "beacon.h"
@@ -845,12 +846,8 @@ static void b43_amt_write(struct b43_wldev *dev, u16 index, const u8 *addr,
 	old_hi = b43_shm_read32(dev, B43_SHM_RCMTA, (index * 2) + 1);
 
 	if (addr) {
-		lo = addr[0];
-		lo |= ((u32)addr[1] << 8);
-		lo |= ((u32)addr[2] << 16);
-		lo |= ((u32)addr[3] << 24);
-		hi = addr[4];
-		hi |= ((u32)addr[5] << 8);
+		lo = get_unaligned_le32(addr);
+		hi = get_unaligned_le16(addr + 4);
 	}
 
 	if (flags == B43_AMT_KEEP_FLAGS)
@@ -922,10 +919,9 @@ static void b43_write_macaddr_template_ac(struct b43_wldev *dev, const u8 *mac)
 	};
 
 	b43_ram_seq_write(dev, &seq, B43_TPL_AC_MACADDR,
-			  (u32)mac[0] | (u32)mac[1] << 8 |
-			  (u32)mac[2] << 16 | (u32)mac[3] << 24);
+			  get_unaligned_le32(mac));
 	b43_ram_seq_write(dev, &seq, B43_TPL_AC_MACADDR + sizeof(u32),
-			  (u32)mac[4] | (u32)mac[5] << 8);
+			  get_unaligned_le16(mac + 4));
 }
 
 static void b43_write_mac_bssid_templates(struct b43_wldev *dev)
@@ -968,20 +964,11 @@ static void b43_write_mac_bssid_templates(struct b43_wldev *dev)
  * same packing b43_macfilter_set() uses for the MACFILTER port. */
 static void b43_shm_macaddr_set(struct b43_wldev *dev, const u8 *mac)
 {
-	static const u8 zero_addr[ETH_ALEN] = { 0 };
 	unsigned int i;
 
-	if (dev->phy.type != B43_PHYTYPE_AC)
-		return;
-	if (!mac)
-		mac = zero_addr;
-
-	for (i = 0; i < ETH_ALEN; i += 2) {
-		u16 data = mac[i] | (mac[i + 1] << 8);
-
-		b43_shm_write16(dev, B43_SHM_SHARED,
-				B43_SHM_SH_AC_MACADDR + i, data);
-	}
+	for (i = 0; i < ETH_ALEN; i += 2)
+		b43_shm_write16(dev, B43_SHM_SHARED, B43_SHM_SH_AC_MACADDR + i,
+				get_unaligned_le16(mac + i));
 }
 
 static u8 b43_txbf_txchain(struct b43_wldev *dev)
@@ -1021,11 +1008,11 @@ static void b43_txbf_write_slot(struct b43_wldev *dev, unsigned int slot)
 	b43_shm_write16(dev, B43_SHM_SHARED, b + 0x0a, 0x0002);
 	b43_shm_write16(dev, B43_SHM_SHARED, b + 0x0c, w0c);
 	b43_shm_write16(dev, B43_SHM_SHARED, b + 0x12,
-			l->addr[0] | l->addr[1] << 8);
+			get_unaligned_le16(l->addr));
 	b43_shm_write16(dev, B43_SHM_SHARED, b + 0x14,
-			l->addr[2] | l->addr[3] << 8);
+			get_unaligned_le16(l->addr + 2));
 	b43_shm_write16(dev, B43_SHM_SHARED, b + 0x16,
-			l->addr[4] | l->addr[5] << 8);
+			get_unaligned_le16(l->addr + 4));
 }
 
 /*
@@ -1212,9 +1199,9 @@ static void b43_mbss_shm_upload(struct b43_wldev *dev)
 		return;
 	}
 	b43_shm_write16(dev, B43_SHM_SHARED, B43_SHM_SH_MBSS_BASE,
-			m[0] | m[1] << 8);
+			get_unaligned_le16(m));
 	b43_shm_write16(dev, B43_SHM_SHARED, B43_SHM_SH_MBSS_BASE + 2,
-			m[2] | m[3] << 8);
+			get_unaligned_le16(m + 2));
 	b43_shm_write16(dev, B43_SHM_SHARED, B43_SHM_SH_MBSS_BASE + 4,
 			m[4] | (m[5] & ~mask) << 8);
 	b43_shm_write16(dev, B43_SHM_SHARED, B43_SHM_SH_MBSS_MASK, mask);
@@ -1238,9 +1225,10 @@ static void b43_upload_card_macaddress(struct b43_wldev *dev)
 	b43_mbss_shm_upload(dev);
 	b43_write_mac_bssid_templates(dev);
 	b43_macfilter_set(dev, B43_MACFILTER_SELF, dev->wl->mac_addr);
-	if (dev->phy.type == B43_PHYTYPE_AC)
+	if (dev->phy.type == B43_PHYTYPE_AC) {
 		b43_write_macaddr_template_ac(dev, dev->wl->mac_addr);
-	b43_shm_macaddr_set(dev, dev->wl->mac_addr);
+		b43_shm_macaddr_set(dev, dev->wl->mac_addr);
+	}
 }
 
 static void b43_set_slot_time(struct b43_wldev *dev, u16 slot_time)
@@ -1961,9 +1949,7 @@ void b43_wireless_core_reset(struct b43_wldev *dev, bool gmode)
 #define B43_TXST_AC_INTERMEDIATE	0x00000004
 #define B43_TXST_AC_PM_INDICATED	0x00000008
 #define B43_TXST_AC_SUPP		0x000000f0
-#define B43_TXST_AC_SUPP_SHIFT		4
 #define B43_TXST_AC_MPDUS		0x00007f00
-#define B43_TXST_AC_MPDUS_SHIFT		8
 #define B43_TXST_AC_ACKED		0x00008000
 
 /*
@@ -2012,13 +1998,13 @@ static bool b43_txstatus_read_ac(struct b43_wldev *dev,
 	stat->acked = !!(w[0] & B43_TXST_AC_ACKED);
 	stat->intermediate = !!(w[0] & B43_TXST_AC_INTERMEDIATE);
 	stat->pm_indicated = !!(w[0] & B43_TXST_AC_PM_INDICATED);
-	stat->supp_reason = (w[0] & B43_TXST_AC_SUPP) >> B43_TXST_AC_SUPP_SHIFT;
+	stat->supp_reason = FIELD_GET(B43_TXST_AC_SUPP, w[0]);
 	stat->frame_count = w[2] & 0xff;
 	stat->rate_tries[0] = w[2] & 0xff;
 	stat->rate_tries[1] = (w[2] >> 16) & 0xff;
 	stat->rate_tries[2] = w[3] & 0xff;
 	stat->rate_tries[3] = (w[3] >> 16) & 0xff;
-	stat->mpdus = (w[0] & B43_TXST_AC_MPDUS) >> B43_TXST_AC_MPDUS_SHIFT;
+	stat->mpdus = FIELD_GET(B43_TXST_AC_MPDUS, w[0]);
 	stat->mpdus_acked = ((w[2] >> 8) & 0xff) + ((w[2] >> 24) & 0xff) +
 			    ((w[3] >> 8) & 0xff) + ((w[3] >> 24) & 0xff);
 	stat->ba_ssn = w[1] & IEEE80211_MAX_SN;
@@ -2538,6 +2524,15 @@ static u16 b43_rate_map_slot(u16 hw_value, u16 *direct, u16 *basic)
 	*direct = B43_SHM_SH_OFDMDIRECT;
 	*basic = B43_SHM_SH_OFDMBASIC;
 	return b43_plcp_get_ratecode_ofdm(hw_value) & 0xF;
+}
+
+/* The byte offset of the rate block the direct map points a rate at. */
+u16 b43_rate_block(struct b43_wldev *dev, u16 hw_value)
+{
+	u16 direct, basic, slot;
+
+	slot = b43_rate_map_slot(hw_value, &direct, &basic);
+	return 2 * b43_shm_read16(dev, B43_SHM_SHARED, direct + 2 * slot);
 }
 
 /*
@@ -4085,15 +4080,6 @@ static void b43_aqm_init_rev42(struct b43_wldev *dev)
 }
 
 /*
- * Airtime of an OFDM frame of @len bytes at 5 GHz, preamble and SIGNAL
- * included, from the bits per symbol of its rate.
- */
-static u16 b43_ofdm_airtime(unsigned int len, unsigned int ndbps)
-{
-	return 20 + 4 * DIV_ROUND_UP(16 + 8 * len + 6, ndbps);
-}
-
-/*
  * What the AC cores' stock driver writes after the band initvals, the same
  * on the agcombo (7.14) and on the MacBookAir6,1 (6.30), where it repeats
  * on every band init:
@@ -4113,12 +4099,10 @@ static u16 b43_ofdm_airtime(unsigned int len, unsigned int ndbps)
 
 static void b43_bsinit_ac(struct b43_wldev *dev)
 {
-	static const struct {
-		u8 signal;
-		u8 ndbps;
-	} rates[] = {
-		{ 0xb, 24 }, { 0xf, 36 }, { 0xa, 48 }, { 0xe, 72 },
-		{ 0x9, 96 }, { 0xd, 144 }, { 0x8, 192 }, { 0xc, 216 },
+	static const u8 rates[] = {
+		B43_OFDM_RATE_6MB, B43_OFDM_RATE_9MB, B43_OFDM_RATE_12MB,
+		B43_OFDM_RATE_18MB, B43_OFDM_RATE_24MB, B43_OFDM_RATE_36MB,
+		B43_OFDM_RATE_48MB, B43_OFDM_RATE_54MB,
 	};
 	unsigned int i;
 
@@ -4128,25 +4112,21 @@ static void b43_bsinit_ac(struct b43_wldev *dev)
 	b43_shm_write16(dev, B43_SHM_SHARED, 0x17d4, 0x0100);
 
 	for (i = 0; i < ARRAY_SIZE(rates); i++) {
-		u16 block = 2 * b43_shm_read16(dev, B43_SHM_SHARED,
-					       B43_SHM_SH_OFDMDIRECT +
-					       2 * rates[i].signal);
+		u8 signal = b43_plcp_get_ratecode_ofdm(rates[i]);
+		u16 block = b43_rate_block(dev, rates[i]);
 
-		if (rates[i].signal == 0xf) {
+		if (rates[i] == B43_OFDM_RATE_9MB) {
 			b43_shm_write16(dev, B43_SHM_SHARED, block, 0x0014);
 			b43_shm_write16(dev, B43_SHM_SHARED, block + 2,
-					0x01c0 | rates[i].signal);
+					0x01c0 | signal);
 			b43_shm_write16(dev, B43_SHM_SHARED, block + 4, 0x0002);
 		}
 		b43_shm_write16(dev, B43_SHM_SHARED, block + B43_RT_ACK_TIME,
-				B43_SIFS_5GHZ +
-				b43_ofdm_airtime(14, rates[i].ndbps));
+				B43_SIFS_5GHZ + b43_ofdm_airtime(rates[i], 14));
 		b43_shm_write16(dev, B43_SHM_SHARED, block + B43_RT_BA_TIME,
-				B43_SIFS_5GHZ +
-				b43_ofdm_airtime(32, rates[i].ndbps));
+				B43_SIFS_5GHZ + b43_ofdm_airtime(rates[i], 32));
 		b43_shm_write16(dev, B43_SHM_SHARED, block + B43_RT_RTS_TIME,
-				B43_SIFS_5GHZ +
-				b43_ofdm_airtime(20, rates[i].ndbps));
+				B43_SIFS_5GHZ + b43_ofdm_airtime(rates[i], 20));
 	}
 }
 

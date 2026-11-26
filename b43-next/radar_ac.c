@@ -229,8 +229,7 @@ static bool b43_radar_fits(const struct b43_radar_type *t,
 			   const struct b43_radar_pulse *p,
 			   const struct b43_radar_pulse *q)
 {
-	u16 d = q->width > p->width ? q->width - p->width
-				    : p->width - q->width;
+	u16 d = abs_diff(q->width, p->width);
 
 	return q->width >= t->wmin && q->width <= t->wmax &&
 	       d <= 6 + p->width / 8;
@@ -255,7 +254,7 @@ static unsigned int b43_radar_train(const struct b43_radar *r,
 		k = (d + pri / 2) / pri;
 		if (!k || k == last)
 			continue;
-		off = d > k * pri ? d - k * pri : k * pri - d;
+		off = abs_diff(d, k * pri);
 		if (off > B43_RADAR_TOL + k * B43_RADAR_TOL_STEP)
 			continue;
 		if (!b43_radar_fits(t, p, q))

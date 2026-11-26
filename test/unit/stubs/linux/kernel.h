@@ -42,6 +42,7 @@ static inline void __clear_bit(unsigned long nr, unsigned long *addr)
 #define clamp(v, lo, hi) ((v) < (lo) ? (lo) : (v) > (hi) ? (hi) : (v))
 #define clamp_t(t, v, lo, hi) ((t)clamp((v), (lo), (hi)))
 #define abs(x) ((x) < 0 ? -(x) : (x))
+#define abs_diff(a, b) ((a) > (b) ? (a) - (b) : (b) - (a))
 
 #define INT_MAX		2147483647
 #define U8_MAX		255

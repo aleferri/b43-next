@@ -21,6 +21,7 @@ STUBS   := stubs
 AC_HDRS := $(addprefix $(SCRATCH)/,phy_ac.h tables_phy_ac.h radio_2069.h \
             ppr.h radar_ac.h fw_layout.h calstat.h qmath.h \
             calibrate.h)
+AC_HDRS += $(SCRATCH)/rates.h
 
 # We include our stubs FIRST (via -I) so kernel headers <linux/*.h> and
 # the b43 project headers resolve to our minimal versions. The copied AC-PHY
@@ -87,9 +88,17 @@ HOSTFLAGS = /^static const u16 b43_phy_ac_hostf_regs\[/ { cut = 1 } \
 	cut && /^static void b43_phy_ac_mhf_write\(/ { last = 1 } \
 	cut && last && /^\}/ { cut = 0 }
 
+# b43_mac_bw_set() is the capture's MAC.BW, which wrap.c emits for it, and
+# phy_ac.c calls it within its own object too: the copy declares it instead
+# of defining it, so that the call reaches the wrap.
+MACBW = /^static void b43_mac_bw_set\(/ { skip = 1; \
+	print "void b43_mac_bw_set(struct b43_wldev *dev, u32 bw);" } \
+	!skip { print } \
+	skip && /^\}/ { skip = 0 }
+
 $(SCRATCH)/phy_ac.c: $(B43)/phy_ac.c
 	@mkdir -p $(SCRATCH)
-	awk '$(call HOSTFLAGS,!cut)' $< > $@
+	awk '$(call HOSTFLAGS,!cut)' $< | awk '$(MACBW)' > $@
 
 $(SCRATCH)/phy_ac_hostflags.c: $(B43)/phy_ac.c
 	@mkdir -p $(SCRATCH)

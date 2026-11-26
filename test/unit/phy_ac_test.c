@@ -83,9 +83,9 @@ static void b43_phy_ac_prb_rsp_plcp(struct b43_wldev *dev, u16 len)
 	u32 tmp = (u32)(len & 0xfff) << 5;
 
 	for (i = 0; i < ARRAY_SIZE(ndbps); i++) {
-		u16 block = b43_phy_ac_rate_shm_offset(dev, i);
+		u16 block = b43_rate_block(dev, b43_phy_ac_ofdm_rates[i]);
 		u16 nsym = DIV_ROUND_UP(len * 8 + 22, ndbps[i]);
-		u16 plcp01 = (u16)((b43_phy_ac_ofdm_dirmap[i] | (tmp & 0xff)) |
+		u16 plcp01 = (u16)((b43_phy_ac_ofdm_slot(i) | (tmp & 0xff)) |
 				   ((tmp >> 8 & 0xff) << 8));
 
 		b43_shm_write16(dev, B43_SHM_SHARED,

@@ -42,6 +42,8 @@
 
 #include "b43.h"
 #include "phy_ac.h"
+#include "main.h"
+#include "rates.h"
 #include "test_harness.h"
 
 /* ============ write mirror (fallback for unscripted reads) ============ */
@@ -1512,6 +1514,25 @@ void b43_shm_write16(struct b43_wldev *dev, u16 routing, u16 offset, u16 val)
 	if (offset / 2 < MIRROR_SHM_WORDS)
 		mirror_shm[offset / 2] = val;
 	fprintf(trace(), "cpu1 OBJ.WR   addr=0x%04x val=0x%04x\n", offset, val);
+}
+
+/* ============ rate maps ============
+ * main.c's b43_rate_block(), which phy_ac.c calls: main.c is not built here.
+ * The direct map is read through the SHM wrap, so the read is in the trace
+ * as on the hardware.
+ */
+u16 b43_rate_block(struct b43_wldev *dev, u16 hw_value)
+{
+	u16 direct, slot;
+
+	if (b43_is_cck_rate(hw_value)) {
+		direct = B43_SHM_SH_CCKDIRECT;
+		slot = b43_plcp_get_ratecode_cck(hw_value) & 0xF;
+	} else {
+		direct = B43_SHM_SH_OFDMDIRECT;
+		slot = b43_plcp_get_ratecode_ofdm(hw_value) & 0xF;
+	}
+	return 2 * b43_shm_read16(dev, B43_SHM_SHARED, direct + 2 * slot);
 }
 
 /* ============ template RAM (TPL) ============

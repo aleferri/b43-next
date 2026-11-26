@@ -573,8 +573,7 @@ bool b43_pio_tx_empty(struct b43_wldev *dev) { return true; }
 /*
  * Non stubbati: stanno in xmit.c, che si compila. Erano qui quando xmit.c
  * non era nella lista, e tenerli darebbe "multiple definition".
- *   b43_handle_txstatus, b43_generate_plcp_hdr,
- *   b43_plcp_get_ratecode_cck, b43_plcp_get_ratecode_ofdm
+ *   b43_handle_txstatus, b43_generate_plcp_hdr
  */
 
 /*

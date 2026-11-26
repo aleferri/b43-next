@@ -41,15 +41,6 @@ enum ht_rssi_type {
 	HT_RSSI_TBD = 6,
 };
 
-/* The channel a 40 MHz block is centred on, the primary one at 20 MHz */
-static int b43_phy_ht_centre_chan(struct b43_wldev *dev)
-{
-	const struct cfg80211_chan_def *cd = dev->phy.chandef;
-	u32 f = b43_is_40mhz(dev) ? cd->center_freq1 : cd->chan->center_freq;
-
-	return f < 5000 ? (f - 2407) / 5 : (f - 5000) / 5;
-}
-
 /**************************************************
  * Radio 2059.
  **************************************************/
@@ -1164,7 +1155,7 @@ lna_done:
 					    2, 0, 0);
 	}
 	if (b43_is_40mhz(dev)) {
-		phy_ht->t25_off = t25_off40[b43_phy_ht_centre_chan(dev) % 4];
+		phy_ht->t25_off = t25_off40[b43_phy_center_channel(dev) % 4];
 		phy_ht->t25_off2 = phy_ht->t25_off - 0x41;
 	} else {
 		phy_ht->t25_off = t25_off[channel->hw_value % 4];
@@ -1912,19 +1903,19 @@ static void b43_phy_ht_op_pwork_1sec(struct b43_wldev *dev)
 }
 
 /*
- * The rate blocks wl gives a power offset, in its order: the low nibble of
- * the PLCP SIGNAL that indexes the CCK or OFDM direct map, and the rate's
- * index in its row of the PPR.
+ * The rate blocks wl gives a power offset, in its order, and the rate's index
+ * in its row of the PPR.
  */
 static const struct b43_phy_ht_rate_po_block {
-	bool cck;
-	u8 signal;
 	u8 rate;
+	u8 idx;
 } b43_phy_ht_rate_po_blocks[] = {
-	{ true, 0xa, 0 }, { true, 0x4, 1 }, { true, 0x7, 2 },
-	{ false, 0xb, 0 }, { false, 0xf, 1 }, { true, 0xe, 3 },
-	{ false, 0xa, 2 }, { false, 0xe, 3 }, { false, 0x9, 4 },
-	{ false, 0xd, 5 }, { false, 0x8, 6 }, { false, 0xc, 7 },
+	{ B43_CCK_RATE_1MB, 0 }, { B43_CCK_RATE_2MB, 1 },
+	{ B43_CCK_RATE_5MB, 2 }, { B43_OFDM_RATE_6MB, 0 },
+	{ B43_OFDM_RATE_9MB, 1 }, { B43_CCK_RATE_11MB, 3 },
+	{ B43_OFDM_RATE_12MB, 2 }, { B43_OFDM_RATE_18MB, 3 },
+	{ B43_OFDM_RATE_24MB, 4 }, { B43_OFDM_RATE_36MB, 5 },
+	{ B43_OFDM_RATE_48MB, 6 }, { B43_OFDM_RATE_54MB, 7 },
 };
 
 /* A rate block's power offset under the target, in half dB */
@@ -1946,21 +1937,18 @@ static void b43_phy_ht_rate_po_write(struct b43_wldev *dev)
 	for (i = 0; i < ARRAY_SIZE(b43_phy_ht_rate_po_blocks); i++) {
 		const struct b43_phy_ht_rate_po_block *r =
 			&b43_phy_ht_rate_po_blocks[i];
-		u16 map, block;
+		bool cck = b43_is_cck_rate(r->rate);
+		u16 block;
 		u8 d;
 
-		if (r->cck && !b43_ppr_has_cck(&dist))
+		if (cck && !b43_ppr_has_cck(&dist))
 			continue;
-		if (r->cck) {
-			map = B43_SHM_SH_CCKDIRECT;
-			d = b43_ppr_get_cck(&dist, r->rate);
-		} else {
-			map = B43_SHM_SH_OFDMDIRECT;
+		if (cck)
+			d = b43_ppr_get_cck(&dist, r->idx);
+		else
 			d = b43_ppr_get_ofdm(&dist, B43_PPR_BW_20, B43_PPR_SISO,
-					     r->rate);
-		}
-		block = 2 * b43_shm_read16(dev, B43_SHM_SHARED,
-					   map + 2 * r->signal);
+					     r->idx);
+		block = b43_rate_block(dev, r->rate);
 		b43_shm_write16(dev, B43_SHM_SHARED, block + B43_HT_RT_TXPWR_PO,
 				b43_ppr_half_db(d));
 	}

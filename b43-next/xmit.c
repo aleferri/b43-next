@@ -38,6 +38,7 @@
  */
 
 #include "xmit.h"
+#include "rates.h"
 #include "phy_common.h"
 #include "phy_ac.h"
 #include "dma.h"
@@ -50,34 +51,33 @@
  * each modulation and coding, in the order of the legacy rates. The coded
  * bits per subcarrier and the coding rate give the data bits per symbol;
  * an HT or VHT frame's response goes at the legacy rate of its row, its
- * non-HT reference rate; a legacy rate's L-SIG carries its RATE code; PHY
- * control word 1 of the pre-AC TX header takes the modulation and coding.
+ * non-HT reference rate; PHY control word 1 of the pre-AC TX header takes
+ * the modulation and coding.
  */
 struct b43_ofdm_rate {
 	u8 bpscs;
 	u8 num, den;
 	u8 legacy;		/* B43_OFDM_RATE_* */
-	u8 signal;		/* of the legacy rates */
 	u16 phy_ctl1;
 };
 
-#define OFDM(_bpscs, _num, _den, _modul, _legacy, _signal) {		\
+#define OFDM(_bpscs, _num, _den, _modul, _legacy) {			\
 	.bpscs = _bpscs, .num = _num, .den = _den,			\
-	.legacy = B43_OFDM_RATE_##_legacy, .signal = _signal,		\
+	.legacy = B43_OFDM_RATE_##_legacy,				\
 	.phy_ctl1 = B43_TXH_PHY1_MODUL_##_modul |			\
 		    B43_TXH_PHY1_CRATE_##_num##_##_den }
 static const struct b43_ofdm_rate b43_ofdm_rates[] = {
-	OFDM(1, 1, 2, BPSK, 6MB, 0xB),
-	OFDM(1, 3, 4, BPSK, 9MB, 0xF),
-	OFDM(2, 1, 2, QPSK, 12MB, 0xA),
-	OFDM(2, 3, 4, QPSK, 18MB, 0xE),
-	OFDM(4, 1, 2, QAM16, 24MB, 0x9),
-	OFDM(4, 3, 4, QAM16, 36MB, 0xD),
-	OFDM(6, 2, 3, QAM64, 48MB, 0x8),
-	OFDM(6, 3, 4, QAM64, 54MB, 0xC),
-	OFDM(6, 5, 6, QAM64, 54MB, 0),
-	OFDM(8, 3, 4, QAM256, 54MB, 0),
-	OFDM(8, 5, 6, QAM256, 54MB, 0),
+	OFDM(1, 1, 2, BPSK, 6MB),
+	OFDM(1, 3, 4, BPSK, 9MB),
+	OFDM(2, 1, 2, QPSK, 12MB),
+	OFDM(2, 3, 4, QPSK, 18MB),
+	OFDM(4, 1, 2, QAM16, 24MB),
+	OFDM(4, 3, 4, QAM16, 36MB),
+	OFDM(6, 2, 3, QAM64, 48MB),
+	OFDM(6, 3, 4, QAM64, 54MB),
+	OFDM(6, 5, 6, QAM64, 54MB),
+	OFDM(8, 3, 4, QAM256, 54MB),
+	OFDM(8, 5, 6, QAM256, 54MB),
 };
 #undef OFDM
 
@@ -111,17 +111,10 @@ static unsigned int b43_ofdm_ndbps(const struct b43_ofdm_rate *r,
 	return nsd * nss * r->bpscs * r->num / r->den;
 }
 
-/* The CCK rates, with the SIGNAL of their PLCP header. */
-struct b43_cck_rate {
-	u8 rate;		/* B43_CCK_RATE_* */
-	u8 signal;
-};
-
-static const struct b43_cck_rate b43_cck_rates[] = {
-	{ B43_CCK_RATE_1MB, 0x0A },
-	{ B43_CCK_RATE_2MB, 0x14 },
-	{ B43_CCK_RATE_5MB, 0x37 },
-	{ B43_CCK_RATE_11MB, 0x6E },
+/* The CCK rates. */
+static const u8 b43_cck_rates[] = {
+	B43_CCK_RATE_1MB, B43_CCK_RATE_2MB, B43_CCK_RATE_5MB,
+	B43_CCK_RATE_11MB,
 };
 
 static unsigned int b43_cck_rate_idx(u8 rate)
@@ -129,7 +122,7 @@ static unsigned int b43_cck_rate_idx(u8 rate)
 	unsigned int i;
 
 	for (i = 0; i < ARRAY_SIZE(b43_cck_rates); i++)
-		if (b43_cck_rates[i].rate == rate)
+		if (b43_cck_rates[i] == rate)
 			return i;
 	B43_WARN_ON(1);
 	return 0;
@@ -141,7 +134,7 @@ static int b43_plcp_get_bitrate_idx_cck(struct b43_plcp_hdr6 *plcp)
 	unsigned int i;
 
 	for (i = 0; i < ARRAY_SIZE(b43_cck_rates); i++)
-		if (b43_cck_rates[i].signal == plcp->raw[0])
+		if (b43_plcp_get_ratecode_cck(b43_cck_rates[i]) == plcp->raw[0])
 			return i;
 	return -1;
 }
@@ -154,19 +147,10 @@ static int b43_plcp_get_bitrate_idx_ofdm(struct b43_plcp_hdr6 *plcp, bool ghz5)
 	unsigned int i;
 
 	for (i = 0; i < B43_OFDM_LEGACY_RATES; i++)
-		if (b43_ofdm_rates[i].signal == (plcp->raw[0] & 0xF))
+		if (b43_plcp_get_ratecode_ofdm(b43_ofdm_rates[i].legacy) ==
+		    (plcp->raw[0] & 0xF))
 			return base + i;
 	return -1;
-}
-
-u8 b43_plcp_get_ratecode_cck(const u8 bitrate)
-{
-	return b43_cck_rates[b43_cck_rate_idx(bitrate)].signal;
-}
-
-u8 b43_plcp_get_ratecode_ofdm(const u8 bitrate)
-{
-	return b43_ofdm_rate(bitrate)->signal;
 }
 
 void b43_generate_plcp_hdr(struct b43_plcp_hdr4 *plcp,
@@ -429,6 +413,15 @@ static unsigned int b43_tx_airtime(const struct b43_tx_rate *r,
 		return 36 + 4 * (b43_tx_ht_ltfs(r) - 1) +
 		       4 * b43_tx_ht_periods(r, octets) + (gmode ? 6 : 0);
 	}
+}
+
+/* Airtime of @octets at a legacy OFDM rate, B43_OFDM_RATE_*, at 5 GHz */
+u16 b43_ofdm_airtime(u8 rate, unsigned int octets)
+{
+	struct b43_tx_rate r;
+
+	b43_tx_rate_legacy(&r, rate, false);
+	return b43_tx_airtime(&r, octets, false);
 }
 
 /*
@@ -1225,7 +1218,7 @@ static int b43_generate_txhdr_fw4(struct b43_wldev *dev,
 	if (r.enc == B43_TX_HT)
 		txhdr->phy_rate = r.rate;
 	else if (r.enc == B43_TX_OFDM)
-		txhdr->phy_rate = r.ofdm->signal;
+		txhdr->phy_rate = b43_plcp_get_ratecode_ofdm(r.rate);
 	else
 		txhdr->phy_rate = b43_plcp_get_ratecode_cck(r.rate);
 	txhdr->mac_frame_ctl = wlhdr->frame_control;
@@ -1504,7 +1497,8 @@ static int b43_generate_txhdr_fw4(struct b43_wldev *dev,
 
 		if (rts.enc == B43_TX_OFDM) {
 			extra_ft |= B43_TXH_EFT_RTS_OFDM;
-			txhdr->phy_rate_rts = rts.ofdm->signal;
+			txhdr->phy_rate_rts =
+			    b43_plcp_get_ratecode_ofdm(rts.rate);
 		} else {
 			extra_ft |= B43_TXH_EFT_RTS_CCK;
 			txhdr->phy_rate_rts =
@@ -1768,8 +1762,8 @@ static int b43_rx_rate_ac(struct b43_plcp_hdr6 *plcp, u16 phystat0,
 	case B43_RX_PHYST0_HT:
 		return b43_rx_rate_ht(p, status);
 	case B43_RX_PHYST0_VHT:
-		a1 = p[0] | (p[1] << 8) | (p[2] << 16);
-		a2 = p[3] | (p[4] << 8) | (p[5] << 16);
+		a1 = get_unaligned_le24(p);
+		a2 = get_unaligned_le24(p + 3);
 		mcs = (a2 >> 4) & 0xf;
 		if (mcs > 9)
 			return -1;

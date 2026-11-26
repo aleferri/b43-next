@@ -177,7 +177,7 @@ void b43_txcal_ladder(unsigned int i, u16 bbmult, u16 *lo, u16 *iq)
  */
 void b43_iq_mismatch(s32 iq, u32 ii, u32 qq, s32 *angle_out, u32 *mag_out)
 {
-	unsigned int nb_iq = fls(iq < 0 ? -iq : iq), nb_max = fls(ii | qq);
+	unsigned int nb_iq = fls(abs(iq)), nb_max = fls(ii | qq);
 	unsigned int nb;
 	s64 num, den, prod;
 	s32 sin_q16, half, cos_q16, d;
@@ -199,7 +199,7 @@ void b43_iq_mismatch(s32 iq, u32 ii, u32 qq, s32 *angle_out, u32 *mag_out)
 	*angle_out = b43_cordic_vector(sin_q16, cos_q16);
 
 	d = (s32)(qq - ii);
-	nb = fls(d < 0 ? -d : d);
+	nb = fls(abs(d));
 	nb += nb & 1;
 	num = (s64)d << (30 - nb);
 	den = nb >= 11 ? ii >> (nb - 10) : (u64)ii << (10 - nb);
