@@ -1075,26 +1075,22 @@ static ssize_t ssb_sprom_store(struct device *pcidev,
 
 static DEVICE_ATTR_ADMIN_RW(ssb_sprom);
 
-void ssbn_pci_exit(struct ssbn_bus *bus)
+static struct attribute *ssbn_pci_attrs[] = {
+	&dev_attr_ssb_sprom.attr,
+	NULL,
+};
+
+static const struct attribute_group ssbn_pci_group = {
+	.attrs = ssbn_pci_attrs,
+};
+
+const struct attribute_group *ssbn_pci_groups[] = {
+	&ssbn_pci_group,
+	NULL,
+};
+
+void ssbn_pci_init(struct ssbn_bus *bus)
 {
-	struct pci_dev *pdev;
-
-	if (bus->bustype != SSBN_BUSTYPE_PCI)
-		return;
-
-	pdev = bus->host_pci;
-	device_remove_file(&pdev->dev, &dev_attr_ssb_sprom);
-}
-
-int ssbn_pci_init(struct ssbn_bus *bus)
-{
-	struct pci_dev *pdev;
-
-	if (bus->bustype != SSBN_BUSTYPE_PCI)
-		return 0;
-
-	pdev = bus->host_pci;
-	mutex_init(&bus->sprom_mutex);
-
-	return device_create_file(&pdev->dev, &dev_attr_ssb_sprom);
+	if (bus->bustype == SSBN_BUSTYPE_PCI)
+		mutex_init(&bus->sprom_mutex);
 }

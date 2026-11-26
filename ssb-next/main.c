@@ -441,7 +441,6 @@ void ssbn_bus_unregister(struct ssbn_bus *bus)
 	ssbn_buses_unlock();
 
 	ssbn_pcmcia_exit(bus);
-	ssbn_pci_exit(bus);
 	ssbn_iounmap(bus);
 }
 
@@ -644,13 +643,11 @@ ssbn_bus_register(struct ssbn_bus *bus,
 		goto err_sdio_exit;
 
 	/* Init PCI-host device (if any) */
-	err = ssbn_pci_init(bus);
-	if (err)
-		goto err_unmap;
+	ssbn_pci_init(bus);
 	/* Init PCMCIA-host device (if any) */
 	err = ssbn_pcmcia_init(bus);
 	if (err)
-		goto err_pci_exit;
+		goto err_unmap;
 
 	/* Initialize basic system devices (if available) */
 	err = ssbn_bus_powerup(bus, 0);
@@ -686,8 +683,6 @@ err_dequeue:
 	list_del(&bus->list);
 err_pcmcia_exit:
 	ssbn_pcmcia_exit(bus);
-err_pci_exit:
-	ssbn_pci_exit(bus);
 err_unmap:
 	ssbn_iounmap(bus);
 err_sdio_exit:

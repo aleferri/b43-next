@@ -20,8 +20,8 @@ extern int ssbn_pci_xtal(struct ssbn_bus *bus, u32 what,
 			int turn_on);
 extern int ssbn_pci_get_invariants(struct ssbn_bus *bus,
 				  struct ssbn_init_invariants *iv);
-extern void ssbn_pci_exit(struct ssbn_bus *bus);
-extern int ssbn_pci_init(struct ssbn_bus *bus);
+extern void ssbn_pci_init(struct ssbn_bus *bus);
+extern const struct attribute_group *ssbn_pci_groups[];
 extern const struct ssbn_bus_ops ssbn_pci_ops;
 
 #else /* CONFIG_SSBN_PCIHOST */
@@ -41,12 +41,8 @@ static inline int ssbn_pci_xtal(struct ssbn_bus *bus, u32 what,
 {
 	return 0;
 }
-static inline void ssbn_pci_exit(struct ssbn_bus *bus)
+static inline void ssbn_pci_init(struct ssbn_bus *bus)
 {
-}
-static inline int ssbn_pci_init(struct ssbn_bus *bus)
-{
-	return 0;
 }
 #endif /* CONFIG_SSBN_PCIHOST */
 

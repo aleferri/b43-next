@@ -11,6 +11,8 @@
  * Licensed under the GNU/GPL. See COPYING for details.
  */
 
+#include "ssbn_private.h"
+
 #include <linux/pm.h>
 #include <linux/pci.h>
 #include <linux/slab.h>
@@ -103,6 +105,7 @@ int ssbn_pcihost_register(struct pci_driver *driver)
 	driver->probe = ssbn_pcihost_probe;
 	driver->remove = ssbn_pcihost_remove;
 	driver->driver.pm = pm_sleep_ptr(&ssbn_pcihost_pm_ops);
+	driver->driver.dev_groups = ssbn_pci_groups;
 
 	return pci_register_driver(driver);
 }
