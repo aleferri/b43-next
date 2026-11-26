@@ -29,12 +29,10 @@ void b43_rfkill_poll(struct ieee80211_hw *hw)
 	bool enabled;
 	bool brought_up = false;
 
-	mutex_lock(&wl->mutex);
+	guard(mutex)(&wl->mutex);
 	if (unlikely(b43_status(dev) < B43_STAT_INITIALIZED)) {
-		if (b43_bus_powerup(dev, 0)) {
-			mutex_unlock(&wl->mutex);
+		if (b43_bus_powerup(dev, 0))
 			return;
-		}
 		b43_device_enable(dev, 0);
 		brought_up = true;
 	}
@@ -54,6 +52,4 @@ void b43_rfkill_poll(struct ieee80211_hw *hw)
 		b43_device_disable(dev, 0);
 		b43_bus_may_powerdown(dev);
 	}
-
-	mutex_unlock(&wl->mutex);
 }

@@ -8422,13 +8422,13 @@ static void b43_nphy_perical_work(struct work_struct *work)
 	struct b43_wldev *dev = nphy->dev;
 	unsigned long delay = msecs_to_jiffies(5);
 
-	mutex_lock(&dev->wl->mutex);
+	guard(mutex)(&dev->wl->mutex);
 	if (!nphy->mphase_cal_phase_id)
-		goto out;
+		return;
 	if (b43_status(dev) < B43_STAT_STARTED || !dev->phy.radio_on ||
 	    !b43_nphy_2057_rev9_2g(dev)) {
 		b43_nphy_perical_mphase_reset(dev);
-		goto out;
+		return;
 	}
 
 	if (dev->wl->hw->conf.flags & IEEE80211_CONF_OFFCHANNEL) {
@@ -8440,8 +8440,6 @@ static void b43_nphy_perical_work(struct work_struct *work)
 	if (nphy->mphase_cal_phase_id)
 		ieee80211_queue_delayed_work(dev->wl->hw, &nphy->perical_work,
 					     delay);
-out:
-	mutex_unlock(&dev->wl->mutex);
 }
 
 /* Called without wl->mutex, as the work takes it */

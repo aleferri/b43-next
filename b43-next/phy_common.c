@@ -510,13 +510,11 @@ void b43_phy_txpower_adjust_work(struct work_struct *work)
 					 txpower_adjust_work);
 	struct b43_wldev *dev;
 
-	mutex_lock(&wl->mutex);
+	guard(mutex)(&wl->mutex);
 	dev = wl->current_dev;
 
 	if (likely(dev && (b43_status(dev) >= B43_STAT_STARTED)))
 		dev->phy.ops->adjust_txpower(dev);
-
-	mutex_unlock(&wl->mutex);
 }
 
 void b43_phy_txpower_check(struct b43_wldev *dev, unsigned int flags)
