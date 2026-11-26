@@ -12,6 +12,7 @@
 #include <bcma-next/bcmn.h>
 #include <bcma-next/bcmn_regs.h>
 #include "../nvram/bcm47xx_sprom.h"
+#include <linux/bitfield.h>
 #include <linux/pci.h>
 #include <linux/io.h>
 #include <linux/dma-mapping.h>
@@ -120,11 +121,9 @@ static int bcmn_sprom_check_crc(const u16 *sprom, size_t words)
 {
 	u8 crc;
 	u8 expected_crc;
-	u16 tmp;
 
 	crc = bcmn_sprom_crc(sprom, words);
-	tmp = sprom[words - 1] & SSBN_SPROM_REVISION_CRC;
-	expected_crc = tmp >> SSBN_SPROM_REVISION_CRC_SHIFT;
+	expected_crc = FIELD_GET(SSBN_SPROM_REVISION_CRC, sprom[words - 1]);
 	if (crc != expected_crc)
 		return -EPROTO;
 
@@ -782,8 +781,7 @@ static bool bcmn_sprom_onchip_available(struct bcmn_bus *bus)
 	}
 
 	if (present) {
-		otpsize = bus->drv_cc.capabilities & BCMN_CC_CAP_OTPS;
-		otpsize >>= BCMN_CC_CAP_OTPS_SHIFT;
+		otpsize = FIELD_GET(BCMN_CC_CAP_OTPS, bus->drv_cc.capabilities);
 	}
 
 	return otpsize != 0;

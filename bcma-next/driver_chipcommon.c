@@ -11,6 +11,7 @@
 
 #include "bcmn_private.h"
 #include <linux/bcm47xx_wdt.h>
+#include <linux/bitfield.h>
 #include <linux/platform_device.h>
 #include <bcma-next/bcmn.h>
 
@@ -222,8 +223,8 @@ void bcmn_core_chipcommon_init(struct bcmn_drv_cc *cc)
 			leddc_off = cc->core->bus->sprom.leddc_off_time;
 		}
 		bcmn_cc_write32(cc, BCMN_CC_GPIOTIMER,
-			((leddc_on << BCMN_CC_GPIOTIMER_ONTIME_SHIFT) |
-			 (leddc_off << BCMN_CC_GPIOTIMER_OFFTIME_SHIFT)));
+			FIELD_PREP(BCMN_CC_GPIOTIMER_ONTIME, leddc_on) |
+			FIELD_PREP(BCMN_CC_GPIOTIMER_OFFTIME, leddc_off));
 	}
 
 	/*

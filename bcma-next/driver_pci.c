@@ -10,6 +10,7 @@
  */
 
 #include "bcmn_private.h"
+#include <linux/bitfield.h>
 #include <linux/iopoll.h>
 #include <bcma-next/bcmn.h>
 
@@ -149,9 +150,8 @@ static void bcmn_core_pci_fixcfg(struct bcmn_drv_pci *pc)
 	core_index = (u16)core->core_index;
 
 	val16 = pcicore_read16(pc, regoff);
-	if (((val16 & BCMN_CORE_PCI_SPROM_PI_MASK) >> BCMN_CORE_PCI_SPROM_PI_SHIFT)
-	     != core_index) {
-		val16 = (core_index << BCMN_CORE_PCI_SPROM_PI_SHIFT) |
+	if (FIELD_GET(BCMN_CORE_PCI_SPROM_PI_MASK, val16) != core_index) {
+		val16 = FIELD_PREP(BCMN_CORE_PCI_SPROM_PI_MASK, core_index) |
 			(val16 & ~BCMN_CORE_PCI_SPROM_PI_MASK);
 		pcicore_write16(pc, regoff, val16);
 	}

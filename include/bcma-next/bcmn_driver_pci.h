@@ -90,7 +90,6 @@ struct pci_dev;
 #define BCMN_CORE_PCI_SPROM(wordoffset)		(0x0800 + ((wordoffset) * 2)) /* SPROM shadow area (72 bytes) */
 #define  BCMN_CORE_PCI_SPROM_PI_OFFSET		0	/* first word */
 #define   BCMN_CORE_PCI_SPROM_PI_MASK		0xf000	/* bit 15:12 */
-#define   BCMN_CORE_PCI_SPROM_PI_SHIFT		12	/* bit 15:12 */
 #define  BCMN_CORE_PCI_SPROM_MISC_CONFIG	5	/* word 5 */
 #define   BCMN_CORE_PCI_SPROM_L23READY_EXIT_NOPERST	0x8000	/* bit 15 */
 #define   BCMN_CORE_PCI_SPROM_CLKREQ_OFFSET_REV5	20	/* word 20 for srom rev <= 5 */
