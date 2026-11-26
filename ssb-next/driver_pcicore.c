@@ -202,13 +202,11 @@ out:
 static int ssbn_pcicore_read_config(struct pci_bus *bus, unsigned int devfn,
 				   int reg, int size, u32 *val)
 {
-	unsigned long flags;
 	int err;
 
-	spin_lock_irqsave(&cfgspace_lock, flags);
+	guard(spinlock_irqsave)(&cfgspace_lock);
 	err = ssbn_extpci_read_config(extpci_core, bus->number, PCI_SLOT(devfn),
 				     PCI_FUNC(devfn), reg, val, size);
-	spin_unlock_irqrestore(&cfgspace_lock, flags);
 
 	return err ? PCIBIOS_DEVICE_NOT_FOUND : PCIBIOS_SUCCESSFUL;
 }
@@ -216,13 +214,11 @@ static int ssbn_pcicore_read_config(struct pci_bus *bus, unsigned int devfn,
 static int ssbn_pcicore_write_config(struct pci_bus *bus, unsigned int devfn,
 				    int reg, int size, u32 val)
 {
-	unsigned long flags;
 	int err;
 
-	spin_lock_irqsave(&cfgspace_lock, flags);
+	guard(spinlock_irqsave)(&cfgspace_lock);
 	err = ssbn_extpci_write_config(extpci_core, bus->number, PCI_SLOT(devfn),
 				      PCI_FUNC(devfn), reg, &val, size);
-	spin_unlock_irqrestore(&cfgspace_lock, flags);
 
 	return err ? PCIBIOS_DEVICE_NOT_FOUND : PCIBIOS_SUCCESSFUL;
 }

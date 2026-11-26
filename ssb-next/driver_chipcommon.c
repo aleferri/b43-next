@@ -508,92 +508,50 @@ u32 ssbn_chipco_gpio_in(struct ssbn_chipcommon *cc, u32 mask)
 
 u32 ssbn_chipco_gpio_out(struct ssbn_chipcommon *cc, u32 mask, u32 value)
 {
-	unsigned long flags;
-	u32 res = 0;
-
-	spin_lock_irqsave(&cc->gpio_lock, flags);
-	res = chipco_write32_masked(cc, SSBN_CHIPCO_GPIOOUT, mask, value);
-	spin_unlock_irqrestore(&cc->gpio_lock, flags);
-
-	return res;
+	guard(spinlock_irqsave)(&cc->gpio_lock);
+	return chipco_write32_masked(cc, SSBN_CHIPCO_GPIOOUT, mask, value);
 }
 
 u32 ssbn_chipco_gpio_outen(struct ssbn_chipcommon *cc, u32 mask, u32 value)
 {
-	unsigned long flags;
-	u32 res = 0;
-
-	spin_lock_irqsave(&cc->gpio_lock, flags);
-	res = chipco_write32_masked(cc, SSBN_CHIPCO_GPIOOUTEN, mask, value);
-	spin_unlock_irqrestore(&cc->gpio_lock, flags);
-
-	return res;
+	guard(spinlock_irqsave)(&cc->gpio_lock);
+	return chipco_write32_masked(cc, SSBN_CHIPCO_GPIOOUTEN, mask, value);
 }
 
 u32 ssbn_chipco_gpio_control(struct ssbn_chipcommon *cc, u32 mask, u32 value)
 {
-	unsigned long flags;
-	u32 res = 0;
-
-	spin_lock_irqsave(&cc->gpio_lock, flags);
-	res = chipco_write32_masked(cc, SSBN_CHIPCO_GPIOCTL, mask, value);
-	spin_unlock_irqrestore(&cc->gpio_lock, flags);
-
-	return res;
+	guard(spinlock_irqsave)(&cc->gpio_lock);
+	return chipco_write32_masked(cc, SSBN_CHIPCO_GPIOCTL, mask, value);
 }
 
 u32 ssbn_chipco_gpio_intmask(struct ssbn_chipcommon *cc, u32 mask, u32 value)
 {
-	unsigned long flags;
-	u32 res = 0;
-
-	spin_lock_irqsave(&cc->gpio_lock, flags);
-	res = chipco_write32_masked(cc, SSBN_CHIPCO_GPIOIRQ, mask, value);
-	spin_unlock_irqrestore(&cc->gpio_lock, flags);
-
-	return res;
+	guard(spinlock_irqsave)(&cc->gpio_lock);
+	return chipco_write32_masked(cc, SSBN_CHIPCO_GPIOIRQ, mask, value);
 }
 
 u32 ssbn_chipco_gpio_polarity(struct ssbn_chipcommon *cc, u32 mask, u32 value)
 {
-	unsigned long flags;
-	u32 res = 0;
-
-	spin_lock_irqsave(&cc->gpio_lock, flags);
-	res = chipco_write32_masked(cc, SSBN_CHIPCO_GPIOPOL, mask, value);
-	spin_unlock_irqrestore(&cc->gpio_lock, flags);
-
-	return res;
+	guard(spinlock_irqsave)(&cc->gpio_lock);
+	return chipco_write32_masked(cc, SSBN_CHIPCO_GPIOPOL, mask, value);
 }
 
 u32 ssbn_chipco_gpio_pullup(struct ssbn_chipcommon *cc, u32 mask, u32 value)
 {
-	unsigned long flags;
-	u32 res = 0;
-
 	if (cc->dev->id.revision < 20)
 		return 0xffffffff;
 
-	spin_lock_irqsave(&cc->gpio_lock, flags);
-	res = chipco_write32_masked(cc, SSBN_CHIPCO_GPIOPULLUP, mask, value);
-	spin_unlock_irqrestore(&cc->gpio_lock, flags);
-
-	return res;
+	guard(spinlock_irqsave)(&cc->gpio_lock);
+	return chipco_write32_masked(cc, SSBN_CHIPCO_GPIOPULLUP, mask, value);
 }
 
 u32 ssbn_chipco_gpio_pulldown(struct ssbn_chipcommon *cc, u32 mask, u32 value)
 {
-	unsigned long flags;
-	u32 res = 0;
-
 	if (cc->dev->id.revision < 20)
 		return 0xffffffff;
 
-	spin_lock_irqsave(&cc->gpio_lock, flags);
-	res = chipco_write32_masked(cc, SSBN_CHIPCO_GPIOPULLDOWN, mask, value);
-	spin_unlock_irqrestore(&cc->gpio_lock, flags);
-
-	return res;
+	guard(spinlock_irqsave)(&cc->gpio_lock);
+	return chipco_write32_masked(cc, SSBN_CHIPCO_GPIOPULLDOWN, mask, value);
 }
 
 #ifdef CONFIG_SSBN_SERIAL

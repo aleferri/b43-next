@@ -65,18 +65,16 @@ int ssbn_pci_switch_core(struct ssbn_bus *bus,
 			struct ssbn_device *dev)
 {
 	int err;
-	unsigned long flags;
 
 #if SSBN_VERBOSE_PCICORESWITCH_DEBUG
 	pr_info("Switching to %s core, index %d\n",
 		ssbn_core_name(dev->id.coreid), dev->core_index);
 #endif
 
-	spin_lock_irqsave(&bus->bar_lock, flags);
+	guard(spinlock_irqsave)(&bus->bar_lock);
 	err = ssbn_pci_switch_coreidx(bus, dev->core_index);
 	if (!err)
 		bus->mapped_device = dev;
-	spin_unlock_irqrestore(&bus->bar_lock, flags);
 
 	return err;
 }
