@@ -16,8 +16,6 @@
 #include <linux/slab.h>
 #include <ssb-next/ssbn.h>
 
-
-#ifdef CONFIG_PM_SLEEP
 static int ssbn_pcihost_suspend(struct device *d)
 {
 	struct pci_dev *dev = to_pci_dev(d);
@@ -57,11 +55,8 @@ static int ssbn_pcihost_resume(struct device *d)
 	return 0;
 }
 
-static const struct dev_pm_ops ssbn_pcihost_pm_ops = {
-	SET_SYSTEM_SLEEP_PM_OPS(ssbn_pcihost_suspend, ssbn_pcihost_resume)
-};
-
-#endif /* CONFIG_PM_SLEEP */
+static DEFINE_SIMPLE_DEV_PM_OPS(ssbn_pcihost_pm_ops, ssbn_pcihost_suspend,
+				ssbn_pcihost_resume);
 
 static int ssbn_pcihost_probe(struct pci_dev *dev,
 			     const struct pci_device_id *id)
@@ -107,9 +102,7 @@ int ssbn_pcihost_register(struct pci_driver *driver)
 {
 	driver->probe = ssbn_pcihost_probe;
 	driver->remove = ssbn_pcihost_remove;
-#ifdef CONFIG_PM_SLEEP
-	driver->driver.pm = &ssbn_pcihost_pm_ops;
-#endif
+	driver->driver.pm = pm_sleep_ptr(&ssbn_pcihost_pm_ops);
 
 	return pci_register_driver(driver);
 }

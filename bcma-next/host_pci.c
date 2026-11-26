@@ -232,7 +232,6 @@ static void bcmn_host_pci_remove(struct pci_dev *dev)
 	bcmn_bus_unregister(bus);
 }
 
-#ifdef CONFIG_PM_SLEEP
 static int bcmn_host_pci_suspend(struct device *dev)
 {
 	struct bcmn_bus *bus = dev_get_drvdata(dev);
@@ -249,15 +248,8 @@ static int bcmn_host_pci_resume(struct device *dev)
 	return bcmn_bus_resume(bus);
 }
 
-static SIMPLE_DEV_PM_OPS(bcmn_pm_ops, bcmn_host_pci_suspend,
-			 bcmn_host_pci_resume);
-#define BCMN_PM_OPS	(&bcmn_pm_ops)
-
-#else /* CONFIG_PM_SLEEP */
-
-#define BCMN_PM_OPS     NULL
-
-#endif /* CONFIG_PM_SLEEP */
+static DEFINE_SIMPLE_DEV_PM_OPS(bcmn_pm_ops, bcmn_host_pci_suspend,
+				bcmn_host_pci_resume);
 
 static const struct pci_device_id bcmn_pci_bridge_tbl[] = {
 	{ PCI_DEVICE(PCI_VENDOR_ID_BROADCOM, 0x0576) },
@@ -291,7 +283,7 @@ static struct pci_driver bcmn_pci_bridge_driver = {
 	.id_table = bcmn_pci_bridge_tbl,
 	.probe = bcmn_host_pci_probe,
 	.remove = bcmn_host_pci_remove,
-	.driver.pm = BCMN_PM_OPS,
+	.driver.pm = pm_sleep_ptr(&bcmn_pm_ops),
 };
 
 int __init bcmn_host_pci_init(void)

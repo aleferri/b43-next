@@ -530,7 +530,6 @@ int __init bcmn_bus_early_register(struct bcmn_bus *bus)
 	return 0;
 }
 
-#ifdef CONFIG_PM
 int bcmn_bus_suspend(struct bcmn_bus *bus)
 {
 	struct bcmn_device *core;
@@ -567,7 +566,6 @@ int bcmn_bus_resume(struct bcmn_bus *bus)
 
 	return 0;
 }
-#endif
 
 int __bcmn_driver_register(struct bcmn_driver *drv, struct module *owner)
 {
