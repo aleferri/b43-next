@@ -21,6 +21,7 @@
 #include "b43.h"
 #include "dma.h"
 #include "main.h"
+#include "ps.h"
 #include "debugfs.h"
 #include "xmit.h"
 

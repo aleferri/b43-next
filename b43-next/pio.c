@@ -14,6 +14,7 @@
 #include "pio.h"
 #include "dma.h"
 #include "main.h"
+#include "ps.h"
 #include "xmit.h"
 
 #include <linux/delay.h>

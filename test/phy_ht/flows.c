@@ -6,6 +6,7 @@
  * accesses go to trace.c, and runs one flow. Nothing of b43 is modified.
  */
 #include "phy_ht.c"
+#include "ps.h"
 #include "ht_trace.h"
 
 static struct ieee80211_channel chan = {
