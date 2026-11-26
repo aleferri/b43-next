@@ -56,7 +56,7 @@ struct b43_dfs_file *fops_to_dfs_file(struct b43_wldev *dev,
 					  bufsize - count,	\
 					  fmt , ##x);		\
 		else						\
-			printk(KERN_ERR "b43: fappend overflow\n"); \
+			pr_err("b43: fappend overflow\n");	\
 	} while (0)
 
 
@@ -240,10 +240,8 @@ static int mmio16read__write_file(struct b43_wldev *dev,
 				  const char *buf, size_t count)
 {
 	unsigned int addr;
-	int res;
 
-	res = sscanf(buf, "0x%X", &addr);
-	if (res != 1)
+	if (kstrtouint(buf, 16, &addr))
 		return -EINVAL;
 	if (addr > B43_MAX_MMIO_ACCESS)
 		return -EADDRNOTAVAIL;
@@ -304,10 +302,8 @@ static int mmio32read__write_file(struct b43_wldev *dev,
 				  const char *buf, size_t count)
 {
 	unsigned int addr;
-	int res;
 
-	res = sscanf(buf, "0x%X", &addr);
-	if (res != 1)
+	if (kstrtouint(buf, 16, &addr))
 		return -EINVAL;
 	if (addr > B43_MAX_MMIO_ACCESS)
 		return -EADDRNOTAVAIL;

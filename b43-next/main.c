@@ -8978,9 +8978,8 @@ static void b43_print_driverinfo(void)
 #ifdef CONFIG_B43_NEXT_SDIO
 	feat_sdio = "S";
 #endif
-	printk(KERN_INFO "Broadcom 43xx driver loaded "
-	       "[ Features: %s%s%s%s ]\n",
-	       feat_pci, feat_nphy, feat_leds, feat_sdio);
+	pr_info("Broadcom 43xx driver loaded [ Features: %s%s%s%s ]\n",
+		feat_pci, feat_nphy, feat_leds, feat_sdio);
 }
 
 #ifdef CONFIG_B43_NEXT_BCMA
