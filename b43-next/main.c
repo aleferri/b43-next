@@ -1669,6 +1669,8 @@ static void b43_keys_restore(struct b43_wldev *dev, struct b43_key *saved)
 static void b43_dump_keymemory(struct b43_wldev *dev)
 {
 	unsigned int i, index, count, offset, pairwise_keys_start;
+	__le16 keybuf[B43_SEC_KEYSIZE / 2], tkipbuf[7];
+	const char *mark;
 	u8 mac[ETH_ALEN];
 	u16 algo;
 	u32 rcmta0;
@@ -1690,39 +1692,47 @@ static void b43_dump_keymemory(struct b43_wldev *dev)
 		count = B43_NR_GROUP_KEYS * 2 + B43_NR_PAIRWISE_KEYS;
 	}
 	for (index = 0; index < count; index++) {
-		key = &(dev->key[index]);
-		printk(KERN_DEBUG "Key slot %02u: %s",
-		       index, (key->keyconf == NULL) ? " " : "*");
+		key = &dev->key[index];
+		mark = key->keyconf ? "*" : " ";
 		offset = dev->ktp + (index * B43_SEC_KEYSIZE);
-		for (i = 0; i < B43_SEC_KEYSIZE; i += 2) {
-			u16 tmp = b43_shm_read16(dev, B43_SHM_SHARED, offset + i);
-			printk("%02X%02X", (tmp & 0xFF), ((tmp >> 8) & 0xFF));
-		}
-
+		for (i = 0; i < ARRAY_SIZE(keybuf); i++)
+			keybuf[i] = cpu_to_le16(b43_shm_read16(dev,
+					B43_SHM_SHARED, offset + i * 2));
 		algo = b43_shm_read16(dev, B43_SHM_SHARED,
 				      dev->fw.layout.keyidxblock +
 				      (index * 2));
-		printk("   Algo: %04X/%02X", algo, key->algorithm);
 
-		if (index >= pairwise_keys_start) {
-			if (key->algorithm == B43_SEC_ALGO_TKIP) {
-				printk("   TKIP: ");
-				offset = B43_SHM_SH_TKIPTSCTTAK + (index - 4) * (10 + 4);
-				for (i = 0; i < 14; i += 2) {
-					u16 tmp = b43_shm_read16(dev, B43_SHM_SHARED, offset + i);
-					printk("%02X%02X", (tmp & 0xFF), ((tmp >> 8) & 0xFF));
-				}
-			}
-			rcmta0 = b43_shm_read32(dev, B43_SHM_RCMTA,
-						((index - pairwise_keys_start) * 2) + 0);
-			rcmta1 = b43_shm_read16(dev, B43_SHM_RCMTA,
-						((index - pairwise_keys_start) * 2) + 1);
-			*((__le32 *)(&mac[0])) = cpu_to_le32(rcmta0);
-			*((__le16 *)(&mac[4])) = cpu_to_le16(rcmta1);
-			printk("   MAC: %pM", mac);
-		} else
-			printk("   DEFAULT KEY");
-		printk("\n");
+		if (index < pairwise_keys_start) {
+			wiphy_printk(KERN_DEBUG, dev->wl->hw->wiphy,
+				     "Key slot %02u: %s%*phN   Algo: %04X/%02X   DEFAULT KEY\n",
+				     index, mark, (int)sizeof(keybuf), keybuf, algo,
+				     key->algorithm);
+			continue;
+		}
+
+		rcmta0 = b43_shm_read32(dev, B43_SHM_RCMTA,
+					((index - pairwise_keys_start) * 2) + 0);
+		rcmta1 = b43_shm_read16(dev, B43_SHM_RCMTA,
+					((index - pairwise_keys_start) * 2) + 1);
+		put_unaligned_le32(rcmta0, &mac[0]);
+		put_unaligned_le16(rcmta1, &mac[4]);
+
+		if (key->algorithm != B43_SEC_ALGO_TKIP) {
+			wiphy_printk(KERN_DEBUG, dev->wl->hw->wiphy,
+				     "Key slot %02u: %s%*phN   Algo: %04X/%02X   MAC: %pM\n",
+				     index, mark, (int)sizeof(keybuf), keybuf, algo,
+				     key->algorithm, mac);
+			continue;
+		}
+
+		offset = B43_SHM_SH_TKIPTSCTTAK + (index - 4) * (10 + 4);
+		for (i = 0; i < ARRAY_SIZE(tkipbuf); i++)
+			tkipbuf[i] = cpu_to_le16(b43_shm_read16(dev,
+					B43_SHM_SHARED, offset + i * 2));
+		wiphy_printk(KERN_DEBUG, dev->wl->hw->wiphy,
+			     "Key slot %02u: %s%*phN   Algo: %04X/%02X   TKIP: %*phN   MAC: %pM\n",
+			     index, mark, (int)sizeof(keybuf), keybuf, algo,
+			     key->algorithm, (int)sizeof(tkipbuf), tkipbuf, mac);
 	}
 }
 
@@ -2426,7 +2436,8 @@ static void b43_handle_firmware_panic(struct b43_wldev *dev)
 
 static void handle_irq_ucode_debug(struct b43_wldev *dev)
 {
-	unsigned int i, cnt;
+	unsigned int i, j;
+	u16 r[8];
 	u16 reason, marker_id, marker_line;
 	__le16 *buf;
 
@@ -2462,18 +2473,15 @@ static void handle_irq_ucode_debug(struct b43_wldev *dev)
 		if (!B43_DEBUG)
 			break; /* Only with driver debugging enabled. */
 		b43info(dev->wl, "Microcode register dump:\n");
-		for (i = 0, cnt = 0; i < 64; i++) {
-			u16 tmp = b43_shm_read16(dev, B43_SHM_SCRATCH, i);
-			if (cnt == 0)
-				printk(KERN_INFO);
-			printk("r%02u: 0x%04X  ", i, tmp);
-			cnt++;
-			if (cnt == 6) {
-				printk("\n");
-				cnt = 0;
-			}
+		for (i = 0; i < 64; i += ARRAY_SIZE(r)) {
+			for (j = 0; j < ARRAY_SIZE(r); j++)
+				r[j] = b43_shm_read16(dev, B43_SHM_SCRATCH,
+						      i + j);
+			wiphy_info(dev->wl->hw->wiphy,
+				   "r%02u: %04X %04X %04X %04X %04X %04X %04X %04X\n",
+				   i, r[0], r[1], r[2], r[3], r[4], r[5], r[6],
+				   r[7]);
 		}
-		printk("\n");
 		break;
 	case B43_DEBUGIRQ_MARKER:
 		if (!B43_DEBUG)
