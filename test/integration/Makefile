@@ -89,7 +89,7 @@ KFLAGS += -fno-inline -g
 endif
 
 # I file di b43 che si compilano come sono. Tutti e tre a zero errori.
-UPSTREAM := $(filter-out sysfs.c pio.c,$(b43n-core)) $(b43n-phy) \
+UPSTREAM := $(filter-out pio.c,$(b43n-core)) $(b43n-phy) \
             $(b43n-leds) $(b43n-phy-ac) $(b43n-phy-ht)
 
 # La gestione del core di bcma, anche lei com'e': reset, clock e PLL del

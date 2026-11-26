@@ -46,7 +46,6 @@
 #include "phy_ht.h"
 #include "dma.h"
 #include "pio.h"
-#include "sysfs.h"
 #include "rates.h"
 #include "xmit.h"
 #include "radar_ac.h"
