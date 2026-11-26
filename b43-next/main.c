@@ -7131,9 +7131,6 @@ static int b43_txfifo_init_ht(struct b43_wldev *dev)
 	return -EIO;
 }
 
-
-/* Frames of earlier rings are gone; restart a station's TX A-MPDU
- * windows. Only DMA aggregates, so PIO ends its sessions' aggregation. */
 /* Initialize a wireless core */
 static int b43_wireless_core_init(struct b43_wldev *dev)
 {

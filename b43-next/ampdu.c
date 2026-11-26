@@ -244,6 +244,8 @@ bool b43_ampdu_tx_queued(struct b43_wl *wl)
 	return queued;
 }
 
+/* Frames of earlier rings are gone; restart a station's TX A-MPDU
+ * windows. Only DMA aggregates, so PIO ends its sessions' aggregation. */
 static void b43_ampdu_tx_restart_sta(void *data, struct ieee80211_sta *sta)
 {
 	struct b43_wldev *dev = data;
