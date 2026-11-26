@@ -24,6 +24,7 @@
 #include "debugfs.h"
 #include "xmit.h"
 
+#include <linux/bitfield.h>
 #include <linux/dma-mapping.h>
 #include <net/page_pool/helpers.h>
 #include <linux/pci.h>
@@ -75,8 +76,7 @@ static u32 b43_dma_address(struct b43_dma *dma, dma_addr_t dmaaddr,
 			addr = lower_32_bits(dmaaddr);
 		else
 			addr = upper_32_bits(dmaaddr);
-		addr &= SSBN_DMA_TRANSLATION_MASK;
-		addr >>= SSBN_DMA_TRANSLATION_SHIFT;
+		addr = FIELD_GET(SSBN_DMA_TRANSLATION_MASK, addr);
 		break;
 	}
 
@@ -124,8 +124,7 @@ static void op32_fill_descriptor(struct b43_dmaring *ring,
 		ctl |= B43_DMA32_DCTL_FRAMEEND;
 	if (irq)
 		ctl |= B43_DMA32_DCTL_IRQ;
-	ctl |= (addrext << B43_DMA32_DCTL_ADDREXT_SHIFT)
-	    & B43_DMA32_DCTL_ADDREXT_MASK;
+	ctl |= FIELD_PREP(B43_DMA32_DCTL_ADDREXT_MASK, addrext);
 
 	desc->dma32.control = cpu_to_le32(ctl);
 	desc->dma32.address = cpu_to_le32(addr);
@@ -217,8 +216,7 @@ static void op64_fill_descriptor(struct b43_dmaring *ring,
 	if (irq)
 		ctl0 |= B43_DMA64_DCTL0_IRQ;
 	ctl1 |= bufsize & B43_DMA64_DCTL1_BYTECNT;
-	ctl1 |= (addrext << B43_DMA64_DCTL1_ADDREXT_SHIFT)
-	    & B43_DMA64_DCTL1_ADDREXT_MASK;
+	ctl1 |= FIELD_PREP(B43_DMA64_DCTL1_ADDREXT_MASK, addrext);
 
 	desc->dma64.control0 = cpu_to_le32(ctl0);
 	desc->dma64.control1 = cpu_to_le32(ctl1);
@@ -906,8 +904,7 @@ static int dmacontroller_setup(struct b43_dmaring *ring)
 			ring->index_base = ring->dev->dma.index_is_addr ?
 					   addrlo : 0;
 
-			value = (addrext << B43_DMA64_TXADDREXT_SHIFT)
-			    & B43_DMA64_TXADDREXT_MASK;
+			value = FIELD_PREP(B43_DMA64_TXADDREXT_MASK, addrext);
 			enable = B43_DMA64_TXENABLE;
 			if (!parity)
 				enable |= B43_DMA64_TXPARITYDISABLE;
@@ -947,8 +944,7 @@ static int dmacontroller_setup(struct b43_dmaring *ring)
 			addrlo = b43_dma_address(&ring->dev->dma, ringbase, B43_DMA_ADDR_LOW);
 
 			value = B43_DMA32_TXENABLE;
-			value |= (addrext << B43_DMA32_TXADDREXT_SHIFT)
-			    & B43_DMA32_TXADDREXT_MASK;
+			value |= FIELD_PREP(B43_DMA32_TXADDREXT_MASK, addrext);
 			if (!parity)
 				value |= B43_DMA32_TXPARITYDISABLE;
 			b43_dma_write(ring, B43_DMA32_TXCTL, value);
@@ -966,10 +962,10 @@ static int dmacontroller_setup(struct b43_dmaring *ring)
 			ring->index_base = ring->dev->dma.index_is_addr ?
 					   addrlo : 0;
 
-			value = (ring->frameoffset << B43_DMA64_RXFROFF_SHIFT);
+			value = FIELD_PREP(B43_DMA64_RXFROFF_MASK,
+					   ring->frameoffset);
 			value |= B43_DMA64_RXENABLE;
-			value |= (addrext << B43_DMA64_RXADDREXT_SHIFT)
-			    & B43_DMA64_RXADDREXT_MASK;
+			value |= FIELD_PREP(B43_DMA64_RXADDREXT_MASK, addrext);
 			if (!parity)
 				value |= B43_DMA64_RXPARITYDISABLE;
 			/*
@@ -998,10 +994,10 @@ static int dmacontroller_setup(struct b43_dmaring *ring)
 			addrext = b43_dma_address(&ring->dev->dma, ringbase, B43_DMA_ADDR_EXT);
 			addrlo = b43_dma_address(&ring->dev->dma, ringbase, B43_DMA_ADDR_LOW);
 
-			value = (ring->frameoffset << B43_DMA32_RXFROFF_SHIFT);
+			value = FIELD_PREP(B43_DMA32_RXFROFF_MASK,
+					   ring->frameoffset);
 			value |= B43_DMA32_RXENABLE;
-			value |= (addrext << B43_DMA32_RXADDREXT_SHIFT)
-			    & B43_DMA32_RXADDREXT_MASK;
+			value |= FIELD_PREP(B43_DMA32_RXADDREXT_MASK, addrext);
 			if (!parity)
 				value |= B43_DMA32_RXPARITYDISABLE;
 			b43_dma_write(ring, B43_DMA32_RXCTL, value);

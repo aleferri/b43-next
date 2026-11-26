@@ -29,9 +29,7 @@ struct b43_cal_entry;
 
 /* Masks for the PHY versioning registers. */
 #define B43_PHYVER_ANALOG		0xF000
-#define B43_PHYVER_ANALOG_SHIFT		12
 #define B43_PHYVER_TYPE			0x0F00
-#define B43_PHYVER_TYPE_SHIFT		8
 #define B43_PHYVER_VERSION		0x00FF
 
 /* PHY writes need to be flushed if we reach limit, unless each address

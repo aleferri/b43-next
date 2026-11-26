@@ -43,6 +43,7 @@
 #include "phy_ac.h"
 #include "dma.h"
 #include "pio.h"
+#include <linux/bitfield.h>
 #include <linux/ktime.h>
 #include <linux/unaligned.h>
 
@@ -233,8 +234,8 @@ static bool b43_tx_ht_ok(const struct ieee80211_supported_band *band,
 	if (!(mcs->tx_params & IEEE80211_HT_MCS_TX_DEFINED) || t->idx > 31)
 		return false;
 	if ((mcs->tx_params & IEEE80211_HT_MCS_TX_RX_DIFF) &&
-	    nss > ((mcs->tx_params & IEEE80211_HT_MCS_TX_MAX_STREAMS_MASK) >>
-		   IEEE80211_HT_MCS_TX_MAX_STREAMS_SHIFT) + 1)
+	    nss > FIELD_GET(IEEE80211_HT_MCS_TX_MAX_STREAMS_MASK,
+			    mcs->tx_params) + 1)
 		return false;
 	return mcs->rx_mask[t->idx / 8] & BIT(t->idx % 8);
 }
@@ -605,7 +606,7 @@ static u16 b43_generate_tx_phy_ctl1(struct b43_wldev *dev,
 		control |= r->ofdm->phy_ctl1;
 		if (r->nss > 1)
 			return control | B43_TXH_PHY1_MODE_SDM |
-			       (r->nss - 1) << B43_TXH_PHY1_NSS_SHIFT;
+			       FIELD_PREP(B43_TXH_PHY1_NSS, r->nss - 1);
 		if (r->stbc)
 			return control | B43_TXH_PHY1_MODE_STBC;
 		if (hweight8(dev->txchain) == 1)
@@ -718,8 +719,8 @@ static void b43_txhdr_ctl_get(struct b43_wldev *dev,
 static u16 b43_txhdr_ac_cores(const struct b43_phy_ac *ac,
 			      enum b43_phy_ac_txcore class)
 {
-	return (ac->txcore[class] ? : ac->coremask)
-		<< B43_TXH_AC_PHY0_CORES_SHIFT;
+	return FIELD_PREP(B43_TXH_AC_PHY0_CORES,
+			  ac->txcore[class] ? : ac->coremask);
 }
 
 /*
@@ -804,7 +805,7 @@ static void b43_txhdr_ac_ht(const struct b43_phy_ac *ac,
 
 	phy0 = B43_TXH_PHY_ENC_HT | B43_TXH_AC_PHY0_NON_SOUNDING |
 	       b43_txhdr_ac_cores(ac, B43_PHY_AC_TXCORE_NSTS1 + mcs / 8) |
-	       bw << B43_TXH_AC_PHY0_BW_SHIFT;
+	       FIELD_PREP(B43_TXH_AC_PHY0_BW, bw);
 	r->phy_ctl[0] = cpu_to_le16(phy0);
 	r->phy_ctl[1] = cpu_to_le16((ac->rate_po_vht[bw][mcs % 8] &
 				     B43_TXH_AC_PHY1_TXPWR_OFFSET) |
@@ -852,11 +853,11 @@ static void b43_txhdr_ac_vht(const struct b43_phy_ac *ac,
 	u16 phy0, phy1 = ac->rate_po_vht[bw][mcs] & B43_TXH_AC_PHY1_TXPWR_OFFSET;
 	phy0 = B43_TXH_PHY_ENC_VHT | B43_TXH_AC_PHY0_NON_SOUNDING |
 	       b43_txhdr_ac_cores(ac, B43_PHY_AC_TXCORE_NSTS1 + nss - 1) |
-	       bw << B43_TXH_AC_PHY0_BW_SHIFT;
+	       FIELD_PREP(B43_TXH_AC_PHY0_BW, bw);
 	r->phy_ctl[0] = cpu_to_le16(phy0);
 	r->phy_ctl[1] = cpu_to_le16(phy1 | b43_txhdr_ac_subband(ac, bw));
 	r->phy_ctl[2] = cpu_to_le16((mcs & B43_TXH_AC_PHY2_VHT_MCS) |
-				    (nss - 1) << B43_TXH_AC_PHY2_VHT_NSS_SHIFT);
+				    FIELD_PREP(B43_TXH_AC_PHY2_VHT_NSS, nss - 1));
 
 	b43_tx_sig(t, 0, false, r->plcp.raw);
 	r->fbw_info = cpu_to_le16(0x0300);
@@ -989,11 +990,11 @@ static void b43_txhdr_ac_txbf(struct b43_wldev *dev,
 		if ((phy0 & B43_TXH_PHY_ENC) != B43_TXH_PHY_ENC_VHT)
 			continue;
 		phy0 &= ~B43_TXH_AC_PHY0_CORES;
-		phy0 |= txchain << B43_TXH_AC_PHY0_CORES_SHIFT |
+		phy0 |= FIELD_PREP(B43_TXH_AC_PHY0_CORES, txchain) |
 			B43_TXH_AC_PHY0_BFM;
 		r->phy_ctl[0] = cpu_to_le16(phy0);
-		r->rts_cts_ctl |= cpu_to_le16((slot - 1) <<
-					      B43_TXH_AC_RTS_TXBF_SLOT_SHIFT);
+		r->rts_cts_ctl |= cpu_to_le16(FIELD_PREP(B43_TXH_AC_RTS_TXBF_SLOT,
+							 slot - 1));
 		r->bfm0 = cpu_to_le16(0x0009);
 	}
 }
@@ -1024,7 +1025,8 @@ static bool b43_txhdr_ac_ampdu(struct b43_txhdr_ac *txhdr,
 	txhdr->mpdu_max = min(win, 32U);
 	txhdr->mpdu_max_fb = txhdr->mpdu_max;
 	density = max_t(unsigned int, density, IEEE80211_HT_MPDU_DENSITY_8);
-	txhdr->ampdu_dur = cpu_to_le16(0x152 << B43_TXH_AC_AMPDU_MAX_DUR_SHIFT |
+	txhdr->ampdu_dur = cpu_to_le16(FIELD_PREP(B43_TXH_AC_AMPDU_MAX_DUR,
+						  0x152) |
 				       (density & B43_TXH_AC_AMPDU_DENSITY));
 	txhdr->ba_win = win - 1;
 	txhdr->max_agg_len = IEEE80211_HT_MAX_AMPDU_FACTOR + exp;
@@ -1126,7 +1128,7 @@ static int b43_generate_txhdr_ac(struct b43_wldev *dev, u8 *_txhdr,
 		u8 kidx = key->hw_key_idx;
 		u8 cipher = b43_sec_algo_fw(dev, dev->key[kidx].algorithm);
 
-		txhdr->cipher_bss = cipher << B43_TXH_AC_CIPHER_SHIFT;
+		txhdr->cipher_bss = FIELD_PREP(B43_TXH_AC_CIPHER, cipher);
 		txhdr->key_idx = b43_kidx_to_fw(dev, kidx);
 	}
 	txhdr->cookie = cpu_to_le16(cookie);
@@ -1148,7 +1150,7 @@ static int b43_generate_txhdr_ac(struct b43_wldev *dev, u8 *_txhdr,
 		} else {
 			code = b43_plcp_get_ratecode_cck(c->rts_rate);
 		}
-		rts |= (code & 0x0f) << B43_TXH_AC_RTS_RATE_SHIFT;
+		rts |= FIELD_PREP(B43_TXH_AC_RTS_RATE, code);
 	}
 	for (i = 0; i < n; i++)
 		txhdr->rate[i].rts_cts_ctl = cpu_to_le16(rts);
@@ -1263,10 +1265,8 @@ static int b43_generate_txhdr_fw4(struct b43_wldev *dev,
 		plcp_fragment_len += info->control.hw_key->icv_len;
 
 		key_idx = b43_kidx_to_fw(dev, key_idx);
-		mac_ctl |= (key_idx << B43_TXH_MAC_KEYIDX_SHIFT) &
-			   B43_TXH_MAC_KEYIDX;
-		mac_ctl |= (key->algorithm << B43_TXH_MAC_KEYALG_SHIFT) &
-			   B43_TXH_MAC_KEYALG;
+		mac_ctl |= FIELD_PREP(B43_TXH_MAC_KEYIDX, key_idx);
+		mac_ctl |= FIELD_PREP(B43_TXH_MAC_KEYALG, key->algorithm);
 		wlhdr_len = ieee80211_hdrlen(fctl);
 		if (key->algorithm == B43_SEC_ALGO_TKIP) {
 			u16 phase1key[5];
@@ -1375,7 +1375,7 @@ static int b43_generate_txhdr_fw4(struct b43_wldev *dev,
 	/* On the pre-AC cores with HT the field holds the mask of TX cores. */
 	if (b43_ht_core(dev)) {
 		phy_ctl &= ~B43_TXH_PHY_ANT;
-		phy_ctl |= dev->txchain << B43_TXH_PHY_ANT_SHIFT;
+		phy_ctl |= FIELD_PREP(B43_TXH_PHY_ANT, dev->txchain);
 	}
 
 	/* MAC control */
@@ -1855,8 +1855,7 @@ static struct sk_buff *b43_rx_amsdu(struct b43_wldev *dev,
 	struct b43_rxhdr_fw4 *first = (struct b43_rxhdr_fw4 *)dev->rx_amsdu_hdr;
 	u32 macstat = le32_to_cpu(((const struct b43_rxhdr_fw4 *)*rxhdr)->
 				  format_598.mac_status);
-	unsigned int type = (macstat & B43_RX_MAC_AGGTYPE) >>
-			    B43_RX_MAC_AGGTYPE_SHIFT;
+	unsigned int type = FIELD_GET(B43_RX_MAC_AGGTYPE, macstat);
 	const u32 err = B43_RX_MAC_FCSERR | B43_RX_MAC_DECERR;
 	struct sk_buff *head = dev->rx_amsdu;
 	int need;
@@ -2060,8 +2059,7 @@ void b43_rx(struct b43_wldev *dev, struct sk_buff *skb, const void *_rxhdr)
 		unsigned int keyidx;
 		int wlhdr_len;
 
-		keyidx = ((macstat & B43_RX_MAC_KEYIDX)
-			  >> B43_RX_MAC_KEYIDX_SHIFT);
+		keyidx = FIELD_GET(B43_RX_MAC_KEYIDX, macstat);
 		/* We must adjust the key index here. We want the "physical"
 		 * key index, but the ucode passed it slightly different.
 		 */
@@ -2194,7 +2192,7 @@ void b43_rx(struct b43_wldev *dev, struct sk_buff *skb, const void *_rxhdr)
 	    ether_addr_equal(wlhdr->addr2, dev->wl->bssid))
 		b43_ps_rx(dev, skb);
 
-	chanid = (chanstat & B43_RX_CHAN_ID) >> B43_RX_CHAN_ID_SHIFT;
+	chanid = FIELD_GET(B43_RX_CHAN_ID, chanstat);
 	switch (phytype) {
 	case B43_PHYTYPE_G:
 		status.band = NL80211_BAND_2GHZ;

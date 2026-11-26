@@ -9,6 +9,7 @@
 
 */
 
+#include <linux/bitfield.h>
 #include <linux/iopoll.h>
 #include <linux/string_choices.h>
 #include <linux/slab.h>
@@ -828,30 +829,30 @@ static void b43_phy_ht_tx_power_ctl_setup(struct b43_wldev *dev)
 
 	b43_phy_maskset(dev, B43_PHY_HT_TXPCTL_IDLE_TSSI,
 			~B43_PHY_HT_TXPCTL_IDLE_TSSI_C1,
-			idle[0] << B43_PHY_HT_TXPCTL_IDLE_TSSI_C1_SHIFT);
+			FIELD_PREP(B43_PHY_HT_TXPCTL_IDLE_TSSI_C1, idle[0]));
 	b43_phy_maskset(dev, B43_PHY_HT_TXPCTL_IDLE_TSSI,
 			~B43_PHY_HT_TXPCTL_IDLE_TSSI_C2,
-			idle[1] << B43_PHY_HT_TXPCTL_IDLE_TSSI_C2_SHIFT);
+			FIELD_PREP(B43_PHY_HT_TXPCTL_IDLE_TSSI_C2, idle[1]));
 	b43_phy_maskset(dev, B43_PHY_HT_TXPCTL_IDLE_TSSI2,
 			~B43_PHY_HT_TXPCTL_IDLE_TSSI2_C3,
-			idle[2] << B43_PHY_HT_TXPCTL_IDLE_TSSI2_C3_SHIFT);
+			FIELD_PREP(B43_PHY_HT_TXPCTL_IDLE_TSSI2_C3, idle[2]));
 
 	b43_phy_maskset(dev, B43_PHY_HT_TXPCTL_N, ~B43_PHY_HT_TXPCTL_N_TSSID,
 			phy_ht->tssi_delay);
 	b43_phy_maskset(dev, B43_PHY_HT_TXPCTL_N, ~B43_PHY_HT_TXPCTL_N_NPTIL2,
-			0x3 << B43_PHY_HT_TXPCTL_N_NPTIL2_SHIFT);
+			FIELD_PREP(B43_PHY_HT_TXPCTL_N_NPTIL2, 0x3));
 	b43_phy_mask(dev, B43_PHY_HT_TXPCTL_CMD_C1, ~0x0800);
 	b43_phy_mask(dev, B43_PHY_HT_TXPCTL_CMD_C1, ~0x0400);
 
 	b43_phy_maskset(dev, B43_PHY_HT_TXPCTL_TARG_PWR,
 			~B43_PHY_HT_TXPCTL_TARG_PWR_C1,
-			target[0] << B43_PHY_HT_TXPCTL_TARG_PWR_C1_SHIFT);
+			FIELD_PREP(B43_PHY_HT_TXPCTL_TARG_PWR_C1, target[0]));
 	b43_phy_maskset(dev, B43_PHY_HT_TXPCTL_TARG_PWR,
 			~B43_PHY_HT_TXPCTL_TARG_PWR_C2 & 0xFFFF,
-			target[1] << B43_PHY_HT_TXPCTL_TARG_PWR_C2_SHIFT);
+			FIELD_PREP(B43_PHY_HT_TXPCTL_TARG_PWR_C2, target[1]));
 	b43_phy_maskset(dev, B43_PHY_HT_TXPCTL_TARG_PWR2,
 			~B43_PHY_HT_TXPCTL_TARG_PWR2_C3,
-			target[2] << B43_PHY_HT_TXPCTL_TARG_PWR2_C3_SHIFT);
+			FIELD_PREP(B43_PHY_HT_TXPCTL_TARG_PWR2_C3, target[2]));
 
 	for (c = 0; c < 3; c++) {
 		u8 regval[64];

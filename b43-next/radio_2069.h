@@ -18,12 +18,10 @@ struct b43_wldev;
 #define R2069_RCCAL_CFG			0x410
 #define  R2069_RCCAL_CFG_START		0x0001
 #define  R2069_RCCAL_CFG_MODE		0x0018
-#define  R2069_RCCAL_CFG_MODE_SHIFT	3
 #define  R2069_RCCAL_CFG_INIT		0x1000
 #define R2069_RCCAL_KICK		0x411
 #define  R2069_RCCAL_KICK_GO		0x0001
 #define  R2069_RCCAL_KICK_NLOOP		0xff00
-#define  R2069_RCCAL_KICK_NLOOP_SHIFT	8
 #define R2069_RCCAL_SEED		0x412
 #define R2069_RCCAL_STAT		0x413
 #define  R2069_RCCAL_STAT_DONE		0x0010
@@ -32,7 +30,6 @@ struct b43_wldev;
 #define R2069_RCCAL_G			0x416
 #define  R2069_RCCAL_G_CODE		0x001f	/* pass 1 */
 #define  R2069_RCCAL_G_DACBUF		0x03e0	/* pass 2 */
-#define  R2069_RCCAL_G_DACBUF_SHIFT	5
 
 /* Per-core RC trim, OR'd with core << 9 */
 #define R2069_RCCAL_P1_A		0x126

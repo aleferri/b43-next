@@ -1029,7 +1029,8 @@ static void b43_txbf_set_row(struct b43_wldev *dev, u8 row, int slot)
 	u16 v = b43_shm_read16(dev, B43_SHM_SHARED, off) & 0x0fff;
 
 	if (slot >= 0)
-		v |= B43_AMT_INFO_TXBF | slot << B43_AMT_INFO_TXBF_SLOT_SHIFT;
+		v |= B43_AMT_INFO_TXBF |
+		     FIELD_PREP(B43_AMT_INFO_TXBF_SLOT, slot);
 	b43_shm_write16(dev, B43_SHM_SHARED, off, v);
 }
 
@@ -2357,7 +2358,7 @@ u16 b43_antenna_to_phyctl(struct b43_wldev *dev, int antenna)
 	 * R6400 v1's three.
 	 */
 	if (b43_ht_core(dev))
-		return dev->txchain << B43_TXH_PHY_ANT_SHIFT;
+		return FIELD_PREP(B43_TXH_PHY_ANT, dev->txchain);
 
 	switch (antenna) {
 	case B43_ANTENNA0:
@@ -6714,8 +6715,8 @@ static int b43_phy_versioning(struct b43_wldev *dev)
 
 	/* Get PHY versioning */
 	tmp = b43_read16(dev, B43_MMIO_PHY_VER);
-	analog_type = (tmp & B43_PHYVER_ANALOG) >> B43_PHYVER_ANALOG_SHIFT;
-	phy_type = (tmp & B43_PHYVER_TYPE) >> B43_PHYVER_TYPE_SHIFT;
+	analog_type = FIELD_GET(B43_PHYVER_ANALOG, tmp);
+	phy_type = FIELD_GET(B43_PHYVER_TYPE, tmp);
 	phy_rev = (tmp & B43_PHYVER_VERSION);
 
 	/* LCNXN is continuation of N which run out of revisions */
@@ -7224,7 +7225,7 @@ static void b43_rx_lazy_init(struct b43_wldev *dev)
 	    dev->phy.type == B43_PHYTYPE_AC)
 		return;
 	b43_write32(dev, B43_MMIO_RX_LAZY,
-		    (frames << B43_RX_LAZY_FRAMES_SHIFT) |
+		    FIELD_PREP(B43_RX_LAZY_FRAMES, frames) |
 		    (timeout & B43_RX_LAZY_TIMEOUT));
 }
 

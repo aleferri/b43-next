@@ -9,7 +9,6 @@
 #define B43_PHY_VERSION_OFDM		B43_PHY_OFDM(0x00)	/* Versioning register for A-PHY */
 #define B43_PHY_BBANDCFG		B43_PHY_OFDM(0x01)	/* Baseband config */
 #define  B43_PHY_BBANDCFG_RXANT		0x180	/* RX Antenna selection */
-#define  B43_PHY_BBANDCFG_RXANT_SHIFT	7
 #define B43_PHY_PWRDOWN			B43_PHY_OFDM(0x03)	/* Powerdown */
 #define B43_PHY_CRSTHRES1_R1		B43_PHY_OFDM(0x06)	/* CRS Threshold 1 (phy.rev 1 only) */
 #define B43_PHY_LNAHPFCTL		B43_PHY_OFDM(0x1C)	/* LNA/HPF control */

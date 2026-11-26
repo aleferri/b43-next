@@ -21,6 +21,7 @@
 #include "wa.h"
 #include "calstat.h"
 
+#include <linux/bitfield.h>
 #include <linux/bitrev.h>
 #include <linux/slab.h>
 
@@ -2683,8 +2684,8 @@ static void b43_gphy_op_set_rx_antenna(struct b43_wldev *dev, int antenna)
 	b43_hf_write(dev, b43_hf_read(dev) & ~B43_HF_ANTDIVHELP);
 
 	b43_phy_maskset(dev, B43_PHY_BBANDCFG, ~B43_PHY_BBANDCFG_RXANT,
-			(autodiv ? B43_ANTENNA_AUTO1 : antenna) <<
-			B43_PHY_BBANDCFG_RXANT_SHIFT);
+			FIELD_PREP(B43_PHY_BBANDCFG_RXANT,
+				   autodiv ? B43_ANTENNA_AUTO1 : antenna));
 
 	if (autodiv) {
 		tmp = b43_phy_read(dev, B43_PHY_ANTDWELL);

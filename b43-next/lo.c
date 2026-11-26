@@ -20,6 +20,7 @@
 #include "main.h"
 #include "calstat.h"
 
+#include <linux/bitfield.h>
 #include <linux/delay.h>
 #include <linux/sched.h>
 #include <linux/slab.h>
@@ -71,11 +72,10 @@ static u16 lo_measure_feedthrough(struct b43_wldev *dev,
 	u16 feedthrough;
 
 	if (phy->gmode) {
-		lna <<= B43_PHY_RFOVERVAL_LNA_SHIFT;
-		pga <<= B43_PHY_RFOVERVAL_PGA_SHIFT;
-
-		B43_WARN_ON(lna & ~B43_PHY_RFOVERVAL_LNA);
-		B43_WARN_ON(pga & ~B43_PHY_RFOVERVAL_PGA);
+		B43_WARN_ON(lna > FIELD_MAX(B43_PHY_RFOVERVAL_LNA));
+		B43_WARN_ON(pga > FIELD_MAX(B43_PHY_RFOVERVAL_PGA));
+		lna = FIELD_PREP(B43_PHY_RFOVERVAL_LNA, lna);
+		pga = FIELD_PREP(B43_PHY_RFOVERVAL_PGA, pga);
 /*FIXME This assertion fails		B43_WARN_ON(trsw_rx & ~(B43_PHY_RFOVERVAL_TRSWRX |
 				    B43_PHY_RFOVERVAL_BW));
 */

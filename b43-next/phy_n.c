@@ -10,6 +10,7 @@
 
 */
 
+#include <linux/bitfield.h>
 #include <linux/delay.h>
 #include <linux/iopoll.h>
 #include <linux/slab.h>
@@ -166,8 +167,8 @@ static bool b43_nphy_2057_rev9_2g(struct b43_wldev *dev)
 /* https://bcm-v4.sipsolutions.net/802.11/PHY/N/RxCoreGetState */
 static u8 b43_nphy_get_rx_core_state(struct b43_wldev *dev)
 {
-	return (b43_phy_read(dev, B43_NPHY_RFSEQCA) & B43_NPHY_RFSEQCA_RXEN) >>
-		B43_NPHY_RFSEQCA_RXEN_SHIFT;
+	return FIELD_GET(B43_NPHY_RFSEQCA_RXEN,
+			 b43_phy_read(dev, B43_NPHY_RFSEQCA));
 }
 
 /**************************************************
@@ -684,9 +685,9 @@ static void b43_nphy_adjust_lna_gain_table(struct b43_wldev *dev)
 	}
 
 	b43_phy_maskset(dev, B43_NPHY_C1_MINMAX_GAIN, ~B43_NPHY_C1_MINGAIN,
-				minmax[0] << B43_NPHY_C1_MINGAIN_SHIFT);
+				FIELD_PREP(B43_NPHY_C1_MINGAIN, minmax[0]));
 	b43_phy_maskset(dev, B43_NPHY_C2_MINMAX_GAIN, ~B43_NPHY_C2_MINGAIN,
-				minmax[1] << B43_NPHY_C2_MINGAIN_SHIFT);
+				FIELD_PREP(B43_NPHY_C2_MINGAIN, minmax[1]));
 
 	if (nphy->hang_avoid)
 		b43_nphy_stay_in_carrier_search(dev, 0);
@@ -1968,7 +1969,7 @@ static void b43_nphy_rev2_rssi_select(struct b43_wldev *dev, u8 code,
 				~(B43_NPHY_RFCTL_CMD_RXEN |
 				  B43_NPHY_RFCTL_CMD_CORESEL),
 				(B43_NPHY_RFCTL_CMD_RXEN |
-				 code << B43_NPHY_RFCTL_CMD_CORESEL_SHIFT));
+				 FIELD_PREP(B43_NPHY_RFCTL_CMD_CORESEL, code)));
 			b43_phy_set(dev, B43_NPHY_RFCTL_OVER,
 				(0x1 << 12 |
 				  0x1 << 5 |
@@ -2896,9 +2897,9 @@ static void b43_nphy_gain_ctl_workarounds_rev1_2(struct b43_wldev *dev)
 
 	/* Set HPVGA2 index */
 	b43_phy_maskset(dev, B43_NPHY_C1_INITGAIN, ~B43_NPHY_C1_INITGAIN_HPVGA2,
-			code << B43_NPHY_C1_INITGAIN_HPVGA2_SHIFT);
+			FIELD_PREP(B43_NPHY_C1_INITGAIN_HPVGA2, code));
 	b43_phy_maskset(dev, B43_NPHY_C2_INITGAIN, ~B43_NPHY_C2_INITGAIN_HPVGA2,
-			code << B43_NPHY_C2_INITGAIN_HPVGA2_SHIFT);
+			FIELD_PREP(B43_NPHY_C2_INITGAIN_HPVGA2, code));
 
 	b43_phy_write(dev, B43_NPHY_TABLE_ADDR, 0x1D06);
 	/* specs say about 2 loops, but wl does 4 */
@@ -2942,7 +2943,7 @@ static void b43_nphy_gain_ctl_workarounds_rev1_2(struct b43_wldev *dev)
 	b43_nphy_set_rf_sequence(dev, 5, rfseq_events, rfseq_delays, 3);
 	b43_phy_maskset(dev, B43_NPHY_OVER_DGAIN1,
 		~B43_NPHY_OVER_DGAIN_CCKDGECV & 0xFFFF,
-		0x5A << B43_NPHY_OVER_DGAIN_CCKDGECV_SHIFT);
+		FIELD_PREP(B43_NPHY_OVER_DGAIN_CCKDGECV, 0x5A));
 
 	if (b43_current_band(dev->wl) == NL80211_BAND_2GHZ)
 		b43_phy_maskset(dev, B43_PHY_N(0xC5D), 0xFF80, 4);
@@ -3954,14 +3955,12 @@ static void b43_nphy_tx_power_ctrl(struct b43_wldev *dev, bool enable)
 		      B43_NPHY_TXPCTL_CMD_HWPCTLEN |
 		      B43_NPHY_TXPCTL_CMD_PCTLEN))) {
 			/* We disable enabled TX pwr ctl, save it's state */
-			nphy->tx_pwr_idx[0] = (b43_phy_read(dev,
-						B43_NPHY_C1_TXPCTL_STAT) &
-						B43_NPHY_TXPCTL_STAT_BIDX) >>
-						B43_NPHY_TXPCTL_STAT_BIDX_SHIFT;
-			nphy->tx_pwr_idx[1] = (b43_phy_read(dev,
-						B43_NPHY_C2_TXPCTL_STAT) &
-						B43_NPHY_TXPCTL_STAT_BIDX) >>
-						B43_NPHY_TXPCTL_STAT_BIDX_SHIFT;
+			nphy->tx_pwr_idx[0] =
+				FIELD_GET(B43_NPHY_TXPCTL_STAT_BIDX,
+					  b43_phy_read(dev, B43_NPHY_C1_TXPCTL_STAT));
+			nphy->tx_pwr_idx[1] =
+				FIELD_GET(B43_NPHY_TXPCTL_STAT_BIDX,
+					  b43_phy_read(dev, B43_NPHY_C2_TXPCTL_STAT));
 		}
 
 		b43_phy_write(dev, B43_NPHY_TABLE_ADDR, 0x6840);
@@ -4564,15 +4563,15 @@ static void b43_nphy_tx_power_ctl_setup(struct b43_wldev *dev)
 		b43_maskset32(dev, B43_MMIO_MACCTL, ~0x200000, 0);
 
 	b43_phy_write(dev, B43_NPHY_TXPCTL_N,
-		      0xF0 << B43_NPHY_TXPCTL_N_TSSID_SHIFT |
-		      3 << B43_NPHY_TXPCTL_N_NPTIL2_SHIFT);
+		      FIELD_PREP(B43_NPHY_TXPCTL_N_TSSID, 0xF0) |
+		      FIELD_PREP(B43_NPHY_TXPCTL_N_NPTIL2, 3));
 	b43_phy_write(dev, B43_NPHY_TXPCTL_ITSSI,
-		      idle[0] << B43_NPHY_TXPCTL_ITSSI_0_SHIFT |
-		      idle[1] << B43_NPHY_TXPCTL_ITSSI_1_SHIFT |
+		      FIELD_PREP(B43_NPHY_TXPCTL_ITSSI_0, idle[0]) |
+		      FIELD_PREP(B43_NPHY_TXPCTL_ITSSI_1, idle[1]) |
 		      B43_NPHY_TXPCTL_ITSSI_BINF);
 	b43_phy_write(dev, B43_NPHY_TXPCTL_TPWR,
-		      target[0] << B43_NPHY_TXPCTL_TPWR_0_SHIFT |
-		      target[1] << B43_NPHY_TXPCTL_TPWR_1_SHIFT);
+		      FIELD_PREP(B43_NPHY_TXPCTL_TPWR_0, target[0]) |
+		      FIELD_PREP(B43_NPHY_TXPCTL_TPWR_1, target[1]));
 
 	for (c = 0; c < 2; c++) {
 		for (i = 0; i < 64; i++) {
@@ -5353,12 +5352,12 @@ static u16 b43_nphy_precal_txgain_2057_rev14_epa(struct b43_wldev *dev)
 	}
 
 	/* The power indices the calibration restores at its end */
-	nphy->cal_orig_pwr_idx[0] = (b43_phy_read(dev, B43_NPHY_C1_TXPCTL_STAT) &
-				     B43_NPHY_TXPCTL_STAT_BIDX) >>
-				    B43_NPHY_TXPCTL_STAT_BIDX_SHIFT;
-	nphy->cal_orig_pwr_idx[1] = (b43_phy_read(dev, B43_NPHY_C2_TXPCTL_STAT) &
-				     B43_NPHY_TXPCTL_STAT_BIDX) >>
-				    B43_NPHY_TXPCTL_STAT_BIDX_SHIFT;
+	nphy->cal_orig_pwr_idx[0] =
+		FIELD_GET(B43_NPHY_TXPCTL_STAT_BIDX,
+			  b43_phy_read(dev, B43_NPHY_C1_TXPCTL_STAT));
+	nphy->cal_orig_pwr_idx[1] =
+		FIELD_GET(B43_NPHY_TXPCTL_STAT_BIDX,
+			  b43_phy_read(dev, B43_NPHY_C2_TXPCTL_STAT));
 
 	b43_phy_mask(dev, B43_NPHY_TXPCTL_CMD,
 		     (u16)~(B43_NPHY_TXPCTL_CMD_COEFF |
@@ -5704,12 +5703,10 @@ static struct nphy_txgains b43_nphy_get_tx_gains(struct b43_wldev *dev)
 	} else {
 		int i;
 		u16 index[2];
-		index[0] = (b43_phy_read(dev, B43_NPHY_C1_TXPCTL_STAT) &
-			B43_NPHY_TXPCTL_STAT_BIDX) >>
-			B43_NPHY_TXPCTL_STAT_BIDX_SHIFT;
-		index[1] = (b43_phy_read(dev, B43_NPHY_C2_TXPCTL_STAT) &
-			B43_NPHY_TXPCTL_STAT_BIDX) >>
-			B43_NPHY_TXPCTL_STAT_BIDX_SHIFT;
+		index[0] = FIELD_GET(B43_NPHY_TXPCTL_STAT_BIDX,
+				     b43_phy_read(dev, B43_NPHY_C1_TXPCTL_STAT));
+		index[1] = FIELD_GET(B43_NPHY_TXPCTL_STAT_BIDX,
+				     b43_phy_read(dev, B43_NPHY_C2_TXPCTL_STAT));
 
 		for (i = 0; i < 2; ++i) {
 			table = b43_nphy_get_tx_gain_table(dev);
@@ -6442,7 +6439,7 @@ static int b43_nphy_rev2_cal_rx_iq(struct b43_wldev *dev,
 
 		b43_phy_maskset(dev, B43_NPHY_RFSEQCA,
 				~B43_NPHY_RFSEQCA_RXDIS & 0xFFFF,
-				((1 - i) << B43_NPHY_RFSEQCA_RXDIS_SHIFT));
+				FIELD_PREP(B43_NPHY_RFSEQCA_RXDIS, 1 - i));
 		b43_phy_maskset(dev, B43_NPHY_RFSEQCA, ~B43_NPHY_RFSEQCA_TXEN,
 				(1 - i));
 		b43_phy_set(dev, afectl_core, 0x0006);
@@ -6911,21 +6908,21 @@ static void b43_nphy_rx_cal_phy_setup(struct b43_wldev *dev, u8 rx_core)
 
 	if (phy->rev >= 7) {
 		b43_phy_maskset(dev, B43_NPHY_RFSEQCA, ~B43_NPHY_RFSEQCA_TXEN,
-				(1 << tx_core) << B43_NPHY_RFSEQCA_TXEN_SHIFT);
+				FIELD_PREP(B43_NPHY_RFSEQCA_TXEN, BIT(tx_core)));
 		b43_phy_maskset(dev, B43_NPHY_RFSEQCA,
 				~B43_NPHY_RFSEQCA_RXDIS & 0xFFFF,
-				(1 << (1 - rx_core)) <<
-				B43_NPHY_RFSEQCA_RXDIS_SHIFT);
+				FIELD_PREP(B43_NPHY_RFSEQCA_RXDIS,
+					   BIT(1 - rx_core)));
 	} else {
 		b43_phy_maskset(dev, B43_NPHY_RFSEQCA,
 				~B43_NPHY_RFSEQCA_RXDIS & 0xFFFF,
-				(1 << tx_core) << B43_NPHY_RFSEQCA_RXDIS_SHIFT);
+				FIELD_PREP(B43_NPHY_RFSEQCA_RXDIS, BIT(tx_core)));
 		b43_phy_maskset(dev, B43_NPHY_RFSEQCA, ~B43_NPHY_RFSEQCA_TXEN,
-				(1 << tx_core) << B43_NPHY_RFSEQCA_TXEN_SHIFT);
+				FIELD_PREP(B43_NPHY_RFSEQCA_TXEN, BIT(tx_core)));
 		b43_phy_maskset(dev, B43_NPHY_RFSEQCA, ~B43_NPHY_RFSEQCA_RXEN,
-				(1 << rx_core) << B43_NPHY_RFSEQCA_RXEN_SHIFT);
+				FIELD_PREP(B43_NPHY_RFSEQCA_RXEN, BIT(rx_core)));
 		b43_phy_maskset(dev, B43_NPHY_RFSEQCA, ~B43_NPHY_RFSEQCA_TXDIS,
-				(1 << rx_core) << B43_NPHY_RFSEQCA_TXDIS_SHIFT);
+				FIELD_PREP(B43_NPHY_RFSEQCA_TXDIS, BIT(rx_core)));
 	}
 
 	b43_phy_mask(dev, afectl_core, ~0x0004);
@@ -7844,8 +7841,7 @@ static u8 b43_nphy_txpwr_idx_cur(struct b43_wldev *dev, u8 core)
 	u16 stat = b43_phy_read(dev, core ? B43_NPHY_C2_TXPCTL_STAT :
 					    B43_NPHY_C1_TXPCTL_STAT);
 
-	return (stat & B43_NPHY_TXPCTL_STAT_BIDX) >>
-		B43_NPHY_TXPCTL_STAT_BIDX_SHIFT;
+	return FIELD_GET(B43_NPHY_TXPCTL_STAT_BIDX, stat);
 }
 
 static void b43_nphy_papd_cal(struct b43_wldev *dev)
@@ -7942,7 +7938,7 @@ static void b43_nphy_set_rx_core_state(struct b43_wldev *dev, u8 mask)
 		b43_nphy_stay_in_carrier_search(dev, true);
 
 	b43_phy_maskset(dev, B43_NPHY_RFSEQCA, ~B43_NPHY_RFSEQCA_RXEN,
-			(mask & 0x3) << B43_NPHY_RFSEQCA_RXEN_SHIFT);
+			FIELD_PREP(B43_NPHY_RFSEQCA_RXEN, mask & 0x3));
 
 	if ((mask & 0x3) != 0x3) {
 		b43_phy_write(dev, B43_NPHY_HPANT_SWTHRES, 1);
@@ -8583,7 +8579,7 @@ static int b43_phy_initn(struct b43_wldev *dev)
 		tmp = (dev->phy.rev == 2) ? 0x3B : 0x40;
 		b43_phy_maskset(dev, B43_NPHY_BPHY_CTL3,
 				~B43_NPHY_BPHY_CTL3_SCALE,
-				tmp << B43_NPHY_BPHY_CTL3_SCALE_SHIFT);
+				FIELD_PREP(B43_NPHY_BPHY_CTL3_SCALE, tmp));
 	}
 	b43_phy_write(dev, B43_NPHY_AFESEQ_TX2RX_PUD_20M, 0x20);
 	b43_phy_write(dev, B43_NPHY_AFESEQ_TX2RX_PUD_40M, 0x20);
@@ -9012,8 +9008,7 @@ static void b43_nphy_op_ofdm_tx(struct b43_wldev *dev)
 	} else {
 		c1 = b43_phy_read(dev, B43_NPHY_C1_TXPCTL_STAT);
 		c2 = b43_phy_read(dev, B43_NPHY_C2_TXPCTL_STAT);
-		nphy->txpctl_bidx = (c1 & B43_NPHY_TXPCTL_STAT_BIDX) >>
-				    B43_NPHY_TXPCTL_STAT_BIDX_SHIFT;
+		nphy->txpctl_bidx = FIELD_GET(B43_NPHY_TXPCTL_STAT_BIDX, c1);
 		nphy->txpctl_bidx |= c2 & B43_NPHY_TXPCTL_STAT_BIDX;
 		nphy->txpctl_bidx_valid = true;
 	}

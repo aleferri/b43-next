@@ -97,10 +97,8 @@ struct b43_txhdr {
 #define B43_TXH_MAC_FB_SHORTPRMBL	0x20000000 /* Main fallback preamble */
 #define B43_TXH_MAC_USEFBR		0x10000000 /* Use fallback rate for this AMPDU */
 #define B43_TXH_MAC_KEYIDX		0x0FF00000 /* Security key index */
-#define B43_TXH_MAC_KEYIDX_SHIFT	20
 #define B43_TXH_MAC_ALT_TXPWR		0x00080000 /* Use alternate txpwr defined at loc. M_ALT_TXPWR_IDX */
 #define B43_TXH_MAC_KEYALG		0x00070000 /* Security key algorithm */
-#define B43_TXH_MAC_KEYALG_SHIFT	16
 #define B43_TXH_MAC_AMIC		0x00008000 /* AMIC */
 #define B43_TXH_MAC_RIFS		0x00004000 /* Use RIFS */
 #define B43_TXH_MAC_LIFETIME		0x00002000 /* Lifetime */
@@ -146,7 +144,6 @@ struct b43_txhdr {
 #define  B43_TXH_PHY_ENC_VHT		0x0003 /* VHT */
 #define B43_TXH_PHY_SHORTPRMBL		0x0010 /* Use short preamble */
 #define B43_TXH_PHY_ANT			0x03C0 /* Antenna selection */
-#define B43_TXH_PHY_ANT_SHIFT		6
 #define  B43_TXH_PHY_ANT0		0x0000 /* Use antenna 0 */
 #define  B43_TXH_PHY_ANT1		0x0040 /* Use antenna 1 */
 #define  B43_TXH_PHY_ANT01AUTO		0x00C0 /* Use antenna 0/1 auto */
@@ -181,7 +178,7 @@ struct b43_txhdr {
 #define  B43_TXH_PHY1_MODUL_QAM16	0x1000 /* QAM16 */
 #define  B43_TXH_PHY1_MODUL_QAM64	0x1800 /* QAM64 */
 #define  B43_TXH_PHY1_MODUL_QAM256	0x2000 /* QAM256 */
-#define B43_TXH_PHY1_NSS_SHIFT		14
+#define B43_TXH_PHY1_NSS		GENMASK(15, 14)
 
 /*
  * TX descriptor of the AC microcode, d11 core revisions 40-63, long format:
@@ -230,10 +227,10 @@ struct b43_txhdr_ac {
 } __packed;
 
 /* Cache info, cipher_bss */
-#define B43_TXH_AC_CIPHER_SHIFT		4
+#define B43_TXH_AC_CIPHER		GENMASK(7, 4)
 /* Cache info, ampdu_dur: d11.h's minimum duration index and maximum */
 #define B43_TXH_AC_AMPDU_DENSITY	0x000F	/* MPDU density, 802.11 code */
-#define B43_TXH_AC_AMPDU_MAX_DUR_SHIFT	4	/* In 16 us units */
+#define B43_TXH_AC_AMPDU_MAX_DUR	GENMASK(15, 4)	/* In 16 us units */
 
 /* TX offload prefix byte 2: aggregate context boundary, not passthrough. */
 #define B43_TXH_AC_TOE_EPOCH		BIT(1)
@@ -251,23 +248,22 @@ struct b43_txhdr_ac {
 #define B43_TXH_AC_PHY0_NON_SOUNDING	0x0004
 #define B43_TXH_AC_PHY0_BFM		0x0008	/* Beamformed */
 #define B43_TXH_AC_PHY0_SHORT_PREAMBLE	0x0010
-#define B43_TXH_AC_PHY0_CORES_SHIFT	6
-#define B43_TXH_AC_PHY0_BW_SHIFT	14	/* 0 20 MHz, 1 40, 2 80 */
 #define B43_TXH_AC_PHY0_CORES		0x01C0
+#define B43_TXH_AC_PHY0_BW		GENMASK(15, 14)	/* 0 20 MHz, 1 40, 2 80 */
 /* PHY TX control word 1: primary 20 MHz subband, power offset */
 #define B43_TXH_AC_PHY1_SUBBAND		0x0007
 #define B43_TXH_AC_PHY1_TXPWR_OFFSET	0x01F8
 /* PHY TX control word 2: the legacy rate index, or the VHT MCS and NSS - 1 */
 #define B43_TXH_AC_PHY2_VHT_MCS		0x000F
-#define B43_TXH_AC_PHY2_VHT_NSS_SHIFT	4
+#define B43_TXH_AC_PHY2_VHT_NSS		GENMASK(6, 4)
 /* RTS/CTS control */
 #define B43_TXH_AC_RTS_FT_OFDM		0x0001
 #define B43_TXH_AC_RTS_USE_RTS		0x0004
 #define B43_TXH_AC_RTS_USE_CTS		0x0008
 #define B43_TXH_AC_RTS_SHORT_PREAMBLE	0x0010
 #define B43_TXH_AC_RTS_LAST_RATE	0x0020
-#define B43_TXH_AC_RTS_RATE_SHIFT	8
-#define B43_TXH_AC_RTS_TXBF_SLOT_SHIFT	12	/* Beamforming slot */
+#define B43_TXH_AC_RTS_RATE		GENMASK(11, 8)
+#define B43_TXH_AC_RTS_TXBF_SLOT	GENMASK(15, 12)	/* Beamforming slot */
 
 static inline
 size_t b43_txhdr_size(struct b43_wldev *dev)
@@ -445,7 +441,6 @@ static inline const void *b43_rxhdr_at(const struct b43_rxhdr_fw4 *rxhdr,
 #define B43_RX_MAC_TKIP_MICERR		0x00100000 /* TKIP MIC error */
 #define B43_RX_MAC_TKIP_MICATT		0x00080000 /* TKIP MIC attempted */
 #define B43_RX_MAC_AGGTYPE		0x00060000 /* Aggregation type */
-#define B43_RX_MAC_AGGTYPE_SHIFT	17
 #define  B43_RX_AGG_MIDDLE		0	/* A-MSDU piece: a subframe */
 #define  B43_RX_AGG_FIRST		1	/* Header and first subframe */
 #define  B43_RX_AGG_LAST		2	/* Last subframe, MIC and FCS */
@@ -453,7 +448,6 @@ static inline const void *b43_rxhdr_at(const struct b43_rxhdr_fw4 *rxhdr,
 #define B43_RX_MAC_AMSDU		0x00010000 /* A-MSDU mask */
 #define B43_RX_MAC_BEACONSENT		0x00008000 /* Beacon sent flag */
 #define B43_RX_MAC_KEYIDX		0x000007E0 /* Key index */
-#define B43_RX_MAC_KEYIDX_SHIFT		5
 #define B43_RX_MAC_DECERR		0x00000010 /* Decrypt error */
 #define B43_RX_MAC_DEC			0x00000008 /* Decryption attempted */
 #define B43_RX_MAC_PADDING		0x00000004 /* Pad bytes present */
@@ -464,7 +458,6 @@ static inline const void *b43_rxhdr_at(const struct b43_rxhdr_fw4 *rxhdr,
 #define B43_RX_CHAN_40MHZ		0x1000 /* 40 Mhz channel width */
 #define B43_RX_CHAN_5GHZ		0x0800 /* 5 Ghz band */
 #define B43_RX_CHAN_ID			0x07F8 /* Channel ID */
-#define B43_RX_CHAN_ID_SHIFT		3
 #define B43_RX_CHAN_PHYTYPE		0x0007 /* PHY type */
 
 

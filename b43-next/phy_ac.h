@@ -2,6 +2,8 @@
 #ifndef B43_PHY_AC_H_
 #define B43_PHY_AC_H_
 
+#include <linux/bitfield.h>
+
 #include "phy_common.h"
 #include "ppr.h"
 #include "radar_ac.h"
@@ -310,7 +312,6 @@ struct b43_phy_ac_txpwr_limits {
  * b43_mac_bw_set().
  */
 #define B43_PHY_AC_CHANSPEC_SB_MASK		0x0700
-#define B43_PHY_AC_CHANSPEC_SB_SHIFT		8
 #define B43_PHY_AC_CHANSPEC_BW_MASK		0x3800
 #define B43_PHY_AC_CHANSPEC_BW20		0x1000
 #define B43_PHY_AC_CHANSPEC_BW40		0x1800
@@ -320,8 +321,7 @@ struct b43_phy_ac_txpwr_limits {
 /* The primary's position in the block, the subband of PHY control word 1. */
 static inline u16 b43_phy_ac_chanspec_sb(u16 chanspec)
 {
-	return (chanspec & B43_PHY_AC_CHANSPEC_SB_MASK) >>
-	       B43_PHY_AC_CHANSPEC_SB_SHIFT;
+	return FIELD_GET(B43_PHY_AC_CHANSPEC_SB_MASK, chanspec);
 }
 
 void b43_phy_ac_write_chanspec(struct b43_wldev *dev);

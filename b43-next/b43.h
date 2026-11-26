@@ -46,7 +46,7 @@
 #define B43_MMIO_MACCMD			0x124	/* MAC command */
 #define B43_MMIO_RX_LAZY		0x100	/* RX interrupt coalescing */
 #define  B43_RX_LAZY_TIMEOUT		0x00FFFFFF	/* in us */
-#define  B43_RX_LAZY_FRAMES_SHIFT	24
+#define  B43_RX_LAZY_FRAMES		GENMASK(31, 24)
 #define B43_MMIO_GEN_IRQ_REASON		0x128
 #define B43_MMIO_GEN_IRQ_MASK		0x12C
 #define B43_MMIO_RAM_CONTROL		0x130
@@ -861,7 +861,7 @@ struct b43_sta {
 #define B43_SHM_SH_TXBF_BLK		0x00B0
 #define B43_SHM_SH_AMT_INFO		0x0668
 #define  B43_AMT_INFO_TXBF		0x1000
-#define  B43_AMT_INFO_TXBF_SLOT_SHIFT	13
+#define  B43_AMT_INFO_TXBF_SLOT		GENMASK(15, 13)
 #define B43_TXBF_SLOTS			5
 #define B43_TXBF_SOUNDING		0x00E0	/* Sounding period, in the block */
 #define B43_TXBF_CTL			0x06E0	/* In the block, bit 8 cleared */

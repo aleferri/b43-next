@@ -37,6 +37,7 @@
  * check it with `b43trace anchors span` before relying on it.
  */
 
+#include <linux/bitfield.h>
 #include <linux/slab.h>
 #include "b43.h"
 #include "phy_ac.h"
@@ -642,9 +643,9 @@ static void b43_r2069_rccal_setup(struct b43_wldev *dev, unsigned int pass)
 	r2069_mod(dev, R2069_RCCAL_CFG, R2069_RCCAL_CFG_INIT,
 		  p->init ? R2069_RCCAL_CFG_INIT : 0);
 	r2069_mod(dev, R2069_RCCAL_CFG, R2069_RCCAL_CFG_MODE,
-		  (u16)(p->mode << R2069_RCCAL_CFG_MODE_SHIFT));
+		  FIELD_PREP(R2069_RCCAL_CFG_MODE, p->mode));
 	r2069_mod(dev, R2069_RCCAL_KICK, R2069_RCCAL_KICK_NLOOP,
-		  (u16)(p->nloop << R2069_RCCAL_KICK_NLOOP_SHIFT));
+		  FIELD_PREP(R2069_RCCAL_KICK_NLOOP, p->nloop));
 	b43_radio_write(dev, R2069_RCCAL_SEED, p->seed);
 }
 
@@ -782,8 +783,8 @@ static void b43_radio_2069_rccal(struct b43_wldev *dev)
 	b43_r2069_rccal_apply_fixed(dev);
 	if (!b43_r2069_rccal_run(dev))
 		b43_cal_report(dev, AC_CAL_RCCAL_TIMEOUT, 2);
-	dev->phy.ac->dacbuf_cap = (b43_radio_read(dev, R2069_RCCAL_G) &
-				   R2069_RCCAL_G_DACBUF) >> R2069_RCCAL_G_DACBUF_SHIFT;
+	dev->phy.ac->dacbuf_cap = FIELD_GET(R2069_RCCAL_G_DACBUF,
+					    b43_radio_read(dev, R2069_RCCAL_G));
 	b43_cal_report(dev, AC_CAL_RCCAL_DACBUF_CAP, dev->phy.ac->dacbuf_cap);
 	b43_r2069_rccal_disarm_p2b(dev);
 
@@ -3502,7 +3503,8 @@ static u16 b43_phy_ac_chanspec(const struct cfg80211_chan_def *chandef)
 		centre += ((int)chandef->center_freq1 - (int)chan->center_freq) / 5;
 
 	spec |= centre;
-	spec |= ((prim - (centre - half)) / 4) << B43_PHY_AC_CHANSPEC_SB_SHIFT;
+	spec |= FIELD_PREP(B43_PHY_AC_CHANSPEC_SB_MASK,
+			   (prim - (centre - half)) / 4);
 	if (chan->band == NL80211_BAND_5GHZ)
 		spec |= B43_PHY_AC_CHANSPEC_BAND_5G;
 	return spec;
