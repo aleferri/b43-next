@@ -7,6 +7,7 @@
 
 #include "bcmn_private.h"
 #include <linux/export.h>
+#include <linux/iopoll.h>
 #include <bcma-next/bcmn.h>
 
 static bool bcmn_core_wait_value(struct bcmn_device *core, u16 reg, u32 mask,
@@ -78,7 +79,7 @@ EXPORT_SYMBOL_GPL(bcmn_core_enable);
 void bcmn_core_set_clockmode(struct bcmn_device *core,
 			     enum bcmn_clkmode clkmode)
 {
-	u16 i;
+	u32 v;
 
 	WARN_ON(core->id.id != BCMN_CORE_CHIPCOMMON &&
 		core->id.id != BCMN_CORE_PCIE &&
@@ -88,15 +89,10 @@ void bcmn_core_set_clockmode(struct bcmn_device *core,
 	case BCMN_CLKMODE_FAST:
 		bcmn_set32(core, BCMN_CLKCTLST, BCMN_CLKCTLST_FORCEHT);
 		usleep_range(64, 300);
-		for (i = 0; i < 1500; i++) {
-			if (bcmn_read32(core, BCMN_CLKCTLST) &
-			    BCMN_CLKCTLST_HAVEHT) {
-				i = 0;
-				break;
-			}
-			udelay(10);
-		}
-		if (i)
+		if (read_poll_timeout_atomic(bcmn_read32, v,
+					     v & BCMN_CLKCTLST_HAVEHT,
+					     10, 15000, false,
+					     core, BCMN_CLKCTLST))
 			bcmn_err(core->bus, "HT force timeout\n");
 		break;
 	case BCMN_CLKMODE_DYNAMIC:
@@ -108,22 +104,17 @@ EXPORT_SYMBOL_GPL(bcmn_core_set_clockmode);
 
 void bcmn_core_pll_ctl(struct bcmn_device *core, u32 req, u32 status, bool on)
 {
-	u16 i;
+	u32 v;
 
 	WARN_ON(req & ~BCMN_CLKCTLST_EXTRESREQ);
 	WARN_ON(status & ~BCMN_CLKCTLST_EXTRESST);
 
 	if (on) {
 		bcmn_set32(core, BCMN_CLKCTLST, req);
-		for (i = 0; i < 10000; i++) {
-			if ((bcmn_read32(core, BCMN_CLKCTLST) & status) ==
-			    status) {
-				i = 0;
-				break;
-			}
-			udelay(10);
-		}
-		if (i)
+		if (read_poll_timeout_atomic(bcmn_read32, v,
+					     (v & status) == status,
+					     10, 100000, false,
+					     core, BCMN_CLKCTLST))
 			bcmn_err(core->bus, "PLL enable timeout\n");
 	} else {
 		/*

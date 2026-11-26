@@ -11,6 +11,7 @@
 
 #include "bcmn_private.h"
 #include <linux/export.h>
+#include <linux/iopoll.h>
 #include <bcma-next/bcmn.h>
 
 /**************************************************
@@ -34,7 +35,6 @@ static void bcmn_pcie_write(struct bcmn_drv_pci *pc, u32 address, u32 data)
 static void bcmn_pcie_mdio_set_phy(struct bcmn_drv_pci *pc, u16 phy)
 {
 	u32 v;
-	int i;
 
 	v = BCMN_CORE_PCI_MDIODATA_START;
 	v |= BCMN_CORE_PCI_MDIODATA_WRITE;
@@ -47,12 +47,10 @@ static void bcmn_pcie_mdio_set_phy(struct bcmn_drv_pci *pc, u16 phy)
 	pcicore_write32(pc, BCMN_CORE_PCI_MDIO_DATA, v);
 
 	udelay(10);
-	for (i = 0; i < 200; i++) {
-		v = pcicore_read32(pc, BCMN_CORE_PCI_MDIO_CONTROL);
-		if (v & BCMN_CORE_PCI_MDIOCTL_ACCESS_DONE)
-			break;
-		usleep_range(1000, 2000);
-	}
+	read_poll_timeout(pcicore_read32, v,
+			  v & BCMN_CORE_PCI_MDIOCTL_ACCESS_DONE,
+			  1000, 200 * USEC_PER_MSEC, false,
+			  pc, BCMN_CORE_PCI_MDIO_CONTROL);
 }
 
 static u16 bcmn_pcie_mdio_read(struct bcmn_drv_pci *pc, u16 device, u8 address)
@@ -60,7 +58,6 @@ static u16 bcmn_pcie_mdio_read(struct bcmn_drv_pci *pc, u16 device, u8 address)
 	int max_retries = 10;
 	u16 ret = 0;
 	u32 v;
-	int i;
 
 	/* enable mdio access to SERDES */
 	v = BCMN_CORE_PCI_MDIOCTL_PREAM_EN;
@@ -85,14 +82,12 @@ static u16 bcmn_pcie_mdio_read(struct bcmn_drv_pci *pc, u16 device, u8 address)
 	pcicore_write32(pc, BCMN_CORE_PCI_MDIO_DATA, v);
 	/* Wait for the device to complete the transaction */
 	udelay(10);
-	for (i = 0; i < max_retries; i++) {
-		v = pcicore_read32(pc, BCMN_CORE_PCI_MDIO_CONTROL);
-		if (v & BCMN_CORE_PCI_MDIOCTL_ACCESS_DONE) {
-			udelay(10);
-			ret = pcicore_read32(pc, BCMN_CORE_PCI_MDIO_DATA);
-			break;
-		}
-		usleep_range(1000, 2000);
+	if (!read_poll_timeout(pcicore_read32, v,
+			       v & BCMN_CORE_PCI_MDIOCTL_ACCESS_DONE,
+			       1000, max_retries * USEC_PER_MSEC, false,
+			       pc, BCMN_CORE_PCI_MDIO_CONTROL)) {
+		udelay(10);
+		ret = pcicore_read32(pc, BCMN_CORE_PCI_MDIO_DATA);
 	}
 	pcicore_write32(pc, BCMN_CORE_PCI_MDIO_CONTROL, 0);
 	return ret;
@@ -103,7 +98,6 @@ static void bcmn_pcie_mdio_write(struct bcmn_drv_pci *pc, u16 device,
 {
 	int max_retries = 10;
 	u32 v;
-	int i;
 
 	/* enable mdio access to SERDES */
 	v = BCMN_CORE_PCI_MDIOCTL_PREAM_EN;
@@ -128,12 +122,10 @@ static void bcmn_pcie_mdio_write(struct bcmn_drv_pci *pc, u16 device,
 	pcicore_write32(pc, BCMN_CORE_PCI_MDIO_DATA, v);
 	/* Wait for the device to complete the transaction */
 	udelay(10);
-	for (i = 0; i < max_retries; i++) {
-		v = pcicore_read32(pc, BCMN_CORE_PCI_MDIO_CONTROL);
-		if (v & BCMN_CORE_PCI_MDIOCTL_ACCESS_DONE)
-			break;
-		usleep_range(1000, 2000);
-	}
+	read_poll_timeout(pcicore_read32, v,
+			  v & BCMN_CORE_PCI_MDIOCTL_ACCESS_DONE,
+			  1000, max_retries * USEC_PER_MSEC, false,
+			  pc, BCMN_CORE_PCI_MDIO_CONTROL);
 	pcicore_write32(pc, BCMN_CORE_PCI_MDIO_CONTROL, 0);
 }
 
