@@ -10,6 +10,7 @@
 
 */
 
+#include <linux/iopoll.h>
 #include <linux/slab.h>
 
 #include "b43.h"
@@ -1008,7 +1009,7 @@ static void lpphy_run_ddfs(struct b43_wldev *dev, int i_on, int q_on,
 static bool lpphy_rx_iq_est(struct b43_wldev *dev, u16 samples, u8 time,
 			   struct lpphy_iq_est *iq_est)
 {
-	int i;
+	u16 v;
 
 	b43_phy_mask(dev, B43_LPPHY_CRSGAIN_CTL, 0xFFF7);
 	b43_phy_write(dev, B43_LPPHY_IQ_NUM_SMPLS_ADDR, samples);
@@ -1016,14 +1017,9 @@ static bool lpphy_rx_iq_est(struct b43_wldev *dev, u16 samples, u8 time,
 	b43_phy_mask(dev, B43_LPPHY_IQ_ENABLE_WAIT_TIME_ADDR, 0xFEFF);
 	b43_phy_set(dev, B43_LPPHY_IQ_ENABLE_WAIT_TIME_ADDR, 0x200);
 
-	for (i = 0; i < 500; i++) {
-		if (!(b43_phy_read(dev,
-				B43_LPPHY_IQ_ENABLE_WAIT_TIME_ADDR) & 0x200))
-			break;
-		msleep(1);
-	}
-
-	if ((b43_phy_read(dev, B43_LPPHY_IQ_ENABLE_WAIT_TIME_ADDR) & 0x200)) {
+	if (read_poll_timeout(b43_phy_read, v, !(v & 0x200),
+			      1000, 500 * USEC_PER_MSEC, false,
+			      dev, B43_LPPHY_IQ_ENABLE_WAIT_TIME_ADDR)) {
 		b43_phy_set(dev, B43_LPPHY_CRSGAIN_CTL, 0x8);
 		return false;
 	}
@@ -1304,7 +1300,7 @@ static void lpphy_rev2plus_rc_calib(struct b43_wldev *dev)
 	struct ssbn_bus *bus = dev->dev->sdev->bus;
 	u32 crystal_freq = bus->chipco.pmu.crystalfreq * 1000;
 	u8 tmp = b43_radio_read(dev, B2063_RX_BB_SP8) & 0xFF;
-	int i;
+	u16 v;
 
 	b43_cal_begin(dev, B43_CAL_RCCAL);
 	b43_radio_write(dev, B2063_RX_BB_SP8, 0x0);
@@ -1317,13 +1313,9 @@ static void lpphy_rev2plus_rc_calib(struct b43_wldev *dev)
 	b43_radio_write(dev, B2063_RC_CALIB_CTL5, 0x1);
 	b43_radio_write(dev, B2063_RC_CALIB_CTL1, 0x7D);
 
-	for (i = 0; i < 10000; i++) {
-		if (b43_radio_read(dev, B2063_RC_CALIB_CTL6) & 0x2)
-			break;
-		msleep(1);
-	}
-
-	if (!(b43_radio_read(dev, B2063_RC_CALIB_CTL6) & 0x2)) {
+	if (read_poll_timeout(b43_radio_read, v, v & 0x2,
+			      1000, 10 * USEC_PER_SEC, false,
+			      dev, B2063_RC_CALIB_CTL6)) {
 		b43_cal_report(dev, LP_CAL_RCCAL_FAIL, 1, -1, -1);
 		b43_radio_write(dev, B2063_RX_BB_SP8, tmp);
 	}
@@ -1346,13 +1338,9 @@ static void lpphy_rev2plus_rc_calib(struct b43_wldev *dev)
 
 	b43_radio_write(dev, B2063_PA_SP7, 0x7D);
 
-	for (i = 0; i < 10000; i++) {
-		if (b43_radio_read(dev, B2063_RC_CALIB_CTL6) & 0x2)
-			break;
-		msleep(1);
-	}
-
-	if (!(b43_radio_read(dev, B2063_RC_CALIB_CTL6) & 0x2)) {
+	if (read_poll_timeout(b43_radio_read, v, v & 0x2,
+			      1000, 10 * USEC_PER_SEC, false,
+			      dev, B2063_RC_CALIB_CTL6)) {
 		b43_cal_report(dev, LP_CAL_RCCAL_FAIL, 2, -1, -1);
 		b43_radio_write(dev, B2063_TX_BB_SP3, tmp);
 	}
@@ -1852,16 +1840,13 @@ static void lpphy_start_tx_tone(struct b43_wldev *dev, s32 freq, u16 max)
 static void lpphy_stop_tx_tone(struct b43_wldev *dev)
 {
 	struct b43_phy_lp *lpphy = dev->phy.lp;
-	int i;
+	u16 v;
 
 	lpphy->tx_tone_freq = 0;
 
 	b43_phy_mask(dev, B43_LPPHY_SMPL_PLAY_COUNT, 0xF000);
-	for (i = 0; i < 31; i++) {
-		if (!(b43_phy_read(dev, B43_LPPHY_A_PHY_CTL_ADDR) & 0x1))
-			break;
-		udelay(100);
-	}
+	read_poll_timeout_atomic(b43_phy_read, v, !(v & 0x1), 100, 3100, false,
+				 dev, B43_LPPHY_A_PHY_CTL_ADDR);
 }
 
 

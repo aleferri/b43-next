@@ -186,7 +186,7 @@ static void b43_nphy_force_rf_sequence(struct b43_wldev *dev,
 		[B43_RFSEQ_UPDATE_GAINL]	= B43_NPHY_RFSEQTR_UPGL,
 		[B43_RFSEQ_UPDATE_GAINU]	= B43_NPHY_RFSEQTR_UPGU,
 	};
-	int i;
+	u16 st;
 	u16 seq_mode = b43_phy_read(dev, B43_NPHY_RFSEQMODE);
 
 	B43_WARN_ON(seq >= ARRAY_SIZE(trigger));
@@ -194,13 +194,10 @@ static void b43_nphy_force_rf_sequence(struct b43_wldev *dev,
 	b43_phy_set(dev, B43_NPHY_RFSEQMODE,
 		    B43_NPHY_RFSEQMODE_CAOVER | B43_NPHY_RFSEQMODE_TROVER);
 	b43_phy_set(dev, B43_NPHY_RFSEQTR, trigger[seq]);
-	for (i = 0; i < 200; i++) {
-		if (!(b43_phy_read(dev, B43_NPHY_RFSEQST) & trigger[seq]))
-			goto ok;
-		msleep(1);
-	}
-	b43err(dev->wl, "RF sequence status timeout\n");
-ok:
+	if (read_poll_timeout(b43_phy_read, st, !(st & trigger[seq]),
+			      1000, 200 * USEC_PER_MSEC, false,
+			      dev, B43_NPHY_RFSEQST))
+		b43err(dev->wl, "RF sequence status timeout\n");
 	b43_phy_write(dev, B43_NPHY_RFSEQMODE, seq_mode);
 }
 
@@ -1654,7 +1651,6 @@ static void b43_nphy_run_samples(struct b43_wldev *dev, u16 samps, u16 loops,
 {
 	struct b43_phy *phy = &dev->phy;
 	struct b43_phy_n *nphy = dev->phy.n;
-	int i;
 	u16 seq_mode;
 	u32 tmp;
 
@@ -1721,14 +1717,8 @@ static void b43_nphy_run_samples(struct b43_wldev *dev, u16 samps, u16 loops,
 		tmp = dac_test ? 5 : 1;
 		b43_phy_write(dev, B43_NPHY_SAMP_CMD, tmp);
 	}
-	for (i = 0; i < 100; i++) {
-		if (!(b43_phy_read(dev, B43_NPHY_RFSEQST) & 1)) {
-			i = 0;
-			break;
-		}
-		udelay(10);
-	}
-	if (i)
+	if (read_poll_timeout_atomic(b43_phy_read, tmp, !(tmp & 1), 10, 1000,
+				     false, dev, B43_NPHY_RFSEQST))
 		b43err(dev->wl, "run samples timeout\n");
 
 	b43_phy_write(dev, B43_NPHY_RFSEQMODE, seq_mode);
@@ -4723,7 +4713,6 @@ static void b43_nphy_tx_lpf_bw(struct b43_wldev *dev)
 static void b43_nphy_rx_iq_est(struct b43_wldev *dev, struct nphy_iq_est *est,
 				u16 samps, u8 time, bool wait)
 {
-	int i;
 	u16 tmp;
 
 	b43_phy_write(dev, B43_NPHY_IQEST_SAMCNT, samps);
@@ -4735,27 +4724,27 @@ static void b43_nphy_rx_iq_est(struct b43_wldev *dev, struct nphy_iq_est *est,
 
 	b43_phy_set(dev, B43_NPHY_IQEST_CMD, B43_NPHY_IQEST_CMD_START);
 
-	for (i = 1000; i; i--) {
-		tmp = b43_phy_read(dev, B43_NPHY_IQEST_CMD);
-		if (!(tmp & B43_NPHY_IQEST_CMD_START)) {
-			est->i0_pwr = (b43_phy_read(dev, B43_NPHY_IQEST_IPACC_HI0) << 16) |
-					b43_phy_read(dev, B43_NPHY_IQEST_IPACC_LO0);
-			est->q0_pwr = (b43_phy_read(dev, B43_NPHY_IQEST_QPACC_HI0) << 16) |
-					b43_phy_read(dev, B43_NPHY_IQEST_QPACC_LO0);
-			est->iq0_prod = (b43_phy_read(dev, B43_NPHY_IQEST_IQACC_HI0) << 16) |
-					b43_phy_read(dev, B43_NPHY_IQEST_IQACC_LO0);
-
-			est->i1_pwr = (b43_phy_read(dev, B43_NPHY_IQEST_IPACC_HI1) << 16) |
-					b43_phy_read(dev, B43_NPHY_IQEST_IPACC_LO1);
-			est->q1_pwr = (b43_phy_read(dev, B43_NPHY_IQEST_QPACC_HI1) << 16) |
-					b43_phy_read(dev, B43_NPHY_IQEST_QPACC_LO1);
-			est->iq1_prod = (b43_phy_read(dev, B43_NPHY_IQEST_IQACC_HI1) << 16) |
-					b43_phy_read(dev, B43_NPHY_IQEST_IQACC_LO1);
-			return;
-		}
-		udelay(10);
+	if (read_poll_timeout_atomic(b43_phy_read, tmp,
+				     !(tmp & B43_NPHY_IQEST_CMD_START),
+				     10, 10000, false,
+				     dev, B43_NPHY_IQEST_CMD)) {
+		memset(est, 0, sizeof(*est));
+		return;
 	}
-	memset(est, 0, sizeof(*est));
+
+	est->i0_pwr = (b43_phy_read(dev, B43_NPHY_IQEST_IPACC_HI0) << 16) |
+			b43_phy_read(dev, B43_NPHY_IQEST_IPACC_LO0);
+	est->q0_pwr = (b43_phy_read(dev, B43_NPHY_IQEST_QPACC_HI0) << 16) |
+			b43_phy_read(dev, B43_NPHY_IQEST_QPACC_LO0);
+	est->iq0_prod = (b43_phy_read(dev, B43_NPHY_IQEST_IQACC_HI0) << 16) |
+			b43_phy_read(dev, B43_NPHY_IQEST_IQACC_LO0);
+
+	est->i1_pwr = (b43_phy_read(dev, B43_NPHY_IQEST_IPACC_HI1) << 16) |
+			b43_phy_read(dev, B43_NPHY_IQEST_IPACC_LO1);
+	est->q1_pwr = (b43_phy_read(dev, B43_NPHY_IQEST_QPACC_HI1) << 16) |
+			b43_phy_read(dev, B43_NPHY_IQEST_QPACC_LO1);
+	est->iq1_prod = (b43_phy_read(dev, B43_NPHY_IQEST_IQACC_HI1) << 16) |
+			b43_phy_read(dev, B43_NPHY_IQEST_IQACC_LO1);
 }
 
 /* https://bcm-v4.sipsolutions.net/802.11/PHY/N/RxIqCoeffs */
@@ -6251,13 +6240,10 @@ static int b43_nphy_cal_tx_iq_lo(struct b43_wldev *dev,
 
 			/* The engine keeps 0xC000 set while it runs */
 			b43_phy_write(dev, B43_NPHY_IQLOCAL_CMD, cmd);
-			for (i = 0; i < 2000; i++) {
-				tmp = b43_phy_read(dev, B43_NPHY_IQLOCAL_CMD);
-				if (!(tmp & 0xC000))
-					break;
-				udelay(10);
-			}
-			if (tmp & 0xC000) {
+			if (read_poll_timeout_atomic(b43_phy_read, tmp,
+						     !(tmp & 0xC000),
+						     10, 20000, false, dev,
+						     B43_NPHY_IQLOCAL_CMD)) {
 				b43err(dev->wl,
 				       "TX IQ/LO cal command 0x%04X timed out\n",
 				       cmd);

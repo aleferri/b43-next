@@ -9,6 +9,7 @@
 
 */
 
+#include <linux/iopoll.h>
 #include <linux/slab.h>
 
 #include "b43.h"
@@ -241,20 +242,15 @@ static void b43_radio_2059_init(struct b43_wldev *dev)
 
 static void b43_phy_ht_force_rf_sequence(struct b43_wldev *dev, u16 rf_seq)
 {
-	u8 i;
+	u16 st;
 
 	u16 save_seq_mode = b43_phy_read(dev, B43_PHY_HT_RF_SEQ_MODE);
 	b43_phy_set(dev, B43_PHY_HT_RF_SEQ_MODE, 0x3);
 
 	b43_phy_set(dev, B43_PHY_HT_RF_SEQ_TRIG, rf_seq);
-	for (i = 0; i < 200; i++) {
-		if (!(b43_phy_read(dev, B43_PHY_HT_RF_SEQ_STATUS) & rf_seq)) {
-			i = 0;
-			break;
-		}
-		msleep(1);
-	}
-	if (i)
+	if (read_poll_timeout(b43_phy_read, st, !(st & rf_seq),
+			      1000, 200 * USEC_PER_MSEC, false,
+			      dev, B43_PHY_HT_RF_SEQ_STATUS))
 		b43err(dev->wl, "Forcing RF sequence timeout\n");
 
 	b43_phy_write(dev, B43_PHY_HT_RF_SEQ_MODE, save_seq_mode);
@@ -465,7 +461,7 @@ static void b43_phy_ht_run_samples(struct b43_wldev *dev, u16 samps, u16 loops,
 				   u16 wait, bool iqmode)
 {
 	u16 save_seq_mode;
-	int i;
+	u16 st;
 
 	b43_phy_ht_save_bb_mult(dev);
 	b43_phy_ht_reset_cca(dev);
@@ -489,14 +485,8 @@ static void b43_phy_ht_run_samples(struct b43_wldev *dev, u16 samps, u16 loops,
 	else
 		b43_phy_set(dev, B43_PHY_HT_SAMP_CMD, 0x1);
 
-	for (i = 0; i < 100; i++) {
-		if (!(b43_phy_read(dev, B43_PHY_HT_RF_SEQ_STATUS) & 1)) {
-			i = 0;
-			break;
-		}
-		udelay(10);
-	}
-	if (i)
+	if (read_poll_timeout_atomic(b43_phy_read, st, !(st & 1), 10, 1000,
+				     false, dev, B43_PHY_HT_RF_SEQ_STATUS))
 		b43err(dev->wl, "run samples timeout\n");
 
 	b43_phy_write(dev, B43_PHY_HT_RF_SEQ_MODE, save_seq_mode);
@@ -2273,19 +2263,16 @@ struct b43_phy_ht_iq_est {
 static void b43_phy_ht_rx_iq_est(struct b43_wldev *dev,
 				 struct b43_phy_ht_iq_est *est, u16 samps)
 {
-	int c, i;
+	u16 st;
+	int c;
 
 	b43_phy_read(dev, 0x0b1);
 	b43_phy_write(dev, 0x12b, samps);
 	b43_phy_maskset(dev, 0x12a, ~0xff, 32);
 	b43_phy_mask(dev, 0x129, ~0x2);
 	b43_phy_set(dev, 0x129, 0x1);
-	for (i = 0; i < 1000; i++) {
-		if (!(b43_phy_read(dev, 0x129) & 0x1))
-			break;
-		udelay(10);
-	}
-	if (b43_phy_read(dev, 0x129) & 0x1)
+	if (read_poll_timeout_atomic(b43_phy_read, st, !(st & 0x1), 10, 10000,
+				     false, dev, 0x129))
 		b43err(dev->wl, "HT-PHY: RX I/Q estimate timeout\n");
 	for (c = 0; c < 3; c++) {
 		static const u16 base[3] = { 0x12c, 0x134, 0x13a };
