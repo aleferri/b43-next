@@ -10,7 +10,7 @@
 	struct b43_plcp_hdr##size {		\
 		union {				\
 			__le32 data;		\
-			__u8 raw[size];		\
+			u8 raw[size];		\
 		} __packed;	\
 	} __packed
 
@@ -31,12 +31,12 @@ struct b43_txhdr {
 	__le16 phy_ctl1_fb;		/* PHY TX control word 1 for fallback rates */
 	__le16 phy_ctl1_rts;		/* PHY TX control word 1 RTS */
 	__le16 phy_ctl1_rts_fb;		/* PHY TX control word 1 RTS for fallback rates */
-	__u8 phy_rate;			/* PHY rate */
-	__u8 phy_rate_rts;		/* PHY rate for RTS/CTS */
-	__u8 extra_ft;			/* Extra Frame Types */
-	__u8 chan_radio_code;		/* Channel Radio Code */
-	__u8 iv[16];			/* Encryption IV */
-	__u8 tx_receiver[6];		/* TX Frame Receiver address */
+	u8 phy_rate;			/* PHY rate */
+	u8 phy_rate_rts;		/* PHY rate for RTS/CTS */
+	u8 extra_ft;			/* Extra Frame Types */
+	u8 chan_radio_code;		/* Channel Radio Code */
+	u8 iv[16];			/* Encryption IV */
+	u8 tx_receiver[6];		/* TX Frame Receiver address */
 	__le16 tx_fes_time_fb;		/* TX FES Time Fallback */
 	struct b43_plcp_hdr6 rts_plcp_fb; /* RTS fallback PLCP header */
 	__le16 rts_dur_fb;		/* RTS fallback duration */
@@ -59,7 +59,7 @@ struct b43_txhdr {
 			__le16 max_a_bytes_fbr;
 			__le16 min_m_bytes;
 			struct b43_plcp_hdr6 rts_plcp;  /* RTS PLCP header */
-			__u8 rts_frame[16];             /* The RTS frame (if used) */
+			u8 rts_frame[16];             /* The RTS frame (if used) */
 			PAD_BYTES(2);
 			struct b43_plcp_hdr6 plcp;      /* Main PLCP header */
 		} format_598 __packed;
@@ -72,7 +72,7 @@ struct b43_txhdr {
 			__le16 cookie;			/* TX frame cookie */
 			__le16 tx_status;		/* TX status */
 			struct b43_plcp_hdr6 rts_plcp;	/* RTS PLCP header */
-			__u8 rts_frame[16];		/* The RTS frame (if used) */
+			u8 rts_frame[16];		/* The RTS frame (if used) */
 			PAD_BYTES(2);
 			struct b43_plcp_hdr6 plcp;	/* Main PLCP header */
 		} format_410 __packed;
@@ -83,7 +83,7 @@ struct b43_txhdr {
 			__le16 cookie;			/* TX frame cookie */
 			__le16 tx_status;		/* TX status */
 			struct b43_plcp_hdr6 rts_plcp;	/* RTS PLCP header */
-			__u8 rts_frame[16];		/* The RTS frame (if used) */
+			u8 rts_frame[16];		/* The RTS frame (if used) */
 			PAD_BYTES(2);
 			struct b43_plcp_hdr6 plcp;	/* Main PLCP header */
 		} format_351 __packed;
@@ -202,28 +202,28 @@ struct b43_txhdr_ac_rate {
 #define B43_TXH_AC_RATES		4
 
 struct b43_txhdr_ac {
-	__u8 toe[4];			/* TX offload header */
+	u8 toe[4];			/* TX offload header */
 	__le16 tso_info;
 	__le16 mac_ctl_lo;		/* MAC TX control, low */
 	__le16 mac_ctl_hi;		/* MAC TX control, high */
 	__le16 chanspec;
-	__u8 iv_offset;			/* Length of the 802.11 header */
-	__u8 pkt_cache_len;
+	u8 iv_offset;			/* Length of the 802.11 header */
+	u8 pkt_cache_len;
 	__le16 frame_len;		/* With the FCS */
 	__le16 cookie;			/* Frame ID */
 	__le16 seq;
 	__le16 tstamp;
 	__le16 tx_status;
 	struct b43_txhdr_ac_rate rate[B43_TXH_AC_RATES];
-	__u8 cipher_bss;		/* Cipher in 7:4, BSS index in 3:0 */
-	__u8 key_idx;			/* Key slot */
-	__u8 mpdu_max;			/* MPDUs per A-MPDU, primary rate */
-	__u8 mpdu_max_fb;		/* and fallback rate */
+	u8 cipher_bss;			/* Cipher in 7:4, BSS index in 3:0 */
+	u8 key_idx;			/* Key slot */
+	u8 mpdu_max;			/* MPDUs per A-MPDU, primary rate */
+	u8 mpdu_max_fb;			/* and fallback rate */
 	__le16 ampdu_dur;		/* Longest A-MPDU, MPDU density */
-	__u8 ba_win;			/* Block ack window less one */
-	__u8 max_agg_len;		/* Longest A-MPDU, log2 of its bytes */
-	__u8 tkip_p1k[10];
-	__u8 tsc_pn[6];
+	u8 ba_win;			/* Block ack window less one */
+	u8 max_agg_len;			/* Longest A-MPDU, log2 of its bytes */
+	u8 tkip_p1k[10];
+	u8 tsc_pn[6];
 } __packed;
 
 /* Cache info, cipher_bss */
@@ -341,26 +341,26 @@ struct b43_rxhdr_fw4 {
 	union {
 		/* RSSI for A/B/G-PHYs */
 		struct {
-			__u8 jssi;	/* PHY RX Status 1: JSSI */
-			__u8 sig_qual;	/* PHY RX Status 1: Signal Quality */
+			u8 jssi;	/* PHY RX Status 1: JSSI */
+			u8 sig_qual;	/* PHY RX Status 1: Signal Quality */
 		} __packed;
 
 		/* RSSI for N-PHYs */
 		struct {
-			__s8 power0;	/* PHY RX Status 1: Power 0 */
-			__s8 power1;	/* PHY RX Status 1: Power 1 */
+			s8 power0;	/* PHY RX Status 1: Power 0 */
+			s8 power1;	/* PHY RX Status 1: Power 1 */
 		} __packed;
 	} __packed;
 	union {
 		/* HT-PHY */
 		struct {
 			PAD_BYTES(1);
-			__s8 phy_ht_power0;
+			s8 phy_ht_power0;
 		} __packed;
 
 		/* RSSI for N-PHYs */
 		struct {
-			__s8 power2;
+			s8 power2;
 			PAD_BYTES(1);
 		} __packed;
 
@@ -369,8 +369,8 @@ struct b43_rxhdr_fw4 {
 	union {
 		/* HT-PHY */
 		struct {
-			__s8 phy_ht_power1;
-			__s8 phy_ht_power2;
+			s8 phy_ht_power1;
+			s8 phy_ht_power2;
 		} __packed;
 
 		__le16 phy_status3;	/* PHY RX Status 3 */

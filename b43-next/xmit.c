@@ -157,7 +157,7 @@ static int b43_plcp_get_bitrate_idx_ofdm(struct b43_plcp_hdr6 *plcp, bool ghz5)
 void b43_generate_plcp_hdr(struct b43_plcp_hdr4 *plcp,
 			   const u16 octets, const u8 bitrate)
 {
-	__u8 *raw = plcp->raw;
+	u8 *raw = plcp->raw;
 
 	if (b43_is_ofdm_rate(bitrate)) {
 		u32 d;
@@ -2105,7 +2105,7 @@ void b43_rx(struct b43_wldev *dev, struct sk_buff *skb, const void *_rxhdr)
 	}
 	case B43_PHYTYPE_HT:
 		/* TODO: is max the right choice? */
-		status.signal = max_t(__s8,
+		status.signal = max_t(s8,
 			max(rxhdr->phy_ht_power0, rxhdr->phy_ht_power1),
 			rxhdr->phy_ht_power2);
 		break;
