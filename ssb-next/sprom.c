@@ -65,32 +65,24 @@ static int hex2sprom(u16 *sprom, const char *dump, size_t len,
 ssize_t ssbn_attr_sprom_show(struct ssbn_bus *bus, char *buf,
 			    int (*sprom_read)(struct ssbn_bus *bus, u16 *sprom))
 {
-	u16 *sprom;
-	int err = -ENOMEM;
-	ssize_t count = 0;
 	size_t sprom_size_words = bus->sprom_size;
+	int err;
 
-	sprom = kcalloc(sprom_size_words, sizeof(u16), GFP_KERNEL);
+	u16 *sprom __free(kfree) = kcalloc(sprom_size_words, sizeof(u16),
+					   GFP_KERNEL);
 	if (!sprom)
-		goto out;
+		return -ENOMEM;
 
 	/* Use interruptible locking, as the SPROM write might
 	 * be holding the lock for several seconds. So allow userspace
 	 * to cancel operation.
 	 */
-	err = -ERESTARTSYS;
-	if (mutex_lock_interruptible(&bus->sprom_mutex))
-		goto out_kfree;
-	err = sprom_read(bus, sprom);
-	mutex_unlock(&bus->sprom_mutex);
+	scoped_cond_guard(mutex_intr, return -ERESTARTSYS, &bus->sprom_mutex)
+		err = sprom_read(bus, sprom);
+	if (err)
+		return err;
 
-	if (!err)
-		count = sprom2hex(sprom, buf, PAGE_SIZE, sprom_size_words);
-
-out_kfree:
-	kfree(sprom);
-out:
-	return err ? err : count;
+	return sprom2hex(sprom, buf, PAGE_SIZE, sprom_size_words);
 }
 
 /* Common sprom device-attribute store-handler */
@@ -99,46 +91,34 @@ ssize_t ssbn_attr_sprom_store(struct ssbn_bus *bus,
 			     int (*sprom_check_crc)(const u16 *sprom, size_t size),
 			     int (*sprom_write)(struct ssbn_bus *bus, const u16 *sprom))
 {
-	u16 *sprom;
-	int res = 0, err = -ENOMEM;
 	size_t sprom_size_words = bus->sprom_size;
 	struct ssbn_freeze_context freeze;
+	int res, err;
 
-	sprom = kcalloc(bus->sprom_size, sizeof(u16), GFP_KERNEL);
+	u16 *sprom __free(kfree) = kcalloc(sprom_size_words, sizeof(u16),
+					   GFP_KERNEL);
 	if (!sprom)
-		goto out;
-	err = hex2sprom(sprom, buf, count, sprom_size_words);
-	if (err) {
-		err = -EINVAL;
-		goto out_kfree;
-	}
-	err = sprom_check_crc(sprom, sprom_size_words);
-	if (err) {
-		err = -EINVAL;
-		goto out_kfree;
-	}
+		return -ENOMEM;
+	if (hex2sprom(sprom, buf, count, sprom_size_words))
+		return -EINVAL;
+	if (sprom_check_crc(sprom, sprom_size_words))
+		return -EINVAL;
 
 	/* Use interruptible locking, as the SPROM write might
 	 * be holding the lock for several seconds. So allow userspace
 	 * to cancel operation.
 	 */
-	err = -ERESTARTSYS;
-	if (mutex_lock_interruptible(&bus->sprom_mutex))
-		goto out_kfree;
-	err = ssbn_devices_freeze(bus, &freeze);
-	if (err) {
-		pr_err("SPROM write: Could not freeze all devices\n");
-		goto out_unlock;
+	scoped_cond_guard(mutex_intr, return -ERESTARTSYS, &bus->sprom_mutex) {
+		err = ssbn_devices_freeze(bus, &freeze);
+		if (err) {
+			pr_err("SPROM write: Could not freeze all devices\n");
+			return err;
+		}
+		res = sprom_write(bus, sprom);
+		err = ssbn_devices_thaw(&freeze);
+		if (err)
+			pr_err("SPROM write: Could not thaw all devices\n");
 	}
-	res = sprom_write(bus, sprom);
-	err = ssbn_devices_thaw(&freeze);
-	if (err)
-		pr_err("SPROM write: Could not thaw all devices\n");
-out_unlock:
-	mutex_unlock(&bus->sprom_mutex);
-out_kfree:
-	kfree(sprom);
-out:
 	if (res)
 		return res;
 	return err ? err : count;
