@@ -28,11 +28,15 @@
 #include <net/page_pool/helpers.h>
 #include <linux/pci.h>
 #include <linux/delay.h>
+#include <linux/iopoll.h>
 #include <linux/skbuff.h>
 #include <linux/etherdevice.h>
 #include <linux/slab.h>
 #include <asm/div64.h>
 
+/* The engine stops within the 10 ms the vendor driver allows it. */
+#define B43_DMA_RESET_POLL_US		100
+#define B43_DMA_RESET_TIMEOUT_US	(10 * USEC_PER_MSEC)
 
 /*
  * The fewest TX slots a frame takes: its TX header and one buffer. A header
@@ -541,38 +545,50 @@ static void free_ringmemory(struct b43_dmaring *ring)
 			  ring->descbase, ring->dmabase);
 }
 
+static bool b43_dma_rx_disabled(u32 value, enum b43_dmatype type)
+{
+	if (type == B43_DMA_64BIT)
+		return (value & B43_DMA64_RXSTAT) == B43_DMA64_RXSTAT_DISABLED;
+	return (value & B43_DMA32_RXSTATE) == B43_DMA32_RXSTAT_DISABLED;
+}
+
+static bool b43_dma_tx_disabled(u32 value, enum b43_dmatype type)
+{
+	if (type == B43_DMA_64BIT)
+		return (value & B43_DMA64_TXSTAT) == B43_DMA64_TXSTAT_DISABLED;
+	return (value & B43_DMA32_TXSTATE) == B43_DMA32_TXSTAT_DISABLED;
+}
+
+static bool b43_dma_tx_quiesced(u32 value, enum b43_dmatype type)
+{
+	if (type == B43_DMA_64BIT) {
+		value &= B43_DMA64_TXSTAT;
+		return value == B43_DMA64_TXSTAT_DISABLED ||
+		       value == B43_DMA64_TXSTAT_IDLEWAIT ||
+		       value == B43_DMA64_TXSTAT_STOPPED;
+	}
+	value &= B43_DMA32_TXSTATE;
+	return value == B43_DMA32_TXSTAT_DISABLED ||
+	       value == B43_DMA32_TXSTAT_IDLEWAIT ||
+	       value == B43_DMA32_TXSTAT_STOPPED;
+}
+
 /* Reset the RX DMA channel */
 static int b43_dmacontroller_rx_reset(struct b43_wldev *dev, u16 mmio_base,
 				      enum b43_dmatype type)
 {
-	int i;
+	u16 ctl = type == B43_DMA_64BIT ? B43_DMA64_RXCTL : B43_DMA32_RXCTL;
+	u16 stat = type == B43_DMA_64BIT ? B43_DMA64_RXSTATUS :
+					   B43_DMA32_RXSTATUS;
 	u32 value;
-	u16 offset;
 
 	might_sleep();
 
-	offset = (type == B43_DMA_64BIT) ? B43_DMA64_RXCTL : B43_DMA32_RXCTL;
-	b43_write32(dev, mmio_base + offset, 0);
-	for (i = 0; i < 10; i++) {
-		offset = (type == B43_DMA_64BIT) ? B43_DMA64_RXSTATUS :
-						   B43_DMA32_RXSTATUS;
-		value = b43_read32(dev, mmio_base + offset);
-		if (type == B43_DMA_64BIT) {
-			value &= B43_DMA64_RXSTAT;
-			if (value == B43_DMA64_RXSTAT_DISABLED) {
-				i = -1;
-				break;
-			}
-		} else {
-			value &= B43_DMA32_RXSTATE;
-			if (value == B43_DMA32_RXSTAT_DISABLED) {
-				i = -1;
-				break;
-			}
-		}
-		msleep(1);
-	}
-	if (i != -1) {
+	b43_write32(dev, mmio_base + ctl, 0);
+	if (read_poll_timeout(b43_read32, value,
+			      b43_dma_rx_disabled(value, type),
+			      B43_DMA_RESET_POLL_US, B43_DMA_RESET_TIMEOUT_US,
+			      false, dev, mmio_base + stat)) {
 		b43err(dev->wl, "DMA RX reset timed out\n");
 		return -ENODEV;
 	}
@@ -584,58 +600,28 @@ static int b43_dmacontroller_rx_reset(struct b43_wldev *dev, u16 mmio_base,
 static int b43_dmacontroller_tx_reset(struct b43_wldev *dev, u16 mmio_base,
 				      enum b43_dmatype type)
 {
-	int i;
+	u16 ctl = type == B43_DMA_64BIT ? B43_DMA64_TXCTL : B43_DMA32_TXCTL;
+	u16 stat = type == B43_DMA_64BIT ? B43_DMA64_TXSTATUS :
+					   B43_DMA32_TXSTATUS;
 	u32 value;
-	u16 offset;
 
 	might_sleep();
 
-	for (i = 0; i < 10; i++) {
-		offset = (type == B43_DMA_64BIT) ? B43_DMA64_TXSTATUS :
-						   B43_DMA32_TXSTATUS;
-		value = b43_read32(dev, mmio_base + offset);
-		if (type == B43_DMA_64BIT) {
-			value &= B43_DMA64_TXSTAT;
-			if (value == B43_DMA64_TXSTAT_DISABLED ||
-			    value == B43_DMA64_TXSTAT_IDLEWAIT ||
-			    value == B43_DMA64_TXSTAT_STOPPED)
-				break;
-		} else {
-			value &= B43_DMA32_TXSTATE;
-			if (value == B43_DMA32_TXSTAT_DISABLED ||
-			    value == B43_DMA32_TXSTAT_IDLEWAIT ||
-			    value == B43_DMA32_TXSTAT_STOPPED)
-				break;
-		}
-		msleep(1);
-	}
-	offset = (type == B43_DMA_64BIT) ? B43_DMA64_TXCTL : B43_DMA32_TXCTL;
-	b43_write32(dev, mmio_base + offset, 0);
-	for (i = 0; i < 10; i++) {
-		offset = (type == B43_DMA_64BIT) ? B43_DMA64_TXSTATUS :
-						   B43_DMA32_TXSTATUS;
-		value = b43_read32(dev, mmio_base + offset);
-		if (type == B43_DMA_64BIT) {
-			value &= B43_DMA64_TXSTAT;
-			if (value == B43_DMA64_TXSTAT_DISABLED) {
-				i = -1;
-				break;
-			}
-		} else {
-			value &= B43_DMA32_TXSTATE;
-			if (value == B43_DMA32_TXSTAT_DISABLED) {
-				i = -1;
-				break;
-			}
-		}
-		msleep(1);
-	}
-	if (i != -1) {
+	/* Let a transfer in flight finish; disable regardless. */
+	read_poll_timeout(b43_read32, value,
+			  b43_dma_tx_quiesced(value, type),
+			  B43_DMA_RESET_POLL_US, B43_DMA_RESET_TIMEOUT_US,
+			  false, dev, mmio_base + stat);
+	b43_write32(dev, mmio_base + ctl, 0);
+	if (read_poll_timeout(b43_read32, value,
+			      b43_dma_tx_disabled(value, type),
+			      B43_DMA_RESET_POLL_US, B43_DMA_RESET_TIMEOUT_US,
+			      false, dev, mmio_base + stat)) {
 		b43err(dev->wl, "DMA TX reset timed out\n");
 		return -ENODEV;
 	}
 	/* ensure the reset is completed. */
-	msleep(1);
+	fsleep(1000);
 
 	return 0;
 }
