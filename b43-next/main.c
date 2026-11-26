@@ -129,6 +129,10 @@ static int b43_modparam_pio;
 module_param_named(pio, b43_modparam_pio, int, 0644);
 MODULE_PARM_DESC(pio, "Use PIO accesses by default: 0=DMA, 1=PIO");
 
+static unsigned int modparam_rx_lazy = 300;
+module_param_named(rx_lazy, modparam_rx_lazy, uint, 0444);
+MODULE_PARM_DESC(rx_lazy, "Delay the RX interrupt by up to this many us, to receive frames in batches (default 300, 0 = off)");
+
 static int modparam_allhwsupport = 1;
 module_param_named(allhwsupport, modparam_allhwsupport, int, 0444);
 MODULE_PARM_DESC(allhwsupport, "Enable support for all hardware (even it if overlaps with the brcmsmac driver)");
@@ -2291,23 +2295,26 @@ static void handle_irq_atim_end(struct b43_wldev *dev)
 /* Entries read from the power management queue before the handler gives up. */
 #define B43_PMQ_DRAIN_MAX	256
 
+/*
+ * Pop the power management queue: the head entry's word (bit 3 while there
+ * is one), then its station address, which moves the read pointer on, then
+ * a 16-bit delete of the entries before the read pointer.
+ */
 static void handle_irq_pmq(struct b43_wldev *dev)
 {
 	unsigned int i;
 	u32 tmp;
 
-	//TODO: AP mode.
-
 	for (i = 0; i < B43_PMQ_DRAIN_MAX; i++) {
 		tmp = b43_read32(dev, B43_MMIO_PS_STATUS);
-		if (!(tmp & 0x00000008))
-			break;
+		if (!(tmp & B43_PMQ_NOT_EMPTY))
+			return;
+		b43_read32(dev, B43_MMIO_PMQ_ADDR_LO);
+		b43_read32(dev, B43_MMIO_PMQ_ADDR_HI);
+		/* 16bit write is odd, but correct. */
+		b43_write16(dev, B43_MMIO_PS_STATUS, B43_PMQ_DEL_MULT);
 	}
-	if (i == B43_PMQ_DRAIN_MAX)
-		b43warn(dev->wl, "Power management queue not drained: 0x%08x\n",
-			tmp);
-	/* 16bit write is odd, but correct. */
-	b43_write16(dev, B43_MMIO_PS_STATUS, 0x0002);
+	b43warn(dev->wl, "Power management queue not drained: 0x%08x\n", tmp);
 }
 
 /* Check if the use of the antenna that ieee80211 told us to
@@ -3824,12 +3831,24 @@ static void b43_adjust_opmode(struct b43_wldev *dev)
 
 	if (wl->filter_flags & FIF_CONTROL)
 		ctl |= B43_MACCTL_KEEP_CTL;
-	if ((wl->filter_flags & FIF_FCSFAIL) || b43_nphy_ht_enabled(dev))
+	/*
+	 * A mesh point runs the microcode as an AP, which drops a mesh peer's
+	 * group-addressed data (from-DS set) unless bad frames are kept.
+	 */
+	if ((wl->filter_flags & FIF_FCSFAIL) || b43_nphy_ht_enabled(dev) ||
+	    b43_is_mode(wl, NL80211_IFTYPE_MESH_POINT))
 		ctl |= B43_MACCTL_KEEP_BAD;
 	if (wl->filter_flags & FIF_PLCPFAIL)
 		ctl |= B43_MACCTL_KEEP_BADPLCP;
 	if (wl->filter_flags & FIF_BCN_PRBRESP_PROMISC)
 		ctl |= B43_MACCTL_BEACPROMISC;
+	/*
+	 * Frames of other BSSes and control frames not addressed to us, as
+	 * FIF_PROMISC_IN_BSS asked for before mac80211 folded it into
+	 * FIF_OTHER_BSS.
+	 */
+	if (wl->filter_flags & FIF_OTHER_BSS)
+		ctl |= B43_MACCTL_PROMISC;
 	/*
 	 * The AC and HT cores' stock driver runs an AP with beacon
 	 * promiscuity on (MACCONTROL 0x0416040x at the bus on every board
@@ -3876,15 +3895,11 @@ static void b43_adjust_opmode(struct b43_wldev *dev)
 	}
 
 	/*
-	 * The power management queue: b43 drains it on its interrupt
-	 * (handle_irq_pmq()) and otherwise keeps it discarded. The HT-PHY's
-	 * stock driver takes it on an AP (MACCONTROL 0x0416040x on the R6400
-	 * v1), where it discards it before.
+	 * Keep the power management queue discarded, also on an AP: mac80211
+	 * follows the stations' power save from their frames, and a queue
+	 * taken fills up without B43_IRQ_PMQ and then stops reception.
 	 */
-	if ((ctl & B43_MACCTL_AP) && dev->phy.type == B43_PHYTYPE_HT)
-		b43_macctl_maskset(dev, ~B43_MACCTL_DISCPMQ, 0);
-	else
-		b43_macctl_maskset(dev, ~0, B43_MACCTL_DISCPMQ);
+	b43_macctl_maskset(dev, ~0, B43_MACCTL_DISCPMQ);
 }
 
 static void b43_rate_memory_write(struct b43_wldev *dev, u16 rate, int is_ofdm)
@@ -4554,6 +4569,8 @@ static void b43_radar_work_handler(struct work_struct *work)
 	mutex_unlock(&wl->mutex);
 }
 
+static void b43_ampdu_kick_work(struct work_struct *work);
+
 static void b43_periodic_tasks_setup(struct b43_wldev *dev)
 {
 	struct delayed_work *work = &dev->periodic_work;
@@ -4565,6 +4582,7 @@ static void b43_periodic_tasks_setup(struct b43_wldev *dev)
 				     b43_periodic_ticks_per_15sec(dev) > 1 ? HZ : 0);
 
 	INIT_DELAYED_WORK(&dev->radar_work, b43_radar_work_handler);
+	INIT_DELAYED_WORK(&dev->ampdu_kick_work, b43_ampdu_kick_work);
 }
 
 /* Check if communication with the device works correctly. */
@@ -5149,6 +5167,68 @@ static void b43_ps_send_null(struct b43_wl *wl, bool pm)
 	b43_ps_send(wl, ieee80211_nullfunc_get(wl->hw, wl->vif, -1, true), pm);
 }
 
+/*
+ * BCM4331 (ucode 784) at 2.4 GHz: now and then an A-MPDU gets no TX status
+ * and the microcode sends nothing more on its FIFO until a frame goes out
+ * on another FIFO. The cause is not known.
+ *
+ * So while an A-MPDU is out, check every B43_AMPDU_KICK_MS whether any
+ * A-MPDU TX status came; if one is pending and none came, send the AP a
+ * null frame on VO. Not while dozing (the null frame would wake the station
+ * at the AP) and not as an AP, where no stall was seen.
+ */
+static bool b43_ampdu_kick_wanted(struct b43_wl *wl)
+{
+	return wl->vif && wl->vif->type == NL80211_IFTYPE_STATION &&
+	       wl->vif->cfg.assoc;
+}
+
+void b43_ampdu_kick_arm(struct b43_wldev *dev)
+{
+	if (!b43_ampdu_kick_wanted(dev->wl))
+		return;
+	ieee80211_queue_delayed_work(dev->wl->hw, &dev->ampdu_kick_work,
+				     msecs_to_jiffies(B43_AMPDU_KICK_MS));
+}
+
+static void b43_ampdu_kick_work(struct work_struct *work)
+{
+	struct b43_wldev *dev = container_of(work, struct b43_wldev,
+					     ampdu_kick_work.work);
+	struct b43_wl *wl = dev->wl;
+	struct b43_dmaring *rings[] = {
+		dev->dma.tx_ring_AC_BK, dev->dma.tx_ring_AC_BE,
+		dev->dma.tx_ring_AC_VI, dev->dma.tx_ring_AC_VO,
+	};
+	bool pending = false, stuck = false;
+	unsigned int i;
+
+	mutex_lock(&wl->mutex);
+	if (b43_status(dev) < B43_STAT_STARTED ||
+	    b43_using_pio_transfers(dev) || !b43_ampdu_kick_wanted(wl))
+		goto out;
+	for (i = 0; i < ARRAY_SIZE(rings); i++) {
+		struct b43_dmaring *ring = rings[i];
+
+		if (!ring)
+			continue;
+		if (ring->ampdu_pending) {
+			pending = true;
+			if (ring->ampdu_done == ring->ampdu_done_seen)
+				stuck = true;
+		}
+		ring->ampdu_done_seen = ring->ampdu_done;
+	}
+	if (stuck && !dev->ps) {
+		b43dbg(wl, "A-MPDU TX status overdue, a null frame on VO\n");
+		b43_ps_send_null(wl, false);
+	}
+	if (pending)
+		b43_ampdu_kick_arm(dev);
+out:
+	mutex_unlock(&wl->mutex);
+}
+
 /* The AP has acknowledged the null frame with PM=1: doze. */
 static void b43_ps_doze(struct b43_wldev *dev)
 {
@@ -5708,14 +5788,15 @@ static int b43_switch_bandwidth(struct b43_wldev *dev)
  * HT-PHY: the receiver locks onto any CCK frame it detects, also a weak
  * one of a distant BSS, and stays on it to its end: a 1 Mbit/s broadcast
  * of 200 bytes keeps it deaf for 2 ms, and a much stronger frame of our
- * own BSS that starts meanwhile is lost. Turn CCK reception off as an AP,
- * or while associated as a station, when nothing of the BSS is sent in
- * CCK: no basic rate is CCK, and no peer supports a CCK rate. mac80211
- * sends management frames and EAPOL to a peer at the lowest rate it
- * supports, not at a basic rate, and a CCK frame is answered in CCK. A
- * station is added with the mandatory rates, CCK ones among them, and
- * keeps them until it associates. Keep CCK reception while scanning, as
- * other APs beacon at 1 Mbit/s, and while a monitor interface is up.
+ * own BSS that starts meanwhile is lost. Turn CCK reception off as an AP
+ * when nothing of the BSS is sent in CCK: no basic rate is CCK, and no
+ * peer supports a CCK rate. mac80211 sends management frames and EAPOL to
+ * a peer at the lowest rate it supports, not at a basic rate, and a CCK
+ * frame is answered in CCK. A station is added with the mandatory rates,
+ * CCK ones among them, and keeps them until it associates. Keep CCK
+ * reception while scanning, as other APs beacon at 1 Mbit/s, and while a
+ * monitor interface is up. Not as a station: what its AP sends in CCK is up
+ * to the AP, whatever rates it announces.
  */
 struct b43_cck_peers {
 	/* A station that changes state, counted as @present says */
@@ -5754,8 +5835,7 @@ static void b43_update_cck_rx(struct b43_wldev *dev, struct ieee80211_sta *sta,
 	if (vif && !wl->radiotap_enabled && !wl->cck_scanning &&
 	    b43_current_band(wl) == NL80211_BAND_2GHZ &&
 	    vif->bss_conf.basic_rates &&
-	    (vif->type == NL80211_IFTYPE_AP ||
-	     (vif->type == NL80211_IFTYPE_STATION && vif->cfg.assoc))) {
+	    vif->type == NL80211_IFTYPE_AP) {
 		sband = wl->hw->wiphy->bands[NL80211_BAND_2GHZ];
 		for (i = 0; sband && i < sband->n_bitrates; i++)
 			if (b43_is_cck_rate(sband->bitrates[i].hw_value))
@@ -6458,6 +6538,8 @@ redo:
 	if (IS_ENABLED(CONFIG_B43_NEXT_PHY_N) && dev->phy.type == B43_PHYTYPE_N)
 		b43_nphy_cancel_perical(dev);
 	cancel_work_sync(&wl->tx_work);
+	/* After the TX work, which arms it */
+	cancel_delayed_work_sync(&dev->ampdu_kick_work);
 	cancel_delayed_work_sync(&wl->ps_work);
 	b43_leds_stop(dev);
 	mutex_lock(&wl->mutex);
@@ -7131,9 +7213,24 @@ static int b43_txfifo_init_ht(struct b43_wldev *dev)
 	return -EIO;
 }
 
+/*
+ * Coalesce the RX interrupt, which the DMA engine raises for every frame by
+ * default: raise it rx_lazy us (at most 10 ms) after the first frame, or
+ * once 32 frames are in. brcmsmac programs it on cores 16 to 30 only.
+ */
+static void b43_rx_lazy_init(struct b43_wldev *dev)
+{
+	u32 timeout = min(modparam_rx_lazy, 10000U);
+	u32 frames = timeout ? 32 : 1;
 
-/* Frames of earlier rings are gone; restart a station's TX A-MPDU
- * windows. Only DMA aggregates, so PIO ends its sessions' aggregation. */
+	if (b43_using_pio_transfers(dev) || dev->dev->core_rev < 16 ||
+	    dev->phy.type == B43_PHYTYPE_AC)
+		return;
+	b43_write32(dev, B43_MMIO_RX_LAZY,
+		    (frames << B43_RX_LAZY_FRAMES_SHIFT) |
+		    (timeout & B43_RX_LAZY_TIMEOUT));
+}
+
 /* Initialize a wireless core */
 static int b43_wireless_core_init(struct b43_wldev *dev)
 {
@@ -7340,6 +7437,7 @@ static int b43_wireless_core_init(struct b43_wldev *dev)
 	}
 	if (err)
 		goto err_chip_exit;
+	b43_rx_lazy_init(dev);
 	/* The microcode drops longer frames, by default those over 2352
 	 * bytes: a QoS data frame with CCMP and a 2304-byte MSDU is longer.
 	 * DMA receives them into several buffers. */

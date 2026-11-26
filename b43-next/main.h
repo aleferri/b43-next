@@ -124,4 +124,6 @@ int b43_do_request_fw(struct b43_request_fw_context *ctx, const char *name,
 		      struct b43_firmware_file *fw, bool async);
 void b43_do_release_fw(struct b43_firmware_file *fw);
 
+void b43_ampdu_kick_arm(struct b43_wldev *dev);
+
 #endif /* B43_MAIN_H_ */

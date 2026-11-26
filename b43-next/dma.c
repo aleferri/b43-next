@@ -702,18 +702,15 @@ static void b43_poison_rx_buffer(struct b43_dmaring *ring, struct sk_buff *skb)
 }
 
 /*
- * An RX buffer with its skb_shared_info does not fit in a page: the AC
- * core's takes 40 bytes of RX header, the PLCP and a 3895-byte MPDU, so
- * __dev_alloc_skb() took 8 KiB from kmalloc for every received frame.
- * A page pool hands out pieces of order-2 pages instead, three buffers a
- * page, and gets them back when the stack frees the frame. The driver
- * still maps each buffer itself.
+ * RX buffers from a page pool, in pieces of order-2 pages. On a coherent
+ * 64-bit engine the pool also maps its pages for the device, once for the
+ * life of the ring. A non-coherent device receives into uncached buffers
+ * (b43_rx_alloc_uncached()); a 30- or 32-bit engine maps each buffer
+ * itself, for the address check and the retry in ZONE_DMA, and takes its
+ * buffers from the pool only when they do not fit in a page.
  *
- * The buffer's size is the microcode's: its RX header
- * (struct b43_fw_hdr) sets the frame offset and how long a frame may be.
- * A ring whose buffer fits in a page with its skb_shared_info, as the 598
- * and 351 layouts' do, gains nothing from a pool and keeps
- * __dev_alloc_skb(); today only the AC layout's does not fit.
+ * The buffer's size is the microcode's: its RX header (struct b43_fw_hdr)
+ * sets the frame offset and how long a frame may be.
  */
 #if IS_ENABLED(CONFIG_PAGE_POOL)
 static unsigned int b43_rx_truesize(const struct b43_dmaring *ring)
@@ -724,6 +721,8 @@ static unsigned int b43_rx_truesize(const struct b43_dmaring *ring)
 
 static void b43_rx_pool_create(struct b43_dmaring *ring)
 {
+	bool map = ring->type == B43_DMA_64BIT &&
+		   !b43_dma_noncoherent(ring->dev);
 	struct page_pool_params pp = {
 		.order = get_order(3 * b43_rx_truesize(ring)),
 		.pool_size = ring->nr_slots,
@@ -732,12 +731,19 @@ static void b43_rx_pool_create(struct b43_dmaring *ring)
 	};
 	struct page_pool *pool;
 
-	if (b43_rx_truesize(ring) <= PAGE_SIZE)
+	if (map) {
+		/* The buffers lie anywhere in the page: sync all of it. */
+		pp.flags = PP_FLAG_DMA_MAP | PP_FLAG_DMA_SYNC_DEV;
+		pp.dma_dir = DMA_FROM_DEVICE;
+		pp.max_len = PAGE_SIZE << pp.order;
+	} else if (b43_rx_truesize(ring) <= PAGE_SIZE) {
 		return;
+	}
 	pool = page_pool_create(&pp);
 	if (IS_ERR(pool))
 		return;
 	ring->rx_pool = pool;
+	ring->rx_pool_dma = map;
 }
 
 static void b43_rx_pool_destroy(struct b43_dmaring *ring)
@@ -745,6 +751,7 @@ static void b43_rx_pool_destroy(struct b43_dmaring *ring)
 	if (ring->rx_pool)
 		page_pool_destroy(ring->rx_pool);
 	ring->rx_pool = NULL;
+	ring->rx_pool_dma = false;
 }
 
 static struct sk_buff *b43_rx_alloc_skb(struct b43_dmaring *ring,
@@ -769,6 +776,15 @@ static struct sk_buff *b43_rx_alloc_skb(struct b43_dmaring *ring,
 	skb_reserve(skb, NET_SKB_PAD);
 	return skb;
 }
+
+/* The bus address of a buffer of a pool that maps its pages */
+static dma_addr_t b43_rx_pool_dma_addr(const struct sk_buff *skb)
+{
+	struct page *page = virt_to_head_page(skb->data);
+
+	return page_pool_get_dma_addr(page) +
+	       (skb->data - (u8 *)page_address(page));
+}
 #else
 static void b43_rx_pool_create(struct b43_dmaring *ring)
 {
@@ -782,6 +798,11 @@ static struct sk_buff *b43_rx_alloc_skb(struct b43_dmaring *ring,
 					gfp_t gfp_flags)
 {
 	return __dev_alloc_skb(ring->rx_buffersize, gfp_flags);
+}
+
+static dma_addr_t b43_rx_pool_dma_addr(const struct sk_buff *skb)
+{
+	return DMA_MAPPING_ERROR;
 }
 #endif
 
@@ -809,6 +830,12 @@ static int setup_rx_descbuffer(struct b43_dmaring *ring,
 	if (unlikely(!skb))
 		return -ENOMEM;
 	b43_poison_rx_buffer(ring, skb);
+	if (ring->rx_pool_dma) {
+		dmaaddr = b43_rx_pool_dma_addr(skb);
+		sync_descbuffer_for_device(ring, dmaaddr, ring->frameoffset +
+					   B43_RX_POISON_LEN);
+		goto fill;
+	}
 	dmaaddr = map_descbuffer(ring, skb->data, ring->rx_buffersize, 0);
 	if (b43_dma_mapping_error(ring, dmaaddr, ring->rx_buffersize, 0)) {
 		/* ugh. try to realloc in zone_dma */
@@ -829,6 +856,7 @@ static int setup_rx_descbuffer(struct b43_dmaring *ring,
 		}
 	}
 
+fill:
 	meta->skb = skb;
 	meta->dmaaddr = dmaaddr;
 	ring->ops->fill_descriptor(ring, desc, dmaaddr,
@@ -866,7 +894,9 @@ static int alloc_initial_descbuffers(struct b43_dmaring *ring)
 	for (i--; i >= 0; i--) {
 		desc = ring->ops->idx2desc(ring, i, &meta);
 
-		unmap_descbuffer(ring, meta->dmaaddr, ring->rx_buffersize, 0);
+		if (!ring->rx_pool_dma)
+			unmap_descbuffer(ring, meta->dmaaddr,
+					 ring->rx_buffersize, 0);
 		dev_kfree_skb(meta->skb);
 	}
 	goto out;
@@ -1045,7 +1075,7 @@ static void free_all_descbuffers(struct b43_dmaring *ring)
 			B43_WARN_ON(!ring->tx);
 			continue;
 		}
-		if (!ring->tx)
+		if (!ring->tx && !ring->rx_pool_dma)
 			unmap_descbuffer(ring, meta->dmaaddr,
 					 ring->rx_buffersize, 0);
 		free_descriptor_buffer(ring, meta);
@@ -2117,6 +2147,8 @@ unsigned int b43_dma_tx_ampdu(struct b43_wldev *dev, u8 queue_prio,
 		}
 	}
 	ring->ampdu_pending++;
+	if (dev->phy.type == B43_PHYTYPE_HT)
+		b43_ampdu_kick_arm(dev);
 	if (free_slots(ring) < TX_SLOTS_MAX) {
 		b43_stop_queue(dev, queue_prio);
 		dev->wl->tx_queue_stopped[queue_prio] = true;
@@ -2251,6 +2283,7 @@ bool b43_dma_ampdu_complete(struct b43_wldev *dev,
 	}
 	if (ring->ampdu_pending)
 		ring->ampdu_pending--;
+	ring->ampdu_done++;
 	if (dev->phy.type == B43_PHYTYPE_HT)
 		b43_ampdu_tx_mpdus_adjust(ring,
 				status->supp_reason == B43_TXST_SUPP_PREV, n);
@@ -2669,8 +2702,9 @@ static bool dma_rx(struct b43_dmaring *ring, int *slot, int current_slot)
 	}
 
 	sync_descbuffer_for_cpu(ring, dmaaddr, len + ring->frameoffset);
-	unmap_descbuffer_attrs(ring, dmaaddr, ring->rx_buffersize, 0,
-			       DMA_ATTR_SKIP_CPU_SYNC);
+	if (!ring->rx_pool_dma)
+		unmap_descbuffer_attrs(ring, dmaaddr, ring->rx_buffersize, 0,
+				       DMA_ATTR_SKIP_CPU_SYNC);
 	skb_put(skb, len + ring->frameoffset);
 	skb_pull(skb, ring->frameoffset);
 

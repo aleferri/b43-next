@@ -44,11 +44,16 @@
 #define B43_MMIO_DMA5_IRQ_MASK		0x4C
 #define B43_MMIO_MACCTL			0x120	/* MAC control */
 #define B43_MMIO_MACCMD			0x124	/* MAC command */
+#define B43_MMIO_RX_LAZY		0x100	/* RX interrupt coalescing */
+#define  B43_RX_LAZY_TIMEOUT		0x00FFFFFF	/* in us */
+#define  B43_RX_LAZY_FRAMES_SHIFT	24
 #define B43_MMIO_GEN_IRQ_REASON		0x128
 #define B43_MMIO_GEN_IRQ_MASK		0x12C
 #define B43_MMIO_RAM_CONTROL		0x130
 #define B43_MMIO_RAM_DATA		0x134
 #define B43_MMIO_PS_STATUS		0x140
+#define B43_MMIO_PMQ_ADDR_LO		0x144
+#define B43_MMIO_PMQ_ADDR_HI		0x148
 #define B43_MMIO_RADIO_HWENABLED_HI	0x158
 #define B43_MMIO_MAC_HW_CAP		0x15C	/* MAC capabilities (corerev >= 13) */
 #define B43_MMIO_SHM_CONTROL		0x160
@@ -566,6 +571,10 @@ enum {
 #define B43_MACCMD_CCA			0x00000008	/* Clear channel assessment */
 #define B43_MACCMD_BGNOISE		0x00000010	/* Background noise */
 
+/* B43_MMIO_PS_STATUS bits */
+#define B43_PMQ_NOT_EMPTY		0x00000008
+#define B43_PMQ_DEL_MULT		0x0002
+
 /* B43_MMIO_PSM_PHY_HDR bits */
 #define B43_PSM_HDR_MAC_PHY_RESET	0x00000001
 #define B43_PSM_HDR_MAC_PHY_CLOCK_EN	0x00000002
@@ -727,6 +736,9 @@ enum {
 #define B43_LONG_FALLBACK_LIMIT		2
 
 #define B43_PHY_TX_BADNESS_LIMIT	1000
+
+/* How often to check for an A-MPDU whose TX status is overdue */
+#define B43_AMPDU_KICK_MS		50
 
 /* Max size of a security key */
 #define B43_SEC_KEYSIZE			16
@@ -1069,6 +1081,8 @@ struct b43_wldev {
 	struct delayed_work periodic_work;
 	unsigned int periodic_state;
 	struct delayed_work radar_work;
+	/* The check for an A-MPDU whose TX status is overdue (b43_ampdu_kick_work()) */
+	struct delayed_work ampdu_kick_work;
 
 	/*
 	 * AC PHY: a channel availability check holds transmission back, and

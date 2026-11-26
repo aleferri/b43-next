@@ -294,6 +294,8 @@ struct b43_dmaring {
 	const struct b43_dma_ops *ops;
 	/* RX buffers, when the kernel has page pools (b43_rx_pool_create()). */
 	struct page_pool *rx_pool;
+	/* The pool maps its pages for the device, for the life of the ring. */
+	bool rx_pool_dma;
 	/* Kernel virtual base address of the ring memory. */
 	void *descbase;
 	/* Cache of TX headers for each TX frame.
@@ -339,6 +341,10 @@ struct b43_dmaring {
 	struct b43_ac_tx_epoch ac_epoch;
 	/* Number of A-MPDUs awaiting TX status. */
 	u8 ampdu_pending;
+	/* A-MPDU TX statuses so far, and their count at the last stall check
+	 * (b43_ampdu_kick_work()). */
+	u32 ampdu_done;
+	u32 ampdu_done_seen;
 	/* A-MPDU preload in bytes, the FIFO's underflow counter at its last
 	 * read and the underflows since the preload last grew. */
 	u16 ampdu_preload;
