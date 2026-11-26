@@ -810,7 +810,7 @@ static int ssbn_pci_sprom_get(struct ssbn_bus *bus,
 	}
 	pr_debug("SPROM offset is 0x%x\n", bus->sprom_offset);
 
-	buf = kcalloc(SSBN_SPROMSIZE_WORDS_R123, sizeof(u16), GFP_KERNEL);
+	buf = kzalloc_objs(*buf, SSBN_SPROMSIZE_WORDS_R123);
 	if (!buf)
 		return -ENOMEM;
 	bus->sprom_size = SSBN_SPROMSIZE_WORDS_R123;
@@ -819,8 +819,7 @@ static int ssbn_pci_sprom_get(struct ssbn_bus *bus,
 	if (err) {
 		/* try for a 440 byte SPROM - revision 4 and higher */
 		kfree(buf);
-		buf = kcalloc(SSBN_SPROMSIZE_WORDS_R4, sizeof(u16),
-			      GFP_KERNEL);
+		buf = kzalloc_objs(*buf, SSBN_SPROMSIZE_WORDS_R4);
 		if (!buf)
 			return -ENOMEM;
 		bus->sprom_size = SSBN_SPROMSIZE_WORDS_R4;

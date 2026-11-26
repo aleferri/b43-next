@@ -1987,7 +1987,7 @@ static u16 b43_phy_ht_load_tone(struct b43_wldev *dev, u32 freq, u16 max)
 	u32 *data;
 	int i;
 
-	data = kcalloc(len, sizeof(*data), GFP_KERNEL);
+	data = kzalloc_objs(*data, len);
 	if (!data)
 		return 0;
 	for (i = 0; i < len; i++, angle += rot)

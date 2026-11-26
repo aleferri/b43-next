@@ -68,8 +68,7 @@ ssize_t ssbn_attr_sprom_show(struct ssbn_bus *bus, char *buf,
 	size_t sprom_size_words = bus->sprom_size;
 	int err;
 
-	u16 *sprom __free(kfree) = kcalloc(sprom_size_words, sizeof(u16),
-					   GFP_KERNEL);
+	u16 *sprom __free(kfree) = kzalloc_objs(u16, sprom_size_words);
 	if (!sprom)
 		return -ENOMEM;
 
@@ -95,8 +94,7 @@ ssize_t ssbn_attr_sprom_store(struct ssbn_bus *bus,
 	struct ssbn_freeze_context freeze;
 	int res, err;
 
-	u16 *sprom __free(kfree) = kcalloc(sprom_size_words, sizeof(u16),
-					   GFP_KERNEL);
+	u16 *sprom __free(kfree) = kzalloc_objs(u16, sprom_size_words);
 	if (!sprom)
 		return -ENOMEM;
 	if (hex2sprom(sprom, buf, count, sprom_size_words))

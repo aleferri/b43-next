@@ -1116,10 +1116,8 @@ static void b43_rx_alloc_uncached(struct b43_dmaring *ring)
 	if (!ring->rx_per_chunk)
 		return;
 	ring->rx_chunks = DIV_ROUND_UP(ring->nr_slots, ring->rx_per_chunk);
-	ring->rx_coh = kcalloc(ring->rx_chunks, sizeof(*ring->rx_coh),
-			       GFP_KERNEL);
-	ring->rx_coh_dma = kcalloc(ring->rx_chunks, sizeof(*ring->rx_coh_dma),
-				   GFP_KERNEL);
+	ring->rx_coh = kzalloc_objs(*ring->rx_coh, ring->rx_chunks);
+	ring->rx_coh_dma = kzalloc_objs(*ring->rx_coh_dma, ring->rx_chunks);
 	if (!ring->rx_coh || !ring->rx_coh_dma)
 		goto fail;
 	for (i = 0; i < ring->rx_chunks; i++) {

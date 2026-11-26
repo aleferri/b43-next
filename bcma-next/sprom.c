@@ -778,7 +778,7 @@ int bcmn_sprom_get(struct bcmn_bus *bus)
 	for (i = 0; i < ARRAY_SIZE(sprom_sizes); i++) {
 		size_t words = sprom_sizes[i];
 
-		sprom = kcalloc(words, sizeof(u16), GFP_KERNEL);
+		sprom = kzalloc_objs(*sprom, words);
 		if (!sprom)
 			return -ENOMEM;
 
