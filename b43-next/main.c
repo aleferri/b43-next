@@ -2796,9 +2796,8 @@ static irqreturn_t b43_interrupt_thread_handler(int irq, void *dev_id)
 {
 	struct b43_wldev *dev = dev_id;
 
-	mutex_lock(&dev->wl->mutex);
-	b43_do_interrupt_thread(dev);
-	mutex_unlock(&dev->wl->mutex);
+	scoped_guard(mutex, &dev->wl->mutex)
+		b43_do_interrupt_thread(dev);
 	b43_rx_deliver(dev->wl);
 
 	return IRQ_HANDLED;
@@ -2856,16 +2855,12 @@ static irqreturn_t b43_do_interrupt(struct b43_wldev *dev)
 static irqreturn_t b43_interrupt_handler(int irq, void *dev_id)
 {
 	struct b43_wldev *dev = dev_id;
-	irqreturn_t ret;
 
 	if (unlikely(b43_status(dev) < B43_STAT_STARTED))
 		return IRQ_NONE;
 
-	spin_lock(&dev->wl->hardirq_lock);
-	ret = b43_do_interrupt(dev);
-	spin_unlock(&dev->wl->hardirq_lock);
-
-	return ret;
+	guard(spinlock)(&dev->wl->hardirq_lock);
+	return b43_do_interrupt(dev);
 }
 
 /* SDIO interrupt handler. This runs in process context. */
@@ -2874,13 +2869,11 @@ static void b43_sdio_interrupt_handler(struct b43_wldev *dev)
 	struct b43_wl *wl = dev->wl;
 	irqreturn_t ret;
 
-	mutex_lock(&wl->mutex);
-
-	ret = b43_do_interrupt(dev);
-	if (ret == IRQ_WAKE_THREAD)
-		b43_do_interrupt_thread(dev);
-
-	mutex_unlock(&wl->mutex);
+	scoped_guard(mutex, &wl->mutex) {
+		ret = b43_do_interrupt(dev);
+		if (ret == IRQ_WAKE_THREAD)
+			b43_do_interrupt_thread(dev);
+	}
 	b43_rx_deliver(wl);
 }
 
@@ -4508,17 +4501,15 @@ static void b43_periodic_work_handler(struct work_struct *work)
 	struct b43_wl *wl = dev->wl;
 	unsigned long delay;
 
-	mutex_lock(&wl->mutex);
+	guard(mutex)(&wl->mutex);
 
 	if (unlikely(b43_status(dev) != B43_STAT_STARTED))
-		goto out;
-	if (b43_debug(dev, B43_DBG_PWORK_STOP))
-		goto out_requeue;
+		return;
+	if (!b43_debug(dev, B43_DBG_PWORK_STOP)) {
+		do_periodic_work(dev);
+		dev->periodic_state++;
+	}
 
-	do_periodic_work(dev);
-
-	dev->periodic_state++;
-out_requeue:
 	if (b43_debug(dev, B43_DBG_PWORK_FAST))
 		delay = msecs_to_jiffies(50);
 	else if (b43_periodic_ticks_per_15sec(dev) > 1)
@@ -4526,8 +4517,6 @@ out_requeue:
 	else
 		delay = round_jiffies_relative(secs_to_jiffies(15));
 	ieee80211_queue_delayed_work(wl->hw, &dev->periodic_work, delay);
-out:
-	mutex_unlock(&wl->mutex);
 }
 
 /*
@@ -4552,7 +4541,7 @@ static void b43_radar_work_handler(struct work_struct *work)
 					     radar_work.work);
 	struct b43_wl *wl = dev->wl;
 
-	mutex_lock(&wl->mutex);
+	guard(mutex)(&wl->mutex);
 	if (likely(b43_status(dev) == B43_STAT_STARTED) && dev->radar_arm) {
 		/*
 		 * The PHY matches the pulses against the radar types, and
@@ -4563,7 +4552,6 @@ static void b43_radar_work_handler(struct work_struct *work)
 		ieee80211_queue_delayed_work(wl->hw, &dev->radar_work,
 					     msecs_to_jiffies(B43_RADAR_POLL_MS));
 	}
-	mutex_unlock(&wl->mutex);
 }
 
 static void b43_ampdu_kick_work(struct work_struct *work);
@@ -4664,14 +4652,13 @@ static int b43_rng_read(struct hwrng *rng, void *data, size_t max, bool wait)
 	int count = -ENODEV;
 	u16 val;
 
-	mutex_lock(&wl->mutex);
+	guard(mutex)(&wl->mutex);
 	dev = wl->current_dev;
 	if (likely(dev && b43_status(dev) >= B43_STAT_INITIALIZED)) {
 		val = b43_read16(dev, B43_MMIO_RNG);
 		count = min(max, sizeof(val));
 		memcpy(data, &val, count);
 	}
-	mutex_unlock(&wl->mutex);
 
 	return count;
 }
@@ -4796,12 +4783,10 @@ static void b43_tx_work(struct work_struct *work)
 	int queue_num;
 	int err = 0;
 
-	mutex_lock(&wl->mutex);
+	guard(mutex)(&wl->mutex);
 	dev = wl->current_dev;
-	if (unlikely(!dev || b43_status(dev) < B43_STAT_STARTED)) {
-		mutex_unlock(&wl->mutex);
+	if (unlikely(!dev || b43_status(dev) < B43_STAT_STARTED))
 		return;
-	}
 
 	if (atomic_xchg(&wl->ps_release, 0))
 		b43_ps_release(wl);
@@ -4843,7 +4828,6 @@ again:
 #if B43_DEBUG
 	dev->tx_count++;
 #endif
-	mutex_unlock(&wl->mutex);
 }
 
 static void b43_op_tx(struct ieee80211_hw *hw,
@@ -5201,10 +5185,10 @@ static void b43_ampdu_kick_work(struct work_struct *work)
 	bool pending = false, stuck = false;
 	unsigned int i;
 
-	mutex_lock(&wl->mutex);
+	guard(mutex)(&wl->mutex);
 	if (b43_status(dev) < B43_STAT_STARTED ||
 	    b43_using_pio_transfers(dev) || !b43_ampdu_kick_wanted(wl))
-		goto out;
+		return;
 	for (i = 0; i < ARRAY_SIZE(rings); i++) {
 		struct b43_dmaring *ring = rings[i];
 
@@ -5223,8 +5207,6 @@ static void b43_ampdu_kick_work(struct work_struct *work)
 	}
 	if (pending)
 		b43_ampdu_kick_arm(dev);
-out:
-	mutex_unlock(&wl->mutex);
 }
 
 /* The AP has acknowledged the null frame with PM=1: doze. */
@@ -5254,31 +5236,29 @@ static void b43_ps_work(struct work_struct *work)
 	unsigned long idle;
 	int timeout;
 
-	mutex_lock(&wl->mutex);
+	guard(mutex)(&wl->mutex);
 	dev = wl->current_dev;
 	if (!dev || b43_status(dev) < B43_STAT_STARTED || !wl->ps_enabled ||
 	    wl->ps_scanning || dev->ps)
-		goto out;
+		return;
 	if (wl->ps_null_acked && dev->hwps) {
 		b43_ps_doze(dev);
-		goto out;
+		return;
 	}
 	timeout = b43_ps_timeout(wl);
 	idle = wl->ps_last + msecs_to_jiffies(timeout);
 	if (time_before(jiffies, idle)) {
 		schedule_delayed_work(&wl->ps_work, idle - jiffies);
-		goto out;
+		return;
 	}
 	if (!b43_tx_empty(dev)) {
 		schedule_delayed_work(&wl->ps_work,
 				      msecs_to_jiffies(max(timeout, 10)));
-		goto out;
+		return;
 	}
 	b43_ps_send_null(wl, true);
 	/* Its TX status reschedules this, unless the frame is dropped. */
 	schedule_delayed_work(&wl->ps_work, msecs_to_jiffies(max(timeout, 10)));
-out:
-	mutex_unlock(&wl->mutex);
 }
 
 /* The TX status of a null frame with PM=1 to the AP, unless a frame with
@@ -5545,7 +5525,6 @@ static int b43_op_conf_tx(struct ieee80211_hw *hw,
 	struct b43_wl *wl = hw_to_b43_wl(hw);
 	struct b43_wldev *dev;
 	unsigned int queue = (unsigned int)_queue;
-	int err = -ENODEV;
 
 	if (queue >= ARRAY_SIZE(wl->qos_params)) {
 		/* Queue not available or don't support setting
@@ -5556,22 +5535,18 @@ static int b43_op_conf_tx(struct ieee80211_hw *hw,
 	BUILD_BUG_ON(ARRAY_SIZE(b43_qos_shm_offsets) !=
 		     ARRAY_SIZE(wl->qos_params));
 
-	mutex_lock(&wl->mutex);
+	guard(mutex)(&wl->mutex);
 	dev = wl->current_dev;
 	if (unlikely(!dev || (b43_status(dev) < B43_STAT_INITIALIZED)))
-		goto out_unlock;
+		return -ENODEV;
 
 	memcpy(&(wl->qos_params[queue].p), params, sizeof(*params));
 	b43_mac_suspend(dev);
 	b43_qos_params_upload(dev, &(wl->qos_params[queue].p),
 			      b43_qos_shm_offsets[queue]);
 	b43_mac_enable(dev);
-	err = 0;
 
-out_unlock:
-	mutex_unlock(&wl->mutex);
-
-	return err;
+	return 0;
 }
 
 static int b43_op_get_stats(struct ieee80211_hw *hw,
@@ -5580,12 +5555,11 @@ static int b43_op_get_stats(struct ieee80211_hw *hw,
 	struct b43_wl *wl = hw_to_b43_wl(hw);
 	struct b43_wldev *dev;
 
-	mutex_lock(&wl->mutex);
+	guard(mutex)(&wl->mutex);
 	dev = wl->current_dev;
 	if (dev && dev->phy.nphy_ht && b43_status(dev) >= B43_STAT_INITIALIZED)
 		b43_macstat_update(dev, true);
 	memcpy(stats, &wl->ieee_stats, sizeof(*stats));
-	mutex_unlock(&wl->mutex);
 
 	return 0;
 }
@@ -5596,15 +5570,13 @@ static u64 b43_op_get_tsf(struct ieee80211_hw *hw, struct ieee80211_vif *vif)
 	struct b43_wldev *dev;
 	u64 tsf;
 
-	mutex_lock(&wl->mutex);
+	guard(mutex)(&wl->mutex);
 	dev = wl->current_dev;
 
 	if (dev && (b43_status(dev) >= B43_STAT_INITIALIZED))
 		b43_tsf_read(dev, &tsf);
 	else
 		tsf = 0;
-
-	mutex_unlock(&wl->mutex);
 
 	return tsf;
 }
@@ -5615,13 +5587,11 @@ static void b43_op_set_tsf(struct ieee80211_hw *hw,
 	struct b43_wl *wl = hw_to_b43_wl(hw);
 	struct b43_wldev *dev;
 
-	mutex_lock(&wl->mutex);
+	guard(mutex)(&wl->mutex);
 	dev = wl->current_dev;
 
 	if (dev && (b43_status(dev) >= B43_STAT_INITIALIZED))
 		b43_tsf_write(dev, tsf);
-
-	mutex_unlock(&wl->mutex);
 }
 
 static const char *band_to_string(enum nl80211_band band)
@@ -6064,7 +6034,7 @@ static int b43_op_config(struct ieee80211_hw *hw, int radio_idx, u32 changed)
 	int antenna;
 	int err = 0;
 
-	mutex_lock(&wl->mutex);
+	guard(mutex)(&wl->mutex);
 	b43_mac_suspend(dev);
 
 	/* With a listen interval the BCM43227's microcode listened to every
@@ -6181,7 +6151,6 @@ out_mac_enable:
 		phy->ops->channel_calibrate(dev, false);
 	else
 		b43_mac_enable(dev);
-	mutex_unlock(&wl->mutex);
 
 	return err;
 }
@@ -6239,15 +6208,15 @@ static void b43_op_bss_info_changed(struct ieee80211_hw *hw,
 	struct b43_wl *wl = hw_to_b43_wl(hw);
 	struct b43_wldev *dev;
 
-	mutex_lock(&wl->mutex);
+	guard(mutex)(&wl->mutex);
 
 	dev = wl->current_dev;
 	if (!dev || b43_status(dev) < B43_STAT_STARTED)
-		goto out_unlock_mutex;
+		return;
 
 	/* A further BSS: beaconed at TBTT, the rest is the primary's. */
 	if (b43_mbss_slot(wl, vif) >= 0)
-		goto out_unlock_mutex;
+		return;
 
 	B43_WARN_ON(wl->vif != vif);
 
@@ -6308,8 +6277,6 @@ static void b43_op_bss_info_changed(struct ieee80211_hw *hw,
 	if (changed & BSS_CHANGED_PS && dev->phy.nphy_ht &&
 	    b43_is_mode(wl, NL80211_IFTYPE_STATION))
 		b43_ps_update(dev, vif->cfg.ps);
-out_unlock_mutex:
-	mutex_unlock(&wl->mutex);
 }
 
 static int b43_op_set_key(struct ieee80211_hw *hw, enum set_key_cmd cmd,
@@ -6340,18 +6307,16 @@ static int b43_op_set_key(struct ieee80211_hw *hw, enum set_key_cmd cmd,
 		return -EOPNOTSUPP;
 	}
 
-	mutex_lock(&wl->mutex);
+	guard(mutex)(&wl->mutex);
 
 	dev = wl->current_dev;
-	err = -ENODEV;
 	if (!dev || b43_status(dev) < B43_STAT_INITIALIZED)
-		goto out_unlock;
+		return -ENODEV;
 
 	if (dev->fw.pcm_request_failed || !dev->hwcrypto_enabled) {
 		/* We don't have firmware for the crypto engine.
 		 * Must use software-crypto. */
-		err = -EOPNOTSUPP;
-		goto out_unlock;
+		return -EOPNOTSUPP;
 	}
 
 	err = -EINVAL;
@@ -6370,12 +6335,11 @@ static int b43_op_set_key(struct ieee80211_hw *hw, enum set_key_cmd cmd,
 		break;
 	default:
 		/* CCMP-256, GCMP and BIP keys are handled by mac80211 */
-		err = -EOPNOTSUPP;
-		goto out_unlock;
+		return -EOPNOTSUPP;
 	}
 	index = (u8) (key->keyidx);
 	if (index > 3)
-		goto out_unlock;
+		return -EINVAL;
 
 	switch (cmd) {
 	case SET_KEY:
@@ -6383,15 +6347,12 @@ static int b43_op_set_key(struct ieee80211_hw *hw, enum set_key_cmd cmd,
 		    (!(key->flags & IEEE80211_KEY_FLAG_PAIRWISE) ||
 		    !modparam_hwtkip || !dev->fw.layout.hw_tkip)) {
 			/* We support only pairwise key */
-			err = -EOPNOTSUPP;
-			goto out_unlock;
+			return -EOPNOTSUPP;
 		}
 
 		if (key->flags & IEEE80211_KEY_FLAG_PAIRWISE) {
-			if (WARN_ON(!sta)) {
-				err = -EOPNOTSUPP;
-				goto out_unlock;
-			}
+			if (WARN_ON(!sta))
+				return -EOPNOTSUPP;
 			/* Pairwise key with an assigned MAC address. */
 			err = b43_key_write(dev, -1, algorithm,
 					    key->key, key->keylen,
@@ -6405,8 +6366,7 @@ static int b43_op_set_key(struct ieee80211_hw *hw, enum set_key_cmd cmd,
 			 * per-row ones: a further AP's group key stays with
 			 * mac80211, which encrypts its multicast in software.
 			 */
-			err = -EOPNOTSUPP;
-			goto out_unlock;
+			return -EOPNOTSUPP;
 		} else if (b43_mbss_slot(wl, vif) >= 0) {
 			/*
 			 * The key index block has one set of group key slots,
@@ -6427,7 +6387,7 @@ static int b43_op_set_key(struct ieee80211_hw *hw, enum set_key_cmd cmd,
 					    key->key, key->keylen, NULL, key);
 		}
 		if (err)
-			goto out_unlock;
+			return err;
 
 		if (!dev->fw.layout.hf_usedefkeys) {
 			key->flags |= IEEE80211_KEY_FLAG_SW_MGMT_TX;
@@ -6453,14 +6413,13 @@ static int b43_op_set_key(struct ieee80211_hw *hw, enum set_key_cmd cmd,
 			b43_txbf_unlink(dev, sta);
 		err = b43_key_clear(dev, key->hw_key_idx);
 		if (err)
-			goto out_unlock;
+			return err;
 		break;
 	}
 	default:
 		B43_WARN_ON(1);
 	}
 
-out_unlock:
 	if (!err) {
 		b43dbg(wl, "%s hardware based encryption for keyidx: %d, "
 		       "mac: %pM\n",
@@ -6468,7 +6427,6 @@ out_unlock:
 		       sta ? sta->addr : bcast_addr);
 		b43_dump_keymemory(dev);
 	}
-	mutex_unlock(&wl->mutex);
 
 	return err;
 }
@@ -6480,11 +6438,11 @@ static void b43_op_configure_filter(struct ieee80211_hw *hw,
 	struct b43_wl *wl = hw_to_b43_wl(hw);
 	struct b43_wldev *dev;
 
-	mutex_lock(&wl->mutex);
+	guard(mutex)(&wl->mutex);
 	dev = wl->current_dev;
 	if (!dev) {
 		*fflags = 0;
-		goto out_unlock;
+		return;
 	}
 
 	*fflags &= FIF_ALLMULTI |
@@ -6507,9 +6465,6 @@ static void b43_op_configure_filter(struct ieee80211_hw *hw,
 
 	if (changed && b43_status(dev) >= B43_STAT_INITIALIZED)
 		b43_adjust_opmode(dev);
-
-out_unlock:
-	mutex_unlock(&wl->mutex);
 }
 
 /* Locking: wl->mutex
@@ -6556,10 +6511,9 @@ redo:
 		b43_write32(dev, B43_MMIO_GEN_IRQ_MASK, 0);
 		b43_read32(dev, B43_MMIO_GEN_IRQ_MASK);	/* Flush */
 	} else {
-		spin_lock_irq(&wl->hardirq_lock);
+		guard(spinlock_irq)(&wl->hardirq_lock);
 		b43_write32(dev, B43_MMIO_GEN_IRQ_MASK, 0);
 		b43_read32(dev, B43_MMIO_GEN_IRQ_MASK);	/* Flush */
-		spin_unlock_irq(&wl->hardirq_lock);
 	}
 	/* Synchronize and free the interrupt handlers. Unlock to avoid deadlocks. */
 	orig_dev = dev;
@@ -7771,10 +7725,10 @@ static int b43_op_sta_state(struct ieee80211_hw *hw, struct ieee80211_vif *vif,
 	    new_state == IEEE80211_STA_NONE)
 		((struct b43_sta *)sta->drv_priv)->vif = vif;
 
-	mutex_lock(&wl->mutex);
+	guard(mutex)(&wl->mutex);
 	dev = wl->current_dev;
 	if (!dev || b43_status(dev) < B43_STAT_INITIALIZED)
-		goto out;
+		return 0;
 
 	/* The rates of a station are known once it associates */
 	if ((old_state == IEEE80211_STA_NOTEXIST &&
@@ -7790,8 +7744,6 @@ static int b43_op_sta_state(struct ieee80211_hw *hw, struct ieee80211_vif *vif,
 			 new_state == IEEE80211_STA_ASSOC)
 			b43_txbf_unlink(dev, sta);
 	}
-out:
-	mutex_unlock(&wl->mutex);
 	return 0;
 }
 
@@ -7802,7 +7754,7 @@ static void b43_op_sw_scan_start_notifier(struct ieee80211_hw *hw,
 	struct b43_wl *wl = hw_to_b43_wl(hw);
 	struct b43_wldev *dev;
 
-	mutex_lock(&wl->mutex);
+	guard(mutex)(&wl->mutex);
 	dev = wl->current_dev;
 	if (dev && (b43_status(dev) >= B43_STAT_INITIALIZED)) {
 		/* Disable CFP update during scan on other channels. */
@@ -7819,7 +7771,6 @@ static void b43_op_sw_scan_start_notifier(struct ieee80211_hw *hw,
 		dev->ps = false;
 		b43_power_saving_ctl_bits(dev, 0);
 	}
-	mutex_unlock(&wl->mutex);
 }
 
 static void b43_op_sw_scan_complete_notifier(struct ieee80211_hw *hw,
@@ -7828,7 +7779,7 @@ static void b43_op_sw_scan_complete_notifier(struct ieee80211_hw *hw,
 	struct b43_wl *wl = hw_to_b43_wl(hw);
 	struct b43_wldev *dev;
 
-	mutex_lock(&wl->mutex);
+	guard(mutex)(&wl->mutex);
 	dev = wl->current_dev;
 	if (dev && (b43_status(dev) >= B43_STAT_INITIALIZED)) {
 		/* Re-enable CFP update. */
@@ -7842,7 +7793,6 @@ static void b43_op_sw_scan_complete_notifier(struct ieee80211_hw *hw,
 		schedule_delayed_work(&wl->ps_work,
 				      msecs_to_jiffies(b43_ps_timeout(wl)));
 	}
-	mutex_unlock(&wl->mutex);
 }
 
 /* Whether every frame from mac80211 has got its TX status. */
@@ -7851,11 +7801,10 @@ static bool b43_tx_flushed(struct b43_wl *wl)
 	struct b43_wldev *dev;
 	bool flushed = true;
 
-	mutex_lock(&wl->mutex);
+	guard(mutex)(&wl->mutex);
 	dev = wl->current_dev;
 	if (dev && b43_status(dev) >= B43_STAT_STARTED)
 		flushed = b43_tx_empty(dev);
-	mutex_unlock(&wl->mutex);
 
 	return flushed;
 }
@@ -7948,12 +7897,11 @@ static int b43_op_set_antenna(struct ieee80211_hw *hw, int radio_idx,
 	if (!tx_ant || !rx_ant)
 		return -EINVAL;
 
-	mutex_lock(&wl->mutex);
+	guard(mutex)(&wl->mutex);
 	dev->txchain = tx_ant;
 	dev->rxchain = rx_ant;
 	if (b43_ht_enabled(dev))
 		b43_ht_set_chains(dev);
-	mutex_unlock(&wl->mutex);
 
 	return 0;
 }
@@ -7964,10 +7912,9 @@ static int b43_op_get_antenna(struct ieee80211_hw *hw, int radio_idx,
 	struct b43_wl *wl = hw_to_b43_wl(hw);
 	struct b43_wldev *dev = wl->current_dev;
 
-	mutex_lock(&wl->mutex);
+	guard(mutex)(&wl->mutex);
 	*tx_ant = dev->txchain;
 	*rx_ant = dev->rxchain;
-	mutex_unlock(&wl->mutex);
 
 	return 0;
 }
