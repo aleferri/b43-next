@@ -118,15 +118,15 @@ static void ssbn_pmu0_pllinit_r0(struct ssbn_chipcommon *cc,
 	switch (bus->chip_id) {
 	case 0x4328:
 		chipco_mask32(cc, SSBN_CHIPCO_PMU_MINRES_MSK,
-			      ~(1 << SSBN_PMURES_4328_BB_PLL_PU));
+			      ~BIT(SSBN_PMURES_4328_BB_PLL_PU));
 		chipco_mask32(cc, SSBN_CHIPCO_PMU_MAXRES_MSK,
-			      ~(1 << SSBN_PMURES_4328_BB_PLL_PU));
+			      ~BIT(SSBN_PMURES_4328_BB_PLL_PU));
 		break;
 	case 0x5354:
 		chipco_mask32(cc, SSBN_CHIPCO_PMU_MINRES_MSK,
-			      ~(1 << SSBN_PMURES_5354_BB_PLL_PU));
+			      ~BIT(SSBN_PMURES_5354_BB_PLL_PU));
 		chipco_mask32(cc, SSBN_CHIPCO_PMU_MAXRES_MSK,
-			      ~(1 << SSBN_PMURES_5354_BB_PLL_PU));
+			      ~BIT(SSBN_PMURES_5354_BB_PLL_PU));
 		break;
 	default:
 		WARN_ON(1);
@@ -253,11 +253,11 @@ static void ssbn_pmu1_pllinit_r0(struct ssbn_chipcommon *cc,
 	switch (bus->chip_id) {
 	case 0x4325:
 		chipco_mask32(cc, SSBN_CHIPCO_PMU_MINRES_MSK,
-			      ~((1 << SSBN_PMURES_4325_BBPLL_PWRSW_PU) |
-				(1 << SSBN_PMURES_4325_HT_AVAIL)));
+			      ~(BIT(SSBN_PMURES_4325_BBPLL_PWRSW_PU) |
+				BIT(SSBN_PMURES_4325_HT_AVAIL)));
 		chipco_mask32(cc, SSBN_CHIPCO_PMU_MAXRES_MSK,
-			      ~((1 << SSBN_PMURES_4325_BBPLL_PWRSW_PU) |
-				(1 << SSBN_PMURES_4325_HT_AVAIL)));
+			      ~(BIT(SSBN_PMURES_4325_BBPLL_PWRSW_PU) |
+				BIT(SSBN_PMURES_4325_HT_AVAIL)));
 		/* Adjust the BBPLL to 2 on all channels later. */
 		buffer_strength = 0x222222;
 		break;
@@ -394,8 +394,8 @@ static const struct pmu_res_depend_tab_entry pmu_res_depend_tab_4328a0[] = {
 		/* Adjust ILP Request to avoid forcing EXT/BB into burst mode. */
 		.resource = SSBN_PMURES_4328_ILP_REQUEST,
 		.task = PMU_RES_DEP_SET,
-		.depend = ((1 << SSBN_PMURES_4328_EXT_SWITCHER_PWM) |
-			   (1 << SSBN_PMURES_4328_BB_SWITCHER_PWM)),
+		.depend = (BIT(SSBN_PMURES_4328_EXT_SWITCHER_PWM) |
+			   BIT(SSBN_PMURES_4328_BB_SWITCHER_PWM)),
 	},
 };
 
@@ -408,10 +408,10 @@ static const struct pmu_res_depend_tab_entry pmu_res_depend_tab_4325a0[] = {
 		/* Adjust HT-Available dependencies. */
 		.resource = SSBN_PMURES_4325_HT_AVAIL,
 		.task = PMU_RES_DEP_ADD,
-		.depend = ((1 << SSBN_PMURES_4325_RX_PWRSW_PU) |
-			   (1 << SSBN_PMURES_4325_TX_PWRSW_PU) |
-			   (1 << SSBN_PMURES_4325_LOGEN_PWRSW_PU) |
-			   (1 << SSBN_PMURES_4325_AFE_PWRSW_PU)),
+		.depend = (BIT(SSBN_PMURES_4325_RX_PWRSW_PU) |
+			   BIT(SSBN_PMURES_4325_TX_PWRSW_PU) |
+			   BIT(SSBN_PMURES_4325_LOGEN_PWRSW_PU) |
+			   BIT(SSBN_PMURES_4325_AFE_PWRSW_PU)),
 	},
 };
 
@@ -438,11 +438,11 @@ static void ssbn_pmu_resources_init(struct ssbn_chipcommon *cc)
 		break;
 	case 0x4325:
 		/* Power OTP down later. */
-		min_msk = (1 << SSBN_PMURES_4325_CBUCK_BURST) |
-			  (1 << SSBN_PMURES_4325_LNLDO2_PU);
+		min_msk = BIT(SSBN_PMURES_4325_CBUCK_BURST) |
+			  BIT(SSBN_PMURES_4325_LNLDO2_PU);
 		if (chipco_read32(cc, SSBN_CHIPCO_CHIPSTAT) &
 		    SSBN_CHIPCO_CHST_4325_PMUTOP_2B)
-			min_msk |= (1 << SSBN_PMURES_4325_CLDO_CBUCK_BURST);
+			min_msk |= BIT(SSBN_PMURES_4325_CLDO_CBUCK_BURST);
 		/* The PLL may turn on, if it decides so. */
 		max_msk = 0xFFFFF;
 		updown_tab = pmu_res_updown_tab_4325a0;
@@ -451,9 +451,9 @@ static void ssbn_pmu_resources_init(struct ssbn_chipcommon *cc)
 		depend_tab_size = ARRAY_SIZE(pmu_res_depend_tab_4325a0);
 		break;
 	case 0x4328:
-		min_msk = (1 << SSBN_PMURES_4328_EXT_SWITCHER_PWM) |
-			  (1 << SSBN_PMURES_4328_BB_SWITCHER_PWM) |
-			  (1 << SSBN_PMURES_4328_XTAL_EN);
+		min_msk = BIT(SSBN_PMURES_4328_EXT_SWITCHER_PWM) |
+			  BIT(SSBN_PMURES_4328_BB_SWITCHER_PWM) |
+			  BIT(SSBN_PMURES_4328_XTAL_EN);
 		/* The PLL may turn on, if it decides so. */
 		max_msk = 0xFFFFF;
 		updown_tab = pmu_res_updown_tab_4328a0;
@@ -602,9 +602,9 @@ void ssbn_pmu_set_ldo_paref(struct ssbn_chipcommon *cc, bool on)
 	}
 
 	if (on)
-		chipco_set32(cc, SSBN_CHIPCO_PMU_MINRES_MSK, 1 << ldo);
+		chipco_set32(cc, SSBN_CHIPCO_PMU_MINRES_MSK, BIT(ldo));
 	else
-		chipco_mask32(cc, SSBN_CHIPCO_PMU_MINRES_MSK, ~(1 << ldo));
+		chipco_mask32(cc, SSBN_CHIPCO_PMU_MINRES_MSK, ~BIT(ldo));
 	chipco_read32(cc, SSBN_CHIPCO_PMU_MINRES_MSK); //SPEC FIXME found via mmiotrace - dummy read?
 }
 

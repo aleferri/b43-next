@@ -189,8 +189,8 @@
 #define SSBN_SPROM1_ETHPHY		0x005A	/* Ethernet PHY settings */
 #define  SSBN_SPROM1_ETHPHY_ET0A		0x001F	/* MII Address for enet0 */
 #define  SSBN_SPROM1_ETHPHY_ET1A		0x03E0	/* MII Address for enet1 */
-#define  SSBN_SPROM1_ETHPHY_ET0M		(1<<14)	/* MDIO for enet0 */
-#define  SSBN_SPROM1_ETHPHY_ET1M		(1<<15)	/* MDIO for enet1 */
+#define  SSBN_SPROM1_ETHPHY_ET0M		BIT(14)	/* MDIO for enet0 */
+#define  SSBN_SPROM1_ETHPHY_ET1M		BIT(15)	/* MDIO for enet1 */
 #define SSBN_SPROM1_BINF			0x005C	/* Board info */
 #define  SSBN_SPROM1_BINF_BREV		0x00FF	/* Board Revision */
 #define  SSBN_SPROM1_BINF_CCODE		0x0F00	/* Country Code */
@@ -273,8 +273,8 @@
 #define SSBN_SPROM4_ETHPHY		0x005A	/* Ethernet PHY settings ?? */
 #define  SSBN_SPROM4_ETHPHY_ET0A		0x001F	/* MII Address for enet0 */
 #define  SSBN_SPROM4_ETHPHY_ET1A		0x03E0	/* MII Address for enet1 */
-#define  SSBN_SPROM4_ETHPHY_ET0M		(1<<14)	/* MDIO for enet0 */
-#define  SSBN_SPROM4_ETHPHY_ET1M		(1<<15)	/* MDIO for enet1 */
+#define  SSBN_SPROM4_ETHPHY_ET0M		BIT(14)	/* MDIO for enet0 */
+#define  SSBN_SPROM4_ETHPHY_ET1M		BIT(15)	/* MDIO for enet1 */
 #define SSBN_SPROM4_ANTAVAIL		0x005C  /* Antenna available bitfields */
 #define  SSBN_SPROM4_ANTAVAIL_BG		0x00FF	/* B-PHY and G-PHY bitfield */
 #define  SSBN_SPROM4_ANTAVAIL_A		0xFF00	/* A-PHY bitfield */

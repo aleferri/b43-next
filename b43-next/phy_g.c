@@ -1532,7 +1532,7 @@ static void b43_phy_initb5(struct b43_wldev *dev)
 	}
 
 	if (dev->bad_frames_preempt) {
-		b43_phy_set(dev, B43_PHY_RADIO_BITFIELD, (1 << 11));
+		b43_phy_set(dev, B43_PHY_RADIO_BITFIELD, BIT(11));
 	}
 
 	if (phy->analog == 1) {
@@ -2142,7 +2142,7 @@ void b43_gphy_channel_switch(struct b43_wldev *dev,
 				     b43_hf_read(dev) | B43_HF_ACPR);
 		b43_write16(dev, B43_MMIO_CHANNEL_EXT,
 			    b43_read16(dev, B43_MMIO_CHANNEL_EXT)
-			    | (1 << 11));
+			    | BIT(11));
 	} else {
 		b43_write16(dev, B43_MMIO_CHANNEL_EXT,
 			    b43_read16(dev, B43_MMIO_CHANNEL_EXT)

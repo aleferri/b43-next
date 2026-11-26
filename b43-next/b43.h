@@ -410,8 +410,8 @@ enum {
 #define B43_SHM_SC_LCFB			0x0018	/* Long frame transmit count threshold for rate fallback */
 
 /* Hardware Radio Enable masks */
-#define B43_MMIO_RADIO_HWENABLED_HI_MASK (1 << 16)
-#define B43_MMIO_RADIO_HWENABLED_LO_MASK (1 << 4)
+#define B43_MMIO_RADIO_HWENABLED_HI_MASK BIT(16)
+#define B43_MMIO_RADIO_HWENABLED_LO_MASK BIT(4)
 
 /* HostFlags. See b43_hf_read/write() */
 #define B43_HF_ANTDIVHELP	0x000000000001ULL /* ucode antenna div helper */

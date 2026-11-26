@@ -2,6 +2,7 @@
 #ifndef LINUX_B43_PHY_COMMON_H_
 #define LINUX_B43_PHY_COMMON_H_
 
+#include <linux/bits.h>
 #include <linux/types.h>
 #include <linux/nl80211.h>
 
@@ -455,8 +456,8 @@ void b43_phy_txpower_check(struct b43_wldev *dev, unsigned int flags);
  *                         TSSI did not change.
  */
 enum b43_phy_txpower_check_flags {
-	B43_TXPWR_IGNORE_TIME		= (1 << 0),
-	B43_TXPWR_IGNORE_TSSI		= (1 << 1),
+	B43_TXPWR_IGNORE_TIME		= BIT(0),
+	B43_TXPWR_IGNORE_TSSI		= BIT(1),
 };
 
 struct work_struct;

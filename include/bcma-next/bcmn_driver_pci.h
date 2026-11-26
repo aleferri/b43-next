@@ -131,7 +131,7 @@ struct pci_dev;
 #define BCMN_CORE_PCI_DLLP_LCREG		0x100	/* Link Control */
 #define BCMN_CORE_PCI_DLLP_LSREG		0x104	/* Link Status */
 #define BCMN_CORE_PCI_DLLP_LAREG		0x108	/* Link Attention */
-#define  BCMN_CORE_PCI_DLLP_LSREG_LINKUP	(1 << 16)
+#define  BCMN_CORE_PCI_DLLP_LSREG_LINKUP	BIT(16)
 #define BCMN_CORE_PCI_DLLP_LAMASKREG		0x10C	/* Link Attention Mask */
 #define BCMN_CORE_PCI_DLLP_NEXTTXSEQNUMREG	0x110	/* Next Tx Seq Num */
 #define BCMN_CORE_PCI_DLLP_ACKEDTXSEQNUMREG	0x114	/* Acked Tx Seq Num */

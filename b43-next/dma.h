@@ -8,10 +8,10 @@
 
 
 /* DMA-Interrupt reasons. */
-#define B43_DMAIRQ_FATALMASK	((1 << 10) | (1 << 11) | (1 << 12) \
-					 | (1 << 14) | (1 << 15))
-#define B43_DMAIRQ_RDESC_UFLOW		(1 << 13)
-#define B43_DMAIRQ_RX_DONE		(1 << 16)
+#define B43_DMAIRQ_FATALMASK	(BIT(10) | BIT(11) | BIT(12) \
+					 | BIT(14) | BIT(15))
+#define B43_DMAIRQ_RDESC_UFLOW		BIT(13)
+#define B43_DMAIRQ_RX_DONE		BIT(16)
 
 /*** 32-bit DMA Engine. ***/
 

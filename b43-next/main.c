@@ -2341,7 +2341,7 @@ u8 b43_ieee80211_antenna_sanitize(struct b43_wldev *dev,
 	else
 		antenna_mask = dev->dev->bus_sprom->ant_available_a;
 
-	if (!(antenna_mask & (1 << (antenna_nr - 1)))) {
+	if (!(antenna_mask & BIT(antenna_nr - 1))) {
 		/* This antenna is not available. Fall back to default. */
 		return 0;
 	}
@@ -2750,7 +2750,7 @@ static void b43_do_interrupt_thread(struct b43_wldev *dev)
 	if (b43_debug(dev, B43_DBG_VERBOSESTATS)) {
 		dev->irq_count++;
 		for (i = 0; i < ARRAY_SIZE(dev->irq_bit_count); i++) {
-			if (reason & (1 << i))
+			if (reason & BIT(i))
 				dev->irq_bit_count[i]++;
 		}
 	}
@@ -4460,8 +4460,8 @@ static void b43_periodic_every15sec(struct b43_wldev *dev)
 		dev->rx_count = 0;
 		for (i = 0; i < ARRAY_SIZE(dev->irq_bit_count); i++) {
 			if (dev->irq_bit_count[i]) {
-				b43dbg(dev->wl, "Stats: %7u IRQ-%02u/sec (0x%08X)\n",
-				       dev->irq_bit_count[i] / 15, i, (1 << i));
+				b43dbg(dev->wl, "Stats: %7u IRQ-%02u/sec (0x%08lX)\n",
+				       dev->irq_bit_count[i] / 15, i, BIT(i));
 				dev->irq_bit_count[i] = 0;
 			}
 		}

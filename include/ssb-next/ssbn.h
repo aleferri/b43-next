@@ -2,6 +2,7 @@
 #ifndef LINUX_SSBN_H_
 #define LINUX_SSBN_H_
 
+#include <linux/bits.h>
 #include <linux/device.h>
 #include <linux/list.h>
 #include <linux/types.h>
@@ -616,7 +617,7 @@ struct ssbn_bus {
 
 enum ssbn_quirks {
 	/* SDIO connected card requires performing a read after writing a 32-bit value */
-	SSBN_QUIRK_SDIO_READ_AFTER_WRITE32	= (1 << 0),
+	SSBN_QUIRK_SDIO_READ_AFTER_WRITE32	= BIT(0),
 };
 
 /* The initialization-invariants. */

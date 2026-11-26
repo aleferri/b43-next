@@ -37,9 +37,9 @@ static void b43_led_set_pin(struct b43_wldev *dev, u8 led_index, bool high)
 #endif
 	ctl = b43_read16(dev, B43_MMIO_GPIO_CONTROL);
 	if (high)
-		ctl |= (1 << led_index);
+		ctl |= BIT(led_index);
 	else
-		ctl &= ~(1 << led_index);
+		ctl &= ~BIT(led_index);
 	b43_write16(dev, B43_MMIO_GPIO_CONTROL, ctl);
 }
 

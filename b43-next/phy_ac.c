@@ -3404,7 +3404,7 @@ static void b43_phy_ac_set_analog_tx_lpf_locked(struct b43_wldev *dev,
 			u16 lo, hi;
 			u32 v;
 
-			if (!(stages & (1 << stage)))
+			if (!(stages & BIT(stage)))
 				continue;
 
 			b43_actab_read_bulk(dev, B43_ACTAB_RFSEQ, off_lo, 16, 1, &lo);

@@ -82,11 +82,11 @@ static u32 get_cfgspace_addr(struct ssbn_pcicore *pc,
 			goto out;
 		/* Slide the window */
 		tmp = SSBN_PCICORE_SBTOPCI_CFG0;
-		tmp |= ((1 << (dev + 16)) & SSBN_PCICORE_SBTOPCI1_MASK);
+		tmp |= (BIT(dev + 16) & SSBN_PCICORE_SBTOPCI1_MASK);
 		pcicore_write32(pc, SSBN_PCICORE_SBTOPCI1, tmp);
 		/* Calculate the address */
 		addr = SSBN_PCI_CFG;
-		addr |= ((1 << (dev + 16)) & ~SSBN_PCICORE_SBTOPCI1_MASK);
+		addr |= (BIT(dev + 16) & ~SSBN_PCICORE_SBTOPCI1_MASK);
 		addr |= (func << 8);
 		addr |= (off & ~3);
 	} else {
@@ -582,9 +582,9 @@ static void ssbn_pcie_mdio_set_phy(struct ssbn_pcicore *pc, u8 phy)
 	const u16 mdio_data = 0x12C;
 	u32 v;
 
-	v = (1 << 30); /* Start of Transaction */
-	v |= (1 << 28); /* Write Transaction */
-	v |= (1 << 17); /* Turnaround */
+	v = BIT(30); /* Start of Transaction */
+	v |= BIT(28); /* Write Transaction */
+	v |= BIT(17); /* Turnaround */
 	v |= (0x1F << 18);
 	v |= (phy << 4);
 	pcicore_write32(pc, mdio_data, v);
@@ -611,9 +611,9 @@ static u16 ssbn_pcie_mdio_read(struct ssbn_pcicore *pc, u8 device, u8 address)
 		ssbn_pcie_mdio_set_phy(pc, device);
 	}
 
-	v = (1 << 30); /* Start of Transaction */
-	v |= (1 << 29); /* Read Transaction */
-	v |= (1 << 17); /* Turnaround */
+	v = BIT(30); /* Start of Transaction */
+	v |= BIT(29); /* Read Transaction */
+	v |= BIT(17); /* Turnaround */
 	if (pc->dev->id.revision < 10)
 		v |= (u32)device << 22;
 	v |= (u32)address << 18;
@@ -648,9 +648,9 @@ static void ssbn_pcie_mdio_write(struct ssbn_pcicore *pc, u8 device,
 		ssbn_pcie_mdio_set_phy(pc, device);
 	}
 
-	v = (1 << 30); /* Start of Transaction */
-	v |= (1 << 28); /* Write Transaction */
-	v |= (1 << 17); /* Turnaround */
+	v = BIT(30); /* Start of Transaction */
+	v |= BIT(28); /* Write Transaction */
+	v |= BIT(17); /* Turnaround */
 	if (pc->dev->id.revision < 10)
 		v |= (u32)device << 22;
 	v |= (u32)address << 18;
@@ -691,7 +691,7 @@ int ssbn_pcicore_dev_irqvecs_enable(struct ssbn_pcicore *pc,
 		u32 coremask;
 
 		/* Calculate the "coremask" for the device. */
-		coremask = (1 << dev->core_index);
+		coremask = (BIT(dev->core_index));
 
 		WARN_ON(bus->bustype != SSBN_BUSTYPE_PCI);
 		err = pci_read_config_dword(bus->host_pci, SSBN_PCI_IRQMASK, &tmp);
@@ -707,7 +707,7 @@ int ssbn_pcicore_dev_irqvecs_enable(struct ssbn_pcicore *pc,
 		intvec = ssbn_read32(pdev, SSBN_INTVEC);
 		tmp = ssbn_read32(dev, SSBN_TPSFLAG);
 		tmp &= SSBN_TPSFLAG_BPFLAG;
-		intvec |= (1 << tmp);
+		intvec |= BIT(tmp);
 		ssbn_write32(pdev, SSBN_INTVEC, intvec);
 	}
 

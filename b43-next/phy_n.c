@@ -247,7 +247,7 @@ static void b43_nphy_rf_ctl_override_rev7(struct b43_wldev *dev, u16 field,
 			if (e) /* Do it safer, better than wl */
 				b43_phy_mask(dev, val_addr, ~e->val_mask);
 		} else {
-			if (!core || (core & (1 << i))) {
+			if (!core || (core & BIT(i))) {
 				b43_phy_set(dev, en_addr, en_mask);
 				if (e)
 					b43_phy_maskset(dev, val_addr, ~e->val_mask, (value << e->val_shift));
@@ -309,7 +309,7 @@ static void b43_nphy_rf_ctl_override(struct b43_wldev *dev, u16 field,
 	u8 index = fls(field);
 	u8 addr, en_addr, val_addr;
 	/* we expect only one bit set */
-	B43_WARN_ON(field & (~(1 << (index - 1))));
+	B43_WARN_ON(field & ~BIT(index - 1));
 
 	if (dev->phy.rev >= 3) {
 		const struct nphy_rf_control_override_rev3 *rf_ctrl;
@@ -331,7 +331,7 @@ static void b43_nphy_rf_ctl_override(struct b43_wldev *dev, u16 field,
 				b43_phy_mask(dev, val_addr,
 						~(rf_ctrl->val_mask));
 			} else {
-				if (core == 0 || ((1 << i) & core)) {
+				if (core == 0 || (BIT(i) & core)) {
 					b43_phy_set(dev, en_addr, field);
 					b43_phy_maskset(dev, val_addr,
 						~(rf_ctrl->val_mask),
@@ -364,7 +364,7 @@ static void b43_nphy_rf_ctl_override(struct b43_wldev *dev, u16 field,
 			addr = B43_PHY_N((i == 0) ?
 				rf_ctrl->addr0 : rf_ctrl->addr1);
 
-			if ((1 << i) & core)
+			if (BIT(i) & core)
 				b43_phy_maskset(dev, addr, ~(rf_ctrl->bmask),
 						(value << rf_ctrl->shift));
 
@@ -2224,7 +2224,7 @@ static void b43_nphy_rev3_rssi_cal(struct b43_wldev *dev)
 
 	rx_core_state = b43_nphy_get_rx_core_state(dev);
 	for (core = 0; core < 2; core++) {
-		if (!(rx_core_state & (1 << core)))
+		if (!(rx_core_state & BIT(core)))
 			continue;
 		r = core ? B2056_RX1 : B2056_RX0;
 		b43_nphy_scale_offset_rssi(dev, 0, 0, core + 1, N_RAIL_I,
@@ -2303,7 +2303,7 @@ static void b43_nphy_rev3_rssi_cal(struct b43_wldev *dev)
 	}
 
 	for (core = 0; core < 2; core++) {
-		if (!(rx_core_state & (1 << core)))
+		if (!(rx_core_state & BIT(core)))
 			continue;
 		for (i = 0; i < 2; i++) {
 			b43_nphy_scale_offset_rssi(dev, 0, 0, core + 1,
@@ -6533,7 +6533,7 @@ static int b43_nphy_rev2_cal_rx_iq(struct b43_wldev *dev,
 					}
 					power[j] = ((real + imag) / 1024) + 1;
 				} else {
-					b43_nphy_calc_rx_iq_comp(dev, 1 << i);
+					b43_nphy_calc_rx_iq_comp(dev, BIT(i));
 				}
 				b43_nphy_stop_playback(dev);
 			}
@@ -6646,7 +6646,7 @@ static void b43_nphy_tx_pwr_index(struct b43_wldev *dev, u8 core_mask,
 		b43_nphy_stay_in_carrier_search(dev, true);
 
 	for (core = 0; core < 2; core++) {
-		if (!(core_mask & (1 << core)))
+		if (!(core_mask & BIT(core)))
 			continue;
 
 		txpi = &nphy->txpwrindex[core];
@@ -7514,7 +7514,7 @@ static int b43_nphy_rev3_cal_rx_iq(struct b43_wldev *dev,
 	rxcore_state = b43_nphy_get_rx_core_state(dev);
 
 	for (rx_core = 0; rx_core < 2; rx_core++) {
-		skip_rxiqcal = !(rxcore_state & (1 << rx_core));
+		skip_rxiqcal = !(rxcore_state & BIT(rx_core));
 
 		b43_nphy_rx_cal_phy_setup(dev, rx_core);
 		b43_nphy_rx_cal_radio_setup(dev, rx_core);
@@ -7692,21 +7692,21 @@ static void b43_nphy_papd_cal_setup(struct b43_wldev *dev,
 
 	b43_nphy_rf_ctl_override_rev7(dev, 0x80, b43_nphy_read_lpf_ctl(dev, 0),
 				      0, false, 1);
-	b43_nphy_rf_ctl_override_rev7(dev, 0x800, 0, 1 << core, false, 0);
+	b43_nphy_rf_ctl_override_rev7(dev, 0x800, 0, BIT(core), false, 0);
 	b43_nphy_rf_ctl_override_one_to_many(dev, N_RF_CTL_OVER_CMD_TX_PU, 1,
-					     1 << core, false);
+					     BIT(core), false);
 	b43_nphy_rf_ctl_override_one_to_many(dev, N_RF_CTL_OVER_CMD_TX_PU, 0,
-					     1 << off_core, false);
+					     BIT(off_core), false);
 	b43_nphy_rf_ctl_override_rev7(dev, 0x8, 0, 3, false, 0);
-	b43_nphy_rf_ctl_override_rev7(dev, 0x4, 1, 1 << core, false, 1);
-	b43_nphy_rf_ctl_override_rev7(dev, 0x1, 0, 1 << core, false, 1);
-	b43_nphy_rf_ctl_override_rev7(dev, 0x2, 1, 1 << core, false, 2);
-	b43_nphy_rf_ctl_override_rev7(dev, 0x100, 0, 1 << core, false, 1);
-	b43_nphy_rf_ctl_override_rev7(dev, 0x200, 1, 1 << core, false, 1);
-	b43_nphy_rf_ctl_override_rev7(dev, 0x400, 0, 1 << core, false, 1);
-	b43_nphy_rf_ctl_override_rev7(dev, 0x8, 1, 1 << core, false, 1);
-	b43_nphy_rf_ctl_override_rev7(dev, 0x20, 0, 1 << core, false, 1);
-	b43_nphy_rf_ctl_override_rev7(dev, 0x10, 0, 1 << core, false, 1);
+	b43_nphy_rf_ctl_override_rev7(dev, 0x4, 1, BIT(core), false, 1);
+	b43_nphy_rf_ctl_override_rev7(dev, 0x1, 0, BIT(core), false, 1);
+	b43_nphy_rf_ctl_override_rev7(dev, 0x2, 1, BIT(core), false, 2);
+	b43_nphy_rf_ctl_override_rev7(dev, 0x100, 0, BIT(core), false, 1);
+	b43_nphy_rf_ctl_override_rev7(dev, 0x200, 1, BIT(core), false, 1);
+	b43_nphy_rf_ctl_override_rev7(dev, 0x400, 0, BIT(core), false, 1);
+	b43_nphy_rf_ctl_override_rev7(dev, 0x8, 1, BIT(core), false, 1);
+	b43_nphy_rf_ctl_override_rev7(dev, 0x20, 0, BIT(core), false, 1);
+	b43_nphy_rf_ctl_override_rev7(dev, 0x10, 0, BIT(core), false, 1);
 
 	for (i = 0; i < 2; i++) {
 		state->afectl[i] = b43_phy_read(dev, afectl[i]);
@@ -7774,7 +7774,7 @@ static bool b43_nphy_papd_cal_core(struct b43_wldev *dev, u8 core, u8 pad,
 	txgain = (gains.tx_lpf[core] << 15) | (gains.txgm[core] << 12) |
 		 (gains.pga[core] << 8) | (pad << 3) | gains.ipa[core];
 	b43_nphy_rf_ctl_override_one_to_many(dev, N_RF_CTL_OVER_CMD_TX_GAIN,
-					     txgain, 1 << core, false);
+					     txgain, BIT(core), false);
 
 	b43_nphy_papd_set_bbmult(dev, core ? bbmult : bbmult << 8);
 	b43_nphy_papd_select_core(dev, core);
@@ -7789,8 +7789,8 @@ static bool b43_nphy_papd_cal_core(struct b43_wldev *dev, u8 core, u8 pad,
 	b43_phy_maskset(dev, B43_NPHY_PAPD_CAL_ADDRESS, ~0x3F3F,
 			(63 << 8) | (gain_search ? 55 : 25));
 
-	b43_nphy_rf_ctl_override_rev7(dev, 0x8, 1, 1 << core, false, 0);
-	b43_nphy_rf_ctl_override_rev7(dev, 0x8, 0, 1 << off_core, false, 0);
+	b43_nphy_rf_ctl_override_rev7(dev, 0x8, 1, BIT(core), false, 0);
+	b43_nphy_rf_ctl_override_rev7(dev, 0x8, 0, BIT(off_core), false, 0);
 
 	b43_phy_write(dev, 0x2BE, 1);
 	if (read_poll_timeout(b43_phy_read, cmd, !cmd, 100, 10 * USEC_PER_SEC,
@@ -7803,7 +7803,7 @@ static bool b43_nphy_papd_cal_core(struct b43_wldev *dev, u8 core, u8 pad,
 	eps = b43_ntab_read(dev, B43_NTAB32(31 + 2 * core, 63));
 
 	b43_nphy_rf_ctl_override_one_to_many(dev, N_RF_CTL_OVER_CMD_TX_GAIN,
-					     txgain, 1 << core, true);
+					     txgain, BIT(core), true);
 
 	eps_i = sign_extend32(eps, 12);
 	eps_q = sign_extend32(eps >> 13, 12);

@@ -104,7 +104,7 @@ static void pciedev_crwlpciegen2_180(struct bcmn_drv_pcie2 *pcie2)
 static void pciedev_crwlpciegen2_182(struct bcmn_drv_pcie2 *pcie2)
 {
 	pcie2_write32(pcie2, BCMN_CORE_PCIE2_CONFIGINDADDR, PCIE2_SBMBX);
-	pcie2_write32(pcie2, BCMN_CORE_PCIE2_CONFIGINDDATA, 1 << 0);
+	pcie2_write32(pcie2, BCMN_CORE_PCIE2_CONFIGINDDATA, BIT(0));
 }
 
 static void pciedev_reg_pm_clk_period(struct bcmn_drv_pcie2 *pcie2)

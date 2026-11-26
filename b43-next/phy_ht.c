@@ -523,8 +523,8 @@ static void b43_phy_ht_rssi_select(struct b43_wldev *dev, u8 core_sel,
 			case HT_RSSI_TSSI_2G:
 				b43_phy_set(dev, ctl_regs[core][0], 0x3 << 8);
 				b43_phy_set(dev, ctl_regs[core][0], 0x3 << 10);
-				b43_phy_set(dev, ctl_regs[core][1], 0x1 << 9);
-				b43_phy_set(dev, ctl_regs[core][1], 0x1 << 10);
+				b43_phy_set(dev, ctl_regs[core][1], BIT(9));
+				b43_phy_set(dev, ctl_regs[core][1], BIT(10));
 
 				b43_radio_set(dev, R2059_C3 | 0xbf, 0x1);
 				b43_radio_write(dev, radio_r[core] | 0x159,
@@ -2358,7 +2358,7 @@ static void b43_phy_ht_rxcal_setup(struct b43_wldev *dev, int core,
 
 	sv->r801 = b43_phy_read(dev, B43_PHY_EXTG(0x001));
 	b43_phy_mask(dev, B43_PHY_EXTG(0x001), ~0x7000);
-	b43_phy_maskset(dev, B43_PHY_EXTG(0x001), ~0x0007, 1 << core);
+	b43_phy_maskset(dev, B43_PHY_EXTG(0x001), ~0x0007, BIT(core));
 
 	sv->rfctl[0] = b43_phy_read(dev, rf + 0xc);
 	b43_phy_mask(dev, rf + 0xc, 0xffff);
