@@ -17,6 +17,7 @@
 #include "xmit.h"
 
 #include <linux/delay.h>
+#include <linux/iopoll.h>
 #include <linux/sched.h>
 #include <linux/slab.h>
 #include <linux/unaligned.h>
@@ -607,7 +608,8 @@ static bool pio_rx_frame(struct b43_pio_rxqueue *q)
 	struct b43_wl *wl = dev->wl;
 	u16 len;
 	u32 macstat = 0;
-	unsigned int i, padding;
+	unsigned int padding;
+	int timedout;
 	struct sk_buff *skb;
 	const char *err_msg = NULL;
 	struct b43_rxhdr_fw4 *rxhdr =
@@ -629,12 +631,10 @@ static bool pio_rx_frame(struct b43_pio_rxqueue *q)
 			return false;
 		b43_piorx_write32(q, B43_PIO8_RXCTL,
 				  B43_PIO8_RXCTL_FRAMERDY);
-		for (i = 0; i < 10; i++) {
-			ctl = b43_piorx_read32(q, B43_PIO8_RXCTL);
-			if (ctl & B43_PIO8_RXCTL_DATARDY)
-				goto data_ready;
-			udelay(10);
-		}
+		timedout = read_poll_timeout_atomic(b43_piorx_read32, ctl,
+						    ctl & B43_PIO8_RXCTL_DATARDY,
+						    10, 100, false,
+						    q, B43_PIO8_RXCTL);
 	} else {
 		u16 ctl;
 
@@ -643,17 +643,16 @@ static bool pio_rx_frame(struct b43_pio_rxqueue *q)
 			return false;
 		b43_piorx_write16(q, B43_PIO_RXCTL,
 				  B43_PIO_RXCTL_FRAMERDY);
-		for (i = 0; i < 10; i++) {
-			ctl = b43_piorx_read16(q, B43_PIO_RXCTL);
-			if (ctl & B43_PIO_RXCTL_DATARDY)
-				goto data_ready;
-			udelay(10);
-		}
+		timedout = read_poll_timeout_atomic(b43_piorx_read16, ctl,
+						    ctl & B43_PIO_RXCTL_DATARDY,
+						    10, 100, false,
+						    q, B43_PIO_RXCTL);
 	}
-	b43warn(q->dev->wl, "PIO RX timed out\n");
-	dev->rx_ht_valid = false;
-	return true;
-data_ready:
+	if (timedout) {
+		b43warn(q->dev->wl, "PIO RX timed out\n");
+		dev->rx_ht_valid = false;
+		return true;
+	}
 
 	/* Get the preamble (RX header) */
 	if (q->rev >= 8) {

@@ -1741,7 +1741,6 @@ void b43_power_saving_ctl_bits(struct b43_wldev *dev, unsigned int ps_flags)
 	u16 ucstat;
 	bool hwps;
 	bool awake;
-	int i;
 
 	B43_WARN_ON((ps_flags & B43_PS_ENABLED) &&
 		    (ps_flags & B43_PS_DISABLED));
@@ -1794,16 +1793,12 @@ void b43_power_saving_ctl_bits(struct b43_wldev *dev, unsigned int ps_flags)
 	b43_macctl_write(dev, macctl);
 	/* Commit write */
 	b43_read32(dev, B43_MMIO_MACCTL);
-	if (awake && dev->dev->core_rev >= 5) {
-		/* Wait for the microcode to wake up. */
-		for (i = 0; i < 100; i++) {
-			ucstat = b43_shm_read16(dev, B43_SHM_SHARED,
-						B43_SHM_SH_UCODESTAT);
-			if (ucstat != B43_SHM_SH_UCODESTAT_SLEEP)
-				break;
-			udelay(10);
-		}
-	}
+	/* Wait for the microcode to wake up. */
+	if (awake && dev->dev->core_rev >= 5)
+		read_poll_timeout_atomic(b43_shm_read16, ucstat,
+					 ucstat != B43_SHM_SH_UCODESTAT_SLEEP,
+					 10, 1000, false, dev, B43_SHM_SHARED,
+					 B43_SHM_SH_UCODESTAT);
 }
 
 /* https://bcm-v4.sipsolutions.net/802.11/PHY/BmacCorePllReset */
@@ -3689,7 +3684,6 @@ void b43_mac_enable(struct b43_wldev *dev)
 /* https://bcm-specs.sipsolutions.net/SuspendMAC */
 void b43_mac_suspend(struct b43_wldev *dev)
 {
-	int i;
 	u32 tmp;
 
 	might_sleep();
@@ -3700,22 +3694,17 @@ void b43_mac_suspend(struct b43_wldev *dev)
 		b43_macctl_maskset(dev, ~B43_MACCTL_ENABLED, 0);
 		/* force pci to flush the write */
 		b43_read32(dev, B43_MMIO_MACCTL);
-		for (i = 35; i; i--) {
-			tmp = b43_read32(dev, B43_MMIO_GEN_IRQ_REASON);
-			if (tmp & B43_IRQ_MAC_SUSPENDED)
-				goto out;
-			udelay(10);
-		}
-		/* Hm, it seems this will take some time. Use msleep(). */
-		for (i = 40; i; i--) {
-			tmp = b43_read32(dev, B43_MMIO_GEN_IRQ_REASON);
-			if (tmp & B43_IRQ_MAC_SUSPENDED)
-				goto out;
-			msleep(1);
-		}
-		b43err(dev->wl, "MAC suspend failed\n");
+		/* Spin briefly first, then sleep if it takes longer. */
+		if (read_poll_timeout_atomic(b43_read32, tmp,
+					     tmp & B43_IRQ_MAC_SUSPENDED,
+					     10, 350, false, dev,
+					     B43_MMIO_GEN_IRQ_REASON) &&
+		    read_poll_timeout(b43_read32, tmp,
+				      tmp & B43_IRQ_MAC_SUSPENDED,
+				      1000, 40 * USEC_PER_MSEC, false, dev,
+				      B43_MMIO_GEN_IRQ_REASON))
+			b43err(dev->wl, "MAC suspend failed\n");
 	}
-out:
 	dev->mac_suspended++;
 }
 
