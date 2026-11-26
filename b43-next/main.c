@@ -4660,17 +4660,19 @@ static void b43_security_init(struct b43_wldev *dev)
 }
 
 #ifdef CONFIG_B43_NEXT_HWRNG
-static int b43_rng_read(struct hwrng *rng, u32 *data)
+static int b43_rng_read(struct hwrng *rng, void *data, size_t max, bool wait)
 {
-	struct b43_wl *wl = (struct b43_wl *)rng->priv;
+	struct b43_wl *wl = container_of(rng, struct b43_wl, rng);
 	struct b43_wldev *dev;
 	int count = -ENODEV;
+	u16 val;
 
 	mutex_lock(&wl->mutex);
 	dev = wl->current_dev;
 	if (likely(dev && b43_status(dev) >= B43_STAT_INITIALIZED)) {
-		*data = b43_read16(dev, B43_MMIO_RNG);
-		count = sizeof(u16);
+		val = b43_read16(dev, B43_MMIO_RNG);
+		count = min(max, sizeof(val));
+		memcpy(data, &val, count);
 	}
 	mutex_unlock(&wl->mutex);
 
@@ -4694,8 +4696,7 @@ static int b43_rng_init(struct b43_wl *wl)
 	snprintf(wl->rng_name, ARRAY_SIZE(wl->rng_name),
 		 "%s_%s", KBUILD_MODNAME, wiphy_name(wl->hw->wiphy));
 	wl->rng.name = wl->rng_name;
-	wl->rng.data_read = b43_rng_read;
-	wl->rng.priv = (unsigned long)wl;
+	wl->rng.read = b43_rng_read;
 	wl->rng_initialized = true;
 	err = hwrng_register(&wl->rng);
 	if (err) {
