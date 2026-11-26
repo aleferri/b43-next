@@ -5513,7 +5513,7 @@ static int b43_nphy_cal_tx_iq_lo(struct b43_wldev *dev,
 				 struct nphy_txgains target,
 				 bool full, bool mphase);
 static int b43_nphy_cal_rx_iq(struct b43_wldev *dev,
-			      struct nphy_txgains target, u8 type, bool debug);
+			      struct nphy_txgains target, u8 type);
 static void b43_nphy_save_cal(struct b43_wldev *dev);
 static void b43_nphy_tx_pwr_ctrl_coef_setup(struct b43_wldev *dev);
 static void b43_nphy_tx_pwr_index(struct b43_wldev *dev, u8 core_mask,
@@ -5653,7 +5653,7 @@ static void b43_nphy_init_cal_2057_rev14_epa(struct b43_wldev *dev, u16 g)
 		target.tx_lpf[c] = (g & 0x8000) >> 15;
 	}
 	if (!b43_nphy_cal_tx_iq_lo_phases(dev, target) &&
-	    b43_nphy_cal_rx_iq(dev, target, 2, 0) == 0) {
+	    b43_nphy_cal_rx_iq(dev, target, 2) == 0) {
 		b43_nphy_save_cal(dev);
 		b43_nphy_tx_pwr_ctrl_coef_setup(dev);
 	}
@@ -6400,7 +6400,7 @@ static void b43_nphy_reapply_tx_cal_coeffs(struct b43_wldev *dev)
 
 /* https://bcm-v4.sipsolutions.net/802.11/PHY/N/CalRxIqRev2 */
 static int b43_nphy_rev2_cal_rx_iq(struct b43_wldev *dev,
-			struct nphy_txgains target, u8 type, bool debug)
+			struct nphy_txgains target, u8 type)
 {
 	struct b43_phy_n *nphy = dev->phy.n;
 	int i, j, index;
@@ -7495,7 +7495,7 @@ static u8 b43_nphy_rc_sweep(struct b43_wldev *dev, u8 core_idx,
 
 /* https://bcm-v4.sipsolutions.net/802.11/PHY/N/CalRxIqRev3 */
 static int b43_nphy_rev3_cal_rx_iq(struct b43_wldev *dev,
-			struct nphy_txgains target, u8 type, bool debug)
+			struct nphy_txgains target, u8 type)
 {
 	struct b43_phy *phy = &dev->phy;
 	struct b43_phy_n *nphy = phy->n;
@@ -7543,9 +7543,6 @@ static int b43_nphy_rev3_cal_rx_iq(struct b43_wldev *dev,
 					 B43_NPHY_RXCAL_TONEFREQ_20MHZ,
 					 B43_NPHY_RXCAL_TONEAMP, false,
 					 type == 1, false);
-
-			if (debug)
-				mdelay(4000);
 
 			b43_nphy_calc_rx_iq_comp(dev, rx_core + 1);
 			b43_nphy_stop_playback(dev);
@@ -7635,16 +7632,16 @@ static int b43_nphy_rev3_cal_rx_iq(struct b43_wldev *dev,
 
 /* https://bcm-v4.sipsolutions.net/802.11/PHY/N/CalRxIq */
 static int b43_nphy_cal_rx_iq(struct b43_wldev *dev,
-			struct nphy_txgains target, u8 type, bool debug)
+			struct nphy_txgains target, u8 type)
 {
 	b43_cal_begin(dev, B43_CAL_RXIQ);
 	if (dev->phy.rev >= 7)
 		type = 0;
 
 	if (dev->phy.rev >= 3)
-		return b43_nphy_rev3_cal_rx_iq(dev, target, type, debug);
+		return b43_nphy_rev3_cal_rx_iq(dev, target, type);
 	else
-		return b43_nphy_rev2_cal_rx_iq(dev, target, type, debug);
+		return b43_nphy_rev2_cal_rx_iq(dev, target, type);
 }
 
 static const u32 b43_nphy_papd_scalar[] = {
@@ -8391,7 +8388,7 @@ static void b43_nphy_perical_run(struct b43_wldev *dev)
 		nphy->mphase_cal_phase_id++;
 		break;
 	case 9:
-		if (!b43_nphy_cal_rx_iq(dev, target, 0, false))
+		if (!b43_nphy_cal_rx_iq(dev, target, 0))
 			b43_nphy_save_cal(dev);
 		nphy->mphase_cal_phase_id++;
 		break;
@@ -8714,7 +8711,7 @@ static int b43_phy_initn(struct b43_wldev *dev)
 					target = b43_nphy_get_tx_gains(dev);
 				}
 				if (!b43_nphy_cal_tx_iq_lo(dev, target, true, false))
-					if (b43_nphy_cal_rx_iq(dev, target, 2, 0) == 0)
+					if (b43_nphy_cal_rx_iq(dev, target, 2) == 0)
 						b43_nphy_save_cal(dev);
 				b43_nphy_precal_tx_gain_restore(dev);
 			} else if (nphy->mphase_cal_phase_id == 0 &&
@@ -8742,13 +8739,13 @@ static int b43_phy_initn(struct b43_wldev *dev)
 					target = b43_nphy_get_tx_gains(dev);
 					if (!b43_nphy_cal_tx_iq_lo(dev, target,
 								   true, false) &&
-					    b43_nphy_cal_rx_iq(dev, target, 2,
-							       0) == 0)
+					    b43_nphy_cal_rx_iq(dev, target,
+							       2) == 0)
 						b43_nphy_save_cal(dev);
 					b43_nphy_precal_tx_gain_restore(dev);
 				} else if (phy->rev >= 3 && phy->rev < 7 &&
-					   b43_nphy_cal_rx_iq(dev, target, 2,
-							      0) == 0) {
+					   b43_nphy_cal_rx_iq(dev, target,
+							      2) == 0) {
 					b43_nphy_save_cal(dev);
 				}
 			}
