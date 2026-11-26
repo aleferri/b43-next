@@ -361,7 +361,7 @@ static void ssbn_pcicore_init_hostmode(struct ssbn_pcicore *pc)
 	 * The same problem was reported for WRT350N v1 (BCM4705), so we just
 	 * sleep here unconditionally.
 	 */
-	usleep_range(1000, 2000);
+	fsleep(1000);
 
 	/* Enable PCI bridge BAR0 prefetch and burst */
 	val = PCI_COMMAND_MASTER | PCI_COMMAND_MEMORY;

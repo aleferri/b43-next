@@ -98,14 +98,14 @@ static void b43_radio_2059_rcal(struct b43_wldev *dev)
 	b43_cal_begin(dev, B43_CAL_RCAL);
 	/* Enable */
 	b43_radio_set(dev, R2059_C3 | R2059_RCAL_CONFIG, 0x1);
-	usleep_range(10, 20);
+	fsleep(10);
 
 	b43_radio_set(dev, R2059_C3 | 0x0BF, 0x1);
 	b43_radio_maskset(dev, R2059_C3 | 0x19B, 0x3, 0x2);
 
 	/* Start */
 	b43_radio_set(dev, R2059_C3 | R2059_RCAL_CONFIG, 0x2);
-	usleep_range(100, 200);
+	fsleep(100);
 
 	/* Stop */
 	b43_radio_mask(dev, R2059_C3 | R2059_RCAL_CONFIG, ~0x2);

@@ -80,7 +80,7 @@ void bcmn_core_set_clockmode(struct bcmn_device *core,
 	switch (clkmode) {
 	case BCMN_CLKMODE_FAST:
 		bcmn_set32(core, BCMN_CLKCTLST, BCMN_CLKCTLST_FORCEHT);
-		usleep_range(64, 300);
+		fsleep(64);
 		if (read_poll_timeout_atomic(bcmn_read32, v,
 					     v & BCMN_CLKCTLST_HAVEHT,
 					     10, 15000, false,

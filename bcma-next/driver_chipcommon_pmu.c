@@ -62,7 +62,7 @@ static u32 bcmn_pmu_xtalfreq(struct bcmn_drv_cc *cc)
 
 	bcmn_pmu_write32(cc, BCMN_CC_PMU_XTAL_FREQ,
 			 BCMN_CC_PMU_XTAL_FREQ_MEASURE_MASK);
-	usleep_range(1000, 2000);
+	fsleep(1000);
 
 	ilp_ctl = bcmn_pmu_read32(cc, BCMN_CC_PMU_XTAL_FREQ);
 	ilp_ctl &= BCMN_CC_PMU_XTAL_FREQ_ILPCTL_MASK;
@@ -285,7 +285,7 @@ static void bcmn_pmu_resources_init(struct bcmn_drv_cc *cc)
 	 * Add some delay; allow resources to come up and settle.
 	 * Delay is required for SoC (early init).
 	 */
-	usleep_range(2000, 2500);
+	fsleep(2000);
 }
 
 /* Disable to allow reading SPROM. Don't know the advantages of enabling it. */

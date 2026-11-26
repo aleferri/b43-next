@@ -86,12 +86,12 @@ static void bcmn_core_pcie2_hw_ltr_war(struct bcmn_drv_pcie2 *pcie2)
 		/* set the LTR state to be active */
 		pcie2_write32(pcie2, BCMN_CORE_PCIE2_LTR_STATE,
 			      PCIE2_LTR_ACTIVE);
-		usleep_range(1000, 2000);
+		fsleep(1000);
 
 		/* set the LTR state to be sleep */
 		pcie2_write32(pcie2, BCMN_CORE_PCIE2_LTR_STATE,
 			      PCIE2_LTR_SLEEP);
-		usleep_range(1000, 2000);
+		fsleep(1000);
 	}
 }
 

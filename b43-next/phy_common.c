@@ -371,12 +371,12 @@ void b43_phy_put_into_reset(struct b43_wldev *dev)
 		tmp |= B43_TMSLOW_PHYRESET;
 		tmp |= SSBN_TMSLOW_FGC;
 		ssbn_write32(dev->dev->sdev, SSBN_TMSLOW, tmp);
-		usleep_range(1000, 2000);
+		fsleep(1000);
 
 		tmp = ssbn_read32(dev->dev->sdev, SSBN_TMSLOW);
 		tmp &= ~SSBN_TMSLOW_FGC;
 		ssbn_write32(dev->dev->sdev, SSBN_TMSLOW, tmp);
-		usleep_range(1000, 2000);
+		fsleep(1000);
 
 		break;
 #endif
@@ -422,14 +422,14 @@ void b43_phy_take_out_of_reset(struct b43_wldev *dev)
 		tmp |= SSBN_TMSLOW_FGC;
 		ssbn_write32(dev->dev->sdev, SSBN_TMSLOW, tmp);
 		ssbn_read32(dev->dev->sdev, SSBN_TMSLOW); /* flush */
-		usleep_range(1000, 2000);
+		fsleep(1000);
 
 		tmp = ssbn_read32(dev->dev->sdev, SSBN_TMSLOW);
 		tmp &= ~SSBN_TMSLOW_FGC;
 		tmp |= B43_TMSLOW_PHYCLKEN;
 		ssbn_write32(dev->dev->sdev, SSBN_TMSLOW, tmp);
 		ssbn_read32(dev->dev->sdev, SSBN_TMSLOW); /* flush */
-		usleep_range(1000, 2000);
+		fsleep(1000);
 		break;
 #endif
 	}
