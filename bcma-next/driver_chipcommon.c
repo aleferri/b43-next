@@ -287,26 +287,14 @@ u32 bcmn_chipco_gpio_in(struct bcmn_drv_cc *cc, u32 mask)
 
 u32 bcmn_chipco_gpio_out(struct bcmn_drv_cc *cc, u32 mask, u32 value)
 {
-	unsigned long flags;
-	u32 res;
-
-	spin_lock_irqsave(&cc->gpio_lock, flags);
-	res = bcmn_cc_write32_masked(cc, BCMN_CC_GPIOOUT, mask, value);
-	spin_unlock_irqrestore(&cc->gpio_lock, flags);
-
-	return res;
+	guard(spinlock_irqsave)(&cc->gpio_lock);
+	return bcmn_cc_write32_masked(cc, BCMN_CC_GPIOOUT, mask, value);
 }
 
 u32 bcmn_chipco_gpio_outen(struct bcmn_drv_cc *cc, u32 mask, u32 value)
 {
-	unsigned long flags;
-	u32 res;
-
-	spin_lock_irqsave(&cc->gpio_lock, flags);
-	res = bcmn_cc_write32_masked(cc, BCMN_CC_GPIOOUTEN, mask, value);
-	spin_unlock_irqrestore(&cc->gpio_lock, flags);
-
-	return res;
+	guard(spinlock_irqsave)(&cc->gpio_lock);
+	return bcmn_cc_write32_masked(cc, BCMN_CC_GPIOOUTEN, mask, value);
 }
 
 /*
@@ -315,68 +303,38 @@ u32 bcmn_chipco_gpio_outen(struct bcmn_drv_cc *cc, u32 mask, u32 value)
  */
 u32 bcmn_chipco_gpio_control(struct bcmn_drv_cc *cc, u32 mask, u32 value)
 {
-	unsigned long flags;
-	u32 res;
-
-	spin_lock_irqsave(&cc->gpio_lock, flags);
-	res = bcmn_cc_write32_masked(cc, BCMN_CC_GPIOCTL, mask, value);
-	spin_unlock_irqrestore(&cc->gpio_lock, flags);
-
-	return res;
+	guard(spinlock_irqsave)(&cc->gpio_lock);
+	return bcmn_cc_write32_masked(cc, BCMN_CC_GPIOCTL, mask, value);
 }
 
 u32 bcmn_chipco_gpio_intmask(struct bcmn_drv_cc *cc, u32 mask, u32 value)
 {
-	unsigned long flags;
-	u32 res;
-
-	spin_lock_irqsave(&cc->gpio_lock, flags);
-	res = bcmn_cc_write32_masked(cc, BCMN_CC_GPIOIRQ, mask, value);
-	spin_unlock_irqrestore(&cc->gpio_lock, flags);
-
-	return res;
+	guard(spinlock_irqsave)(&cc->gpio_lock);
+	return bcmn_cc_write32_masked(cc, BCMN_CC_GPIOIRQ, mask, value);
 }
 
 u32 bcmn_chipco_gpio_polarity(struct bcmn_drv_cc *cc, u32 mask, u32 value)
 {
-	unsigned long flags;
-	u32 res;
-
-	spin_lock_irqsave(&cc->gpio_lock, flags);
-	res = bcmn_cc_write32_masked(cc, BCMN_CC_GPIOPOL, mask, value);
-	spin_unlock_irqrestore(&cc->gpio_lock, flags);
-
-	return res;
+	guard(spinlock_irqsave)(&cc->gpio_lock);
+	return bcmn_cc_write32_masked(cc, BCMN_CC_GPIOPOL, mask, value);
 }
 
 u32 bcmn_chipco_gpio_pullup(struct bcmn_drv_cc *cc, u32 mask, u32 value)
 {
-	unsigned long flags;
-	u32 res;
-
 	if (cc->core->id.rev < 20)
 		return 0;
 
-	spin_lock_irqsave(&cc->gpio_lock, flags);
-	res = bcmn_cc_write32_masked(cc, BCMN_CC_GPIOPULLUP, mask, value);
-	spin_unlock_irqrestore(&cc->gpio_lock, flags);
-
-	return res;
+	guard(spinlock_irqsave)(&cc->gpio_lock);
+	return bcmn_cc_write32_masked(cc, BCMN_CC_GPIOPULLUP, mask, value);
 }
 
 u32 bcmn_chipco_gpio_pulldown(struct bcmn_drv_cc *cc, u32 mask, u32 value)
 {
-	unsigned long flags;
-	u32 res;
-
 	if (cc->core->id.rev < 20)
 		return 0;
 
-	spin_lock_irqsave(&cc->gpio_lock, flags);
-	res = bcmn_cc_write32_masked(cc, BCMN_CC_GPIOPULLDOWN, mask, value);
-	spin_unlock_irqrestore(&cc->gpio_lock, flags);
-
-	return res;
+	guard(spinlock_irqsave)(&cc->gpio_lock);
+	return bcmn_cc_write32_masked(cc, BCMN_CC_GPIOPULLDOWN, mask, value);
 }
 
 #ifdef CONFIG_BCMN_DRIVER_MIPS

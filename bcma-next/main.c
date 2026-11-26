@@ -261,9 +261,8 @@ void bcmn_prepare_core(struct bcmn_bus *bus, struct bcmn_device *core)
 
 void bcmn_init_bus(struct bcmn_bus *bus)
 {
-	mutex_lock(&bcmn_buses_mutex);
-	bus->num = bcmn_bus_next_num++;
-	mutex_unlock(&bcmn_buses_mutex);
+	scoped_guard(mutex, &bcmn_buses_mutex)
+		bus->num = bcmn_bus_next_num++;
 
 	INIT_LIST_HEAD(&bus->cores);
 	bus->nr_cores = 0;
