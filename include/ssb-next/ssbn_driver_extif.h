@@ -128,11 +128,8 @@
 /* prog_waitcount */
 #define	SSBN_PROG_WCNT_0			0x0000001F	/* waitcount0 */
 #define	SSBN_PROG_WCNT_1			0x00001F00	/* waitcount1 */
-#define	SSBN_PROG_WCNT_1_SHIFT		8
 #define	SSBN_PROG_WCNT_2			0x001F0000	/* waitcount2 */
-#define	SSBN_PROG_WCNT_2_SHIFT		16
 #define	SSBN_PROG_WCNT_3			0x1F000000	/* waitcount3 */
-#define	SSBN_PROG_WCNT_3_SHIFT		24
 
 #define SSBN_PROG_W0			0x0000000C
 #define SSBN_PROG_W1			0x00000A00
@@ -142,11 +139,9 @@
 /* flash_waitcount */
 #define	SSBN_FLASH_WCNT_0		0x0000001F	/* waitcount0 */
 #define	SSBN_FLASH_WCNT_1		0x00001F00	/* waitcount1 */
-#define	SSBN_FLASH_WCNT_1_SHIFT		8
 #define	SSBN_FLASH_WCNT_2		0x001F0000	/* waitcount2 */
 #define	SSBN_FLASH_WCNT_2_SHIFT		16
 #define	SSBN_FLASH_WCNT_3		0x1F000000	/* waitcount3 */
-#define	SSBN_FLASH_WCNT_3_SHIFT		24
 
 /* watchdog */
 #define SSBN_EXTIF_WATCHDOG_CLK		48000000	/* Hz */

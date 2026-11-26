@@ -725,7 +725,6 @@ static inline void ssbn_block_write(struct ssbn_device *dev, const void *buffer,
  * addresses before they are given to a device. */
 extern u32 ssbn_dma_translation(struct ssbn_device *dev);
 #define SSBN_DMA_TRANSLATION_MASK	0xC0000000
-#define SSBN_DMA_TRANSLATION_SHIFT	30
 
 #ifdef CONFIG_SSBN_PCIHOST
 /* PCI-host wrapper driver */

@@ -19,6 +19,7 @@
 
 #include <ssb-next/ssbn.h>
 #include <ssb-next/ssbn_regs.h>
+#include <linux/bitfield.h>
 #include <linux/slab.h>
 #include <linux/pci.h>
 #include <linux/delay.h>
@@ -257,11 +258,9 @@ static int sprom_check_crc(const u16 *sprom, size_t size)
 {
 	u8 crc;
 	u8 expected_crc;
-	u16 tmp;
 
 	crc = ssbn_sprom_crc(sprom, size);
-	tmp = sprom[size - 1] & SSBN_SPROM_REVISION_CRC;
-	expected_crc = tmp >> SSBN_SPROM_REVISION_CRC_SHIFT;
+	expected_crc = FIELD_GET(SSBN_SPROM_REVISION_CRC, sprom[size - 1]);
 	if (crc != expected_crc)
 		return -EPROTO;
 

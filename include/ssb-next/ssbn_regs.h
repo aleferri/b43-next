@@ -119,7 +119,6 @@
 #define SSBN_IMCFGLO		0x0FA8
 #define  SSBN_IMCFGLO_SERTO	0x00000007 /* Service timeout */
 #define  SSBN_IMCFGLO_REQTO	0x00000070 /* Request timeout */
-#define  SSBN_IMCFGLO_REQTO_SHIFT	4
 #define  SSBN_IMCFGLO_CONNID	0x00FF0000 /* Connection ID */
 #define  SSBN_IMCFGLO_CONNID_SHIFT	16
 #define SSBN_IMCFGHI		0x0FAC
@@ -161,7 +160,6 @@
 #define  SSBN_IDHIGH_RCHI	0x00007000 /* Revision Code (high part) */
 #define  SSBN_IDHIGH_RCHI_SHIFT	8	   /* yes, shift 8 is right */
 #define  SSBN_IDHIGH_VC		0xFFFF0000 /* Vendor Code */
-#define  SSBN_IDHIGH_VC_SHIFT	16
 
 /* SPROM shadow area. If not otherwise noted, fields are
  * two bytes wide. Note that the SPROM can _only_ be read
@@ -180,7 +178,6 @@
 #define SSBN_SPROM_REVISION		0x007E
 #define  SSBN_SPROM_REVISION_REV		0x00FF	/* SPROM Revision number */
 #define  SSBN_SPROM_REVISION_CRC		0xFF00	/* SPROM CRC8 value */
-#define  SSBN_SPROM_REVISION_CRC_SHIFT	8
 
 /* SPROM Revision 1 */
 #define SSBN_SPROM1_SPID			0x0004	/* Subsystem Product ID for PCI */
@@ -821,11 +818,8 @@ enum {
 #define  SSBN_ADM_TYPE2			2
 #define SSBN_ADM_AD64			0x00000004
 #define SSBN_ADM_SZ0			0x000000F8	/* Type0 size */
-#define SSBN_ADM_SZ0_SHIFT		3
 #define SSBN_ADM_SZ1			0x000001F8	/* Type1 size */
-#define SSBN_ADM_SZ1_SHIFT		3
 #define SSBN_ADM_SZ2			0x000001F8	/* Type2 size */
-#define SSBN_ADM_SZ2_SHIFT		3
 #define SSBN_ADM_EN			0x00000400	/* Enable */
 #define SSBN_ADM_NEG			0x00000800	/* Negative decode */
 #define SSBN_ADM_BASE0			0xFFFFFF00	/* Type0 base address */

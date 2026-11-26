@@ -11,6 +11,7 @@
 #include "ssbn_private.h"
 
 #include <ssb-next/ssbn.h>
+#include <linux/bitfield.h>
 #include <linux/pci.h>
 #include <linux/delay.h>
 #include <linux/iopoll.h>
@@ -468,7 +469,7 @@ static void ssbn_pcicore_pci_setup_workarounds(struct ssbn_pcicore *pc)
 		tmp &= ~SSBN_IMCFGLO_SERTO;
 		tmp |= 2;
 		tmp &= ~SSBN_IMCFGLO_REQTO;
-		tmp |= 3 << SSBN_IMCFGLO_REQTO_SHIFT;
+		tmp |= FIELD_PREP(SSBN_IMCFGLO_REQTO, 3);
 		ssbn_write32(pdev, SSBN_IMCFGLO, tmp);
 		ssbn_commit_settings(bus);
 	} else if (pdev->id.revision >= 11) {

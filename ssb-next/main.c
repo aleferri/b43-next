@@ -10,6 +10,7 @@
 
 #include "ssbn_private.h"
 
+#include <linux/bitfield.h>
 #include <linux/delay.h>
 #include <linux/iopoll.h>
 #include <linux/io.h>
@@ -840,7 +841,7 @@ u32 ssbn_calc_clock_rate(u32 plltype, u32 n, u32 m)
 	u32 n1, n2, clock, m1, m2, m3, mc;
 
 	n1 = (n & SSBN_CHIPCO_CLK_N1);
-	n2 = ((n & SSBN_CHIPCO_CLK_N2) >> SSBN_CHIPCO_CLK_N2_SHIFT);
+	n2 = FIELD_GET(SSBN_CHIPCO_CLK_N2, n);
 
 	switch (plltype) {
 	case SSBN_PLLTYPE_6: /* 100/200 or 120/240 only */
@@ -878,9 +879,9 @@ u32 ssbn_calc_clock_rate(u32 plltype, u32 n, u32 m)
 		return 0;
 
 	m1 = (m & SSBN_CHIPCO_CLK_M1);
-	m2 = ((m & SSBN_CHIPCO_CLK_M2) >> SSBN_CHIPCO_CLK_M2_SHIFT);
-	m3 = ((m & SSBN_CHIPCO_CLK_M3) >> SSBN_CHIPCO_CLK_M3_SHIFT);
-	mc = ((m & SSBN_CHIPCO_CLK_MC) >> SSBN_CHIPCO_CLK_MC_SHIFT);
+	m2 = FIELD_GET(SSBN_CHIPCO_CLK_M2, m);
+	m3 = FIELD_GET(SSBN_CHIPCO_CLK_M3, m);
+	mc = FIELD_GET(SSBN_CHIPCO_CLK_MC, m);
 
 	switch (plltype) {
 	case SSBN_PLLTYPE_1: /* 48Mhz base, 3 dividers */
@@ -1242,15 +1243,15 @@ u32 ssbn_admatch_size(u32 adm)
 
 	switch (adm & SSBN_ADM_TYPE) {
 	case SSBN_ADM_TYPE0:
-		size = ((adm & SSBN_ADM_SZ0) >> SSBN_ADM_SZ0_SHIFT);
+		size = FIELD_GET(SSBN_ADM_SZ0, adm);
 		break;
 	case SSBN_ADM_TYPE1:
 		WARN_ON(adm & SSBN_ADM_NEG); /* unsupported */
-		size = ((adm & SSBN_ADM_SZ1) >> SSBN_ADM_SZ1_SHIFT);
+		size = FIELD_GET(SSBN_ADM_SZ1, adm);
 		break;
 	case SSBN_ADM_TYPE2:
 		WARN_ON(adm & SSBN_ADM_NEG); /* unsupported */
-		size = ((adm & SSBN_ADM_SZ2) >> SSBN_ADM_SZ2_SHIFT);
+		size = FIELD_GET(SSBN_ADM_SZ2, adm);
 		break;
 	default:
 		WARN_ON(1);
