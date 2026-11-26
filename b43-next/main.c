@@ -931,7 +931,7 @@ static void b43_write_mac_bssid_templates(struct b43_wldev *dev)
 {
 	const u8 *mac;
 	const u8 *bssid;
-	u8 mac_bssid[ETH_ALEN * 2];
+	u8 mac_bssid[ETH_ALEN * 2] __aligned(2);
 	int i;
 	u32 tmp;
 
@@ -944,8 +944,8 @@ static void b43_write_mac_bssid_templates(struct b43_wldev *dev)
 	if (dev->phy.type == B43_PHYTYPE_AC)
 		return;
 
-	memcpy(mac_bssid, mac, ETH_ALEN);
-	memcpy(mac_bssid + ETH_ALEN, bssid, ETH_ALEN);
+	ether_addr_copy(mac_bssid, mac);
+	ether_addr_copy(mac_bssid + ETH_ALEN, bssid);
 
 	/* Write our MAC address and BSSID to template ram */
 	for (i = 0; i < ARRAY_SIZE(mac_bssid); i += sizeof(u32)) {
@@ -1096,7 +1096,7 @@ static void b43_txbf_link(struct b43_wldev *dev, struct ieee80211_vif *vif,
 
 	dev->txbf[i].bsta = bsta;
 	dev->txbf[i].row = row;
-	memcpy(dev->txbf[i].addr, vif->addr, ETH_ALEN);
+	ether_addr_copy(dev->txbf[i].addr, vif->addr);
 	b43_mac_suspend(dev);
 	b43_txbf_write_slot(dev, i);
 	if (row != B43_TXBF_NO_ROW)
@@ -6252,7 +6252,7 @@ static void b43_op_bss_info_changed(struct ieee80211_hw *hw,
 
 	if (changed & BSS_CHANGED_BSSID) {
 		if (conf->bssid)
-			memcpy(wl->bssid, conf->bssid, ETH_ALEN);
+			ether_addr_copy(wl->bssid, conf->bssid);
 		else
 			eth_zero_addr(wl->bssid);
 	}
@@ -7568,7 +7568,7 @@ static int b43_op_add_interface(struct ieee80211_hw *hw,
 	wl->operating = true;
 	wl->vif = vif;
 	wl->if_type = vif->type;
-	memcpy(wl->mac_addr, vif->addr, ETH_ALEN);
+	ether_addr_copy(wl->mac_addr, vif->addr);
 
 	b43_adjust_opmode(dev);
 	b43_set_pretbtt(dev);
@@ -7621,7 +7621,7 @@ static void b43_op_remove_interface(struct ieee80211_hw *hw,
 		if (b43_amt_wide(dev))
 			b43_amt_write(dev, B43_AMT_MBSS(i), NULL, 0);
 		wl->vif = next;
-		memcpy(wl->mac_addr, next->addr, ETH_ALEN);
+		ether_addr_copy(wl->mac_addr, next->addr);
 		b43_upload_card_macaddress(dev);
 		mutex_unlock(&wl->mutex);
 		b43_op_bss_info_changed(hw, next, &next->bss_conf, ~0);

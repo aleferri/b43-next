@@ -871,9 +871,9 @@ struct b43_sta {
 
 struct b43_txbf_link {
 	struct b43_sta *bsta;
+	u8 addr[ETH_ALEN] __aligned(2);	/* Our address, of the station's BSS */
 	u8 row;				/* Address match row of the key, or
 					 * B43_TXBF_NO_ROW on an open BSS */
-	u8 addr[ETH_ALEN];		/* Our address, of the station's BSS */
 };
 
 struct b43_key {
@@ -1158,9 +1158,9 @@ struct b43_wl {
 	/* BCM4331: the factory address, then the further APs' block */
 	struct mac_address mbss_addrs[B43_MBSS_MAX];
 	/* The MAC address of the operating interface. */
-	u8 mac_addr[ETH_ALEN];
+	u8 mac_addr[ETH_ALEN] __aligned(2);
 	/* Current BSSID */
-	u8 bssid[ETH_ALEN];
+	u8 bssid[ETH_ALEN] __aligned(2);
 	/* Interface type. (NL80211_IFTYPE_XXX) */
 	int if_type;
 	/* Is the card operating in AP, STA or IBSS mode? */
