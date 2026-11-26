@@ -179,7 +179,7 @@ static void b43_synth_pu_workaround(struct b43_wldev *dev, u8 channel)
 	} else {
 		b43_write16(dev, B43_MMIO_CHANNEL, channel2freq_bg(1));
 	}
-	msleep(1);
+	fsleep(1000);
 	b43_write16(dev, B43_MMIO_CHANNEL, channel2freq_bg(channel));
 }
 

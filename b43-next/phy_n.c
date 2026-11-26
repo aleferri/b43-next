@@ -1440,7 +1440,7 @@ static void b43_radio_init2056_post(struct b43_wldev *dev)
 	b43_radio_set(dev, B2056_SYN_COM_CTRL, 0xB);
 	b43_radio_set(dev, B2056_SYN_COM_PU, 0x2);
 	b43_radio_set(dev, B2056_SYN_COM_RESET, 0x2);
-	msleep(1);
+	fsleep(1000);
 	b43_radio_mask(dev, B2056_SYN_COM_RESET, ~0x2);
 	b43_radio_mask(dev, B2056_SYN_PLL_MAST2, ~0xFC);
 	b43_radio_mask(dev, B2056_SYN_RCCAL_CTRL0, ~0x1);
@@ -1550,7 +1550,7 @@ static void b43_radio_init2055_post(struct b43_wldev *dev)
 	b43_radio_mask(dev, B2055_CAL_MISC, 0xFFBE);
 	b43_radio_set(dev, B2055_CAL_LPOCTL, 0x80);
 	b43_radio_set(dev, B2055_CAL_MISC, 0x1);
-	msleep(1);
+	fsleep(1000);
 	b43_radio_set(dev, B2055_CAL_MISC, 0x40);
 	if (!b43_radio_wait_value(dev, B2055_CAL_COUT2, 0x80, 0x80, 10, 2000))
 		b43err(dev->wl, "radio post init timeout\n");

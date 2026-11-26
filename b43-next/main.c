@@ -1909,7 +1909,7 @@ static void b43_ssb_wireless_core_reset(struct b43_wldev *dev, bool gmode)
 	if (dev->phy.type == B43_PHYTYPE_N)
 		flags |= B43_TMSLOW_PHY_BANDWIDTH_20MHZ; /* Make 20 MHz def */
 	b43_device_enable(dev, flags);
-	msleep(2);		/* Wait for the PLL to turn on. */
+	fsleep(2000);		/* Wait for the PLL to turn on. */
 
 	b43_phy_take_out_of_reset(dev);
 }

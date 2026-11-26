@@ -120,7 +120,7 @@ int ssbn_pci_xtal(struct ssbn_bus *bus, u32 what, int turn_on)
 							     outenable);
 				if (err)
 					goto err_pci;
-				msleep(1);
+				fsleep(1000);
 			}
 			if (what & SSBN_GPIO_PLL) {
 				/* Turn the PLL on */
@@ -128,7 +128,7 @@ int ssbn_pci_xtal(struct ssbn_bus *bus, u32 what, int turn_on)
 				err = pci_write_config_dword(bus->host_pci, SSBN_GPIO_OUT, out);
 				if (err)
 					goto err_pci;
-				msleep(5);
+				fsleep(5000);
 			}
 		}
 

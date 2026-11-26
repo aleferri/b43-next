@@ -443,7 +443,7 @@ static int b43_switch_channel_ac(struct b43_wldev *dev,
 	err = dev->phy.ops->switch_channel(dev, new_channel);
 	if (err)
 		return err;
-	msleep(8);
+	fsleep(8000);
 	return 0;
 }
 
@@ -478,7 +478,7 @@ int b43_switch_channel(struct b43_wldev *dev, unsigned int new_channel)
 		goto err_restore_cookie;
 
 	/* Wait for the radio to tune to the channel and stabilize. */
-	msleep(8);
+	fsleep(8000);
 
 	return 0;
 
