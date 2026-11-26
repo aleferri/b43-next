@@ -559,11 +559,15 @@ static ssize_t b43_debugfs_write(struct file *file,
 
 	if (!count)
 		return 0;
-	if (count > PAGE_SIZE)
+	if (count >= PAGE_SIZE)
 		return -E2BIG;
 	dev = file->private_data;
 	if (!dev)
 		return -ENODEV;
+
+	buf = memdup_user_nul(userbuf, count);
+	if (IS_ERR(buf))
+		return PTR_ERR(buf);
 
 	mutex_lock(&dev->wl->mutex);
 	if (b43_status(dev) < B43_STAT_INITIALIZED) {
@@ -577,23 +581,10 @@ static ssize_t b43_debugfs_write(struct file *file,
 		goto out_unlock;
 	}
 
-	buf = kzalloc(PAGE_SIZE, GFP_KERNEL);
-	if (!buf) {
-		err = -ENOMEM;
-		goto out_unlock;
-	}
-	if (copy_from_user(buf, userbuf, count)) {
-		err = -EFAULT;
-		goto out_freepage;
-	}
 	err = dfops->write(dev, buf, count);
-	if (err)
-		goto out_freepage;
-
-out_freepage:
-	kfree(buf);
 out_unlock:
 	mutex_unlock(&dev->wl->mutex);
+	kfree(buf);
 
 	return err ? err : count;
 }
