@@ -322,8 +322,10 @@ static void ssbn_pmu_pll_init(struct ssbn_chipcommon *cc)
 	if (bus->bustype == SSBN_BUSTYPE_SSB) {
 #ifdef CONFIG_BCM47XX
 		char buf[20];
-		if (bcm47xx_nvram_getenv("xtalfreq", buf, sizeof(buf)) >= 0)
-			crystalfreq = simple_strtoul(buf, NULL, 0);
+
+		if (bcm47xx_nvram_getenv("xtalfreq", buf, sizeof(buf)) >= 0 &&
+		    kstrtou32(buf, 0, &crystalfreq))
+			crystalfreq = 0;
 #endif
 	}
 
