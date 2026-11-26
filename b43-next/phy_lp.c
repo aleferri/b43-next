@@ -42,7 +42,7 @@ enum {
 };
 
 
-static inline u16 channel2freq_lp(u8 channel)
+static u16 channel2freq_lp(u8 channel)
 {
 	if (channel < 14)
 		return (2407 + 5 * channel);

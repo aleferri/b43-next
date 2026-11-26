@@ -337,7 +337,7 @@ const u16 b43_tab_rssiagc2[] = {
 	0x0820, 0x0820, 0x0820, 0x0820,
 };
 
-static inline void assert_sizes(void)
+static void assert_sizes(void)
 {
 	BUILD_BUG_ON(B43_TAB_ROTOR_SIZE != ARRAY_SIZE(b43_tab_rotor));
 	BUILD_BUG_ON(B43_TAB_RETARD_SIZE != ARRAY_SIZE(b43_tab_retard));

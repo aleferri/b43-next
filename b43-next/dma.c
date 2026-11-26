@@ -278,12 +278,12 @@ static const struct b43_dma_ops dma64_ops = {
 	.set_current_rxslot = op64_set_current_rxslot,
 };
 
-static inline int free_slots(struct b43_dmaring *ring)
+static int free_slots(struct b43_dmaring *ring)
 {
 	return (ring->nr_slots - ring->used_slots);
 }
 
-static inline int next_slot(struct b43_dmaring *ring, int slot)
+static int next_slot(struct b43_dmaring *ring, int slot)
 {
 	B43_WARN_ON(!(slot >= -1 && slot <= ring->nr_slots - 1));
 	if (slot == ring->nr_slots - 1)
@@ -291,7 +291,7 @@ static inline int next_slot(struct b43_dmaring *ring, int slot)
 	return slot + 1;
 }
 
-static inline int prev_slot(struct b43_dmaring *ring, int slot)
+static int prev_slot(struct b43_dmaring *ring, int slot)
 {
 	B43_WARN_ON(!(slot >= 0 && slot <= ring->nr_slots - 1));
 	if (slot == 0)
@@ -325,14 +325,14 @@ static void update_max_used_slots(struct b43_dmaring *ring,
 	}
 }
 #else
-static inline
-    void update_max_used_slots(struct b43_dmaring *ring, int current_used_slots)
+static void update_max_used_slots(struct b43_dmaring *ring,
+				  int current_used_slots)
 {
 }
 #endif /* DEBUG */
 
 /* Request a slot for usage. */
-static inline int request_slot(struct b43_dmaring *ring)
+static int request_slot(struct b43_dmaring *ring)
 {
 	int slot;
 
@@ -378,9 +378,8 @@ static u16 b43_dmacontroller_base(enum b43_dmatype type, int controller_idx)
 	return map32[controller_idx];
 }
 
-static inline
-    dma_addr_t map_descbuffer(struct b43_dmaring *ring,
-			      unsigned char *buf, size_t len, int tx)
+static dma_addr_t map_descbuffer(struct b43_dmaring *ring,
+				 unsigned char *buf, size_t len, int tx)
 {
 	dma_addr_t dmaaddr;
 
@@ -395,33 +394,29 @@ static inline
 	return dmaaddr;
 }
 
-static inline
-    void unmap_descbuffer_attrs(struct b43_dmaring *ring, dma_addr_t addr,
-				size_t len, int tx, unsigned long attrs)
+static void unmap_descbuffer_attrs(struct b43_dmaring *ring, dma_addr_t addr,
+				   size_t len, int tx, unsigned long attrs)
 {
 	dma_unmap_single_attrs(ring->dev->dev->dma_dev, addr, len,
 			       tx ? DMA_TO_DEVICE : DMA_FROM_DEVICE, attrs);
 }
 
-static inline
-    void unmap_descbuffer(struct b43_dmaring *ring,
-			  dma_addr_t addr, size_t len, int tx)
+static void unmap_descbuffer(struct b43_dmaring *ring,
+			     dma_addr_t addr, size_t len, int tx)
 {
 	unmap_descbuffer_attrs(ring, addr, len, tx, 0);
 }
 
-static inline
-    void sync_descbuffer_for_cpu(struct b43_dmaring *ring,
-				 dma_addr_t addr, size_t len)
+static void sync_descbuffer_for_cpu(struct b43_dmaring *ring,
+				    dma_addr_t addr, size_t len)
 {
 	B43_WARN_ON(ring->tx);
 	dma_sync_single_for_cpu(ring->dev->dev->dma_dev,
 				    addr, len, DMA_FROM_DEVICE);
 }
 
-static inline
-    void sync_descbuffer_for_device(struct b43_dmaring *ring,
-				    dma_addr_t addr, size_t len)
+static void sync_descbuffer_for_device(struct b43_dmaring *ring,
+				       dma_addr_t addr, size_t len)
 {
 	B43_WARN_ON(ring->tx);
 	dma_sync_single_for_device(ring->dev->dev->dma_dev,
@@ -499,9 +494,8 @@ static void unmap_tx_descbuffer(struct b43_dmaring *ring,
 	meta->len = 0;
 }
 
-static inline
-    void free_descriptor_buffer(struct b43_dmaring *ring,
-				struct b43_dmadesc_meta *meta)
+static void free_descriptor_buffer(struct b43_dmaring *ring,
+				   struct b43_dmadesc_meta *meta)
 {
 	if (meta->skb) {
 		if (ring->tx)
@@ -1874,7 +1868,7 @@ static int dma_tx_fragment(struct b43_dmaring *ring,
 	return 0;
 }
 
-static inline int should_inject_overflow(struct b43_dmaring *ring)
+static int should_inject_overflow(struct b43_dmaring *ring)
 {
 #ifdef CONFIG_B43_NEXT_DEBUG
 	if (unlikely(b43_debug(ring->dev, B43_DBG_DMAOVERFLOW))) {

@@ -61,7 +61,7 @@ static void bcmn_sprom_read(struct bcmn_bus *bus, u16 offset, u16 *sprom,
  * Validation.
  **************************************************/
 
-static inline u8 bcmn_crc8(u8 crc, u8 data)
+static u8 bcmn_crc8(u8 crc, u8 data)
 {
 	/* Polynomial:   x^8 + x^7 + x^6 + x^4 + x^2 + 1   */
 	static const u8 t[] = {

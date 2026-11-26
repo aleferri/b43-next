@@ -28,8 +28,8 @@ enum ssbn_clksrc {
 };
 
 
-static inline u32 chipco_write32_masked(struct ssbn_chipcommon *cc, u16 offset,
-					u32 mask, u32 value)
+static u32 chipco_write32_masked(struct ssbn_chipcommon *cc, u16 offset,
+				 u32 mask, u32 value)
 {
 	value &= mask;
 	value |= chipco_read32(cc, offset) & ~mask;

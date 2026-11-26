@@ -101,7 +101,7 @@
  * NOTE: SDIO address @addr is 17 bits long (SDIO address space is 128K).
  */
 
-static inline struct device *ssbn_sdio_dev(struct ssbn_bus *bus)
+static struct device *ssbn_sdio_dev(struct ssbn_bus *bus)
 {
 	return &bus->host_sdio->dev;
 }

@@ -622,7 +622,7 @@ static void b43_radio_2069_channel_setup(struct b43_wldev *dev,
 #define R2069_RCCAL_POLL_MAX	100
 #define R2069_PWRON_POLL_MAX	100
 
-static inline void r2069_mod(struct b43_wldev *dev, u16 reg, u16 mask, u16 val)
+static void r2069_mod(struct b43_wldev *dev, u16 reg, u16 mask, u16 val)
 {
 	b43_radio_maskset(dev, reg, (u16)~mask, val & mask);
 }

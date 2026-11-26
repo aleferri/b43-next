@@ -36,9 +36,8 @@ struct b43_debugfs_fops {
 	size_t file_struct_offset;
 };
 
-static inline
-struct b43_dfs_file *fops_to_dfs_file(struct b43_wldev *dev,
-				      const struct b43_debugfs_fops *dfops)
+static struct b43_dfs_file *fops_to_dfs_file(struct b43_wldev *dev,
+					     const struct b43_debugfs_fops *dfops)
 {
 	void *p;
 
@@ -757,11 +756,10 @@ static void b43_cal_remove(struct b43_wldev *dev, struct b43_dfsentry *e)
 	kfree(e->cal);
 }
 #else
-static inline void b43_cal_add(struct b43_wldev *dev, struct b43_dfsentry *e)
+static void b43_cal_add(struct b43_wldev *dev, struct b43_dfsentry *e)
 {
 }
-static inline void b43_cal_remove(struct b43_wldev *dev,
-				  struct b43_dfsentry *e)
+static void b43_cal_remove(struct b43_wldev *dev, struct b43_dfsentry *e)
 {
 }
 #endif

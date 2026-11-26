@@ -14,8 +14,8 @@
 #include <linux/platform_device.h>
 #include <bcma-next/bcmn.h>
 
-static inline u32 bcmn_cc_write32_masked(struct bcmn_drv_cc *cc, u16 offset,
-					 u32 mask, u32 value)
+static u32 bcmn_cc_write32_masked(struct bcmn_drv_cc *cc, u16 offset,
+				  u32 mask, u32 value)
 {
 	value &= mask;
 	value |= bcmn_cc_read32(cc, offset) & ~mask;

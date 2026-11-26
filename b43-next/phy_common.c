@@ -212,7 +212,7 @@ void b43_phy_unlock(struct b43_wldev *dev)
 		b43_power_saving_ctl_bits(dev, 0);
 }
 
-static inline void assert_mac_suspended(struct b43_wldev *dev)
+static void assert_mac_suspended(struct b43_wldev *dev)
 {
 	if (!B43_DEBUG)
 		return;

@@ -621,8 +621,8 @@ void b43_tpl_write(struct b43_wldev *dev, struct b43_ram_seq *seq,
 		b43_ram_write(dev, offset, val);
 }
 
-static inline void b43_shm_control_word(struct b43_wldev *dev,
-					u16 routing, u16 offset)
+static void b43_shm_control_word(struct b43_wldev *dev,
+				 u16 routing, u16 offset)
 {
 	u32 control;
 

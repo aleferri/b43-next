@@ -140,7 +140,7 @@ enum n_rail_type {
 	N_RAIL_Q = 1,
 };
 
-static inline bool b43_nphy_ipa(struct b43_wldev *dev)
+static bool b43_nphy_ipa(struct b43_wldev *dev)
 {
 	enum nl80211_band band = b43_current_band(dev->wl);
 	return ((dev->phy.n->ipa2g_on && band == NL80211_BAND_2GHZ) ||
@@ -9201,7 +9201,7 @@ static void b43_nphy_op_exit(struct b43_wldev *dev)
 	b43_nphy_perical_mphase_reset(dev);
 }
 
-static inline void check_phyreg(struct b43_wldev *dev, u16 offset)
+static void check_phyreg(struct b43_wldev *dev, u16 offset)
 {
 #if B43_DEBUG
 	if ((offset & B43_PHYROUTE) == B43_PHYROUTE_OFDM_GPHY) {

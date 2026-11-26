@@ -885,7 +885,7 @@ void b43_gphy_dc_lt_init(struct b43_wldev *dev, bool update_all)
 
 /* Fixup the RF attenuation value for the case where we are
  * using the PAD mixer. */
-static inline void b43_lo_fixup_rfatt(struct b43_rfatt *rf)
+static void b43_lo_fixup_rfatt(struct b43_rfatt *rf)
 {
 	if (!rf->with_padmix)
 		return;

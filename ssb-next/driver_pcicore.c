@@ -22,26 +22,22 @@ static u16 ssbn_pcie_mdio_read(struct ssbn_pcicore *pc, u8 device, u8 address);
 static void ssbn_pcie_mdio_write(struct ssbn_pcicore *pc, u8 device,
 				u8 address, u16 data);
 
-static inline
-u32 pcicore_read32(struct ssbn_pcicore *pc, u16 offset)
+static u32 pcicore_read32(struct ssbn_pcicore *pc, u16 offset)
 {
 	return ssbn_read32(pc->dev, offset);
 }
 
-static inline
-void pcicore_write32(struct ssbn_pcicore *pc, u16 offset, u32 value)
+static void pcicore_write32(struct ssbn_pcicore *pc, u16 offset, u32 value)
 {
 	ssbn_write32(pc->dev, offset, value);
 }
 
-static inline
-u16 pcicore_read16(struct ssbn_pcicore *pc, u16 offset)
+static u16 pcicore_read16(struct ssbn_pcicore *pc, u16 offset)
 {
 	return ssbn_read16(pc->dev, offset);
 }
 
-static inline
-void pcicore_write16(struct ssbn_pcicore *pc, u16 offset, u16 value)
+static void pcicore_write16(struct ssbn_pcicore *pc, u16 offset, u16 value)
 {
 	ssbn_write16(pc->dev, offset, value);
 }

@@ -3322,7 +3322,7 @@ static struct nphy_gain_ctl_workaround_entry nphy_gain_ctl_workaround[2][4] = {
 	},
 };
 
-static inline void assert_ntab_array_sizes(void)
+static void assert_ntab_array_sizes(void)
 {
 #undef check
 #define check(table, size)	\

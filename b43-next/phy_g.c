@@ -59,7 +59,7 @@ static void b43_calc_nrssi_threshold(struct b43_wldev *dev);
 
 
 /* Get the freq, as it has to be written to the device. */
-static inline u16 channel2freq_bg(u8 channel)
+static u16 channel2freq_bg(u8 channel)
 {
 	B43_WARN_ON(!(channel >= 1 && channel <= 14));
 

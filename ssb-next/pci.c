@@ -189,7 +189,7 @@ err_pci:
 	} while (0)
 
 
-static inline u8 ssbn_crc8(u8 crc, u8 data)
+static u8 ssbn_crc8(u8 crc, u8 data)
 {
 	/* Polynomial:   x^8 + x^7 + x^6 + x^4 + x^2 + 1   */
 	static const u8 t[] = {
