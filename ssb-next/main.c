@@ -356,7 +356,7 @@ static int ssbn_device_uevent(const struct device *dev, struct kobj_uevent_env *
 static ssize_t \
 attrib##_show(struct device *dev, struct device_attribute *attr, char *buf) \
 { \
-	return sprintf(buf, format_string, dev_to_ssb_dev(dev)->field); \
+	return sysfs_emit(buf, format_string, dev_to_ssb_dev(dev)->field); \
 } \
 static DEVICE_ATTR_RO(attrib);
 
@@ -368,8 +368,8 @@ ssbn_config_attr(irq, irq, "%u\n")
 static ssize_t
 name_show(struct device *dev, struct device_attribute *attr, char *buf)
 {
-	return sprintf(buf, "%s\n",
-		       ssbn_core_name(dev_to_ssb_dev(dev)->id.coreid));
+	return sysfs_emit(buf, "%s\n",
+			  ssbn_core_name(dev_to_ssb_dev(dev)->id.coreid));
 }
 static DEVICE_ATTR_RO(name);
 

@@ -32,28 +32,28 @@ static int bcmn_device_uevent(const struct device *dev, struct kobj_uevent_env *
 static ssize_t manuf_show(struct device *dev, struct device_attribute *attr, char *buf)
 {
 	struct bcmn_device *core = container_of(dev, struct bcmn_device, dev);
-	return sprintf(buf, "0x%03X\n", core->id.manuf);
+	return sysfs_emit(buf, "0x%03X\n", core->id.manuf);
 }
 static DEVICE_ATTR_RO(manuf);
 
 static ssize_t id_show(struct device *dev, struct device_attribute *attr, char *buf)
 {
 	struct bcmn_device *core = container_of(dev, struct bcmn_device, dev);
-	return sprintf(buf, "0x%03X\n", core->id.id);
+	return sysfs_emit(buf, "0x%03X\n", core->id.id);
 }
 static DEVICE_ATTR_RO(id);
 
 static ssize_t rev_show(struct device *dev, struct device_attribute *attr, char *buf)
 {
 	struct bcmn_device *core = container_of(dev, struct bcmn_device, dev);
-	return sprintf(buf, "0x%02X\n", core->id.rev);
+	return sysfs_emit(buf, "0x%02X\n", core->id.rev);
 }
 static DEVICE_ATTR_RO(rev);
 
 static ssize_t class_show(struct device *dev, struct device_attribute *attr, char *buf)
 {
 	struct bcmn_device *core = container_of(dev, struct bcmn_device, dev);
-	return sprintf(buf, "0x%X\n", core->id.class);
+	return sysfs_emit(buf, "0x%X\n", core->id.class);
 }
 static DEVICE_ATTR_RO(class);
 
