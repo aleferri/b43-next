@@ -7577,10 +7577,8 @@ static int b43_nphy_rev3_cal_rx_iq(struct b43_wldev *dev,
 			}
 
 			/* As brcmsmac, negative values clamp to 31 */
-			rxlpf_rccal_hpc = max_t(int, min_t(u8, rxlpf_rccal_hpc,
-							   31), 0);
-			txlpf_rccal_lpc = max_t(int, min_t(u8, txlpf_rccal_lpc,
-							   31), 0);
+			rxlpf_rccal_hpc = min_t(u8, rxlpf_rccal_hpc, 31);
+			txlpf_rccal_lpc = min_t(u8, txlpf_rccal_lpc, 31);
 
 			b43_radio_write(dev, B2056_RX_RXLPF_RCCAL_HPC |
 					(rx_core == 0 ? B2056_RX0 : B2056_RX1),
