@@ -6,7 +6,6 @@
  */
 
 #include "bcmn_private.h"
-#include <linux/export.h>
 #include <linux/iopoll.h>
 #include <bcma-next/bcmn.h>
 
@@ -38,7 +37,6 @@ bool bcmn_core_is_enabled(struct bcmn_device *core)
 		return false;
 	return true;
 }
-EXPORT_SYMBOL_GPL(bcmn_core_is_enabled);
 
 void bcmn_core_disable(struct bcmn_device *core, u32 flags)
 {
@@ -55,7 +53,6 @@ void bcmn_core_disable(struct bcmn_device *core, u32 flags)
 	bcmn_aread32(core, BCMN_IOCTL);
 	udelay(10);
 }
-EXPORT_SYMBOL_GPL(bcmn_core_disable);
 
 int bcmn_core_enable(struct bcmn_device *core, u32 flags)
 {
@@ -74,7 +71,6 @@ int bcmn_core_enable(struct bcmn_device *core, u32 flags)
 
 	return 0;
 }
-EXPORT_SYMBOL_GPL(bcmn_core_enable);
 
 void bcmn_core_set_clockmode(struct bcmn_device *core,
 			     enum bcmn_clkmode clkmode)
@@ -100,7 +96,6 @@ void bcmn_core_set_clockmode(struct bcmn_device *core,
 		break;
 	}
 }
-EXPORT_SYMBOL_GPL(bcmn_core_set_clockmode);
 
 void bcmn_core_pll_ctl(struct bcmn_device *core, u32 req, u32 status, bool on)
 {
@@ -126,7 +121,6 @@ void bcmn_core_pll_ctl(struct bcmn_device *core, u32 req, u32 status, bool on)
 		bcmn_read32(core, BCMN_CLKCTLST);
 	}
 }
-EXPORT_SYMBOL_GPL(bcmn_core_pll_ctl);
 
 u32 bcmn_core_dma_translation(struct bcmn_device *core)
 {
@@ -144,4 +138,3 @@ u32 bcmn_core_dma_translation(struct bcmn_device *core)
 	}
 	return BCMN_DMA_TRANSLATION_NONE;
 }
-EXPORT_SYMBOL(bcmn_core_dma_translation);

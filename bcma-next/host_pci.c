@@ -319,7 +319,6 @@ void bcmn_host_pci_up(struct bcmn_bus *bus)
 	else
 		bcmn_core_pci_up(&bus->drv_pci[0]);
 }
-EXPORT_SYMBOL_GPL(bcmn_host_pci_up);
 
 /* See also pcicore_down */
 void bcmn_host_pci_down(struct bcmn_bus *bus)
@@ -330,7 +329,6 @@ void bcmn_host_pci_down(struct bcmn_bus *bus)
 	if (!bus->host_is_pcie2)
 		bcmn_core_pci_down(&bus->drv_pci[0]);
 }
-EXPORT_SYMBOL_GPL(bcmn_host_pci_down);
 
 /* See also si_pci_setup */
 int bcmn_host_pci_irq_ctl(struct bcmn_bus *bus, struct bcmn_device *core,
@@ -364,4 +362,3 @@ int bcmn_host_pci_irq_ctl(struct bcmn_bus *bus, struct bcmn_device *core,
 out:
 	return err;
 }
-EXPORT_SYMBOL_GPL(bcmn_host_pci_irq_ctl);

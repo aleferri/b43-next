@@ -10,7 +10,6 @@
  */
 
 #include "bcmn_private.h"
-#include <linux/export.h>
 #include <linux/iopoll.h>
 #include <bcma-next/bcmn.h>
 
@@ -272,7 +271,6 @@ void bcmn_core_pci_power_save(struct bcmn_bus *bus, bool up)
 					 BCMN_CORE_PCI_MDIO_BLK1_MGMT3, data);
 	}
 }
-EXPORT_SYMBOL_GPL(bcmn_core_pci_power_save);
 
 static void bcmn_core_pci_extend_L1timer(struct bcmn_drv_pci *pc, bool extend)
 {

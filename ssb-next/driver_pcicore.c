@@ -12,7 +12,6 @@
 
 #include <ssb-next/ssbn.h>
 #include <linux/pci.h>
-#include <linux/export.h>
 #include <linux/delay.h>
 #include <linux/iopoll.h>
 #include <ssb-next/ssbn_embedded.h>
@@ -728,4 +727,3 @@ int ssbn_pcicore_dev_irqvecs_enable(struct ssbn_pcicore *pc,
 out:
 	return err;
 }
-EXPORT_SYMBOL(ssbn_pcicore_dev_irqvecs_enable);

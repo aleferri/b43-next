@@ -93,7 +93,6 @@ struct bcmn_device *bcmn_find_core_unit(struct bcmn_bus *bus, u16 coreid,
 	}
 	return NULL;
 }
-EXPORT_SYMBOL_GPL(bcmn_find_core_unit);
 
 bool bcmn_wait_value(struct bcmn_device *core, u16 reg, u32 mask, u32 value,
 		     int timeout)
@@ -231,7 +230,6 @@ unsigned int bcmn_core_irq(struct bcmn_device *core, int num)
 
 	return 0;
 }
-EXPORT_SYMBOL(bcmn_core_irq);
 
 void bcmn_prepare_core(struct bcmn_bus *bus, struct bcmn_device *core)
 {
@@ -580,13 +578,11 @@ int __bcmn_driver_register(struct bcmn_driver *drv, struct module *owner)
 
 	return driver_register(&drv->drv);
 }
-EXPORT_SYMBOL_GPL(__bcmn_driver_register);
 
 void bcmn_driver_unregister(struct bcmn_driver *drv)
 {
 	driver_unregister(&drv->drv);
 }
-EXPORT_SYMBOL_GPL(bcmn_driver_unregister);
 
 static int bcmn_bus_match(struct device *dev, const struct device_driver *drv)
 {

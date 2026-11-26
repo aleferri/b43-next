@@ -11,7 +11,6 @@
 
 #include "bcmn_private.h"
 #include <linux/bcm47xx_wdt.h>
-#include <linux/export.h>
 #include <linux/platform_device.h>
 #include <bcma-next/bcmn.h>
 
@@ -32,7 +31,6 @@ u32 bcmn_chipco_get_alp_clock(struct bcmn_drv_cc *cc)
 
 	return 20000000;
 }
-EXPORT_SYMBOL_GPL(bcmn_chipco_get_alp_clock);
 
 static bool bcmn_core_cc_has_pmu_watchdog(struct bcmn_drv_cc *cc)
 {
@@ -297,7 +295,6 @@ u32 bcmn_chipco_gpio_out(struct bcmn_drv_cc *cc, u32 mask, u32 value)
 
 	return res;
 }
-EXPORT_SYMBOL_GPL(bcmn_chipco_gpio_out);
 
 u32 bcmn_chipco_gpio_outen(struct bcmn_drv_cc *cc, u32 mask, u32 value)
 {
@@ -310,7 +307,6 @@ u32 bcmn_chipco_gpio_outen(struct bcmn_drv_cc *cc, u32 mask, u32 value)
 
 	return res;
 }
-EXPORT_SYMBOL_GPL(bcmn_chipco_gpio_outen);
 
 /*
  * If the bit is set to 0, chipcommon controls this GPIO,
@@ -327,7 +323,6 @@ u32 bcmn_chipco_gpio_control(struct bcmn_drv_cc *cc, u32 mask, u32 value)
 
 	return res;
 }
-EXPORT_SYMBOL_GPL(bcmn_chipco_gpio_control);
 
 u32 bcmn_chipco_gpio_intmask(struct bcmn_drv_cc *cc, u32 mask, u32 value)
 {

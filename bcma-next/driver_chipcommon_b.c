@@ -8,7 +8,6 @@
  */
 
 #include "bcmn_private.h"
-#include <linux/export.h>
 #include <bcma-next/bcmn.h>
 
 static bool bcmn_wait_reg(struct bcmn_bus *bus, void __iomem *addr, u32 mask,
@@ -40,7 +39,6 @@ void bcmn_chipco_b_mii_write(struct bcmn_drv_cc_b *ccb, u32 offset, u32 value)
 	writel(value, mii + BCMN_CCB_MII_MNG_CMD_DATA);
 	bcmn_wait_reg(bus, mii + BCMN_CCB_MII_MNG_CTL, 0x0100, 0x0000, 100);
 }
-EXPORT_SYMBOL_GPL(bcmn_chipco_b_mii_write);
 
 int bcmn_core_chipcommon_b_init(struct bcmn_drv_cc_b *ccb)
 {

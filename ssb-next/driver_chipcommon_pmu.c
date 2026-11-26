@@ -15,7 +15,6 @@
 #include <ssb-next/ssbn_driver_chipcommon.h>
 #include <linux/delay.h>
 #include <linux/iopoll.h>
-#include <linux/export.h>
 #ifdef CONFIG_BCM47XX
 #include <linux/bcm47xx_nvram.h>
 #endif
@@ -606,8 +605,6 @@ void ssbn_pmu_set_ldo_paref(struct ssbn_chipcommon *cc, bool on)
 	chipco_read32(cc, SSBN_CHIPCO_PMU_MINRES_MSK); //SPEC FIXME found via mmiotrace - dummy read?
 }
 
-EXPORT_SYMBOL(ssbn_pmu_set_ldo_voltage);
-EXPORT_SYMBOL(ssbn_pmu_set_ldo_paref);
 
 static u32 ssbn_pmu_get_alp_clock_clk0(struct ssbn_chipcommon *cc)
 {
@@ -706,4 +703,3 @@ void ssbn_pmu_spuravoid_pllupdate(struct ssbn_chipcommon *cc, int spuravoid)
 
 	chipco_set32(cc, SSBN_CHIPCO_PMU_CTL, pmu_ctl);
 }
-EXPORT_SYMBOL_GPL(ssbn_pmu_spuravoid_pllupdate);

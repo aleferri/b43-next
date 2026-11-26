@@ -182,7 +182,6 @@ int ssbn_bus_resume(struct ssbn_bus *bus)
 
 	return 0;
 }
-EXPORT_SYMBOL(ssbn_bus_resume);
 
 int ssbn_bus_suspend(struct ssbn_bus *bus)
 {
@@ -191,7 +190,6 @@ int ssbn_bus_suspend(struct ssbn_bus *bus)
 
 	return 0;
 }
-EXPORT_SYMBOL(ssbn_bus_suspend);
 
 #ifdef CONFIG_SSBN_SPROM
 /** ssbn_devices_freeze - Freeze all devices on the bus.
@@ -445,7 +443,6 @@ void ssbn_bus_unregister(struct ssbn_bus *bus)
 	ssbn_pci_exit(bus);
 	ssbn_iounmap(bus);
 }
-EXPORT_SYMBOL(ssbn_bus_unregister);
 
 static void ssbn_release_dev(struct device *dev)
 {
@@ -766,7 +763,6 @@ int ssbn_bus_sdiobus_register(struct ssbn_bus *bus, struct sdio_func *func,
 
 	return err;
 }
-EXPORT_SYMBOL(ssbn_bus_sdiobus_register);
 #endif /* CONFIG_SSBN_PCMCIAHOST */
 
 #ifdef CONFIG_SSBN_HOST_SOC
@@ -795,13 +791,11 @@ int __ssbn_driver_register(struct ssbn_driver *drv, struct module *owner)
 
 	return driver_register(&drv->drv);
 }
-EXPORT_SYMBOL(__ssbn_driver_register);
 
 void ssbn_driver_unregister(struct ssbn_driver *drv)
 {
 	driver_unregister(&drv->drv);
 }
-EXPORT_SYMBOL(ssbn_driver_unregister);
 
 void ssbn_set_devtypedata(struct ssbn_device *dev, void *data)
 {
@@ -819,7 +813,6 @@ void ssbn_set_devtypedata(struct ssbn_device *dev, void *data)
 		ent->devtypedata = data;
 	}
 }
-EXPORT_SYMBOL(ssbn_set_devtypedata);
 
 static u32 clkfactor_f6_resolve(u32 v)
 {
@@ -965,7 +958,6 @@ u32 ssbn_clockspeed(struct ssbn_bus *bus)
 
 	return rate;
 }
-EXPORT_SYMBOL(ssbn_clockspeed);
 
 static u32 ssbn_tmslow_reject_bitmask(struct ssbn_device *dev)
 {
@@ -1001,7 +993,6 @@ int ssbn_device_is_enabled(struct ssbn_device *dev)
 
 	return (val == SSBN_TMSLOW_CLOCK);
 }
-EXPORT_SYMBOL(ssbn_device_is_enabled);
 
 static void ssbn_flush_tmslow(struct ssbn_device *dev)
 {
@@ -1045,7 +1036,6 @@ void ssbn_device_enable(struct ssbn_device *dev, u32 core_specific_flags)
 		    core_specific_flags);
 	ssbn_flush_tmslow(dev);
 }
-EXPORT_SYMBOL(ssbn_device_enable);
 
 /* Wait for bitmask in a register to get set or cleared.
  * timeout is in units of ten-microseconds
@@ -1107,7 +1097,6 @@ void ssbn_device_disable(struct ssbn_device *dev, u32 core_specific_flags)
 		    core_specific_flags);
 	ssbn_flush_tmslow(dev);
 }
-EXPORT_SYMBOL(ssbn_device_disable);
 
 /* Some chipsets need routing known for PCIe and 64-bit DMA */
 static bool ssbn_dma_translation_special_bit(struct ssbn_device *dev)
@@ -1142,7 +1131,6 @@ u32 ssbn_dma_translation(struct ssbn_device *dev)
 	}
 	return 0;
 }
-EXPORT_SYMBOL(ssbn_dma_translation);
 
 int ssbn_bus_may_powerdown(struct ssbn_bus *bus)
 {
@@ -1174,7 +1162,6 @@ error:
 	pr_err("Bus powerdown failed\n");
 	goto out;
 }
-EXPORT_SYMBOL(ssbn_bus_may_powerdown);
 
 int ssbn_bus_powerup(struct ssbn_bus *bus, bool dynamic_pctl)
 {
@@ -1195,7 +1182,6 @@ error:
 	pr_err("Bus powerup failed\n");
 	return err;
 }
-EXPORT_SYMBOL(ssbn_bus_powerup);
 
 static void ssbn_broadcast_value(struct ssbn_device *dev,
 				u32 address, u32 data)
@@ -1226,7 +1212,6 @@ void ssbn_commit_settings(struct ssbn_bus *bus)
 	/* This forces an update of the cached registers. */
 	ssbn_broadcast_value(dev, 0xFD8, 0);
 }
-EXPORT_SYMBOL(ssbn_commit_settings);
 
 u32 ssbn_admatch_base(u32 adm)
 {
@@ -1250,7 +1235,6 @@ u32 ssbn_admatch_base(u32 adm)
 
 	return base;
 }
-EXPORT_SYMBOL(ssbn_admatch_base);
 
 u32 ssbn_admatch_size(u32 adm)
 {
@@ -1275,7 +1259,6 @@ u32 ssbn_admatch_size(u32 adm)
 
 	return size;
 }
-EXPORT_SYMBOL(ssbn_admatch_size);
 
 int __init ssbn_modinit(void)
 {

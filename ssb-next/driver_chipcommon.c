@@ -13,7 +13,6 @@
 
 #include <ssb-next/ssbn.h>
 #include <ssb-next/ssbn_regs.h>
-#include <linux/export.h>
 #include <linux/pci.h>
 #include <linux/bcm47xx_wdt.h>
 
@@ -541,7 +540,6 @@ u32 ssbn_chipco_gpio_control(struct ssbn_chipcommon *cc, u32 mask, u32 value)
 
 	return res;
 }
-EXPORT_SYMBOL(ssbn_chipco_gpio_control);
 
 u32 ssbn_chipco_gpio_intmask(struct ssbn_chipcommon *cc, u32 mask, u32 value)
 {

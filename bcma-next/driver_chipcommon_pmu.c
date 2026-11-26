@@ -10,7 +10,6 @@
  */
 
 #include "bcmn_private.h"
-#include <linux/export.h>
 #include <bcma-next/bcmn.h>
 
 u32 bcmn_chipco_pll_read(struct bcmn_drv_cc *cc, u32 offset)
@@ -19,7 +18,6 @@ u32 bcmn_chipco_pll_read(struct bcmn_drv_cc *cc, u32 offset)
 	bcmn_pmu_read32(cc, BCMN_CC_PMU_PLLCTL_ADDR);
 	return bcmn_pmu_read32(cc, BCMN_CC_PMU_PLLCTL_DATA);
 }
-EXPORT_SYMBOL_GPL(bcmn_chipco_pll_read);
 
 void bcmn_chipco_pll_write(struct bcmn_drv_cc *cc, u32 offset, u32 value)
 {
@@ -27,7 +25,6 @@ void bcmn_chipco_pll_write(struct bcmn_drv_cc *cc, u32 offset, u32 value)
 	bcmn_pmu_read32(cc, BCMN_CC_PMU_PLLCTL_ADDR);
 	bcmn_pmu_write32(cc, BCMN_CC_PMU_PLLCTL_DATA, value);
 }
-EXPORT_SYMBOL_GPL(bcmn_chipco_pll_write);
 
 void bcmn_chipco_pll_maskset(struct bcmn_drv_cc *cc, u32 offset, u32 mask,
 			     u32 set)
@@ -36,7 +33,6 @@ void bcmn_chipco_pll_maskset(struct bcmn_drv_cc *cc, u32 offset, u32 mask,
 	bcmn_pmu_read32(cc, BCMN_CC_PMU_PLLCTL_ADDR);
 	bcmn_pmu_maskset32(cc, BCMN_CC_PMU_PLLCTL_DATA, mask, set);
 }
-EXPORT_SYMBOL_GPL(bcmn_chipco_pll_maskset);
 
 void bcmn_chipco_chipctl_maskset(struct bcmn_drv_cc *cc,
 				 u32 offset, u32 mask, u32 set)
@@ -45,7 +41,6 @@ void bcmn_chipco_chipctl_maskset(struct bcmn_drv_cc *cc,
 	bcmn_pmu_read32(cc, BCMN_CC_PMU_CHIPCTL_ADDR);
 	bcmn_pmu_maskset32(cc, BCMN_CC_PMU_CHIPCTL_DATA, mask, set);
 }
-EXPORT_SYMBOL_GPL(bcmn_chipco_chipctl_maskset);
 
 void bcmn_chipco_regctl_maskset(struct bcmn_drv_cc *cc, u32 offset, u32 mask,
 				u32 set)
@@ -54,7 +49,6 @@ void bcmn_chipco_regctl_maskset(struct bcmn_drv_cc *cc, u32 offset, u32 mask,
 	bcmn_pmu_read32(cc, BCMN_CC_PMU_REGCTL_ADDR);
 	bcmn_pmu_maskset32(cc, BCMN_CC_PMU_REGCTL_DATA, mask, set);
 }
-EXPORT_SYMBOL_GPL(bcmn_chipco_regctl_maskset);
 
 static u32 bcmn_pmu_xtalfreq(struct bcmn_drv_cc *cc)
 {
@@ -536,7 +530,6 @@ u32 bcmn_pmu_get_bus_clock(struct bcmn_drv_cc *cc)
 	}
 	return BCMN_CC_PMU_HT_CLOCK;
 }
-EXPORT_SYMBOL_GPL(bcmn_pmu_get_bus_clock);
 
 /* query cpu clock frequency for PMU-enabled chipcommon */
 u32 bcmn_pmu_get_cpu_clock(struct bcmn_drv_cc *cc)
@@ -770,4 +763,3 @@ void bcmn_pmu_spuravoid_pllupdate(struct bcmn_drv_cc *cc, int spuravoid)
 	tmp |= bcmn_pmu_read32(cc, BCMN_CC_PMU_CTL);
 	bcmn_pmu_write32(cc, BCMN_CC_PMU_CTL, tmp);
 }
-EXPORT_SYMBOL_GPL(bcmn_pmu_spuravoid_pllupdate);

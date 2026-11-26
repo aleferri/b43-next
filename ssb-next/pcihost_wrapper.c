@@ -13,7 +13,6 @@
 
 #include <linux/pm.h>
 #include <linux/pci.h>
-#include <linux/export.h>
 #include <linux/slab.h>
 #include <ssb-next/ssbn.h>
 
@@ -114,4 +113,3 @@ int ssbn_pcihost_register(struct pci_driver *driver)
 
 	return pci_register_driver(driver);
 }
-EXPORT_SYMBOL(ssbn_pcihost_register);
