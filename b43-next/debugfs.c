@@ -442,8 +442,8 @@ static ssize_t loctls_read_file(struct b43_wldev *dev,
 		calc_expire_secs(now, lo->txctl_measured_time,
 				 B43_LO_TXCTL_EXPIRE));
 	fappend("Power Vector: 0x%08X%08X  (expires in %lu sec)\n",
-		(unsigned int)((lo->power_vector & 0xFFFFFFFF00000000ULL) >> 32),
-		(unsigned int)(lo->power_vector & 0x00000000FFFFFFFFULL),
+		upper_32_bits(lo->power_vector),
+		lower_32_bits(lo->power_vector),
 		calc_expire_secs(now, lo->pwr_vec_read_time,
 				 B43_LO_PWRVEC_EXPIRE));
 

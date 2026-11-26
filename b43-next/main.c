@@ -732,9 +732,9 @@ void b43_hf_write(struct b43_wldev *dev, u64 value)
 {
 	u16 lo, mi, hi;
 
-	lo = (value & 0x00000000FFFFULL);
-	mi = (value & 0x0000FFFF0000ULL) >> 16;
-	hi = (value & 0xFFFF00000000ULL) >> 32;
+	lo = FIELD_GET(GENMASK_ULL(15, 0), value);
+	mi = FIELD_GET(GENMASK_ULL(31, 16), value);
+	hi = FIELD_GET(GENMASK_ULL(47, 32), value);
 	b43_shm_write16(dev, B43_SHM_SHARED, B43_SHM_SH_HOSTF1, lo);
 	b43_shm_write16(dev, B43_SHM_SHARED, B43_SHM_SH_HOSTF2, mi);
 	b43_shm_write16(dev, B43_SHM_SHARED, B43_SHM_SH_HOSTF3, hi);
@@ -783,8 +783,8 @@ static void b43_tsf_write_locked(struct b43_wldev *dev, u64 tsf)
 
 	B43_WARN_ON(dev->dev->core_rev < 3);
 
-	low = tsf;
-	high = (tsf >> 32);
+	low = lower_32_bits(tsf);
+	high = upper_32_bits(tsf);
 	/* The hardware guarantees us an atomic write, if we
 	 * write the low register first. */
 	b43_write32(dev, B43_MMIO_REV3PLUS_TSF_LOW, low);
