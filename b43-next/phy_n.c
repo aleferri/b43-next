@@ -9064,12 +9064,6 @@ static int b43_nphy_set_channel(struct b43_wldev *dev,
 	phy->channel = channel->hw_value;
 	b43_nphy_txpctl_bidx_reset(dev);
 
-#if 0
-	if (b43_channel_type_is_40mhz(phy->channel_type) !=
-		b43_channel_type_is_40mhz(channel_type))
-		; /* TODO: BMAC BW Set (channel_type) */
-#endif
-
 	if (channel_type == NL80211_CHAN_HT40MINUS) {
 		b43_phy_set(dev, B43_NPHY_RXCTL, B43_NPHY_RXCTL_BSELU20);
 		if (phy->rev >= 7)

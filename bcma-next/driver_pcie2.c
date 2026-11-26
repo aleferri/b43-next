@@ -16,15 +16,6 @@
  * R/W ops.
  **************************************************/
 
-#if 0
-static u32 bcmn_core_pcie2_cfg_read(struct bcmn_drv_pcie2 *pcie2, u32 addr)
-{
-	pcie2_write32(pcie2, BCMN_CORE_PCIE2_CONFIGINDADDR, addr);
-	pcie2_read32(pcie2, BCMN_CORE_PCIE2_CONFIGINDADDR);
-	return pcie2_read32(pcie2, BCMN_CORE_PCIE2_CONFIGINDDATA);
-}
-#endif
-
 static void bcmn_core_pcie2_cfg_write(struct bcmn_drv_pcie2 *pcie2, u32 addr,
 				      u32 val)
 {
@@ -104,31 +95,6 @@ static void bcmn_core_pcie2_hw_ltr_war(struct bcmn_drv_pcie2 *pcie2)
 	}
 }
 
-static void pciedev_crwlpciegen2(struct bcmn_drv_pcie2 *pcie2)
-{
-	u8 core_rev = pcie2->core->id.rev;
-	bool pciewar160, pciewar162;
-
-	pciewar160 = core_rev == 7 || core_rev == 9 || core_rev == 11;
-	pciewar162 = core_rev == 5 || core_rev == 7 || core_rev == 8 ||
-		     core_rev == 9 || core_rev == 11;
-
-	if (!pciewar160 && !pciewar162)
-		return;
-
-/* TODO */
-#if 0
-	pcie2_set32(pcie2, BCMN_CORE_PCIE2_CLK_CONTROL,
-		    PCIE_DISABLE_L1CLK_GATING);
-#if 0
-	pcie2_write32(pcie2, BCMN_CORE_PCIE2_CONFIGINDADDR,
-		      PCIEGEN2_COE_PVT_TL_CTRL_0);
-	pcie2_mask32(pcie2, BCMN_CORE_PCIE2_CONFIGINDDATA,
-		     ~(1 << COE_PVT_TL_CTRL_0_PM_DIS_L1_REENTRY_BIT));
-#endif
-#endif
-}
-
 static void pciedev_crwlpciegen2_180(struct bcmn_drv_pcie2 *pcie2)
 {
 	pcie2_write32(pcie2, BCMN_CORE_PCIE2_CONFIGINDADDR, PCIE2_PMCR_REFUP);
@@ -183,7 +149,6 @@ void bcmn_core_pcie2_init(struct bcmn_drv_pcie2 *pcie2)
 	if (ci->id == BCMN_CHIP_ID_BCM4360 && ci->rev > 3)
 		bcmn_core_pcie2_war_delay_perst_enab(pcie2, true);
 	bcmn_core_pcie2_hw_ltr_war(pcie2);
-	pciedev_crwlpciegen2(pcie2);
 	pciedev_reg_pm_clk_period(pcie2);
 	pciedev_crwlpciegen2_180(pcie2);
 	pciedev_crwlpciegen2_182(pcie2);
