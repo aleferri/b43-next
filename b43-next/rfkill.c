@@ -9,6 +9,8 @@
 
 */
 
+#include <linux/string_choices.h>
+
 #include "b43.h"
 
 
@@ -42,7 +44,7 @@ void b43_rfkill_poll(struct ieee80211_hw *hw)
 	if (unlikely(enabled != dev->radio_hw_enable)) {
 		dev->radio_hw_enable = enabled;
 		b43info(wl, "Radio hardware status changed to %s\n",
-			enabled ? "ENABLED" : "DISABLED");
+			str_enabled_disabled(enabled));
 		wiphy_rfkill_set_hw_state(hw->wiphy, !enabled);
 		if (enabled != dev->phy.radio_on)
 			b43_software_rfkill(dev, !enabled);
