@@ -807,7 +807,6 @@ void b43_debugfs_add_device(struct b43_wldev *dev)
 {
 	struct b43_dfsentry *e;
 	struct b43_txstatus_log *log;
-	char devdir[16];
 
 	B43_WARN_ON(!dev);
 	e = kzalloc_obj(*e);
@@ -827,8 +826,7 @@ void b43_debugfs_add_device(struct b43_wldev *dev)
 
 	dev->dfsentry = e;
 
-	snprintf(devdir, sizeof(devdir), "%s", wiphy_name(dev->wl->hw->wiphy));
-	e->subdir = debugfs_create_dir(devdir, rootdir);
+	e->subdir = debugfs_create_dir(wiphy_name(dev->wl->hw->wiphy), rootdir);
 
 	e->mmio16read_next = 0xFFFF; /* invalid address */
 	e->mmio32read_next = 0xFFFF; /* invalid address */
