@@ -3465,7 +3465,7 @@ static int b43_write_initvals(struct b43_wldev *dev,
 			value = get_unaligned_be32(&iv->data.d32);
 			b43_write32(dev, offset, value);
 
-			iv = (const struct b43_iv *)((const uint8_t *)iv +
+			iv = (const struct b43_iv *)((const u8 *)iv +
 							sizeof(__be16) +
 							sizeof(__be32));
 		} else {
@@ -3478,7 +3478,7 @@ static int b43_write_initvals(struct b43_wldev *dev,
 			value = be16_to_cpu(iv->data.d16);
 			b43_write16(dev, offset, value);
 
-			iv = (const struct b43_iv *)((const uint8_t *)iv +
+			iv = (const struct b43_iv *)((const u8 *)iv +
 							sizeof(__be16) +
 							sizeof(__be16));
 		}

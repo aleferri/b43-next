@@ -230,7 +230,7 @@ static void b43_write_beacon_template(struct b43_wldev *dev,
 	ie = bcn->u.beacon.variable;
 	variable_len = len - offsetof(struct ieee80211_mgmt, u.beacon.variable);
 	for (i = 0; i < variable_len - 2; ) {
-		uint8_t ie_id, ie_len;
+		u8 ie_id, ie_len;
 
 		ie_id = ie[i];
 		ie_len = ie[i + 1];
