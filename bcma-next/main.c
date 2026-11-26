@@ -6,6 +6,7 @@
  */
 
 #include "bcmn_private.h"
+#include <linux/iopoll.h>
 #include <linux/module.h>
 #include <linux/mmc/sdio_func.h>
 #include <linux/platform_device.h>
@@ -97,16 +98,12 @@ struct bcmn_device *bcmn_find_core_unit(struct bcmn_bus *bus, u16 coreid,
 bool bcmn_wait_value(struct bcmn_device *core, u16 reg, u32 mask, u32 value,
 		     int timeout)
 {
-	unsigned long deadline = jiffies + timeout;
 	u32 val;
 
-	do {
-		val = bcmn_read32(core, reg);
-		if ((val & mask) == value)
-			return true;
-		cpu_relax();
-		udelay(10);
-	} while (!time_after_eq(jiffies, deadline));
+	if (!read_poll_timeout_atomic(bcmn_read32, val, (val & mask) == value,
+				      10, jiffies_to_usecs(timeout), false,
+				      core, reg))
+		return true;
 
 	bcmn_warn(core->bus, "Timeout waiting for register 0x%04X!\n", reg);
 

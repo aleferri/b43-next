@@ -12,16 +12,12 @@
 static bool bcmn_core_wait_value(struct bcmn_device *core, u16 reg, u32 mask,
 				 u32 value, int timeout)
 {
-	unsigned long deadline = jiffies + timeout;
 	u32 val;
 
-	do {
-		val = bcmn_aread32(core, reg);
-		if ((val & mask) == value)
-			return true;
-		cpu_relax();
-		udelay(10);
-	} while (!time_after_eq(jiffies, deadline));
+	if (!read_poll_timeout_atomic(bcmn_aread32, val, (val & mask) == value,
+				      10, jiffies_to_usecs(timeout), false,
+				      core, reg))
+		return true;
 
 	bcmn_warn(core->bus, "Timeout waiting for register 0x%04X!\n", reg);
 

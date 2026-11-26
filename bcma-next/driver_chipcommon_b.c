@@ -8,21 +8,17 @@
  */
 
 #include "bcmn_private.h"
+#include <linux/iopoll.h>
 #include <bcma-next/bcmn.h>
 
 static bool bcmn_wait_reg(struct bcmn_bus *bus, void __iomem *addr, u32 mask,
 			  u32 value, int timeout)
 {
-	unsigned long deadline = jiffies + timeout;
 	u32 val;
 
-	do {
-		val = readl(addr);
-		if ((val & mask) == value)
-			return true;
-		cpu_relax();
-		udelay(10);
-	} while (!time_after_eq(jiffies, deadline));
+	if (!readl_poll_timeout_atomic(addr, val, (val & mask) == value,
+				       10, jiffies_to_usecs(timeout)))
+		return true;
 
 	bcmn_err(bus, "Timeout waiting for register %p\n", addr);
 
