@@ -7253,7 +7253,7 @@ static void b43_nphy_rx_cal_gain_ctl(struct b43_wldev *dev, u8 rx_core,
 						     N_RF_CTL_OVER_CMD_RX_GAIN,
 						     rxgain, 0x3, false);
 	} else {
-		hpvga = (u16)max(min(((int)hpvga) + delta_pwr, 10), 0);
+		hpvga = clamp((int)hpvga + delta_pwr, 0, 10);
 		rxgain = (hpvga << 12) | (lpf_biq1 << 10) | (lpf_biq0 << 8) |
 			 (mix_tia_gain << 4) | (lna2 << 2) | lna1;
 		b43_nphy_rf_ctl_override(dev, 0x1000, rxgain, 0x3, false);
