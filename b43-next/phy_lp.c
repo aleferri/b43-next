@@ -1042,11 +1042,9 @@ static bool lpphy_rx_iq_est(struct b43_wldev *dev, u16 samples, u8 time,
 
 static int lpphy_loopback(struct b43_wldev *dev)
 {
-	struct lpphy_iq_est iq_est;
+	struct lpphy_iq_est iq_est = {};
 	int i, index = -1;
 	u32 tmp;
-
-	memset(&iq_est, 0, sizeof(iq_est));
 
 	lpphy_set_trsw_over(dev, true, true);
 	b43_phy_set(dev, B43_LPPHY_AFE_CTL_OVR, 1);
@@ -1190,7 +1188,7 @@ static int b43_lpphy_op_switch_channel(struct b43_wldev *dev,
 static void lpphy_rev0_1_rc_calib(struct b43_wldev *dev)
 {
 	struct b43_phy_lp *lpphy = dev->phy.lp;
-	struct lpphy_iq_est iq_est;
+	struct lpphy_iq_est iq_est = {};
 	struct lpphy_tx_gains tx_gains;
 	static const u32 ideal_pwr_table[21] = {
 		0x10000, 0x10557, 0x10e2d, 0x113e0, 0x10f22, 0x0ff64,
@@ -1206,7 +1204,6 @@ static void lpphy_rev0_1_rc_calib(struct b43_wldev *dev)
 	u32 normal_pwr, ideal_pwr, mean_sq_pwr, tmp = 0, mean_sq_pwr_min = 0;
 	int loopback, i, j, inner_sum, err;
 
-	memset(&iq_est, 0, sizeof(iq_est));
 	b43_cal_begin(dev, B43_CAL_RCCAL);
 
 	err = b43_lpphy_op_switch_channel(dev, 7);
@@ -1878,12 +1875,9 @@ static int lpphy_rx_iq_cal(struct b43_wldev *dev, bool noise, bool tx,
 {
 	struct b43_phy_lp *lpphy = dev->phy.lp;
 	const struct lpphy_rx_iq_comp *iqcomp = NULL;
-	struct lpphy_tx_gains nogains, oldgains;
+	struct lpphy_tx_gains nogains = {}, oldgains = {};
 	u16 tmp;
 	int i, ret;
-
-	memset(&nogains, 0, sizeof(nogains));
-	memset(&oldgains, 0, sizeof(oldgains));
 
 	if (dev->dev->chip_id == 0x5354) {
 		for (i = 0; i < ARRAY_SIZE(lpphy_5354_iq_table); i++) {

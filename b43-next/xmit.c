@@ -1940,7 +1940,7 @@ void b43_rx_amsdu_free(struct b43_wldev *dev)
 
 void b43_rx(struct b43_wldev *dev, struct sk_buff *skb, const void *_rxhdr)
 {
-	struct ieee80211_rx_status status;
+	struct ieee80211_rx_status status = {};
 	struct b43_plcp_hdr6 *plcp;
 	const u8 *ht_plcp = NULL;
 	struct ieee80211_hdr *wlhdr;
@@ -1955,8 +1955,6 @@ void b43_rx(struct b43_wldev *dev, struct sk_buff *skb, const void *_rxhdr)
 	bool rx_5ghz;
 	bool ht = b43_ht_enabled(dev);
 	int padding, rate_idx;
-
-	memset(&status, 0, sizeof(status));
 
 	if (fh->rx_amsdu &&
 	    (b43_nphy_ht_enabled(dev) || dev->phy.type == B43_PHYTYPE_HT ||

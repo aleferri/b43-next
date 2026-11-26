@@ -5382,7 +5382,7 @@ static void b43_qos_params_upload(struct b43_wldev *dev,
 				  const struct ieee80211_tx_queue_params *p,
 				  u16 shm_offset)
 {
-	u16 params[B43_NR_QOSPARAMS];
+	u16 params[B43_NR_QOSPARAMS] = {};
 	int bslots, tmp;
 	unsigned int i;
 
@@ -5390,8 +5390,6 @@ static void b43_qos_params_upload(struct b43_wldev *dev,
 		return;
 
 	bslots = b43_read16(dev, B43_MMIO_RNG) & p->cw_min;
-
-	memset(&params, 0, sizeof(params));
 
 	params[B43_QOSPARAM_TXOP] = p->txop * 32;
 	params[B43_QOSPARAM_CWMIN] = p->cw_min;

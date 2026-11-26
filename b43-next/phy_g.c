@@ -1260,14 +1260,12 @@ struct init2050_saved_values {
 static u16 b43_radio_init2050(struct b43_wldev *dev)
 {
 	struct b43_phy *phy = &dev->phy;
-	struct init2050_saved_values sav;
+	struct init2050_saved_values sav = {};
 	u16 rcc;
 	u16 radio78;
 	u16 ret;
 	u16 i, j;
 	u32 tmp1 = 0, tmp2 = 0;
-
-	memset(&sav, 0, sizeof(sav));	/* get rid of "may be used uninitialized..." */
 
 	sav.radio_43 = b43_radio_read16(dev, 0x43);
 	sav.radio_51 = b43_radio_read16(dev, 0x51);

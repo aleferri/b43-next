@@ -911,12 +911,10 @@ void b43_lo_g_adjust(struct b43_wldev *dev)
 void b43_lo_g_adjust_to(struct b43_wldev *dev,
 			u16 rfatt, u16 bbatt, u16 tx_control)
 {
-	struct b43_rfatt rf;
-	struct b43_bbatt bb;
+	struct b43_rfatt rf = {};
+	struct b43_bbatt bb = {};
 	struct b43_lo_calib *cal;
 
-	memset(&rf, 0, sizeof(rf));
-	memset(&bb, 0, sizeof(bb));
 	rf.att = rfatt;
 	bb.att = bbatt;
 	b43_lo_fixup_rfatt(&rf);

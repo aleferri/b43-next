@@ -598,10 +598,9 @@ error:
 static int ssbn_fetch_invariants(struct ssbn_bus *bus,
 				ssbn_invariants_func_t get_invariants)
 {
-	struct ssbn_init_invariants iv;
+	struct ssbn_init_invariants iv = {};
 	int err;
 
-	memset(&iv, 0, sizeof(iv));
 	err = get_invariants(bus, &iv);
 	if (err)
 		goto out;
