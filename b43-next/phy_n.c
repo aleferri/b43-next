@@ -2171,7 +2171,8 @@ static void b43_nphy_rev3_rssi_cal(struct b43_wldev *dev)
 		regs_to_store = regs_to_store_rev3;
 		regs_amount = ARRAY_SIZE(regs_to_store_rev3);
 	}
-	BUG_ON(regs_amount > ARRAY_SIZE(saved_regs_phy));
+	BUILD_BUG_ON(ARRAY_SIZE(regs_to_store_rev3) > ARRAY_SIZE(saved_regs_phy));
+	BUILD_BUG_ON(ARRAY_SIZE(regs_to_store_rev7) > ARRAY_SIZE(saved_regs_phy));
 
 	class = b43_nphy_classifier(dev, 0, 0);
 	b43_nphy_classifier(dev, 7, 4);

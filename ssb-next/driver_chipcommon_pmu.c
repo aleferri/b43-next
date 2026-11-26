@@ -98,7 +98,8 @@ static void ssbn_pmu0_pllinit_r0(struct ssbn_chipcommon *cc,
 		e = pmu0_plltab_find_entry(crystalfreq);
 	if (!e)
 		e = pmu0_plltab_find_entry(SSBN_PMU0_DEFAULT_XTALFREQ);
-	BUG_ON(!e);
+	if (WARN_ON(!e))
+		return;
 	crystalfreq = e->freq;
 	cc->pmu.crystalfreq = e->freq;
 
@@ -232,7 +233,8 @@ static void ssbn_pmu1_pllinit_r0(struct ssbn_chipcommon *cc,
 		e = pmu1_plltab_find_entry(crystalfreq);
 	if (!e)
 		e = pmu1_plltab_find_entry(SSBN_PMU1_DEFAULT_XTALFREQ);
-	BUG_ON(!e);
+	if (WARN_ON(!e))
+		return;
 	crystalfreq = e->freq;
 	cc->pmu.crystalfreq = e->freq;
 
@@ -614,7 +616,8 @@ static u32 ssbn_pmu_get_alp_clock_clk0(struct ssbn_chipcommon *cc)
 	crystalfreq = (chipco_read32(cc, SSBN_CHIPCO_PMU_CTL) &
 		       SSBN_CHIPCO_PMU_CTL_XTALFREQ)  >> SSBN_CHIPCO_PMU_CTL_XTALFREQ_SHIFT;
 	e = pmu0_plltab_find_entry(crystalfreq);
-	BUG_ON(!e);
+	if (WARN_ON(!e))
+		return SSBN_PMU0_DEFAULT_XTALFREQ * 1000;
 	return e->freq * 1000;
 }
 

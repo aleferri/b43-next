@@ -439,9 +439,9 @@ static u32 bcmn_pmu_pll_clock(struct bcmn_drv_cc *cc, u32 pll0, u32 m)
 	u32 tmp, div, ndiv, p1, p2, fc;
 	struct bcmn_bus *bus = cc->core->bus;
 
-	BUG_ON((pll0 & 3) || (pll0 > BCMN_CC_PMU4716_MAINPLL_PLL0));
-
-	BUG_ON(!m || m > 4);
+	if (WARN_ON((pll0 & 3) || pll0 > BCMN_CC_PMU4716_MAINPLL_PLL0 ||
+		    !m || m > 4))
+		return 0;
 
 	if (bus->chipinfo.id == BCMN_CHIP_ID_BCM5357 ||
 	    bus->chipinfo.id == BCMN_CHIP_ID_BCM4749) {
@@ -475,7 +475,8 @@ static u32 bcmn_pmu_pll_clock_bcm4706(struct bcmn_drv_cc *cc, u32 pll0, u32 m)
 	u32 tmp, ndiv, p1div, p2div;
 	u32 clock;
 
-	BUG_ON(!m || m > 4);
+	if (WARN_ON(!m || m > 4))
+		return 0;
 
 	/* Get N, P1 and P2 dividers to determine CPU clock */
 	tmp = bcmn_chipco_pll_read(cc, pll0 + BCMN_CC_PMU6_4706_PROCPLL_OFF);
