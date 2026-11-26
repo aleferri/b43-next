@@ -14,6 +14,7 @@
 #include <ssb-next/ssbn_regs.h>
 #include <ssb-next/ssbn_driver_chipcommon.h>
 #include <linux/delay.h>
+#include <linux/iopoll.h>
 #include <linux/export.h>
 #ifdef CONFIG_BCM47XX
 #include <linux/bcm47xx_nvram.h>
@@ -93,7 +94,6 @@ static void ssbn_pmu0_pllinit_r0(struct ssbn_chipcommon *cc,
 	struct ssbn_bus *bus = cc->dev->bus;
 	const struct pmu0_plltab_entry *e = NULL;
 	u32 pmuctl, tmp, pllctl;
-	unsigned int i;
 
 	if (crystalfreq)
 		e = pmu0_plltab_find_entry(crystalfreq);
@@ -130,14 +130,10 @@ static void ssbn_pmu0_pllinit_r0(struct ssbn_chipcommon *cc,
 	default:
 		WARN_ON(1);
 	}
-	for (i = 1500; i; i--) {
-		tmp = chipco_read32(cc, SSBN_CHIPCO_CLKCTLST);
-		if (!(tmp & SSBN_CHIPCO_CLKCTLST_HAVEHT))
-			break;
-		udelay(10);
-	}
-	tmp = chipco_read32(cc, SSBN_CHIPCO_CLKCTLST);
-	if (tmp & SSBN_CHIPCO_CLKCTLST_HAVEHT)
+	if (read_poll_timeout_atomic(chipco_read32, tmp,
+				     !(tmp & SSBN_CHIPCO_CLKCTLST_HAVEHT),
+				     10, 15000, false,
+				     cc, SSBN_CHIPCO_CLKCTLST))
 		dev_emerg(cc->dev->dev, "Failed to turn the PLL off!\n");
 
 	/* Set PDIV in PLL control 0. */
@@ -225,7 +221,6 @@ static void ssbn_pmu1_pllinit_r0(struct ssbn_chipcommon *cc,
 	const struct pmu1_plltab_entry *e = NULL;
 	u32 buffer_strength = 0;
 	u32 tmp, pllctl, pmuctl;
-	unsigned int i;
 
 	if (bus->chip_id == 0x4312) {
 		/* We do not touch the BCM4312 PLL and assume
@@ -267,14 +262,10 @@ static void ssbn_pmu1_pllinit_r0(struct ssbn_chipcommon *cc,
 	default:
 		WARN_ON(1);
 	}
-	for (i = 1500; i; i--) {
-		tmp = chipco_read32(cc, SSBN_CHIPCO_CLKCTLST);
-		if (!(tmp & SSBN_CHIPCO_CLKCTLST_HAVEHT))
-			break;
-		udelay(10);
-	}
-	tmp = chipco_read32(cc, SSBN_CHIPCO_CLKCTLST);
-	if (tmp & SSBN_CHIPCO_CLKCTLST_HAVEHT)
+	if (read_poll_timeout_atomic(chipco_read32, tmp,
+				     !(tmp & SSBN_CHIPCO_CLKCTLST_HAVEHT),
+				     10, 15000, false,
+				     cc, SSBN_CHIPCO_CLKCTLST))
 		dev_emerg(cc->dev->dev, "Failed to turn the PLL off!\n");
 
 	/* Set p1div and p2div. */

@@ -14,6 +14,7 @@
 #include <linux/pci.h>
 #include <linux/export.h>
 #include <linux/delay.h>
+#include <linux/iopoll.h>
 #include <ssb-next/ssbn_embedded.h>
 
 static u32 ssbn_pcie_read(struct ssbn_pcicore *pc, u32 address);
@@ -584,7 +585,6 @@ static void ssbn_pcie_mdio_set_phy(struct ssbn_pcicore *pc, u8 phy)
 	const u16 mdio_control = 0x128;
 	const u16 mdio_data = 0x12C;
 	u32 v;
-	int i;
 
 	v = (1 << 30); /* Start of Transaction */
 	v |= (1 << 28); /* Write Transaction */
@@ -594,12 +594,8 @@ static void ssbn_pcie_mdio_set_phy(struct ssbn_pcicore *pc, u8 phy)
 	pcicore_write32(pc, mdio_data, v);
 
 	udelay(10);
-	for (i = 0; i < 200; i++) {
-		v = pcicore_read32(pc, mdio_control);
-		if (v & 0x100 /* Trans complete */)
-			break;
-		msleep(1);
-	}
+	read_poll_timeout(pcicore_read32, v, v & 0x100 /* Trans complete */,
+			  1000, 200 * USEC_PER_MSEC, false, pc, mdio_control);
 }
 
 static u16 ssbn_pcie_mdio_read(struct ssbn_pcicore *pc, u8 device, u8 address)
@@ -609,7 +605,6 @@ static u16 ssbn_pcie_mdio_read(struct ssbn_pcicore *pc, u8 device, u8 address)
 	int max_retries = 10;
 	u16 ret = 0;
 	u32 v;
-	int i;
 
 	v = 0x80; /* Enable Preamble Sequence */
 	v |= 0x2; /* MDIO Clock Divisor */
@@ -629,14 +624,12 @@ static u16 ssbn_pcie_mdio_read(struct ssbn_pcicore *pc, u8 device, u8 address)
 	pcicore_write32(pc, mdio_data, v);
 	/* Wait for the device to complete the transaction */
 	udelay(10);
-	for (i = 0; i < max_retries; i++) {
-		v = pcicore_read32(pc, mdio_control);
-		if (v & 0x100 /* Trans complete */) {
-			udelay(10);
-			ret = pcicore_read32(pc, mdio_data);
-			break;
-		}
-		msleep(1);
+	if (!read_poll_timeout(pcicore_read32, v,
+			       v & 0x100 /* Trans complete */,
+			       1000, max_retries * USEC_PER_MSEC, false,
+			       pc, mdio_control)) {
+		udelay(10);
+		ret = pcicore_read32(pc, mdio_data);
 	}
 	pcicore_write32(pc, mdio_control, 0);
 	return ret;
@@ -649,7 +642,6 @@ static void ssbn_pcie_mdio_write(struct ssbn_pcicore *pc, u8 device,
 	const u16 mdio_data = 0x12C;
 	int max_retries = 10;
 	u32 v;
-	int i;
 
 	v = 0x80; /* Enable Preamble Sequence */
 	v |= 0x2; /* MDIO Clock Divisor */
@@ -670,12 +662,9 @@ static void ssbn_pcie_mdio_write(struct ssbn_pcicore *pc, u8 device,
 	pcicore_write32(pc, mdio_data, v);
 	/* Wait for the device to complete the transaction */
 	udelay(10);
-	for (i = 0; i < max_retries; i++) {
-		v = pcicore_read32(pc, mdio_control);
-		if (v & 0x100 /* Trans complete */)
-			break;
-		msleep(1);
-	}
+	read_poll_timeout(pcicore_read32, v, v & 0x100 /* Trans complete */,
+			  1000, max_retries * USEC_PER_MSEC, false,
+			  pc, mdio_control);
 	pcicore_write32(pc, mdio_control, 0);
 }
 

@@ -11,6 +11,7 @@
 #include "ssbn_private.h"
 
 #include <linux/delay.h>
+#include <linux/iopoll.h>
 #include <linux/io.h>
 #include <linux/module.h>
 #include <linux/platform_device.h>
@@ -1052,20 +1053,13 @@ EXPORT_SYMBOL(ssbn_device_enable);
 static int ssbn_wait_bits(struct ssbn_device *dev, u16 reg, u32 bitmask,
 			 int timeout, int set)
 {
-	int i;
 	u32 val;
 
-	for (i = 0; i < timeout; i++) {
-		val = ssbn_read32(dev, reg);
-		if (set) {
-			if ((val & bitmask) == bitmask)
-				return 0;
-		} else {
-			if (!(val & bitmask))
-				return 0;
-		}
-		udelay(10);
-	}
+	if (!read_poll_timeout_atomic(ssbn_read32, val,
+				      set ? (val & bitmask) == bitmask :
+					    !(val & bitmask),
+				      10, timeout * 10, false, dev, reg))
+		return 0;
 	dev_err(dev->dev,
 		"Timeout waiting for bitmask %08X on register %04X to %s\n",
 		bitmask, reg, set ? "set" : "clear");
