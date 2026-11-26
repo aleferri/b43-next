@@ -25,7 +25,7 @@ struct ssbn_device_id {
 	__u16	coreid;
 	__u8	revision;
 	__u8	__pad;
-} __attribute__((packed, aligned(2)));
+} __packed __aligned(2);
 #define SSBN_DEVICE(_vendor, _coreid, _revision)  \
 	{ .vendor = _vendor, .coreid = _coreid, .revision = _revision, }
 

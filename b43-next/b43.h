@@ -1250,8 +1250,8 @@ struct b43_wl {
 	u8 radar_region;
 
 	/* Kmalloc'ed scratch space for PIO TX/RX. Protected by wl->mutex. */
-	u8 pio_scratchspace[128] __attribute__((__aligned__(8)));
-	u8 pio_tailspace[4] __attribute__((__aligned__(8)));
+	u8 pio_scratchspace[128] __aligned(8);
+	u8 pio_tailspace[4] __aligned(8);
 };
 
 static inline struct b43_wl *hw_to_b43_wl(struct ieee80211_hw *hw)
