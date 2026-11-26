@@ -10,6 +10,7 @@
 */
 
 #include <linux/iopoll.h>
+#include <linux/string_choices.h>
 #include <linux/slab.h>
 
 #include "b43.h"
@@ -287,7 +288,7 @@ void b43_phy_ht_set_cck_rx(struct b43_wldev *dev, bool on)
 	if (b43_current_band(dev->wl) == NL80211_BAND_2GHZ)
 		b43_phy_ht_classifier(dev, B43_PHY_HT_CLASS_CTL_CCK_EN,
 				      on ? B43_PHY_HT_CLASS_CTL_CCK_EN : 0);
-	b43dbg(dev->wl, "HT-PHY: CCK reception %s\n", on ? "on" : "off");
+	b43dbg(dev->wl, "HT-PHY: CCK reception %s\n", str_on_off(on));
 }
 
 static void b43_phy_ht_reset_cca(struct b43_wldev *dev)
