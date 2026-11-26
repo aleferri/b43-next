@@ -197,15 +197,14 @@ static void b43_write_beacon_template(struct b43_wldev *dev,
 	bool tim_found = false;
 	unsigned int rate;
 	struct ieee80211_tx_info *info;
-	unsigned long flags;
 	struct sk_buff *beacon_skb;
 
-	spin_lock_irqsave(&dev->wl->beacon_lock, flags);
-	info = IEEE80211_SKB_CB(dev->wl->current_beacon);
-	rate = ieee80211_get_tx_rate(dev->wl->hw, info)->hw_value;
-	/* Clone the beacon, so it cannot go away, while we write it to hw. */
-	beacon_skb = skb_clone(dev->wl->current_beacon, GFP_ATOMIC);
-	spin_unlock_irqrestore(&dev->wl->beacon_lock, flags);
+	scoped_guard(spinlock_irqsave, &dev->wl->beacon_lock) {
+		info = IEEE80211_SKB_CB(dev->wl->current_beacon);
+		rate = ieee80211_get_tx_rate(dev->wl->hw, info)->hw_value;
+		/* Clone the beacon, so it cannot go away, while we write it to hw. */
+		beacon_skb = skb_clone(dev->wl->current_beacon, GFP_ATOMIC);
+	}
 
 	if (!beacon_skb) {
 		b43dbg(dev->wl, "Could not upload beacon. "
@@ -374,26 +373,23 @@ static void b43_beacon_update_trigger_work(struct work_struct *work)
 					 beacon_update_trigger);
 	struct b43_wldev *dev;
 
-	mutex_lock(&wl->mutex);
+	guard(mutex)(&wl->mutex);
 	dev = wl->current_dev;
 	if (likely(dev && (b43_status(dev) >= B43_STAT_INITIALIZED))) {
 		if (b43_bus_host_is_sdio(dev->dev)) {
 			/* wl->mutex is enough. */
 			b43_do_beacon_update_trigger_work(dev);
 		} else {
-			spin_lock_irq(&wl->hardirq_lock);
+			guard(spinlock_irq)(&wl->hardirq_lock);
 			b43_do_beacon_update_trigger_work(dev);
-			spin_unlock_irq(&wl->hardirq_lock);
 		}
 	}
-	mutex_unlock(&wl->mutex);
 }
 
 /* Asynchronously update the packet templates in template RAM. */
 void b43_beacon_update(struct b43_wl *wl)
 {
 	struct sk_buff *beacon, *old_beacon;
-	unsigned long flags;
 
 	if (!b43_beacon_mode(wl))
 		return;
@@ -402,12 +398,12 @@ void b43_beacon_update(struct b43_wl *wl)
 	if (unlikely(!beacon))
 		return;
 
-	spin_lock_irqsave(&wl->beacon_lock, flags);
-	old_beacon = wl->current_beacon;
-	wl->current_beacon = beacon;
-	wl->beacon0_uploaded = false;
-	wl->beacon1_uploaded = false;
-	spin_unlock_irqrestore(&wl->beacon_lock, flags);
+	scoped_guard(spinlock_irqsave, &wl->beacon_lock) {
+		old_beacon = wl->current_beacon;
+		wl->current_beacon = beacon;
+		wl->beacon0_uploaded = false;
+		wl->beacon1_uploaded = false;
+	}
 
 	ieee80211_queue_work(wl->hw, &wl->beacon_update_trigger);
 
