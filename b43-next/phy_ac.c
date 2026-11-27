@@ -598,11 +598,11 @@ static void b43_radio_2069_channel_setup(struct b43_wldev *dev,
 	 * sequence kicks the loop, and the PLL locks within the roughly 15us of
 	 * the udelays below.
 	 *
-	 * The lock verify, bit 8 of radio 0x090b, lives in adc_reset() instead:
-	 * the vendor emits that peek immediately before the final RX release,
-	 * not inside chanspec_set(). The chip stays in the RX freeze for tens of
-	 * milliseconds while the channel_setup flow runs, so by the time the
-	 * lock is checked it has long since been achieved.
+	 * The lock verify, bit 8 of radio 0x090b, lives in
+	 * b43_phy_ac_txpwrctrl_enable() instead: the vendor emits that peek
+	 * immediately before the RX release, not here. The chip stays in the
+	 * RX freeze for tens of milliseconds while the channel setup runs, so
+	 * by the time the lock is checked it has long since been achieved.
 	 */
 	b43_radio_maskset(dev, 0x08e5, (u16)~0x4000, 0x0000);
 	b43_radio_maskset(dev, 0x08d0, (u16)~0x0001, 0x0000);
@@ -704,7 +704,7 @@ static void b43_r2069_rccal_apply_fixed(struct b43_wldev *dev)
 {
 	unsigned int core;
 
-	/* Per silicon core, as apply_code (all three). */
+	/* Per silicon core, as b43_r2069_rccal_apply_code() (all three). */
 	for (core = 0; core < dev->phy.ac->num_cores; core++) {
 		u16 stride = (u16)(core << 9);
 
@@ -914,7 +914,7 @@ void b43_radio_2069_init(struct b43_wldev *dev)
 	if (dev->phy.radio_rev == 4)
 		r2069_upload_inittabs(dev);
 
-	/* --- Body (acphychipid ∈ {0x4360, 0x4352}) --- */
+	/* --- Body: the stock driver's for acphychipid 0x4360 and 0x4352 --- */
 	b43_radio_set(dev, 0x096b, 0x0800);
 	b43_radio_set(dev, 0x096b, 0x4000);
 	b43_radio_set(dev, 0x096c, 0x0800);
@@ -10631,8 +10631,8 @@ static int b43_phy_ac_op_switch_channel(struct b43_wldev *dev, unsigned int new_
 	/*
 	 * Freeze the RX path before the channel reconfiguration: classifier
 	 * WAITED only, clip detectors frozen, CCA reset. Everything up to
-	 * rx_enable runs frozen; the first release is the RX gate pulse in
-	 * idle_tssi_meas.
+	 * b43_phy_ac_txpwrctrl_enable(), after the ADC reset, runs frozen;
+	 * that is where RX is released.
 	 */
 	B43_AC_BLOCK(dev, "switch_prep");
 	b43_phy_ac_channel_switch_prep(dev);

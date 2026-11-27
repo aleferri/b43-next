@@ -1020,7 +1020,7 @@ const struct r2069_rccal_pass r2069_rccal_passes[3] = {
 /*
  * Band-preferred radio register block for radio_rev 4, written by
  * b43_radio_2069_init() right after the power-on setup pulse, before the
- * chip-id-gated body.
+ * body.
  */
 static const u16 b43_r2069_prefregs_rev4[][2] = {
 	{ 0x063a, 0x0000 }, { 0x063d, 0x000f }, { 0x0645, 0x3000 },

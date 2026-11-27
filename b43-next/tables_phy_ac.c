@@ -115,9 +115,10 @@ static void actab_write_bulk_common(struct b43_wldev *dev,
 }
 
 /*
- * write_bulk with the gate peek the stock driver emits before the id/offset/data
- * writes. Every capture finds the gate locked there, so what the stock driver
- * does with an unlocked one is not known, and the peek is only logged.
+ * The table write, with the gate peek the stock driver emits before the
+ * id/offset/data writes. Every capture finds the gate locked there, so what
+ * the stock driver does with an unlocked one is not known, and the peek is
+ * only logged.
  */
 void b43_actab_write_bulk(struct b43_wldev *dev,
 			  u16 id, u16 offset, u8 width,
