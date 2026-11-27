@@ -700,6 +700,7 @@ void ssbn_modexit(void) { }
 char __this_module[512];
 char param_ops_int[64];
 char param_ops_string[64];
+char param_ops_uint[64];
 
 #ifdef __SANITIZE_ADDRESS__
 /*
