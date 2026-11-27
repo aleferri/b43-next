@@ -2,6 +2,7 @@
 #ifndef LINUX_SSBN_H_
 #define LINUX_SSBN_H_
 
+#include <linux/bits.h>
 #include <linux/device.h>
 #include <linux/list.h>
 #include <linux/types.h>
@@ -25,7 +26,7 @@ struct ssbn_device_id {
 	__u16	coreid;
 	__u8	revision;
 	__u8	__pad;
-} __attribute__((packed, aligned(2)));
+} __packed __aligned(2);
 #define SSBN_DEVICE(_vendor, _coreid, _revision)  \
 	{ .vendor = _vendor, .coreid = _coreid, .revision = _revision, }
 
@@ -616,7 +617,7 @@ struct ssbn_bus {
 
 enum ssbn_quirks {
 	/* SDIO connected card requires performing a read after writing a 32-bit value */
-	SSBN_QUIRK_SDIO_READ_AFTER_WRITE32	= (1 << 0),
+	SSBN_QUIRK_SDIO_READ_AFTER_WRITE32	= BIT(0),
 };
 
 /* The initialization-invariants. */
@@ -725,7 +726,6 @@ static inline void ssbn_block_write(struct ssbn_device *dev, const void *buffer,
  * addresses before they are given to a device. */
 extern u32 ssbn_dma_translation(struct ssbn_device *dev);
 #define SSBN_DMA_TRANSLATION_MASK	0xC0000000
-#define SSBN_DMA_TRANSLATION_SHIFT	30
 
 #ifdef CONFIG_SSBN_PCIHOST
 /* PCI-host wrapper driver */

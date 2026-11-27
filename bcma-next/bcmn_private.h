@@ -29,10 +29,8 @@ void bcmn_unregister_cores(struct bcmn_bus *bus);
 int bcmn_bus_register(struct bcmn_bus *bus);
 void bcmn_bus_unregister(struct bcmn_bus *bus);
 int __init bcmn_bus_early_register(struct bcmn_bus *bus);
-#ifdef CONFIG_PM
 int bcmn_bus_suspend(struct bcmn_bus *bus);
 int bcmn_bus_resume(struct bcmn_bus *bus);
-#endif
 
 /* scan.c */
 void bcmn_detect_chip(struct bcmn_bus *bus);

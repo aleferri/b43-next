@@ -6,22 +6,18 @@
  */
 
 #include "bcmn_private.h"
-#include <linux/export.h>
+#include <linux/iopoll.h>
 #include <bcma-next/bcmn.h>
 
 static bool bcmn_core_wait_value(struct bcmn_device *core, u16 reg, u32 mask,
 				 u32 value, int timeout)
 {
-	unsigned long deadline = jiffies + timeout;
 	u32 val;
 
-	do {
-		val = bcmn_aread32(core, reg);
-		if ((val & mask) == value)
-			return true;
-		cpu_relax();
-		udelay(10);
-	} while (!time_after_eq(jiffies, deadline));
+	if (!read_poll_timeout_atomic(bcmn_aread32, val, (val & mask) == value,
+				      10, jiffies_to_usecs(timeout), false,
+				      core, reg))
+		return true;
 
 	bcmn_warn(core->bus, "Timeout waiting for register 0x%04X!\n", reg);
 
@@ -37,7 +33,6 @@ bool bcmn_core_is_enabled(struct bcmn_device *core)
 		return false;
 	return true;
 }
-EXPORT_SYMBOL_GPL(bcmn_core_is_enabled);
 
 void bcmn_core_disable(struct bcmn_device *core, u32 flags)
 {
@@ -54,7 +49,6 @@ void bcmn_core_disable(struct bcmn_device *core, u32 flags)
 	bcmn_aread32(core, BCMN_IOCTL);
 	udelay(10);
 }
-EXPORT_SYMBOL_GPL(bcmn_core_disable);
 
 int bcmn_core_enable(struct bcmn_device *core, u32 flags)
 {
@@ -73,12 +67,11 @@ int bcmn_core_enable(struct bcmn_device *core, u32 flags)
 
 	return 0;
 }
-EXPORT_SYMBOL_GPL(bcmn_core_enable);
 
 void bcmn_core_set_clockmode(struct bcmn_device *core,
 			     enum bcmn_clkmode clkmode)
 {
-	u16 i;
+	u32 v;
 
 	WARN_ON(core->id.id != BCMN_CORE_CHIPCOMMON &&
 		core->id.id != BCMN_CORE_PCIE &&
@@ -87,16 +80,11 @@ void bcmn_core_set_clockmode(struct bcmn_device *core,
 	switch (clkmode) {
 	case BCMN_CLKMODE_FAST:
 		bcmn_set32(core, BCMN_CLKCTLST, BCMN_CLKCTLST_FORCEHT);
-		usleep_range(64, 300);
-		for (i = 0; i < 1500; i++) {
-			if (bcmn_read32(core, BCMN_CLKCTLST) &
-			    BCMN_CLKCTLST_HAVEHT) {
-				i = 0;
-				break;
-			}
-			udelay(10);
-		}
-		if (i)
+		fsleep(64);
+		if (read_poll_timeout_atomic(bcmn_read32, v,
+					     v & BCMN_CLKCTLST_HAVEHT,
+					     10, 15000, false,
+					     core, BCMN_CLKCTLST))
 			bcmn_err(core->bus, "HT force timeout\n");
 		break;
 	case BCMN_CLKMODE_DYNAMIC:
@@ -104,26 +92,20 @@ void bcmn_core_set_clockmode(struct bcmn_device *core,
 		break;
 	}
 }
-EXPORT_SYMBOL_GPL(bcmn_core_set_clockmode);
 
 void bcmn_core_pll_ctl(struct bcmn_device *core, u32 req, u32 status, bool on)
 {
-	u16 i;
+	u32 v;
 
 	WARN_ON(req & ~BCMN_CLKCTLST_EXTRESREQ);
 	WARN_ON(status & ~BCMN_CLKCTLST_EXTRESST);
 
 	if (on) {
 		bcmn_set32(core, BCMN_CLKCTLST, req);
-		for (i = 0; i < 10000; i++) {
-			if ((bcmn_read32(core, BCMN_CLKCTLST) & status) ==
-			    status) {
-				i = 0;
-				break;
-			}
-			udelay(10);
-		}
-		if (i)
+		if (read_poll_timeout_atomic(bcmn_read32, v,
+					     (v & status) == status,
+					     10, 100000, false,
+					     core, BCMN_CLKCTLST))
 			bcmn_err(core->bus, "PLL enable timeout\n");
 	} else {
 		/*
@@ -135,7 +117,6 @@ void bcmn_core_pll_ctl(struct bcmn_device *core, u32 req, u32 status, bool on)
 		bcmn_read32(core, BCMN_CLKCTLST);
 	}
 }
-EXPORT_SYMBOL_GPL(bcmn_core_pll_ctl);
 
 u32 bcmn_core_dma_translation(struct bcmn_device *core)
 {
@@ -153,4 +134,3 @@ u32 bcmn_core_dma_translation(struct bcmn_device *core)
 	}
 	return BCMN_DMA_TRANSLATION_NONE;
 }
-EXPORT_SYMBOL(bcmn_core_dma_translation);

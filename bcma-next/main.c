@@ -6,6 +6,7 @@
  */
 
 #include "bcmn_private.h"
+#include <linux/iopoll.h>
 #include <linux/module.h>
 #include <linux/mmc/sdio_func.h>
 #include <linux/platform_device.h>
@@ -32,28 +33,28 @@ static int bcmn_device_uevent(const struct device *dev, struct kobj_uevent_env *
 static ssize_t manuf_show(struct device *dev, struct device_attribute *attr, char *buf)
 {
 	struct bcmn_device *core = container_of(dev, struct bcmn_device, dev);
-	return sprintf(buf, "0x%03X\n", core->id.manuf);
+	return sysfs_emit(buf, "0x%03X\n", core->id.manuf);
 }
 static DEVICE_ATTR_RO(manuf);
 
 static ssize_t id_show(struct device *dev, struct device_attribute *attr, char *buf)
 {
 	struct bcmn_device *core = container_of(dev, struct bcmn_device, dev);
-	return sprintf(buf, "0x%03X\n", core->id.id);
+	return sysfs_emit(buf, "0x%03X\n", core->id.id);
 }
 static DEVICE_ATTR_RO(id);
 
 static ssize_t rev_show(struct device *dev, struct device_attribute *attr, char *buf)
 {
 	struct bcmn_device *core = container_of(dev, struct bcmn_device, dev);
-	return sprintf(buf, "0x%02X\n", core->id.rev);
+	return sysfs_emit(buf, "0x%02X\n", core->id.rev);
 }
 static DEVICE_ATTR_RO(rev);
 
 static ssize_t class_show(struct device *dev, struct device_attribute *attr, char *buf)
 {
 	struct bcmn_device *core = container_of(dev, struct bcmn_device, dev);
-	return sprintf(buf, "0x%X\n", core->id.class);
+	return sysfs_emit(buf, "0x%X\n", core->id.class);
 }
 static DEVICE_ATTR_RO(class);
 
@@ -93,21 +94,16 @@ struct bcmn_device *bcmn_find_core_unit(struct bcmn_bus *bus, u16 coreid,
 	}
 	return NULL;
 }
-EXPORT_SYMBOL_GPL(bcmn_find_core_unit);
 
 bool bcmn_wait_value(struct bcmn_device *core, u16 reg, u32 mask, u32 value,
 		     int timeout)
 {
-	unsigned long deadline = jiffies + timeout;
 	u32 val;
 
-	do {
-		val = bcmn_read32(core, reg);
-		if ((val & mask) == value)
-			return true;
-		cpu_relax();
-		udelay(10);
-	} while (!time_after_eq(jiffies, deadline));
+	if (!read_poll_timeout_atomic(bcmn_read32, val, (val & mask) == value,
+				      10, jiffies_to_usecs(timeout), false,
+				      core, reg))
+		return true;
 
 	bcmn_warn(core->bus, "Timeout waiting for register 0x%04X!\n", reg);
 
@@ -231,7 +227,6 @@ unsigned int bcmn_core_irq(struct bcmn_device *core, int num)
 
 	return 0;
 }
-EXPORT_SYMBOL(bcmn_core_irq);
 
 void bcmn_prepare_core(struct bcmn_bus *bus, struct bcmn_device *core)
 {
@@ -263,9 +258,8 @@ void bcmn_prepare_core(struct bcmn_bus *bus, struct bcmn_device *core)
 
 void bcmn_init_bus(struct bcmn_bus *bus)
 {
-	mutex_lock(&bcmn_buses_mutex);
-	bus->num = bcmn_bus_next_num++;
-	mutex_unlock(&bcmn_buses_mutex);
+	scoped_guard(mutex, &bcmn_buses_mutex)
+		bus->num = bcmn_bus_next_num++;
 
 	INIT_LIST_HEAD(&bus->cores);
 	bus->nr_cores = 0;
@@ -533,7 +527,6 @@ int __init bcmn_bus_early_register(struct bcmn_bus *bus)
 	return 0;
 }
 
-#ifdef CONFIG_PM
 int bcmn_bus_suspend(struct bcmn_bus *bus)
 {
 	struct bcmn_device *core;
@@ -570,7 +563,6 @@ int bcmn_bus_resume(struct bcmn_bus *bus)
 
 	return 0;
 }
-#endif
 
 int __bcmn_driver_register(struct bcmn_driver *drv, struct module *owner)
 {
@@ -580,13 +572,11 @@ int __bcmn_driver_register(struct bcmn_driver *drv, struct module *owner)
 
 	return driver_register(&drv->drv);
 }
-EXPORT_SYMBOL_GPL(__bcmn_driver_register);
 
 void bcmn_driver_unregister(struct bcmn_driver *drv)
 {
 	driver_unregister(&drv->drv);
 }
-EXPORT_SYMBOL_GPL(bcmn_driver_unregister);
 
 static int bcmn_bus_match(struct device *dev, const struct device_driver *drv)
 {

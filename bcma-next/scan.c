@@ -10,6 +10,7 @@
 
 #include <bcma-next/bcmn.h>
 #include <bcma-next/bcmn_regs.h>
+#include <linux/bitfield.h>
 #include <linux/pci.h>
 #include <linux/io.h>
 #include <linux/dma-mapping.h>
@@ -227,7 +228,7 @@ static u32 bcmn_erom_get_addr_desc(struct bcmn_bus *bus, u32 __iomem **eromptr,
 	if ((!(ent & SCAN_ER_VALID)) ||
 	    ((ent & SCAN_ER_TAGX) != SCAN_ER_TAG_ADDR) ||
 	    ((ent & SCAN_ADDR_TYPE) != type) ||
-	    (((ent & SCAN_ADDR_PORT) >> SCAN_ADDR_PORT_SHIFT) != port)) {
+	    (FIELD_GET(SCAN_ADDR_PORT, ent) != port)) {
 		bcmn_erom_push_ent(eromptr);
 		return (u32)-EINVAL;
 	}
@@ -292,14 +293,14 @@ static int bcmn_get_next_core(struct bcmn_bus *bus, u32 __iomem **eromptr,
 		return -EILSEQ;
 
 	/* parse CIs */
-	core->id.class = (cia & SCAN_CIA_CLASS) >> SCAN_CIA_CLASS_SHIFT;
-	core->id.id = (cia & SCAN_CIA_ID) >> SCAN_CIA_ID_SHIFT;
-	core->id.manuf = (cia & SCAN_CIA_MANUF) >> SCAN_CIA_MANUF_SHIFT;
-	ports[0] = (cib & SCAN_CIB_NMP) >> SCAN_CIB_NMP_SHIFT;
-	ports[1] = (cib & SCAN_CIB_NSP) >> SCAN_CIB_NSP_SHIFT;
-	wrappers[0] = (cib & SCAN_CIB_NMW) >> SCAN_CIB_NMW_SHIFT;
-	wrappers[1] = (cib & SCAN_CIB_NSW) >> SCAN_CIB_NSW_SHIFT;
-	core->id.rev = (cib & SCAN_CIB_REV) >> SCAN_CIB_REV_SHIFT;
+	core->id.class = FIELD_GET(SCAN_CIA_CLASS, cia);
+	core->id.id = FIELD_GET(SCAN_CIA_ID, cia);
+	core->id.manuf = FIELD_GET(SCAN_CIA_MANUF, cia);
+	ports[0] = FIELD_GET(SCAN_CIB_NMP, cib);
+	ports[1] = FIELD_GET(SCAN_CIB_NSP, cib);
+	wrappers[0] = FIELD_GET(SCAN_CIB_NMW, cib);
+	wrappers[1] = FIELD_GET(SCAN_CIB_NSW, cib);
+	core->id.rev = FIELD_GET(SCAN_CIB_REV, cib);
 
 	if (((core->id.manuf == BCMN_MANUF_ARM) &&
 	     (core->id.id == 0xFFF)) ||
@@ -451,9 +452,9 @@ void bcmn_detect_chip(struct bcmn_bus *bus)
 	bcmn_scan_switch_core(bus, BCMN_ADDR_BASE);
 
 	tmp = bcmn_scan_read32(bus, BCMN_CC_ID);
-	chipinfo->id = (tmp & BCMN_CC_ID_ID) >> BCMN_CC_ID_ID_SHIFT;
-	chipinfo->rev = (tmp & BCMN_CC_ID_REV) >> BCMN_CC_ID_REV_SHIFT;
-	chipinfo->pkg = (tmp & BCMN_CC_ID_PKG) >> BCMN_CC_ID_PKG_SHIFT;
+	chipinfo->id = FIELD_GET(BCMN_CC_ID_ID, tmp);
+	chipinfo->rev = FIELD_GET(BCMN_CC_ID_REV, tmp);
+	chipinfo->pkg = FIELD_GET(BCMN_CC_ID_PKG, tmp);
 
 	snprintf(chip_id, ARRAY_SIZE(chip_id),
 		 (chipinfo->id > 0x9999) ? "%d" : "0x%04X", chipinfo->id);

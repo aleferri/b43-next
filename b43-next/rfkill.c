@@ -9,6 +9,8 @@
 
 */
 
+#include <linux/string_choices.h>
+
 #include "b43.h"
 
 
@@ -27,12 +29,10 @@ void b43_rfkill_poll(struct ieee80211_hw *hw)
 	bool enabled;
 	bool brought_up = false;
 
-	mutex_lock(&wl->mutex);
+	guard(mutex)(&wl->mutex);
 	if (unlikely(b43_status(dev) < B43_STAT_INITIALIZED)) {
-		if (b43_bus_powerup(dev, 0)) {
-			mutex_unlock(&wl->mutex);
+		if (b43_bus_powerup(dev, 0))
 			return;
-		}
 		b43_device_enable(dev, 0);
 		brought_up = true;
 	}
@@ -42,7 +42,7 @@ void b43_rfkill_poll(struct ieee80211_hw *hw)
 	if (unlikely(enabled != dev->radio_hw_enable)) {
 		dev->radio_hw_enable = enabled;
 		b43info(wl, "Radio hardware status changed to %s\n",
-			enabled ? "ENABLED" : "DISABLED");
+			str_enabled_disabled(enabled));
 		wiphy_rfkill_set_hw_state(hw->wiphy, !enabled);
 		if (enabled != dev->phy.radio_on)
 			b43_software_rfkill(dev, !enabled);
@@ -52,6 +52,4 @@ void b43_rfkill_poll(struct ieee80211_hw *hw)
 		b43_device_disable(dev, 0);
 		b43_bus_may_powerdown(dev);
 	}
-
-	mutex_unlock(&wl->mutex);
 }

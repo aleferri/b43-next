@@ -16,6 +16,7 @@
 
 #include <ssb-next/ssbn.h>
 #include <ssb-next/ssbn_regs.h>
+#include <linux/bitfield.h>
 #include <linux/pci.h>
 #include <linux/io.h>
 
@@ -351,7 +352,7 @@ int ssbn_bus_scan(struct ssbn_bus *bus,
 		dev->id.coreid = (idhi & SSBN_IDHIGH_CC) >> SSBN_IDHIGH_CC_SHIFT;
 		dev->id.revision = (idhi & SSBN_IDHIGH_RCLO);
 		dev->id.revision |= (idhi & SSBN_IDHIGH_RCHI) >> SSBN_IDHIGH_RCHI_SHIFT;
-		dev->id.vendor = (idhi & SSBN_IDHIGH_VC) >> SSBN_IDHIGH_VC_SHIFT;
+		dev->id.vendor = FIELD_GET(SSBN_IDHIGH_VC, idhi);
 		dev->core_index = i;
 		dev->bus = bus;
 		dev->ops = bus->ops;

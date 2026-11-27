@@ -40,7 +40,6 @@
 #define  B43_NPHY_C1_CCK_CGAINI_CLIPGBKOFF	0x01E0 /* CCK barely clip gain backoff */
 #define B43_NPHY_C1_MINMAX_GAIN			B43_PHY_N(0x01E) /* Core 1 min/max gain */
 #define  B43_NPHY_C1_MINGAIN			0x00FF /* Minimum gain */
-#define  B43_NPHY_C1_MINGAIN_SHIFT		0
 #define  B43_NPHY_C1_MAXGAIN			0xFF00 /* Maximum gain */
 #define  B43_NPHY_C1_MAXGAIN_SHIFT		8
 #define B43_NPHY_C1_CCK_MINMAX_GAIN		B43_PHY_N(0x01F) /* Core 1 CCK min/max gain */
@@ -55,7 +54,6 @@
 #define  B43_NPHY_C1_INITGAIN_HPVGA1		0x0078 /* HPVGA1 index */
 #define  B43_NPHY_C1_INITGAIN_HPVGA1_SHIFT	3
 #define  B43_NPHY_C1_INITGAIN_HPVGA2		0x0F80 /* HPVGA2 index */
-#define  B43_NPHY_C1_INITGAIN_HPVGA2_SHIFT	7
 #define  B43_NPHY_C1_INITGAIN_TRRX		0x1000 /* TR RX index */
 #define  B43_NPHY_C1_INITGAIN_TRTX		0x2000 /* TR TX index */
 #define B43_NPHY_REV3_C1_INITGAIN_A		B43_PHY_N(0x020)
@@ -98,7 +96,6 @@
 #define  B43_NPHY_C2_CCK_CGAINI_CLIPGBKOFF	0x01E0 /* CCK barely clip gain backoff */
 #define B43_NPHY_C2_MINMAX_GAIN			B43_PHY_N(0x034) /* Core 2 min/max gain */
 #define  B43_NPHY_C2_MINGAIN			0x00FF /* Minimum gain */
-#define  B43_NPHY_C2_MINGAIN_SHIFT		0
 #define  B43_NPHY_C2_MAXGAIN			0xFF00 /* Maximum gain */
 #define  B43_NPHY_C2_MAXGAIN_SHIFT		8
 #define B43_NPHY_C2_CCK_MINMAX_GAIN		B43_PHY_N(0x035) /* Core 2 CCK min/max gain */
@@ -113,7 +110,6 @@
 #define  B43_NPHY_C2_INITGAIN_HPVGA1		0x0078 /* HPVGA1 index */
 #define  B43_NPHY_C2_INITGAIN_HPVGA1_SHIFT	3
 #define  B43_NPHY_C2_INITGAIN_HPVGA2		0x0F80 /* HPVGA2 index */
-#define  B43_NPHY_C2_INITGAIN_HPVGA2_SHIFT	7
 #define  B43_NPHY_C2_INITGAIN_TRRX		0x1000 /* TR RX index */
 #define  B43_NPHY_C2_INITGAIN_TRTX		0x2000 /* TR TX index */
 #define B43_NPHY_REV3_C1_CLIP_MEDGAIN_B		B43_PHY_N(0x036)
@@ -192,7 +188,6 @@
 #define  B43_NPHY_RFCTL_CMD_START		0x0001 /* Start sequence */
 #define  B43_NPHY_RFCTL_CMD_RXTX		0x0002 /* RX/TX */
 #define  B43_NPHY_RFCTL_CMD_CORESEL		0x0038 /* Core select */
-#define  B43_NPHY_RFCTL_CMD_CORESEL_SHIFT	3
 #define  B43_NPHY_RFCTL_CMD_PORFORCE		0x0040 /* POR force */
 #define  B43_NPHY_RFCTL_CMD_OEPORFORCE		0x0080 /* OE POR force */
 #define  B43_NPHY_RFCTL_CMD_RXEN		0x0100 /* RX enable */
@@ -274,13 +269,9 @@
 #define  B43_NPHY_RFSEQMODE_TROVER		0x0002 /* Trigger override */
 #define B43_NPHY_RFSEQCA			B43_PHY_N(0x0A2) /* RF seq core active */
 #define  B43_NPHY_RFSEQCA_TXEN			0x000F /* TX enable */
-#define  B43_NPHY_RFSEQCA_TXEN_SHIFT		0
 #define  B43_NPHY_RFSEQCA_RXEN			0x00F0 /* RX enable */
-#define  B43_NPHY_RFSEQCA_RXEN_SHIFT		4
 #define  B43_NPHY_RFSEQCA_TXDIS			0x0F00 /* TX disable */
-#define  B43_NPHY_RFSEQCA_TXDIS_SHIFT		8
 #define  B43_NPHY_RFSEQCA_RXDIS			0xF000 /* RX disable */
-#define  B43_NPHY_RFSEQCA_RXDIS_SHIFT		12
 #define B43_NPHY_RFSEQTR			B43_PHY_N(0x0A3) /* RF seq trigger */
 #define  B43_NPHY_RFSEQTR_RX2TX			0x0001 /* RX2TX */
 #define  B43_NPHY_RFSEQTR_TX2RX			0x0002 /* TX2RX */
@@ -357,7 +348,6 @@
 #define B43_NPHY_INITSWIZPATTLEG		B43_PHY_N(0x0DB) /* Initial swizzle pattern leg */
 #define B43_NPHY_BPHY_CTL3			B43_PHY_N(0x0DC) /* B PHY control 3 */
 #define  B43_NPHY_BPHY_CTL3_SCALE		0x00FF /* Scale */
-#define  B43_NPHY_BPHY_CTL3_SCALE_SHIFT		0
 #define  B43_NPHY_BPHY_CTL3_FSC			0xFF00 /* Frame start count value */
 #define  B43_NPHY_BPHY_CTL3_FSC_SHIFT		8
 #define B43_NPHY_BPHY_CTL4			B43_PHY_N(0x0DD) /* B PHY control 4 */
@@ -498,7 +488,6 @@
 #define  B43_NPHY_OVER_DGAIN_FDGV_SHIFT		0
 #define  B43_NPHY_OVER_DGAIN_FDGEN		0x0008 /* Force digital gain enable */
 #define  B43_NPHY_OVER_DGAIN_CCKDGECV		0xFF00 /* CCK digital gain enable count value */
-#define  B43_NPHY_OVER_DGAIN_CCKDGECV_SHIFT	8
 #define B43_NPHY_BIST_STAT4			B43_PHY_N(0x156) /* BIST status 4 */
 #define B43_NPHY_RADAR_MAL			B43_PHY_N(0x157) /* Radar MA length */
 #define B43_NPHY_RADAR_SRCCTL			B43_PHY_N(0x158) /* Radar search control */
@@ -642,20 +631,14 @@
 #define  B43_NPHY_TXPCTL_CMD_PCTLEN		0x8000 /* TX power control enable */
 #define B43_NPHY_TXPCTL_N			B43_PHY_N(0x1E8) /* TX power control N num */
 #define  B43_NPHY_TXPCTL_N_TSSID		0x00FF /* N TSSI delay */
-#define  B43_NPHY_TXPCTL_N_TSSID_SHIFT		0
 #define  B43_NPHY_TXPCTL_N_NPTIL2		0x0700 /* N PT integer log2 */
-#define  B43_NPHY_TXPCTL_N_NPTIL2_SHIFT		8
 #define B43_NPHY_TXPCTL_ITSSI			B43_PHY_N(0x1E9) /* TX power control idle TSSI */
 #define  B43_NPHY_TXPCTL_ITSSI_0		0x003F /* Idle TSSI 0 */
-#define  B43_NPHY_TXPCTL_ITSSI_0_SHIFT		0
 #define  B43_NPHY_TXPCTL_ITSSI_1		0x3F00 /* Idle TSSI 1 */
-#define  B43_NPHY_TXPCTL_ITSSI_1_SHIFT		8
 #define  B43_NPHY_TXPCTL_ITSSI_BINF		0x8000 /* Raw TSSI offset bin format */
 #define B43_NPHY_TXPCTL_TPWR			B43_PHY_N(0x1EA) /* TX power control target power */
 #define  B43_NPHY_TXPCTL_TPWR_0			0x00FF /* Power 0 */
-#define  B43_NPHY_TXPCTL_TPWR_0_SHIFT		0
 #define  B43_NPHY_TXPCTL_TPWR_1			0xFF00 /* Power 1 */
-#define  B43_NPHY_TXPCTL_TPWR_1_SHIFT		8
 #define B43_NPHY_TXPCTL_BIDX			B43_PHY_N(0x1EB) /* TX power control base index */
 #define  B43_NPHY_TXPCTL_BIDX_0			0x007F /* uC base index 0 */
 #define  B43_NPHY_TXPCTL_BIDX_0_SHIFT		0
@@ -672,7 +655,6 @@
 #define  B43_NPHY_TXPCTL_STAT_EST		0x00FF /* Estimated power */
 #define  B43_NPHY_TXPCTL_STAT_EST_SHIFT		0
 #define  B43_NPHY_TXPCTL_STAT_BIDX		0x7F00 /* Base index */
-#define  B43_NPHY_TXPCTL_STAT_BIDX_SHIFT	8
 #define  B43_NPHY_TXPCTL_STAT_ESTVALID		0x8000 /* Estimated power valid */
 #define B43_NPHY_SMALLSGS_LEN			B43_PHY_N(0x1EF) /* Small sig gain settle length */
 #define B43_NPHY_PHYSTAT_GAIN0			B43_PHY_N(0x1F0) /* PHY stats gain info 0 */

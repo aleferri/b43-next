@@ -192,12 +192,11 @@ void b43_ampdu_tx_sta_drop(struct b43_wl *wl, struct ieee80211_sta *sta)
 	struct b43_sta *bsta = (struct b43_sta *)sta->drv_priv;
 	int tid;
 
-	mutex_lock(&wl->mutex);
+	guard(mutex)(&wl->mutex);
 	if (wl->current_dev)
 		b43_dma_ac_epoch_invalidate(wl->current_dev);
 	for (tid = 0; tid < IEEE80211_NUM_TIDS; tid++)
 		b43_ampdu_tx_stop(wl, &bsta->ampdu_tx[tid], true);
-	mutex_unlock(&wl->mutex);
 }
 
 static void b43_ampdu_tx_sta_purge(void *data, struct ieee80211_sta *sta)
@@ -442,7 +441,6 @@ void b43_ampdu_txstatus(struct b43_wldev *dev,
 	struct ieee80211_tx_info *info, rc = {};
 	struct ieee80211_tx_rate rate = { .idx = -1 };
 	unsigned int n = 0, acked = 0;
-	unsigned long flags;
 	u8 tid = 0;
 
 	__skb_queue_head_init(&mpdus);
@@ -527,9 +525,8 @@ void b43_ampdu_txstatus(struct b43_wldev *dev,
 	if (bar)
 		IEEE80211_SKB_CB(bar)->flags |= IEEE80211_TX_STAT_AMPDU_NO_BACK;
 	/* Reported by b43_rx_deliver(), outside wl->mutex. */
-	spin_lock_irqsave(&wl->txstatus_queue.lock, flags);
-	skb_queue_splice_tail_init(&done, &wl->txstatus_queue);
-	spin_unlock_irqrestore(&wl->txstatus_queue.lock, flags);
+	scoped_guard(spinlock_irqsave, &wl->txstatus_queue.lock)
+		skb_queue_splice_tail_init(&done, &wl->txstatus_queue);
 }
 
 /*
@@ -557,71 +554,74 @@ int b43_ampdu_action(struct ieee80211_hw *hw, struct ieee80211_vif *vif,
 	switch (params->action) {
 	case IEEE80211_AMPDU_TX_START:
 	case IEEE80211_AMPDU_RX_START:
-		mutex_lock(&wl->mutex);
-		dev = wl->current_dev;
-		rx = params->action == IEEE80211_AMPDU_RX_START;
-		if (dev && (rx ? b43_ht_enabled(dev) :
-				 b43_ampdu_tx_host(dev)))
-			ok = b43_status(dev) >= B43_STAT_STARTED &&
-			     (vif->type == NL80211_IFTYPE_STATION ||
-			      vif->type == NL80211_IFTYPE_AP ||
-			      vif->type == NL80211_IFTYPE_ADHOC ||
-			      vif->type == NL80211_IFTYPE_MESH_POINT) &&
-			     (rx || (!b43_using_pio_transfers(dev) &&
-				     (params->tid == 0 || params->tid == 3 ||
-				      params->tid == 4 || params->tid == 5)));
-		else
-			ok = dev && dev->fw.layout.ampdu &&
-			     !b43_using_pio_transfers(dev);
-		if (ok && !rx && b43_ampdu_tx_host(dev))
-			memset(t, 0, sizeof(*t));
-		mutex_unlock(&wl->mutex);
+		scoped_guard(mutex, &wl->mutex) {
+			dev = wl->current_dev;
+			rx = params->action == IEEE80211_AMPDU_RX_START;
+			if (dev && (rx ? b43_ht_enabled(dev) :
+					 b43_ampdu_tx_host(dev)))
+				ok = b43_status(dev) >= B43_STAT_STARTED &&
+				     (vif->type == NL80211_IFTYPE_STATION ||
+				      vif->type == NL80211_IFTYPE_AP ||
+				      vif->type == NL80211_IFTYPE_ADHOC ||
+				      vif->type == NL80211_IFTYPE_MESH_POINT) &&
+				     (rx || (!b43_using_pio_transfers(dev) &&
+					     (params->tid == 0 ||
+					      params->tid == 3 ||
+					      params->tid == 4 ||
+					      params->tid == 5)));
+			else
+				ok = dev && dev->fw.layout.ampdu &&
+				     !b43_using_pio_transfers(dev);
+			if (ok && !rx && b43_ampdu_tx_host(dev))
+				memset(t, 0, sizeof(*t));
+		}
 		if (!ok)
 			return -EOPNOTSUPP;
 		if (rx)
 			return 0;
 		return IEEE80211_AMPDU_TX_START_IMMEDIATE;
 	case IEEE80211_AMPDU_TX_OPERATIONAL:
-		mutex_lock(&wl->mutex);
-		WRITE_ONCE(bsta->ampdu_win[params->tid], params->buf_size);
-		dev = wl->current_dev;
-		if (dev)
-			b43_dma_ac_epoch_invalidate(dev);
-		if (dev && b43_ampdu_tx_host(dev)) {
-			memset(t, 0, sizeof(*t));
-			skb_queue_head_init(&t->queue);
-			t->buf_size = min_t(u16, params->buf_size,
-					    B43_AMPDU_TX_WINDOW);
-			t->operational = t->buf_size;
-			bsta->ampdu_tx_max_len =
-				(1 << (IEEE80211_HT_MAX_AMPDU_FACTOR +
-				       ht_cap->ampdu_factor)) - 1;
-			bsta->ampdu_tx_density = ht_cap->ampdu_density;
+		scoped_guard(mutex, &wl->mutex) {
+			WRITE_ONCE(bsta->ampdu_win[params->tid],
+				   params->buf_size);
+			dev = wl->current_dev;
+			if (dev)
+				b43_dma_ac_epoch_invalidate(dev);
+			if (dev && b43_ampdu_tx_host(dev)) {
+				memset(t, 0, sizeof(*t));
+				skb_queue_head_init(&t->queue);
+				t->buf_size = min_t(u16, params->buf_size,
+						    B43_AMPDU_TX_WINDOW);
+				t->operational = t->buf_size;
+				bsta->ampdu_tx_max_len =
+					(1 << (IEEE80211_HT_MAX_AMPDU_FACTOR +
+					       ht_cap->ampdu_factor)) - 1;
+				bsta->ampdu_tx_density = ht_cap->ampdu_density;
+			}
 		}
-		mutex_unlock(&wl->mutex);
 		return 0;
 	case IEEE80211_AMPDU_TX_STOP_CONT:
 		/* Queued and retried members continue as ordinary MPDUs. */
-		mutex_lock(&wl->mutex);
-		WRITE_ONCE(bsta->ampdu_win[params->tid], 0);
-		dev = wl->current_dev;
-		if (dev)
-			b43_dma_ac_epoch_invalidate(dev);
-		b43_ampdu_tx_stop(wl, t, false);
-		mutex_unlock(&wl->mutex);
+		scoped_guard(mutex, &wl->mutex) {
+			WRITE_ONCE(bsta->ampdu_win[params->tid], 0);
+			dev = wl->current_dev;
+			if (dev)
+				b43_dma_ac_epoch_invalidate(dev);
+			b43_ampdu_tx_stop(wl, t, false);
+		}
 		ieee80211_stop_tx_ba_cb_irqsafe(vif, params->sta->addr,
 						params->tid);
 		return 0;
 	case IEEE80211_AMPDU_TX_STOP_FLUSH:
 	case IEEE80211_AMPDU_TX_STOP_FLUSH_CONT:
-		mutex_lock(&wl->mutex);
-		WRITE_ONCE(bsta->ampdu_win[params->tid], 0);
-		dev = wl->current_dev;
-		if (dev)
-			b43_dma_ac_epoch_invalidate(dev);
-		b43_ampdu_tx_stop(wl, t, params->action ==
-				  IEEE80211_AMPDU_TX_STOP_FLUSH);
-		mutex_unlock(&wl->mutex);
+		scoped_guard(mutex, &wl->mutex) {
+			WRITE_ONCE(bsta->ampdu_win[params->tid], 0);
+			dev = wl->current_dev;
+			if (dev)
+				b43_dma_ac_epoch_invalidate(dev);
+			b43_ampdu_tx_stop(wl, t, params->action ==
+					  IEEE80211_AMPDU_TX_STOP_FLUSH);
+		}
 		return 0;
 	case IEEE80211_AMPDU_RX_STOP:
 		return 0;

@@ -10,7 +10,9 @@
 
 #include "ssbn_private.h"
 
+#include <linux/bitfield.h>
 #include <linux/delay.h>
+#include <linux/iopoll.h>
 #include <linux/io.h>
 #include <linux/module.h>
 #include <linux/platform_device.h>
@@ -181,7 +183,6 @@ int ssbn_bus_resume(struct ssbn_bus *bus)
 
 	return 0;
 }
-EXPORT_SYMBOL(ssbn_bus_resume);
 
 int ssbn_bus_suspend(struct ssbn_bus *bus)
 {
@@ -190,7 +191,6 @@ int ssbn_bus_suspend(struct ssbn_bus *bus)
 
 	return 0;
 }
-EXPORT_SYMBOL(ssbn_bus_suspend);
 
 #ifdef CONFIG_SSBN_SPROM
 /** ssbn_devices_freeze - Freeze all devices on the bus.
@@ -356,7 +356,7 @@ static int ssbn_device_uevent(const struct device *dev, struct kobj_uevent_env *
 static ssize_t \
 attrib##_show(struct device *dev, struct device_attribute *attr, char *buf) \
 { \
-	return sprintf(buf, format_string, dev_to_ssb_dev(dev)->field); \
+	return sysfs_emit(buf, format_string, dev_to_ssb_dev(dev)->field); \
 } \
 static DEVICE_ATTR_RO(attrib);
 
@@ -368,8 +368,8 @@ ssbn_config_attr(irq, irq, "%u\n")
 static ssize_t
 name_show(struct device *dev, struct device_attribute *attr, char *buf)
 {
-	return sprintf(buf, "%s\n",
-		       ssbn_core_name(dev_to_ssb_dev(dev)->id.coreid));
+	return sysfs_emit(buf, "%s\n",
+			  ssbn_core_name(dev_to_ssb_dev(dev)->id.coreid));
 }
 static DEVICE_ATTR_RO(name);
 
@@ -441,10 +441,8 @@ void ssbn_bus_unregister(struct ssbn_bus *bus)
 	ssbn_buses_unlock();
 
 	ssbn_pcmcia_exit(bus);
-	ssbn_pci_exit(bus);
 	ssbn_iounmap(bus);
 }
-EXPORT_SYMBOL(ssbn_bus_unregister);
 
 static void ssbn_release_dev(struct device *dev)
 {
@@ -600,10 +598,9 @@ error:
 static int ssbn_fetch_invariants(struct ssbn_bus *bus,
 				ssbn_invariants_func_t get_invariants)
 {
-	struct ssbn_init_invariants iv;
+	struct ssbn_init_invariants iv = {};
 	int err;
 
-	memset(&iv, 0, sizeof(iv));
 	err = get_invariants(bus, &iv);
 	if (err)
 		goto out;
@@ -645,13 +642,11 @@ ssbn_bus_register(struct ssbn_bus *bus,
 		goto err_sdio_exit;
 
 	/* Init PCI-host device (if any) */
-	err = ssbn_pci_init(bus);
-	if (err)
-		goto err_unmap;
+	ssbn_pci_init(bus);
 	/* Init PCMCIA-host device (if any) */
 	err = ssbn_pcmcia_init(bus);
 	if (err)
-		goto err_pci_exit;
+		goto err_unmap;
 
 	/* Initialize basic system devices (if available) */
 	err = ssbn_bus_powerup(bus, 0);
@@ -687,8 +682,6 @@ err_dequeue:
 	list_del(&bus->list);
 err_pcmcia_exit:
 	ssbn_pcmcia_exit(bus);
-err_pci_exit:
-	ssbn_pci_exit(bus);
 err_unmap:
 	ssbn_iounmap(bus);
 err_sdio_exit:
@@ -765,7 +758,6 @@ int ssbn_bus_sdiobus_register(struct ssbn_bus *bus, struct sdio_func *func,
 
 	return err;
 }
-EXPORT_SYMBOL(ssbn_bus_sdiobus_register);
 #endif /* CONFIG_SSBN_PCMCIAHOST */
 
 #ifdef CONFIG_SSBN_HOST_SOC
@@ -794,13 +786,11 @@ int __ssbn_driver_register(struct ssbn_driver *drv, struct module *owner)
 
 	return driver_register(&drv->drv);
 }
-EXPORT_SYMBOL(__ssbn_driver_register);
 
 void ssbn_driver_unregister(struct ssbn_driver *drv)
 {
 	driver_unregister(&drv->drv);
 }
-EXPORT_SYMBOL(ssbn_driver_unregister);
 
 void ssbn_set_devtypedata(struct ssbn_device *dev, void *data)
 {
@@ -818,7 +808,6 @@ void ssbn_set_devtypedata(struct ssbn_device *dev, void *data)
 		ent->devtypedata = data;
 	}
 }
-EXPORT_SYMBOL(ssbn_set_devtypedata);
 
 static u32 clkfactor_f6_resolve(u32 v)
 {
@@ -846,7 +835,7 @@ u32 ssbn_calc_clock_rate(u32 plltype, u32 n, u32 m)
 	u32 n1, n2, clock, m1, m2, m3, mc;
 
 	n1 = (n & SSBN_CHIPCO_CLK_N1);
-	n2 = ((n & SSBN_CHIPCO_CLK_N2) >> SSBN_CHIPCO_CLK_N2_SHIFT);
+	n2 = FIELD_GET(SSBN_CHIPCO_CLK_N2, n);
 
 	switch (plltype) {
 	case SSBN_PLLTYPE_6: /* 100/200 or 120/240 only */
@@ -884,9 +873,9 @@ u32 ssbn_calc_clock_rate(u32 plltype, u32 n, u32 m)
 		return 0;
 
 	m1 = (m & SSBN_CHIPCO_CLK_M1);
-	m2 = ((m & SSBN_CHIPCO_CLK_M2) >> SSBN_CHIPCO_CLK_M2_SHIFT);
-	m3 = ((m & SSBN_CHIPCO_CLK_M3) >> SSBN_CHIPCO_CLK_M3_SHIFT);
-	mc = ((m & SSBN_CHIPCO_CLK_MC) >> SSBN_CHIPCO_CLK_MC_SHIFT);
+	m2 = FIELD_GET(SSBN_CHIPCO_CLK_M2, m);
+	m3 = FIELD_GET(SSBN_CHIPCO_CLK_M3, m);
+	mc = FIELD_GET(SSBN_CHIPCO_CLK_MC, m);
 
 	switch (plltype) {
 	case SSBN_PLLTYPE_1: /* 48Mhz base, 3 dividers */
@@ -964,7 +953,6 @@ u32 ssbn_clockspeed(struct ssbn_bus *bus)
 
 	return rate;
 }
-EXPORT_SYMBOL(ssbn_clockspeed);
 
 static u32 ssbn_tmslow_reject_bitmask(struct ssbn_device *dev)
 {
@@ -1000,7 +988,6 @@ int ssbn_device_is_enabled(struct ssbn_device *dev)
 
 	return (val == SSBN_TMSLOW_CLOCK);
 }
-EXPORT_SYMBOL(ssbn_device_is_enabled);
 
 static void ssbn_flush_tmslow(struct ssbn_device *dev)
 {
@@ -1044,7 +1031,6 @@ void ssbn_device_enable(struct ssbn_device *dev, u32 core_specific_flags)
 		    core_specific_flags);
 	ssbn_flush_tmslow(dev);
 }
-EXPORT_SYMBOL(ssbn_device_enable);
 
 /* Wait for bitmask in a register to get set or cleared.
  * timeout is in units of ten-microseconds
@@ -1052,20 +1038,13 @@ EXPORT_SYMBOL(ssbn_device_enable);
 static int ssbn_wait_bits(struct ssbn_device *dev, u16 reg, u32 bitmask,
 			 int timeout, int set)
 {
-	int i;
 	u32 val;
 
-	for (i = 0; i < timeout; i++) {
-		val = ssbn_read32(dev, reg);
-		if (set) {
-			if ((val & bitmask) == bitmask)
-				return 0;
-		} else {
-			if (!(val & bitmask))
-				return 0;
-		}
-		udelay(10);
-	}
+	if (!read_poll_timeout_atomic(ssbn_read32, val,
+				      set ? (val & bitmask) == bitmask :
+					    !(val & bitmask),
+				      10, timeout * 10, false, dev, reg))
+		return 0;
 	dev_err(dev->dev,
 		"Timeout waiting for bitmask %08X on register %04X to %s\n",
 		bitmask, reg, set ? "set" : "clear");
@@ -1113,7 +1092,6 @@ void ssbn_device_disable(struct ssbn_device *dev, u32 core_specific_flags)
 		    core_specific_flags);
 	ssbn_flush_tmslow(dev);
 }
-EXPORT_SYMBOL(ssbn_device_disable);
 
 /* Some chipsets need routing known for PCIe and 64-bit DMA */
 static bool ssbn_dma_translation_special_bit(struct ssbn_device *dev)
@@ -1148,7 +1126,6 @@ u32 ssbn_dma_translation(struct ssbn_device *dev)
 	}
 	return 0;
 }
-EXPORT_SYMBOL(ssbn_dma_translation);
 
 int ssbn_bus_may_powerdown(struct ssbn_bus *bus)
 {
@@ -1180,7 +1157,6 @@ error:
 	pr_err("Bus powerdown failed\n");
 	goto out;
 }
-EXPORT_SYMBOL(ssbn_bus_may_powerdown);
 
 int ssbn_bus_powerup(struct ssbn_bus *bus, bool dynamic_pctl)
 {
@@ -1201,7 +1177,6 @@ error:
 	pr_err("Bus powerup failed\n");
 	return err;
 }
-EXPORT_SYMBOL(ssbn_bus_powerup);
 
 static void ssbn_broadcast_value(struct ssbn_device *dev,
 				u32 address, u32 data)
@@ -1232,7 +1207,6 @@ void ssbn_commit_settings(struct ssbn_bus *bus)
 	/* This forces an update of the cached registers. */
 	ssbn_broadcast_value(dev, 0xFD8, 0);
 }
-EXPORT_SYMBOL(ssbn_commit_settings);
 
 u32 ssbn_admatch_base(u32 adm)
 {
@@ -1256,7 +1230,6 @@ u32 ssbn_admatch_base(u32 adm)
 
 	return base;
 }
-EXPORT_SYMBOL(ssbn_admatch_base);
 
 u32 ssbn_admatch_size(u32 adm)
 {
@@ -1264,15 +1237,15 @@ u32 ssbn_admatch_size(u32 adm)
 
 	switch (adm & SSBN_ADM_TYPE) {
 	case SSBN_ADM_TYPE0:
-		size = ((adm & SSBN_ADM_SZ0) >> SSBN_ADM_SZ0_SHIFT);
+		size = FIELD_GET(SSBN_ADM_SZ0, adm);
 		break;
 	case SSBN_ADM_TYPE1:
 		WARN_ON(adm & SSBN_ADM_NEG); /* unsupported */
-		size = ((adm & SSBN_ADM_SZ1) >> SSBN_ADM_SZ1_SHIFT);
+		size = FIELD_GET(SSBN_ADM_SZ1, adm);
 		break;
 	case SSBN_ADM_TYPE2:
 		WARN_ON(adm & SSBN_ADM_NEG); /* unsupported */
-		size = ((adm & SSBN_ADM_SZ2) >> SSBN_ADM_SZ2_SHIFT);
+		size = FIELD_GET(SSBN_ADM_SZ2, adm);
 		break;
 	default:
 		WARN_ON(1);
@@ -1281,7 +1254,6 @@ u32 ssbn_admatch_size(u32 adm)
 
 	return size;
 }
-EXPORT_SYMBOL(ssbn_admatch_size);
 
 int __init ssbn_modinit(void)
 {

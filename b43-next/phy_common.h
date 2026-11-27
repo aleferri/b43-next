@@ -2,6 +2,7 @@
 #ifndef LINUX_B43_PHY_COMMON_H_
 #define LINUX_B43_PHY_COMMON_H_
 
+#include <linux/bits.h>
 #include <linux/types.h>
 #include <linux/nl80211.h>
 
@@ -29,9 +30,7 @@ struct b43_cal_entry;
 
 /* Masks for the PHY versioning registers. */
 #define B43_PHYVER_ANALOG		0xF000
-#define B43_PHYVER_ANALOG_SHIFT		12
 #define B43_PHYVER_TYPE			0x0F00
-#define B43_PHYVER_TYPE_SHIFT		8
 #define B43_PHYVER_VERSION		0x00FF
 
 /* PHY writes need to be flushed if we reach limit, unless each address
@@ -457,8 +456,8 @@ void b43_phy_txpower_check(struct b43_wldev *dev, unsigned int flags);
  *                         TSSI did not change.
  */
 enum b43_phy_txpower_check_flags {
-	B43_TXPWR_IGNORE_TIME		= (1 << 0),
-	B43_TXPWR_IGNORE_TSSI		= (1 << 1),
+	B43_TXPWR_IGNORE_TIME		= BIT(0),
+	B43_TXPWR_IGNORE_TSSI		= BIT(1),
 };
 
 struct work_struct;

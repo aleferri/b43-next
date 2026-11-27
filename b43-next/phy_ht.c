@@ -9,6 +9,9 @@
 
 */
 
+#include <linux/bitfield.h>
+#include <linux/iopoll.h>
+#include <linux/string_choices.h>
 #include <linux/slab.h>
 
 #include "b43.h"
@@ -95,14 +98,14 @@ static void b43_radio_2059_rcal(struct b43_wldev *dev)
 	b43_cal_begin(dev, B43_CAL_RCAL);
 	/* Enable */
 	b43_radio_set(dev, R2059_C3 | R2059_RCAL_CONFIG, 0x1);
-	usleep_range(10, 20);
+	fsleep(10);
 
 	b43_radio_set(dev, R2059_C3 | 0x0BF, 0x1);
 	b43_radio_maskset(dev, R2059_C3 | 0x19B, 0x3, 0x2);
 
 	/* Start */
 	b43_radio_set(dev, R2059_C3 | R2059_RCAL_CONFIG, 0x2);
-	usleep_range(100, 200);
+	fsleep(100);
 
 	/* Stop */
 	b43_radio_mask(dev, R2059_C3 | R2059_RCAL_CONFIG, ~0x2);
@@ -220,7 +223,7 @@ static void b43_radio_2059_init(struct b43_wldev *dev)
 
 	b43_radio_set(dev, R2059_RFPLL_MISC_CAL_RESETN, 0x0078);
 	b43_radio_set(dev, R2059_XTAL_CONFIG2, 0x0080);
-	msleep(2);
+	fsleep(2000);
 	b43_radio_mask(dev, R2059_RFPLL_MISC_CAL_RESETN, ~0x0078);
 	b43_radio_mask(dev, R2059_XTAL_CONFIG2, ~0x0080);
 
@@ -241,20 +244,15 @@ static void b43_radio_2059_init(struct b43_wldev *dev)
 
 static void b43_phy_ht_force_rf_sequence(struct b43_wldev *dev, u16 rf_seq)
 {
-	u8 i;
+	u16 st;
 
 	u16 save_seq_mode = b43_phy_read(dev, B43_PHY_HT_RF_SEQ_MODE);
 	b43_phy_set(dev, B43_PHY_HT_RF_SEQ_MODE, 0x3);
 
 	b43_phy_set(dev, B43_PHY_HT_RF_SEQ_TRIG, rf_seq);
-	for (i = 0; i < 200; i++) {
-		if (!(b43_phy_read(dev, B43_PHY_HT_RF_SEQ_STATUS) & rf_seq)) {
-			i = 0;
-			break;
-		}
-		msleep(1);
-	}
-	if (i)
+	if (read_poll_timeout(b43_phy_read, st, !(st & rf_seq),
+			      1000, 200 * USEC_PER_MSEC, false,
+			      dev, B43_PHY_HT_RF_SEQ_STATUS))
 		b43err(dev->wl, "Forcing RF sequence timeout\n");
 
 	b43_phy_write(dev, B43_PHY_HT_RF_SEQ_MODE, save_seq_mode);
@@ -291,7 +289,7 @@ void b43_phy_ht_set_cck_rx(struct b43_wldev *dev, bool on)
 	if (b43_current_band(dev->wl) == NL80211_BAND_2GHZ)
 		b43_phy_ht_classifier(dev, B43_PHY_HT_CLASS_CTL_CCK_EN,
 				      on ? B43_PHY_HT_CLASS_CTL_CCK_EN : 0);
-	b43dbg(dev->wl, "HT-PHY: CCK reception %s\n", on ? "on" : "off");
+	b43dbg(dev->wl, "HT-PHY: CCK reception %s\n", str_on_off(on));
 }
 
 static void b43_phy_ht_reset_cca(struct b43_wldev *dev)
@@ -465,7 +463,7 @@ static void b43_phy_ht_run_samples(struct b43_wldev *dev, u16 samps, u16 loops,
 				   u16 wait, bool iqmode)
 {
 	u16 save_seq_mode;
-	int i;
+	u16 st;
 
 	b43_phy_ht_save_bb_mult(dev);
 	b43_phy_ht_reset_cca(dev);
@@ -489,14 +487,8 @@ static void b43_phy_ht_run_samples(struct b43_wldev *dev, u16 samps, u16 loops,
 	else
 		b43_phy_set(dev, B43_PHY_HT_SAMP_CMD, 0x1);
 
-	for (i = 0; i < 100; i++) {
-		if (!(b43_phy_read(dev, B43_PHY_HT_RF_SEQ_STATUS) & 1)) {
-			i = 0;
-			break;
-		}
-		udelay(10);
-	}
-	if (i)
+	if (read_poll_timeout_atomic(b43_phy_read, st, !(st & 1), 10, 1000,
+				     false, dev, B43_PHY_HT_RF_SEQ_STATUS))
 		b43err(dev->wl, "run samples timeout\n");
 
 	b43_phy_write(dev, B43_PHY_HT_RF_SEQ_MODE, save_seq_mode);
@@ -531,8 +523,8 @@ static void b43_phy_ht_rssi_select(struct b43_wldev *dev, u8 core_sel,
 			case HT_RSSI_TSSI_2G:
 				b43_phy_set(dev, ctl_regs[core][0], 0x3 << 8);
 				b43_phy_set(dev, ctl_regs[core][0], 0x3 << 10);
-				b43_phy_set(dev, ctl_regs[core][1], 0x1 << 9);
-				b43_phy_set(dev, ctl_regs[core][1], 0x1 << 10);
+				b43_phy_set(dev, ctl_regs[core][1], BIT(9));
+				b43_phy_set(dev, ctl_regs[core][1], BIT(10));
 
 				b43_radio_set(dev, R2059_C3 | 0xbf, 0x1);
 				b43_radio_write(dev, radio_r[core] | 0x159,
@@ -837,30 +829,30 @@ static void b43_phy_ht_tx_power_ctl_setup(struct b43_wldev *dev)
 
 	b43_phy_maskset(dev, B43_PHY_HT_TXPCTL_IDLE_TSSI,
 			~B43_PHY_HT_TXPCTL_IDLE_TSSI_C1,
-			idle[0] << B43_PHY_HT_TXPCTL_IDLE_TSSI_C1_SHIFT);
+			FIELD_PREP(B43_PHY_HT_TXPCTL_IDLE_TSSI_C1, idle[0]));
 	b43_phy_maskset(dev, B43_PHY_HT_TXPCTL_IDLE_TSSI,
 			~B43_PHY_HT_TXPCTL_IDLE_TSSI_C2,
-			idle[1] << B43_PHY_HT_TXPCTL_IDLE_TSSI_C2_SHIFT);
+			FIELD_PREP(B43_PHY_HT_TXPCTL_IDLE_TSSI_C2, idle[1]));
 	b43_phy_maskset(dev, B43_PHY_HT_TXPCTL_IDLE_TSSI2,
 			~B43_PHY_HT_TXPCTL_IDLE_TSSI2_C3,
-			idle[2] << B43_PHY_HT_TXPCTL_IDLE_TSSI2_C3_SHIFT);
+			FIELD_PREP(B43_PHY_HT_TXPCTL_IDLE_TSSI2_C3, idle[2]));
 
 	b43_phy_maskset(dev, B43_PHY_HT_TXPCTL_N, ~B43_PHY_HT_TXPCTL_N_TSSID,
 			phy_ht->tssi_delay);
 	b43_phy_maskset(dev, B43_PHY_HT_TXPCTL_N, ~B43_PHY_HT_TXPCTL_N_NPTIL2,
-			0x3 << B43_PHY_HT_TXPCTL_N_NPTIL2_SHIFT);
+			FIELD_PREP(B43_PHY_HT_TXPCTL_N_NPTIL2, 0x3));
 	b43_phy_mask(dev, B43_PHY_HT_TXPCTL_CMD_C1, ~0x0800);
 	b43_phy_mask(dev, B43_PHY_HT_TXPCTL_CMD_C1, ~0x0400);
 
 	b43_phy_maskset(dev, B43_PHY_HT_TXPCTL_TARG_PWR,
 			~B43_PHY_HT_TXPCTL_TARG_PWR_C1,
-			target[0] << B43_PHY_HT_TXPCTL_TARG_PWR_C1_SHIFT);
+			FIELD_PREP(B43_PHY_HT_TXPCTL_TARG_PWR_C1, target[0]));
 	b43_phy_maskset(dev, B43_PHY_HT_TXPCTL_TARG_PWR,
 			~B43_PHY_HT_TXPCTL_TARG_PWR_C2 & 0xFFFF,
-			target[1] << B43_PHY_HT_TXPCTL_TARG_PWR_C2_SHIFT);
+			FIELD_PREP(B43_PHY_HT_TXPCTL_TARG_PWR_C2, target[1]));
 	b43_phy_maskset(dev, B43_PHY_HT_TXPCTL_TARG_PWR2,
 			~B43_PHY_HT_TXPCTL_TARG_PWR2_C3,
-			target[2] << B43_PHY_HT_TXPCTL_TARG_PWR2_C3_SHIFT);
+			FIELD_PREP(B43_PHY_HT_TXPCTL_TARG_PWR2_C3, target[2]));
 
 	for (c = 0; c < 3; c++) {
 		u8 regval[64];
@@ -1995,7 +1987,7 @@ static u16 b43_phy_ht_load_tone(struct b43_wldev *dev, u32 freq, u16 max)
 	u32 *data;
 	int i;
 
-	data = kcalloc(len, sizeof(*data), GFP_KERNEL);
+	data = kzalloc_objs(*data, len);
 	if (!data)
 		return 0;
 	for (i = 0; i < len; i++, angle += rot)
@@ -2273,19 +2265,16 @@ struct b43_phy_ht_iq_est {
 static void b43_phy_ht_rx_iq_est(struct b43_wldev *dev,
 				 struct b43_phy_ht_iq_est *est, u16 samps)
 {
-	int c, i;
+	u16 st;
+	int c;
 
 	b43_phy_read(dev, 0x0b1);
 	b43_phy_write(dev, 0x12b, samps);
 	b43_phy_maskset(dev, 0x12a, ~0xff, 32);
 	b43_phy_mask(dev, 0x129, ~0x2);
 	b43_phy_set(dev, 0x129, 0x1);
-	for (i = 0; i < 1000; i++) {
-		if (!(b43_phy_read(dev, 0x129) & 0x1))
-			break;
-		udelay(10);
-	}
-	if (b43_phy_read(dev, 0x129) & 0x1)
+	if (read_poll_timeout_atomic(b43_phy_read, st, !(st & 0x1), 10, 10000,
+				     false, dev, 0x129))
 		b43err(dev->wl, "HT-PHY: RX I/Q estimate timeout\n");
 	for (c = 0; c < 3; c++) {
 		static const u16 base[3] = { 0x12c, 0x134, 0x13a };
@@ -2369,7 +2358,7 @@ static void b43_phy_ht_rxcal_setup(struct b43_wldev *dev, int core,
 
 	sv->r801 = b43_phy_read(dev, B43_PHY_EXTG(0x001));
 	b43_phy_mask(dev, B43_PHY_EXTG(0x001), ~0x7000);
-	b43_phy_maskset(dev, B43_PHY_EXTG(0x001), ~0x0007, 1 << core);
+	b43_phy_maskset(dev, B43_PHY_EXTG(0x001), ~0x0007, BIT(core));
 
 	sv->rfctl[0] = b43_phy_read(dev, rf + 0xc);
 	b43_phy_mask(dev, rf + 0xc, 0xffff);

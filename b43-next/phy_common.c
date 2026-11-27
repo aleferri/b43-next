@@ -212,7 +212,7 @@ void b43_phy_unlock(struct b43_wldev *dev)
 		b43_power_saving_ctl_bits(dev, 0);
 }
 
-static inline void assert_mac_suspended(struct b43_wldev *dev)
+static void assert_mac_suspended(struct b43_wldev *dev)
 {
 	if (!B43_DEBUG)
 		return;
@@ -371,12 +371,12 @@ void b43_phy_put_into_reset(struct b43_wldev *dev)
 		tmp |= B43_TMSLOW_PHYRESET;
 		tmp |= SSBN_TMSLOW_FGC;
 		ssbn_write32(dev->dev->sdev, SSBN_TMSLOW, tmp);
-		usleep_range(1000, 2000);
+		fsleep(1000);
 
 		tmp = ssbn_read32(dev->dev->sdev, SSBN_TMSLOW);
 		tmp &= ~SSBN_TMSLOW_FGC;
 		ssbn_write32(dev->dev->sdev, SSBN_TMSLOW, tmp);
-		usleep_range(1000, 2000);
+		fsleep(1000);
 
 		break;
 #endif
@@ -422,14 +422,14 @@ void b43_phy_take_out_of_reset(struct b43_wldev *dev)
 		tmp |= SSBN_TMSLOW_FGC;
 		ssbn_write32(dev->dev->sdev, SSBN_TMSLOW, tmp);
 		ssbn_read32(dev->dev->sdev, SSBN_TMSLOW); /* flush */
-		usleep_range(1000, 2000);
+		fsleep(1000);
 
 		tmp = ssbn_read32(dev->dev->sdev, SSBN_TMSLOW);
 		tmp &= ~SSBN_TMSLOW_FGC;
 		tmp |= B43_TMSLOW_PHYCLKEN;
 		ssbn_write32(dev->dev->sdev, SSBN_TMSLOW, tmp);
 		ssbn_read32(dev->dev->sdev, SSBN_TMSLOW); /* flush */
-		usleep_range(1000, 2000);
+		fsleep(1000);
 		break;
 #endif
 	}
@@ -443,7 +443,7 @@ static int b43_switch_channel_ac(struct b43_wldev *dev,
 	err = dev->phy.ops->switch_channel(dev, new_channel);
 	if (err)
 		return err;
-	msleep(8);
+	fsleep(8000);
 	return 0;
 }
 
@@ -478,7 +478,7 @@ int b43_switch_channel(struct b43_wldev *dev, unsigned int new_channel)
 		goto err_restore_cookie;
 
 	/* Wait for the radio to tune to the channel and stabilize. */
-	msleep(8);
+	fsleep(8000);
 
 	return 0;
 
@@ -510,13 +510,11 @@ void b43_phy_txpower_adjust_work(struct work_struct *work)
 					 txpower_adjust_work);
 	struct b43_wldev *dev;
 
-	mutex_lock(&wl->mutex);
+	guard(mutex)(&wl->mutex);
 	dev = wl->current_dev;
 
 	if (likely(dev && (b43_status(dev) >= B43_STAT_STARTED)))
 		dev->phy.ops->adjust_txpower(dev);
-
-	mutex_unlock(&wl->mutex);
 }
 
 void b43_phy_txpower_check(struct b43_wldev *dev, unsigned int flags)
@@ -531,7 +529,7 @@ void b43_phy_txpower_check(struct b43_wldev *dev, unsigned int flags)
 			return; /* Not yet */
 	}
 	/* The next check will be needed in two seconds, or later. */
-	phy->next_txpwr_check_time = round_jiffies(now + (HZ * 2));
+	phy->next_txpwr_check_time = round_jiffies(now + secs_to_jiffies(2));
 
 	if ((dev->dev->board_vendor == SSBN_BOARDVENDOR_BCM) &&
 	    (dev->dev->board_type == SSBN_BOARD_BU4306))

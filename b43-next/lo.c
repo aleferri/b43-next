@@ -20,6 +20,7 @@
 #include "main.h"
 #include "calstat.h"
 
+#include <linux/bitfield.h>
 #include <linux/delay.h>
 #include <linux/sched.h>
 #include <linux/slab.h>
@@ -71,11 +72,10 @@ static u16 lo_measure_feedthrough(struct b43_wldev *dev,
 	u16 feedthrough;
 
 	if (phy->gmode) {
-		lna <<= B43_PHY_RFOVERVAL_LNA_SHIFT;
-		pga <<= B43_PHY_RFOVERVAL_PGA_SHIFT;
-
-		B43_WARN_ON(lna & ~B43_PHY_RFOVERVAL_LNA);
-		B43_WARN_ON(pga & ~B43_PHY_RFOVERVAL_PGA);
+		B43_WARN_ON(lna > FIELD_MAX(B43_PHY_RFOVERVAL_LNA));
+		B43_WARN_ON(pga > FIELD_MAX(B43_PHY_RFOVERVAL_PGA));
+		lna = FIELD_PREP(B43_PHY_RFOVERVAL_LNA, lna);
+		pga = FIELD_PREP(B43_PHY_RFOVERVAL_PGA, pga);
 /*FIXME This assertion fails		B43_WARN_ON(trsw_rx & ~(B43_PHY_RFOVERVAL_TRSWRX |
 				    B43_PHY_RFOVERVAL_BW));
 */
@@ -885,7 +885,7 @@ void b43_gphy_dc_lt_init(struct b43_wldev *dev, bool update_all)
 
 /* Fixup the RF attenuation value for the case where we are
  * using the PAD mixer. */
-static inline void b43_lo_fixup_rfatt(struct b43_rfatt *rf)
+static void b43_lo_fixup_rfatt(struct b43_rfatt *rf)
 {
 	if (!rf->with_padmix)
 		return;
@@ -911,12 +911,10 @@ void b43_lo_g_adjust(struct b43_wldev *dev)
 void b43_lo_g_adjust_to(struct b43_wldev *dev,
 			u16 rfatt, u16 bbatt, u16 tx_control)
 {
-	struct b43_rfatt rf;
-	struct b43_bbatt bb;
+	struct b43_rfatt rf = {};
+	struct b43_bbatt bb = {};
 	struct b43_lo_calib *cal;
 
-	memset(&rf, 0, sizeof(rf));
-	memset(&bb, 0, sizeof(bb));
 	rf.att = rfatt;
 	bb.att = bbatt;
 	b43_lo_fixup_rfatt(&rf);

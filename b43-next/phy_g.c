@@ -21,6 +21,7 @@
 #include "wa.h"
 #include "calstat.h"
 
+#include <linux/bitfield.h>
 #include <linux/bitrev.h>
 #include <linux/slab.h>
 
@@ -59,7 +60,7 @@ static void b43_calc_nrssi_threshold(struct b43_wldev *dev);
 
 
 /* Get the freq, as it has to be written to the device. */
-static inline u16 channel2freq_bg(u8 channel)
+static u16 channel2freq_bg(u8 channel)
 {
 	B43_WARN_ON(!(channel >= 1 && channel <= 14));
 
@@ -179,7 +180,7 @@ static void b43_synth_pu_workaround(struct b43_wldev *dev, u8 channel)
 	} else {
 		b43_write16(dev, B43_MMIO_CHANNEL, channel2freq_bg(1));
 	}
-	msleep(1);
+	fsleep(1000);
 	b43_write16(dev, B43_MMIO_CHANNEL, channel2freq_bg(channel));
 }
 
@@ -1259,14 +1260,12 @@ struct init2050_saved_values {
 static u16 b43_radio_init2050(struct b43_wldev *dev)
 {
 	struct b43_phy *phy = &dev->phy;
-	struct init2050_saved_values sav;
+	struct init2050_saved_values sav = {};
 	u16 rcc;
 	u16 radio78;
 	u16 ret;
 	u16 i, j;
 	u32 tmp1 = 0, tmp2 = 0;
-
-	memset(&sav, 0, sizeof(sav));	/* get rid of "may be used uninitialized..." */
 
 	sav.radio_43 = b43_radio_read16(dev, 0x43);
 	sav.radio_51 = b43_radio_read16(dev, 0x51);
@@ -1531,7 +1530,7 @@ static void b43_phy_initb5(struct b43_wldev *dev)
 	}
 
 	if (dev->bad_frames_preempt) {
-		b43_phy_set(dev, B43_PHY_RADIO_BITFIELD, (1 << 11));
+		b43_phy_set(dev, B43_PHY_RADIO_BITFIELD, BIT(11));
 	}
 
 	if (phy->analog == 1) {
@@ -2141,7 +2140,7 @@ void b43_gphy_channel_switch(struct b43_wldev *dev,
 				     b43_hf_read(dev) | B43_HF_ACPR);
 		b43_write16(dev, B43_MMIO_CHANNEL_EXT,
 			    b43_read16(dev, B43_MMIO_CHANNEL_EXT)
-			    | (1 << 11));
+			    | BIT(11));
 	} else {
 		b43_write16(dev, B43_MMIO_CHANNEL_EXT,
 			    b43_read16(dev, B43_MMIO_CHANNEL_EXT)
@@ -2683,8 +2682,8 @@ static void b43_gphy_op_set_rx_antenna(struct b43_wldev *dev, int antenna)
 	b43_hf_write(dev, b43_hf_read(dev) & ~B43_HF_ANTDIVHELP);
 
 	b43_phy_maskset(dev, B43_PHY_BBANDCFG, ~B43_PHY_BBANDCFG_RXANT,
-			(autodiv ? B43_ANTENNA_AUTO1 : antenna) <<
-			B43_PHY_BBANDCFG_RXANT_SHIFT);
+			FIELD_PREP(B43_PHY_BBANDCFG_RXANT,
+				   autodiv ? B43_ANTENNA_AUTO1 : antenna));
 
 	if (autodiv) {
 		tmp = b43_phy_read(dev, B43_PHY_ANTDWELL);

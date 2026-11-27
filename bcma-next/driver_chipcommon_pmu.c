@@ -9,8 +9,9 @@
  * Licensed under the GNU/GPL. See COPYING for details.
  */
 
+#include <linux/bitfield.h>
+
 #include "bcmn_private.h"
-#include <linux/export.h>
 #include <bcma-next/bcmn.h>
 
 u32 bcmn_chipco_pll_read(struct bcmn_drv_cc *cc, u32 offset)
@@ -19,7 +20,6 @@ u32 bcmn_chipco_pll_read(struct bcmn_drv_cc *cc, u32 offset)
 	bcmn_pmu_read32(cc, BCMN_CC_PMU_PLLCTL_ADDR);
 	return bcmn_pmu_read32(cc, BCMN_CC_PMU_PLLCTL_DATA);
 }
-EXPORT_SYMBOL_GPL(bcmn_chipco_pll_read);
 
 void bcmn_chipco_pll_write(struct bcmn_drv_cc *cc, u32 offset, u32 value)
 {
@@ -27,7 +27,6 @@ void bcmn_chipco_pll_write(struct bcmn_drv_cc *cc, u32 offset, u32 value)
 	bcmn_pmu_read32(cc, BCMN_CC_PMU_PLLCTL_ADDR);
 	bcmn_pmu_write32(cc, BCMN_CC_PMU_PLLCTL_DATA, value);
 }
-EXPORT_SYMBOL_GPL(bcmn_chipco_pll_write);
 
 void bcmn_chipco_pll_maskset(struct bcmn_drv_cc *cc, u32 offset, u32 mask,
 			     u32 set)
@@ -36,7 +35,6 @@ void bcmn_chipco_pll_maskset(struct bcmn_drv_cc *cc, u32 offset, u32 mask,
 	bcmn_pmu_read32(cc, BCMN_CC_PMU_PLLCTL_ADDR);
 	bcmn_pmu_maskset32(cc, BCMN_CC_PMU_PLLCTL_DATA, mask, set);
 }
-EXPORT_SYMBOL_GPL(bcmn_chipco_pll_maskset);
 
 void bcmn_chipco_chipctl_maskset(struct bcmn_drv_cc *cc,
 				 u32 offset, u32 mask, u32 set)
@@ -45,7 +43,6 @@ void bcmn_chipco_chipctl_maskset(struct bcmn_drv_cc *cc,
 	bcmn_pmu_read32(cc, BCMN_CC_PMU_CHIPCTL_ADDR);
 	bcmn_pmu_maskset32(cc, BCMN_CC_PMU_CHIPCTL_DATA, mask, set);
 }
-EXPORT_SYMBOL_GPL(bcmn_chipco_chipctl_maskset);
 
 void bcmn_chipco_regctl_maskset(struct bcmn_drv_cc *cc, u32 offset, u32 mask,
 				u32 set)
@@ -54,7 +51,6 @@ void bcmn_chipco_regctl_maskset(struct bcmn_drv_cc *cc, u32 offset, u32 mask,
 	bcmn_pmu_read32(cc, BCMN_CC_PMU_REGCTL_ADDR);
 	bcmn_pmu_maskset32(cc, BCMN_CC_PMU_REGCTL_DATA, mask, set);
 }
-EXPORT_SYMBOL_GPL(bcmn_chipco_regctl_maskset);
 
 static u32 bcmn_pmu_xtalfreq(struct bcmn_drv_cc *cc)
 {
@@ -65,8 +61,8 @@ static u32 bcmn_pmu_xtalfreq(struct bcmn_drv_cc *cc)
 		return 0;
 
 	bcmn_pmu_write32(cc, BCMN_CC_PMU_XTAL_FREQ,
-			 BIT(BCMN_CC_PMU_XTAL_FREQ_MEASURE_SHIFT));
-	usleep_range(1000, 2000);
+			 BCMN_CC_PMU_XTAL_FREQ_MEASURE_MASK);
+	fsleep(1000);
 
 	ilp_ctl = bcmn_pmu_read32(cc, BCMN_CC_PMU_XTAL_FREQ);
 	ilp_ctl &= BCMN_CC_PMU_XTAL_FREQ_ILPCTL_MASK;
@@ -116,9 +112,8 @@ static u32 bcmn_pmu2_alp_clock(struct bcmn_drv_cc *cc)
 	u32 freq_tgt;
 	int i;
 
-	freq_tgt = (bcmn_chipco_pll_read(cc, BCMN_CC_PMU15_PLL_PLLCTL0) &
-		    BCMN_CC_PMU15_PLL_PC0_FREQTGT_MASK) >>
-		   BCMN_CC_PMU15_PLL_PC0_FREQTGT_SHIFT;
+	freq_tgt = FIELD_GET(BCMN_CC_PMU15_PLL_PC0_FREQTGT_MASK,
+			     bcmn_chipco_pll_read(cc, BCMN_CC_PMU15_PLL_PLLCTL0));
 	for (i = 0; i < ARRAY_SIZE(tabs); i++)
 		for (t = tabs[i]; t->fref; t++)
 			if (t->freq_tgt == freq_tgt)
@@ -146,8 +141,7 @@ static void bcmn_pmu2_pll_init0(struct bcmn_drv_cc *cc, u32 xtalfreq)
 	}
 
 	pll0 = bcmn_chipco_pll_read(cc, BCMN_CC_PMU15_PLL_PLLCTL0);
-	freq_tgt_current = (pll0 & BCMN_CC_PMU15_PLL_PC0_FREQTGT_MASK) >>
-		BCMN_CC_PMU15_PLL_PC0_FREQTGT_SHIFT;
+	freq_tgt_current = FIELD_GET(BCMN_CC_PMU15_PLL_PC0_FREQTGT_MASK, pll0);
 
 	if (freq_tgt_current == freq_tgt_target) {
 		bcmn_debug(bus, "Target TGT frequency already set\n");
@@ -168,7 +162,7 @@ static void bcmn_pmu2_pll_init0(struct bcmn_drv_cc *cc, u32 xtalfreq)
 	}
 
 	pll0 &= ~BCMN_CC_PMU15_PLL_PC0_FREQTGT_MASK;
-	pll0 |= freq_tgt_target << BCMN_CC_PMU15_PLL_PC0_FREQTGT_SHIFT;
+	pll0 |= FIELD_PREP(BCMN_CC_PMU15_PLL_PC0_FREQTGT_MASK, freq_tgt_target);
 	bcmn_chipco_pll_write(cc, BCMN_CC_PMU15_PLL_PLLCTL0, pll0);
 
 	/* Flush */
@@ -291,7 +285,7 @@ static void bcmn_pmu_resources_init(struct bcmn_drv_cc *cc)
 	 * Add some delay; allow resources to come up and settle.
 	 * Delay is required for SoC (early init).
 	 */
-	usleep_range(2000, 2500);
+	fsleep(2000);
 }
 
 /* Disable to allow reading SPROM. Don't know the advantages of enabling it. */
@@ -445,9 +439,9 @@ static u32 bcmn_pmu_pll_clock(struct bcmn_drv_cc *cc, u32 pll0, u32 m)
 	u32 tmp, div, ndiv, p1, p2, fc;
 	struct bcmn_bus *bus = cc->core->bus;
 
-	BUG_ON((pll0 & 3) || (pll0 > BCMN_CC_PMU4716_MAINPLL_PLL0));
-
-	BUG_ON(!m || m > 4);
+	if (WARN_ON((pll0 & 3) || pll0 > BCMN_CC_PMU4716_MAINPLL_PLL0 ||
+		    !m || m > 4))
+		return 0;
 
 	if (bus->chipinfo.id == BCMN_CHIP_ID_BCM5357 ||
 	    bus->chipinfo.id == BCMN_CHIP_ID_BCM4749) {
@@ -458,15 +452,15 @@ static u32 bcmn_pmu_pll_clock(struct bcmn_drv_cc *cc, u32 pll0, u32 m)
 	}
 
 	tmp = bcmn_chipco_pll_read(cc, pll0 + BCMN_CC_PPL_P1P2_OFF);
-	p1 = (tmp & BCMN_CC_PPL_P1_MASK) >> BCMN_CC_PPL_P1_SHIFT;
-	p2 = (tmp & BCMN_CC_PPL_P2_MASK) >> BCMN_CC_PPL_P2_SHIFT;
+	p1 = FIELD_GET(BCMN_CC_PPL_P1_MASK, tmp);
+	p2 = FIELD_GET(BCMN_CC_PPL_P2_MASK, tmp);
 
 	tmp = bcmn_chipco_pll_read(cc, pll0 + BCMN_CC_PPL_M14_OFF);
 	div = (tmp >> ((m - 1) * BCMN_CC_PPL_MDIV_WIDTH)) &
 		BCMN_CC_PPL_MDIV_MASK;
 
 	tmp = bcmn_chipco_pll_read(cc, pll0 + BCMN_CC_PPL_NM5_OFF);
-	ndiv = (tmp & BCMN_CC_PPL_NDIV_MASK) >> BCMN_CC_PPL_NDIV_SHIFT;
+	ndiv = FIELD_GET(BCMN_CC_PPL_NDIV_MASK, tmp);
 
 	/* Do calculation in Mhz */
 	fc = bcmn_pmu_get_alp_clock(cc) / 1000000;
@@ -481,16 +475,14 @@ static u32 bcmn_pmu_pll_clock_bcm4706(struct bcmn_drv_cc *cc, u32 pll0, u32 m)
 	u32 tmp, ndiv, p1div, p2div;
 	u32 clock;
 
-	BUG_ON(!m || m > 4);
+	if (WARN_ON(!m || m > 4))
+		return 0;
 
 	/* Get N, P1 and P2 dividers to determine CPU clock */
 	tmp = bcmn_chipco_pll_read(cc, pll0 + BCMN_CC_PMU6_4706_PROCPLL_OFF);
-	ndiv = (tmp & BCMN_CC_PMU6_4706_PROC_NDIV_INT_MASK)
-		>> BCMN_CC_PMU6_4706_PROC_NDIV_INT_SHIFT;
-	p1div = (tmp & BCMN_CC_PMU6_4706_PROC_P1DIV_MASK)
-		>> BCMN_CC_PMU6_4706_PROC_P1DIV_SHIFT;
-	p2div = (tmp & BCMN_CC_PMU6_4706_PROC_P2DIV_MASK)
-		>> BCMN_CC_PMU6_4706_PROC_P2DIV_SHIFT;
+	ndiv = FIELD_GET(BCMN_CC_PMU6_4706_PROC_NDIV_INT_MASK, tmp);
+	p1div = FIELD_GET(BCMN_CC_PMU6_4706_PROC_P1DIV_MASK, tmp);
+	p2div = FIELD_GET(BCMN_CC_PMU6_4706_PROC_P2DIV_MASK, tmp);
 
 	tmp = bcmn_cc_read32(cc, BCMN_CC_CHIPSTAT);
 	if (tmp & BCMN_CC_CHIPST_4706_PKG_OPTION)
@@ -536,7 +528,6 @@ u32 bcmn_pmu_get_bus_clock(struct bcmn_drv_cc *cc)
 	}
 	return BCMN_CC_PMU_HT_CLOCK;
 }
-EXPORT_SYMBOL_GPL(bcmn_pmu_get_bus_clock);
 
 /* query cpu clock frequency for PMU-enabled chipcommon */
 u32 bcmn_pmu_get_cpu_clock(struct bcmn_drv_cc *cc)
@@ -606,16 +597,18 @@ void bcmn_pmu_spuravoid_pllupdate(struct bcmn_drv_cc *cc, int spuravoid)
 		bcmn_pmu_write32(cc, BCMN_CC_PMU_PLLCTL_ADDR,
 				BCMN_CC_PMU_PLL_CTL0 + phypll_offset);
 		tmp = bcmn_pmu_read32(cc, BCMN_CC_PMU_PLLCTL_DATA);
-		tmp &= (~(BCMN_CC_PMU1_PLL0_PC0_P1DIV_MASK));
-		tmp |= (bcm5357_bcm43236_p1div[spuravoid] << BCMN_CC_PMU1_PLL0_PC0_P1DIV_SHIFT);
+		tmp &= ~BCMN_CC_PMU1_PLL0_PC0_P1DIV_MASK;
+		tmp |= FIELD_PREP(BCMN_CC_PMU1_PLL0_PC0_P1DIV_MASK,
+				  bcm5357_bcm43236_p1div[spuravoid]);
 		bcmn_pmu_write32(cc, BCMN_CC_PMU_PLLCTL_DATA, tmp);
 
 		/* RMW only the int feedback divider */
 		bcmn_pmu_write32(cc, BCMN_CC_PMU_PLLCTL_ADDR,
 				BCMN_CC_PMU_PLL_CTL2 + phypll_offset);
 		tmp = bcmn_pmu_read32(cc, BCMN_CC_PMU_PLLCTL_DATA);
-		tmp &= ~(BCMN_CC_PMU1_PLL0_PC2_NDIV_INT_MASK);
-		tmp |= (bcm5357_bcm43236_ndiv[spuravoid]) << BCMN_CC_PMU1_PLL0_PC2_NDIV_INT_SHIFT;
+		tmp &= ~BCMN_CC_PMU1_PLL0_PC2_NDIV_INT_MASK;
+		tmp |= FIELD_PREP(BCMN_CC_PMU1_PLL0_PC2_NDIV_INT_MASK,
+				  bcm5357_bcm43236_ndiv[spuravoid]);
 		bcmn_pmu_write32(cc, BCMN_CC_PMU_PLLCTL_DATA, tmp);
 
 		tmp = BCMN_CC_PMU_CTL_PLL_UPD;
@@ -758,7 +751,8 @@ void bcmn_pmu_spuravoid_pllupdate(struct bcmn_drv_cc *cc, int spuravoid)
 			break;
 		bcmn_chipco_pll_maskset(cc, BCMN_CC_PMU15_PLL_PLLCTL0,
 					~BCMN_CC_PMU15_PLL_PC0_FREQTGT_MASK,
-					freq_tgt << BCMN_CC_PMU15_PLL_PC0_FREQTGT_SHIFT);
+					FIELD_PREP(BCMN_CC_PMU15_PLL_PC0_FREQTGT_MASK,
+						   freq_tgt));
 		tmp = BCMN_CC_PMU_CTL_PLL_UPD;
 		break;
 	default:
@@ -770,4 +764,3 @@ void bcmn_pmu_spuravoid_pllupdate(struct bcmn_drv_cc *cc, int spuravoid)
 	tmp |= bcmn_pmu_read32(cc, BCMN_CC_PMU_CTL);
 	bcmn_pmu_write32(cc, BCMN_CC_PMU_CTL, tmp);
 }
-EXPORT_SYMBOL_GPL(bcmn_pmu_spuravoid_pllupdate);

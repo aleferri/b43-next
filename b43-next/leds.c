@@ -37,9 +37,9 @@ static void b43_led_set_pin(struct b43_wldev *dev, u8 led_index, bool high)
 #endif
 	ctl = b43_read16(dev, B43_MMIO_GPIO_CONTROL);
 	if (high)
-		ctl |= (1 << led_index);
+		ctl |= BIT(led_index);
 	else
-		ctl &= ~(1 << led_index);
+		ctl &= ~BIT(led_index);
 	b43_write16(dev, B43_MMIO_GPIO_CONTROL, ctl);
 }
 
@@ -90,16 +90,13 @@ static void b43_leds_work(struct work_struct *work)
 	struct b43_wldev *dev;
 	unsigned int i;
 
-	mutex_lock(&wl->mutex);
+	guard(mutex)(&wl->mutex);
 	dev = wl->current_dev;
 	if (unlikely(!dev || b43_status(dev) < B43_STAT_STARTED))
-		goto out_unlock;
+		return;
 
 	for (i = 0; i < ARRAY_SIZE(wl->leds.led); i++)
 		b43_led_update(dev, &wl->leds.led[i]);
-
-out_unlock:
-	mutex_unlock(&wl->mutex);
 }
 
 /* Callback from the LED subsystem. */

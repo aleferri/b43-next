@@ -11,12 +11,12 @@
 
 #include "bcmn_private.h"
 #include <linux/bcm47xx_wdt.h>
-#include <linux/export.h>
+#include <linux/bitfield.h>
 #include <linux/platform_device.h>
 #include <bcma-next/bcmn.h>
 
-static inline u32 bcmn_cc_write32_masked(struct bcmn_drv_cc *cc, u16 offset,
-					 u32 mask, u32 value)
+static u32 bcmn_cc_write32_masked(struct bcmn_drv_cc *cc, u16 offset,
+				  u32 mask, u32 value)
 {
 	value &= mask;
 	value |= bcmn_cc_read32(cc, offset) & ~mask;
@@ -32,7 +32,6 @@ u32 bcmn_chipco_get_alp_clock(struct bcmn_drv_cc *cc)
 
 	return 20000000;
 }
-EXPORT_SYMBOL_GPL(bcmn_chipco_get_alp_clock);
 
 static bool bcmn_core_cc_has_pmu_watchdog(struct bcmn_drv_cc *cc)
 {
@@ -224,8 +223,8 @@ void bcmn_core_chipcommon_init(struct bcmn_drv_cc *cc)
 			leddc_off = cc->core->bus->sprom.leddc_off_time;
 		}
 		bcmn_cc_write32(cc, BCMN_CC_GPIOTIMER,
-			((leddc_on << BCMN_CC_GPIOTIMER_ONTIME_SHIFT) |
-			 (leddc_off << BCMN_CC_GPIOTIMER_OFFTIME_SHIFT)));
+			FIELD_PREP(BCMN_CC_GPIOTIMER_ONTIME, leddc_on) |
+			FIELD_PREP(BCMN_CC_GPIOTIMER_OFFTIME, leddc_off));
 	}
 
 	/*
@@ -288,29 +287,15 @@ u32 bcmn_chipco_gpio_in(struct bcmn_drv_cc *cc, u32 mask)
 
 u32 bcmn_chipco_gpio_out(struct bcmn_drv_cc *cc, u32 mask, u32 value)
 {
-	unsigned long flags;
-	u32 res;
-
-	spin_lock_irqsave(&cc->gpio_lock, flags);
-	res = bcmn_cc_write32_masked(cc, BCMN_CC_GPIOOUT, mask, value);
-	spin_unlock_irqrestore(&cc->gpio_lock, flags);
-
-	return res;
+	guard(spinlock_irqsave)(&cc->gpio_lock);
+	return bcmn_cc_write32_masked(cc, BCMN_CC_GPIOOUT, mask, value);
 }
-EXPORT_SYMBOL_GPL(bcmn_chipco_gpio_out);
 
 u32 bcmn_chipco_gpio_outen(struct bcmn_drv_cc *cc, u32 mask, u32 value)
 {
-	unsigned long flags;
-	u32 res;
-
-	spin_lock_irqsave(&cc->gpio_lock, flags);
-	res = bcmn_cc_write32_masked(cc, BCMN_CC_GPIOOUTEN, mask, value);
-	spin_unlock_irqrestore(&cc->gpio_lock, flags);
-
-	return res;
+	guard(spinlock_irqsave)(&cc->gpio_lock);
+	return bcmn_cc_write32_masked(cc, BCMN_CC_GPIOOUTEN, mask, value);
 }
-EXPORT_SYMBOL_GPL(bcmn_chipco_gpio_outen);
 
 /*
  * If the bit is set to 0, chipcommon controls this GPIO,
@@ -318,69 +303,38 @@ EXPORT_SYMBOL_GPL(bcmn_chipco_gpio_outen);
  */
 u32 bcmn_chipco_gpio_control(struct bcmn_drv_cc *cc, u32 mask, u32 value)
 {
-	unsigned long flags;
-	u32 res;
-
-	spin_lock_irqsave(&cc->gpio_lock, flags);
-	res = bcmn_cc_write32_masked(cc, BCMN_CC_GPIOCTL, mask, value);
-	spin_unlock_irqrestore(&cc->gpio_lock, flags);
-
-	return res;
+	guard(spinlock_irqsave)(&cc->gpio_lock);
+	return bcmn_cc_write32_masked(cc, BCMN_CC_GPIOCTL, mask, value);
 }
-EXPORT_SYMBOL_GPL(bcmn_chipco_gpio_control);
 
 u32 bcmn_chipco_gpio_intmask(struct bcmn_drv_cc *cc, u32 mask, u32 value)
 {
-	unsigned long flags;
-	u32 res;
-
-	spin_lock_irqsave(&cc->gpio_lock, flags);
-	res = bcmn_cc_write32_masked(cc, BCMN_CC_GPIOIRQ, mask, value);
-	spin_unlock_irqrestore(&cc->gpio_lock, flags);
-
-	return res;
+	guard(spinlock_irqsave)(&cc->gpio_lock);
+	return bcmn_cc_write32_masked(cc, BCMN_CC_GPIOIRQ, mask, value);
 }
 
 u32 bcmn_chipco_gpio_polarity(struct bcmn_drv_cc *cc, u32 mask, u32 value)
 {
-	unsigned long flags;
-	u32 res;
-
-	spin_lock_irqsave(&cc->gpio_lock, flags);
-	res = bcmn_cc_write32_masked(cc, BCMN_CC_GPIOPOL, mask, value);
-	spin_unlock_irqrestore(&cc->gpio_lock, flags);
-
-	return res;
+	guard(spinlock_irqsave)(&cc->gpio_lock);
+	return bcmn_cc_write32_masked(cc, BCMN_CC_GPIOPOL, mask, value);
 }
 
 u32 bcmn_chipco_gpio_pullup(struct bcmn_drv_cc *cc, u32 mask, u32 value)
 {
-	unsigned long flags;
-	u32 res;
-
 	if (cc->core->id.rev < 20)
 		return 0;
 
-	spin_lock_irqsave(&cc->gpio_lock, flags);
-	res = bcmn_cc_write32_masked(cc, BCMN_CC_GPIOPULLUP, mask, value);
-	spin_unlock_irqrestore(&cc->gpio_lock, flags);
-
-	return res;
+	guard(spinlock_irqsave)(&cc->gpio_lock);
+	return bcmn_cc_write32_masked(cc, BCMN_CC_GPIOPULLUP, mask, value);
 }
 
 u32 bcmn_chipco_gpio_pulldown(struct bcmn_drv_cc *cc, u32 mask, u32 value)
 {
-	unsigned long flags;
-	u32 res;
-
 	if (cc->core->id.rev < 20)
 		return 0;
 
-	spin_lock_irqsave(&cc->gpio_lock, flags);
-	res = bcmn_cc_write32_masked(cc, BCMN_CC_GPIOPULLDOWN, mask, value);
-	spin_unlock_irqrestore(&cc->gpio_lock, flags);
-
-	return res;
+	guard(spinlock_irqsave)(&cc->gpio_lock);
+	return bcmn_cc_write32_masked(cc, BCMN_CC_GPIOPULLDOWN, mask, value);
 }
 
 #ifdef CONFIG_BCMN_DRIVER_MIPS

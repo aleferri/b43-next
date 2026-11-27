@@ -46,7 +46,7 @@
 #define B43_MMIO_MACCMD			0x124	/* MAC command */
 #define B43_MMIO_RX_LAZY		0x100	/* RX interrupt coalescing */
 #define  B43_RX_LAZY_TIMEOUT		0x00FFFFFF	/* in us */
-#define  B43_RX_LAZY_FRAMES_SHIFT	24
+#define  B43_RX_LAZY_FRAMES		GENMASK(31, 24)
 #define B43_MMIO_GEN_IRQ_REASON		0x128
 #define B43_MMIO_GEN_IRQ_MASK		0x12C
 #define B43_MMIO_RAM_CONTROL		0x130
@@ -410,8 +410,8 @@ enum {
 #define B43_SHM_SC_LCFB			0x0018	/* Long frame transmit count threshold for rate fallback */
 
 /* Hardware Radio Enable masks */
-#define B43_MMIO_RADIO_HWENABLED_HI_MASK (1 << 16)
-#define B43_MMIO_RADIO_HWENABLED_LO_MASK (1 << 4)
+#define B43_MMIO_RADIO_HWENABLED_HI_MASK BIT(16)
+#define B43_MMIO_RADIO_HWENABLED_LO_MASK BIT(4)
 
 /* HostFlags. See b43_hf_read/write() */
 #define B43_HF_ANTDIVHELP	0x000000000001ULL /* ucode antenna div helper */
@@ -861,7 +861,7 @@ struct b43_sta {
 #define B43_SHM_SH_TXBF_BLK		0x00B0
 #define B43_SHM_SH_AMT_INFO		0x0668
 #define  B43_AMT_INFO_TXBF		0x1000
-#define  B43_AMT_INFO_TXBF_SLOT_SHIFT	13
+#define  B43_AMT_INFO_TXBF_SLOT		GENMASK(15, 13)
 #define B43_TXBF_SLOTS			5
 #define B43_TXBF_SOUNDING		0x00E0	/* Sounding period, in the block */
 #define B43_TXBF_CTL			0x06E0	/* In the block, bit 8 cleared */
@@ -871,9 +871,9 @@ struct b43_sta {
 
 struct b43_txbf_link {
 	struct b43_sta *bsta;
+	u8 addr[ETH_ALEN] __aligned(2);	/* Our address, of the station's BSS */
 	u8 row;				/* Address match row of the key, or
 					 * B43_TXBF_NO_ROW on an open BSS */
-	u8 addr[ETH_ALEN];		/* Our address, of the station's BSS */
 };
 
 struct b43_key {
@@ -1158,9 +1158,9 @@ struct b43_wl {
 	/* BCM4331: the factory address, then the further APs' block */
 	struct mac_address mbss_addrs[B43_MBSS_MAX];
 	/* The MAC address of the operating interface. */
-	u8 mac_addr[ETH_ALEN];
+	u8 mac_addr[ETH_ALEN] __aligned(2);
 	/* Current BSSID */
-	u8 bssid[ETH_ALEN];
+	u8 bssid[ETH_ALEN] __aligned(2);
 	/* Interface type. (NL80211_IFTYPE_XXX) */
 	int if_type;
 	/* Is the card operating in AP, STA or IBSS mode? */
@@ -1250,8 +1250,8 @@ struct b43_wl {
 	u8 radar_region;
 
 	/* Kmalloc'ed scratch space for PIO TX/RX. Protected by wl->mutex. */
-	u8 pio_scratchspace[128] __attribute__((__aligned__(8)));
-	u8 pio_tailspace[4] __attribute__((__aligned__(8)));
+	u8 pio_scratchspace[128] __aligned(8);
+	u8 pio_tailspace[4] __aligned(8);
 };
 
 static inline struct b43_wl *hw_to_b43_wl(struct ieee80211_hw *hw)

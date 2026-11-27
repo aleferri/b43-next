@@ -327,7 +327,7 @@ static void b43_phy_lcn_sense_setup(struct b43_wldev *dev,
 	};
 	u16 save_radio_4a4;
 
-	msleep(1);
+	fsleep(1000);
 
 	/* Save */
 	for (i = 0; i < 6; i++)
@@ -416,7 +416,7 @@ static void b43_phy_lcn_sense_setup(struct b43_wldev *dev,
 
 	b43_mac_enable(dev);
 
-	msleep(1);
+	fsleep(1000);
 }
 
 static bool b43_phy_lcn_load_tx_iir_cck_filter(struct b43_wldev *dev,

@@ -13,7 +13,7 @@
 
 #include <ssb-next/ssbn.h>
 #include <ssb-next/ssbn_regs.h>
-#include <linux/export.h>
+#include <linux/bitfield.h>
 #include <linux/pci.h>
 #include <linux/bcm47xx_wdt.h>
 
@@ -29,8 +29,8 @@ enum ssbn_clksrc {
 };
 
 
-static inline u32 chipco_write32_masked(struct ssbn_chipcommon *cc, u16 offset,
-					u32 mask, u32 value)
+static u32 chipco_write32_masked(struct ssbn_chipcommon *cc, u16 offset,
+				 u32 mask, u32 value)
 {
 	value &= mask;
 	value |= chipco_read32(cc, offset) & ~mask;
@@ -440,14 +440,14 @@ void ssbn_chipco_timing_init(struct ssbn_chipcommon *cc,
 
 	/* set register for external IO to control LED. */
 	chipco_write32(cc, SSBN_CHIPCO_PROG_CFG, 0x11);
-	tmp = DIV_ROUND_UP(10, ns) << SSBN_PROG_WCNT_3_SHIFT;		/* Waitcount-3 = 10ns */
-	tmp |= DIV_ROUND_UP(40, ns) << SSBN_PROG_WCNT_1_SHIFT;	/* Waitcount-1 = 40ns */
+	tmp = FIELD_PREP(SSBN_PROG_WCNT_3, DIV_ROUND_UP(10, ns));
+	tmp |= FIELD_PREP(SSBN_PROG_WCNT_1, DIV_ROUND_UP(40, ns));
 	tmp |= DIV_ROUND_UP(240, ns);				/* Waitcount-0 = 240ns */
 	chipco_write32(cc, SSBN_CHIPCO_PROG_WAITCNT, tmp);	/* 0x01020a0c for a 100Mhz clock */
 
 	/* Set timing for the flash */
-	tmp = DIV_ROUND_UP(10, ns) << SSBN_FLASH_WCNT_3_SHIFT;	/* Waitcount-3 = 10nS */
-	tmp |= DIV_ROUND_UP(10, ns) << SSBN_FLASH_WCNT_1_SHIFT;	/* Waitcount-1 = 10nS */
+	tmp = FIELD_PREP(SSBN_FLASH_WCNT_3, DIV_ROUND_UP(10, ns));
+	tmp |= FIELD_PREP(SSBN_FLASH_WCNT_1, DIV_ROUND_UP(10, ns));
 	tmp |= DIV_ROUND_UP(120, ns);				/* Waitcount-0 = 120nS */
 	if ((bus->chip_id == 0x5365) ||
 	    (dev->id.revision < 9))
@@ -459,9 +459,9 @@ void ssbn_chipco_timing_init(struct ssbn_chipcommon *cc,
 
 	if (bus->chip_id == 0x5350) {
 		/* Enable EXTIF */
-		tmp = DIV_ROUND_UP(10, ns) << SSBN_PROG_WCNT_3_SHIFT;	  /* Waitcount-3 = 10ns */
-		tmp |= DIV_ROUND_UP(20, ns) << SSBN_PROG_WCNT_2_SHIFT;  /* Waitcount-2 = 20ns */
-		tmp |= DIV_ROUND_UP(100, ns) << SSBN_PROG_WCNT_1_SHIFT; /* Waitcount-1 = 100ns */
+		tmp = FIELD_PREP(SSBN_PROG_WCNT_3, DIV_ROUND_UP(10, ns));
+		tmp |= FIELD_PREP(SSBN_PROG_WCNT_2, DIV_ROUND_UP(20, ns));
+		tmp |= FIELD_PREP(SSBN_PROG_WCNT_1, DIV_ROUND_UP(100, ns));
 		tmp |= DIV_ROUND_UP(120, ns);			  /* Waitcount-0 = 120ns */
 		chipco_write32(cc, SSBN_CHIPCO_PROG_WAITCNT, tmp); /* 0x01020a0c for a 100Mhz clock */
 	}
@@ -508,93 +508,50 @@ u32 ssbn_chipco_gpio_in(struct ssbn_chipcommon *cc, u32 mask)
 
 u32 ssbn_chipco_gpio_out(struct ssbn_chipcommon *cc, u32 mask, u32 value)
 {
-	unsigned long flags;
-	u32 res = 0;
-
-	spin_lock_irqsave(&cc->gpio_lock, flags);
-	res = chipco_write32_masked(cc, SSBN_CHIPCO_GPIOOUT, mask, value);
-	spin_unlock_irqrestore(&cc->gpio_lock, flags);
-
-	return res;
+	guard(spinlock_irqsave)(&cc->gpio_lock);
+	return chipco_write32_masked(cc, SSBN_CHIPCO_GPIOOUT, mask, value);
 }
 
 u32 ssbn_chipco_gpio_outen(struct ssbn_chipcommon *cc, u32 mask, u32 value)
 {
-	unsigned long flags;
-	u32 res = 0;
-
-	spin_lock_irqsave(&cc->gpio_lock, flags);
-	res = chipco_write32_masked(cc, SSBN_CHIPCO_GPIOOUTEN, mask, value);
-	spin_unlock_irqrestore(&cc->gpio_lock, flags);
-
-	return res;
+	guard(spinlock_irqsave)(&cc->gpio_lock);
+	return chipco_write32_masked(cc, SSBN_CHIPCO_GPIOOUTEN, mask, value);
 }
 
 u32 ssbn_chipco_gpio_control(struct ssbn_chipcommon *cc, u32 mask, u32 value)
 {
-	unsigned long flags;
-	u32 res = 0;
-
-	spin_lock_irqsave(&cc->gpio_lock, flags);
-	res = chipco_write32_masked(cc, SSBN_CHIPCO_GPIOCTL, mask, value);
-	spin_unlock_irqrestore(&cc->gpio_lock, flags);
-
-	return res;
+	guard(spinlock_irqsave)(&cc->gpio_lock);
+	return chipco_write32_masked(cc, SSBN_CHIPCO_GPIOCTL, mask, value);
 }
-EXPORT_SYMBOL(ssbn_chipco_gpio_control);
 
 u32 ssbn_chipco_gpio_intmask(struct ssbn_chipcommon *cc, u32 mask, u32 value)
 {
-	unsigned long flags;
-	u32 res = 0;
-
-	spin_lock_irqsave(&cc->gpio_lock, flags);
-	res = chipco_write32_masked(cc, SSBN_CHIPCO_GPIOIRQ, mask, value);
-	spin_unlock_irqrestore(&cc->gpio_lock, flags);
-
-	return res;
+	guard(spinlock_irqsave)(&cc->gpio_lock);
+	return chipco_write32_masked(cc, SSBN_CHIPCO_GPIOIRQ, mask, value);
 }
 
 u32 ssbn_chipco_gpio_polarity(struct ssbn_chipcommon *cc, u32 mask, u32 value)
 {
-	unsigned long flags;
-	u32 res = 0;
-
-	spin_lock_irqsave(&cc->gpio_lock, flags);
-	res = chipco_write32_masked(cc, SSBN_CHIPCO_GPIOPOL, mask, value);
-	spin_unlock_irqrestore(&cc->gpio_lock, flags);
-
-	return res;
+	guard(spinlock_irqsave)(&cc->gpio_lock);
+	return chipco_write32_masked(cc, SSBN_CHIPCO_GPIOPOL, mask, value);
 }
 
 u32 ssbn_chipco_gpio_pullup(struct ssbn_chipcommon *cc, u32 mask, u32 value)
 {
-	unsigned long flags;
-	u32 res = 0;
-
 	if (cc->dev->id.revision < 20)
 		return 0xffffffff;
 
-	spin_lock_irqsave(&cc->gpio_lock, flags);
-	res = chipco_write32_masked(cc, SSBN_CHIPCO_GPIOPULLUP, mask, value);
-	spin_unlock_irqrestore(&cc->gpio_lock, flags);
-
-	return res;
+	guard(spinlock_irqsave)(&cc->gpio_lock);
+	return chipco_write32_masked(cc, SSBN_CHIPCO_GPIOPULLUP, mask, value);
 }
 
 u32 ssbn_chipco_gpio_pulldown(struct ssbn_chipcommon *cc, u32 mask, u32 value)
 {
-	unsigned long flags;
-	u32 res = 0;
-
 	if (cc->dev->id.revision < 20)
 		return 0xffffffff;
 
-	spin_lock_irqsave(&cc->gpio_lock, flags);
-	res = chipco_write32_masked(cc, SSBN_CHIPCO_GPIOPULLDOWN, mask, value);
-	spin_unlock_irqrestore(&cc->gpio_lock, flags);
-
-	return res;
+	guard(spinlock_irqsave)(&cc->gpio_lock);
+	return chipco_write32_masked(cc, SSBN_CHIPCO_GPIOPULLDOWN, mask, value);
 }
 
 #ifdef CONFIG_SSBN_SERIAL

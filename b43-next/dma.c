@@ -24,15 +24,20 @@
 #include "debugfs.h"
 #include "xmit.h"
 
+#include <linux/bitfield.h>
 #include <linux/dma-mapping.h>
 #include <net/page_pool/helpers.h>
 #include <linux/pci.h>
 #include <linux/delay.h>
+#include <linux/iopoll.h>
 #include <linux/skbuff.h>
 #include <linux/etherdevice.h>
 #include <linux/slab.h>
 #include <asm/div64.h>
 
+/* The engine stops within the 10 ms the vendor driver allows it. */
+#define B43_DMA_RESET_POLL_US		100
+#define B43_DMA_RESET_TIMEOUT_US	(10 * USEC_PER_MSEC)
 
 /*
  * The fewest TX slots a frame takes: its TX header and one buffer. A header
@@ -71,8 +76,7 @@ static u32 b43_dma_address(struct b43_dma *dma, dma_addr_t dmaaddr,
 			addr = lower_32_bits(dmaaddr);
 		else
 			addr = upper_32_bits(dmaaddr);
-		addr &= SSBN_DMA_TRANSLATION_MASK;
-		addr >>= SSBN_DMA_TRANSLATION_SHIFT;
+		addr = FIELD_GET(SSBN_DMA_TRANSLATION_MASK, addr);
 		break;
 	}
 
@@ -120,8 +124,7 @@ static void op32_fill_descriptor(struct b43_dmaring *ring,
 		ctl |= B43_DMA32_DCTL_FRAMEEND;
 	if (irq)
 		ctl |= B43_DMA32_DCTL_IRQ;
-	ctl |= (addrext << B43_DMA32_DCTL_ADDREXT_SHIFT)
-	    & B43_DMA32_DCTL_ADDREXT_MASK;
+	ctl |= FIELD_PREP(B43_DMA32_DCTL_ADDREXT_MASK, addrext);
 
 	desc->dma32.control = cpu_to_le32(ctl);
 	desc->dma32.address = cpu_to_le32(addr);
@@ -213,8 +216,7 @@ static void op64_fill_descriptor(struct b43_dmaring *ring,
 	if (irq)
 		ctl0 |= B43_DMA64_DCTL0_IRQ;
 	ctl1 |= bufsize & B43_DMA64_DCTL1_BYTECNT;
-	ctl1 |= (addrext << B43_DMA64_DCTL1_ADDREXT_SHIFT)
-	    & B43_DMA64_DCTL1_ADDREXT_MASK;
+	ctl1 |= FIELD_PREP(B43_DMA64_DCTL1_ADDREXT_MASK, addrext);
 
 	desc->dma64.control0 = cpu_to_le32(ctl0);
 	desc->dma64.control1 = cpu_to_le32(ctl1);
@@ -274,12 +276,12 @@ static const struct b43_dma_ops dma64_ops = {
 	.set_current_rxslot = op64_set_current_rxslot,
 };
 
-static inline int free_slots(struct b43_dmaring *ring)
+static int free_slots(struct b43_dmaring *ring)
 {
 	return (ring->nr_slots - ring->used_slots);
 }
 
-static inline int next_slot(struct b43_dmaring *ring, int slot)
+static int next_slot(struct b43_dmaring *ring, int slot)
 {
 	B43_WARN_ON(!(slot >= -1 && slot <= ring->nr_slots - 1));
 	if (slot == ring->nr_slots - 1)
@@ -287,7 +289,7 @@ static inline int next_slot(struct b43_dmaring *ring, int slot)
 	return slot + 1;
 }
 
-static inline int prev_slot(struct b43_dmaring *ring, int slot)
+static int prev_slot(struct b43_dmaring *ring, int slot)
 {
 	B43_WARN_ON(!(slot >= 0 && slot <= ring->nr_slots - 1));
 	if (slot == 0)
@@ -321,14 +323,14 @@ static void update_max_used_slots(struct b43_dmaring *ring,
 	}
 }
 #else
-static inline
-    void update_max_used_slots(struct b43_dmaring *ring, int current_used_slots)
+static void update_max_used_slots(struct b43_dmaring *ring,
+				  int current_used_slots)
 {
 }
 #endif /* DEBUG */
 
 /* Request a slot for usage. */
-static inline int request_slot(struct b43_dmaring *ring)
+static int request_slot(struct b43_dmaring *ring)
 {
 	int slot;
 
@@ -374,9 +376,8 @@ static u16 b43_dmacontroller_base(enum b43_dmatype type, int controller_idx)
 	return map32[controller_idx];
 }
 
-static inline
-    dma_addr_t map_descbuffer(struct b43_dmaring *ring,
-			      unsigned char *buf, size_t len, int tx)
+static dma_addr_t map_descbuffer(struct b43_dmaring *ring,
+				 unsigned char *buf, size_t len, int tx)
 {
 	dma_addr_t dmaaddr;
 
@@ -391,33 +392,29 @@ static inline
 	return dmaaddr;
 }
 
-static inline
-    void unmap_descbuffer_attrs(struct b43_dmaring *ring, dma_addr_t addr,
-				size_t len, int tx, unsigned long attrs)
+static void unmap_descbuffer_attrs(struct b43_dmaring *ring, dma_addr_t addr,
+				   size_t len, int tx, unsigned long attrs)
 {
 	dma_unmap_single_attrs(ring->dev->dev->dma_dev, addr, len,
 			       tx ? DMA_TO_DEVICE : DMA_FROM_DEVICE, attrs);
 }
 
-static inline
-    void unmap_descbuffer(struct b43_dmaring *ring,
-			  dma_addr_t addr, size_t len, int tx)
+static void unmap_descbuffer(struct b43_dmaring *ring,
+			     dma_addr_t addr, size_t len, int tx)
 {
 	unmap_descbuffer_attrs(ring, addr, len, tx, 0);
 }
 
-static inline
-    void sync_descbuffer_for_cpu(struct b43_dmaring *ring,
-				 dma_addr_t addr, size_t len)
+static void sync_descbuffer_for_cpu(struct b43_dmaring *ring,
+				    dma_addr_t addr, size_t len)
 {
 	B43_WARN_ON(ring->tx);
 	dma_sync_single_for_cpu(ring->dev->dev->dma_dev,
 				    addr, len, DMA_FROM_DEVICE);
 }
 
-static inline
-    void sync_descbuffer_for_device(struct b43_dmaring *ring,
-				    dma_addr_t addr, size_t len)
+static void sync_descbuffer_for_device(struct b43_dmaring *ring,
+				       dma_addr_t addr, size_t len)
 {
 	B43_WARN_ON(ring->tx);
 	dma_sync_single_for_device(ring->dev->dev->dma_dev,
@@ -495,9 +492,8 @@ static void unmap_tx_descbuffer(struct b43_dmaring *ring,
 	meta->len = 0;
 }
 
-static inline
-    void free_descriptor_buffer(struct b43_dmaring *ring,
-				struct b43_dmadesc_meta *meta)
+static void free_descriptor_buffer(struct b43_dmaring *ring,
+				   struct b43_dmadesc_meta *meta)
 {
 	if (meta->skb) {
 		if (ring->tx)
@@ -541,38 +537,50 @@ static void free_ringmemory(struct b43_dmaring *ring)
 			  ring->descbase, ring->dmabase);
 }
 
+static bool b43_dma_rx_disabled(u32 value, enum b43_dmatype type)
+{
+	if (type == B43_DMA_64BIT)
+		return (value & B43_DMA64_RXSTAT) == B43_DMA64_RXSTAT_DISABLED;
+	return (value & B43_DMA32_RXSTATE) == B43_DMA32_RXSTAT_DISABLED;
+}
+
+static bool b43_dma_tx_disabled(u32 value, enum b43_dmatype type)
+{
+	if (type == B43_DMA_64BIT)
+		return (value & B43_DMA64_TXSTAT) == B43_DMA64_TXSTAT_DISABLED;
+	return (value & B43_DMA32_TXSTATE) == B43_DMA32_TXSTAT_DISABLED;
+}
+
+static bool b43_dma_tx_quiesced(u32 value, enum b43_dmatype type)
+{
+	if (type == B43_DMA_64BIT) {
+		value &= B43_DMA64_TXSTAT;
+		return value == B43_DMA64_TXSTAT_DISABLED ||
+		       value == B43_DMA64_TXSTAT_IDLEWAIT ||
+		       value == B43_DMA64_TXSTAT_STOPPED;
+	}
+	value &= B43_DMA32_TXSTATE;
+	return value == B43_DMA32_TXSTAT_DISABLED ||
+	       value == B43_DMA32_TXSTAT_IDLEWAIT ||
+	       value == B43_DMA32_TXSTAT_STOPPED;
+}
+
 /* Reset the RX DMA channel */
 static int b43_dmacontroller_rx_reset(struct b43_wldev *dev, u16 mmio_base,
 				      enum b43_dmatype type)
 {
-	int i;
+	u16 ctl = type == B43_DMA_64BIT ? B43_DMA64_RXCTL : B43_DMA32_RXCTL;
+	u16 stat = type == B43_DMA_64BIT ? B43_DMA64_RXSTATUS :
+					   B43_DMA32_RXSTATUS;
 	u32 value;
-	u16 offset;
 
 	might_sleep();
 
-	offset = (type == B43_DMA_64BIT) ? B43_DMA64_RXCTL : B43_DMA32_RXCTL;
-	b43_write32(dev, mmio_base + offset, 0);
-	for (i = 0; i < 10; i++) {
-		offset = (type == B43_DMA_64BIT) ? B43_DMA64_RXSTATUS :
-						   B43_DMA32_RXSTATUS;
-		value = b43_read32(dev, mmio_base + offset);
-		if (type == B43_DMA_64BIT) {
-			value &= B43_DMA64_RXSTAT;
-			if (value == B43_DMA64_RXSTAT_DISABLED) {
-				i = -1;
-				break;
-			}
-		} else {
-			value &= B43_DMA32_RXSTATE;
-			if (value == B43_DMA32_RXSTAT_DISABLED) {
-				i = -1;
-				break;
-			}
-		}
-		msleep(1);
-	}
-	if (i != -1) {
+	b43_write32(dev, mmio_base + ctl, 0);
+	if (read_poll_timeout(b43_read32, value,
+			      b43_dma_rx_disabled(value, type),
+			      B43_DMA_RESET_POLL_US, B43_DMA_RESET_TIMEOUT_US,
+			      false, dev, mmio_base + stat)) {
 		b43err(dev->wl, "DMA RX reset timed out\n");
 		return -ENODEV;
 	}
@@ -584,58 +592,28 @@ static int b43_dmacontroller_rx_reset(struct b43_wldev *dev, u16 mmio_base,
 static int b43_dmacontroller_tx_reset(struct b43_wldev *dev, u16 mmio_base,
 				      enum b43_dmatype type)
 {
-	int i;
+	u16 ctl = type == B43_DMA_64BIT ? B43_DMA64_TXCTL : B43_DMA32_TXCTL;
+	u16 stat = type == B43_DMA_64BIT ? B43_DMA64_TXSTATUS :
+					   B43_DMA32_TXSTATUS;
 	u32 value;
-	u16 offset;
 
 	might_sleep();
 
-	for (i = 0; i < 10; i++) {
-		offset = (type == B43_DMA_64BIT) ? B43_DMA64_TXSTATUS :
-						   B43_DMA32_TXSTATUS;
-		value = b43_read32(dev, mmio_base + offset);
-		if (type == B43_DMA_64BIT) {
-			value &= B43_DMA64_TXSTAT;
-			if (value == B43_DMA64_TXSTAT_DISABLED ||
-			    value == B43_DMA64_TXSTAT_IDLEWAIT ||
-			    value == B43_DMA64_TXSTAT_STOPPED)
-				break;
-		} else {
-			value &= B43_DMA32_TXSTATE;
-			if (value == B43_DMA32_TXSTAT_DISABLED ||
-			    value == B43_DMA32_TXSTAT_IDLEWAIT ||
-			    value == B43_DMA32_TXSTAT_STOPPED)
-				break;
-		}
-		msleep(1);
-	}
-	offset = (type == B43_DMA_64BIT) ? B43_DMA64_TXCTL : B43_DMA32_TXCTL;
-	b43_write32(dev, mmio_base + offset, 0);
-	for (i = 0; i < 10; i++) {
-		offset = (type == B43_DMA_64BIT) ? B43_DMA64_TXSTATUS :
-						   B43_DMA32_TXSTATUS;
-		value = b43_read32(dev, mmio_base + offset);
-		if (type == B43_DMA_64BIT) {
-			value &= B43_DMA64_TXSTAT;
-			if (value == B43_DMA64_TXSTAT_DISABLED) {
-				i = -1;
-				break;
-			}
-		} else {
-			value &= B43_DMA32_TXSTATE;
-			if (value == B43_DMA32_TXSTAT_DISABLED) {
-				i = -1;
-				break;
-			}
-		}
-		msleep(1);
-	}
-	if (i != -1) {
+	/* Let a transfer in flight finish; disable regardless. */
+	read_poll_timeout(b43_read32, value,
+			  b43_dma_tx_quiesced(value, type),
+			  B43_DMA_RESET_POLL_US, B43_DMA_RESET_TIMEOUT_US,
+			  false, dev, mmio_base + stat);
+	b43_write32(dev, mmio_base + ctl, 0);
+	if (read_poll_timeout(b43_read32, value,
+			      b43_dma_tx_disabled(value, type),
+			      B43_DMA_RESET_POLL_US, B43_DMA_RESET_TIMEOUT_US,
+			      false, dev, mmio_base + stat)) {
 		b43err(dev->wl, "DMA TX reset timed out\n");
 		return -ENODEV;
 	}
 	/* ensure the reset is completed. */
-	msleep(1);
+	fsleep(1000);
 
 	return 0;
 }
@@ -926,8 +904,7 @@ static int dmacontroller_setup(struct b43_dmaring *ring)
 			ring->index_base = ring->dev->dma.index_is_addr ?
 					   addrlo : 0;
 
-			value = (addrext << B43_DMA64_TXADDREXT_SHIFT)
-			    & B43_DMA64_TXADDREXT_MASK;
+			value = FIELD_PREP(B43_DMA64_TXADDREXT_MASK, addrext);
 			enable = B43_DMA64_TXENABLE;
 			if (!parity)
 				enable |= B43_DMA64_TXPARITYDISABLE;
@@ -967,8 +944,7 @@ static int dmacontroller_setup(struct b43_dmaring *ring)
 			addrlo = b43_dma_address(&ring->dev->dma, ringbase, B43_DMA_ADDR_LOW);
 
 			value = B43_DMA32_TXENABLE;
-			value |= (addrext << B43_DMA32_TXADDREXT_SHIFT)
-			    & B43_DMA32_TXADDREXT_MASK;
+			value |= FIELD_PREP(B43_DMA32_TXADDREXT_MASK, addrext);
 			if (!parity)
 				value |= B43_DMA32_TXPARITYDISABLE;
 			b43_dma_write(ring, B43_DMA32_TXCTL, value);
@@ -986,10 +962,10 @@ static int dmacontroller_setup(struct b43_dmaring *ring)
 			ring->index_base = ring->dev->dma.index_is_addr ?
 					   addrlo : 0;
 
-			value = (ring->frameoffset << B43_DMA64_RXFROFF_SHIFT);
+			value = FIELD_PREP(B43_DMA64_RXFROFF_MASK,
+					   ring->frameoffset);
 			value |= B43_DMA64_RXENABLE;
-			value |= (addrext << B43_DMA64_RXADDREXT_SHIFT)
-			    & B43_DMA64_RXADDREXT_MASK;
+			value |= FIELD_PREP(B43_DMA64_RXADDREXT_MASK, addrext);
 			if (!parity)
 				value |= B43_DMA64_RXPARITYDISABLE;
 			/*
@@ -1018,10 +994,10 @@ static int dmacontroller_setup(struct b43_dmaring *ring)
 			addrext = b43_dma_address(&ring->dev->dma, ringbase, B43_DMA_ADDR_EXT);
 			addrlo = b43_dma_address(&ring->dev->dma, ringbase, B43_DMA_ADDR_LOW);
 
-			value = (ring->frameoffset << B43_DMA32_RXFROFF_SHIFT);
+			value = FIELD_PREP(B43_DMA32_RXFROFF_MASK,
+					   ring->frameoffset);
 			value |= B43_DMA32_RXENABLE;
-			value |= (addrext << B43_DMA32_RXADDREXT_SHIFT)
-			    & B43_DMA32_RXADDREXT_MASK;
+			value |= FIELD_PREP(B43_DMA32_RXADDREXT_MASK, addrext);
 			if (!parity)
 				value |= B43_DMA32_RXPARITYDISABLE;
 			b43_dma_write(ring, B43_DMA32_RXCTL, value);
@@ -1140,10 +1116,8 @@ static void b43_rx_alloc_uncached(struct b43_dmaring *ring)
 	if (!ring->rx_per_chunk)
 		return;
 	ring->rx_chunks = DIV_ROUND_UP(ring->nr_slots, ring->rx_per_chunk);
-	ring->rx_coh = kcalloc(ring->rx_chunks, sizeof(*ring->rx_coh),
-			       GFP_KERNEL);
-	ring->rx_coh_dma = kcalloc(ring->rx_chunks, sizeof(*ring->rx_coh_dma),
-				   GFP_KERNEL);
+	ring->rx_coh = kzalloc_objs(*ring->rx_coh, ring->rx_chunks);
+	ring->rx_coh_dma = kzalloc_objs(*ring->rx_coh_dma, ring->rx_chunks);
 	if (!ring->rx_coh || !ring->rx_coh_dma)
 		goto fail;
 	for (i = 0; i < ring->rx_chunks; i++) {
@@ -1888,7 +1862,7 @@ static int dma_tx_fragment(struct b43_dmaring *ring,
 	return 0;
 }
 
-static inline int should_inject_overflow(struct b43_dmaring *ring)
+static int should_inject_overflow(struct b43_dmaring *ring)
 {
 #ifdef CONFIG_B43_NEXT_DEBUG
 	if (unlikely(b43_debug(ring->dev, B43_DBG_DMAOVERFLOW))) {

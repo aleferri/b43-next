@@ -11,9 +11,10 @@
 #include "ssbn_private.h"
 
 #include <ssb-next/ssbn.h>
+#include <linux/bitfield.h>
 #include <linux/pci.h>
-#include <linux/export.h>
 #include <linux/delay.h>
+#include <linux/iopoll.h>
 #include <ssb-next/ssbn_embedded.h>
 
 static u32 ssbn_pcie_read(struct ssbn_pcicore *pc, u32 address);
@@ -22,26 +23,22 @@ static u16 ssbn_pcie_mdio_read(struct ssbn_pcicore *pc, u8 device, u8 address);
 static void ssbn_pcie_mdio_write(struct ssbn_pcicore *pc, u8 device,
 				u8 address, u16 data);
 
-static inline
-u32 pcicore_read32(struct ssbn_pcicore *pc, u16 offset)
+static u32 pcicore_read32(struct ssbn_pcicore *pc, u16 offset)
 {
 	return ssbn_read32(pc->dev, offset);
 }
 
-static inline
-void pcicore_write32(struct ssbn_pcicore *pc, u16 offset, u32 value)
+static void pcicore_write32(struct ssbn_pcicore *pc, u16 offset, u32 value)
 {
 	ssbn_write32(pc->dev, offset, value);
 }
 
-static inline
-u16 pcicore_read16(struct ssbn_pcicore *pc, u16 offset)
+static u16 pcicore_read16(struct ssbn_pcicore *pc, u16 offset)
 {
 	return ssbn_read16(pc->dev, offset);
 }
 
-static inline
-void pcicore_write16(struct ssbn_pcicore *pc, u16 offset, u16 value)
+static void pcicore_write16(struct ssbn_pcicore *pc, u16 offset, u16 value)
 {
 	ssbn_write16(pc->dev, offset, value);
 }
@@ -85,11 +82,11 @@ static u32 get_cfgspace_addr(struct ssbn_pcicore *pc,
 			goto out;
 		/* Slide the window */
 		tmp = SSBN_PCICORE_SBTOPCI_CFG0;
-		tmp |= ((1 << (dev + 16)) & SSBN_PCICORE_SBTOPCI1_MASK);
+		tmp |= (BIT(dev + 16) & SSBN_PCICORE_SBTOPCI1_MASK);
 		pcicore_write32(pc, SSBN_PCICORE_SBTOPCI1, tmp);
 		/* Calculate the address */
 		addr = SSBN_PCI_CFG;
-		addr |= ((1 << (dev + 16)) & ~SSBN_PCICORE_SBTOPCI1_MASK);
+		addr |= (BIT(dev + 16) & ~SSBN_PCICORE_SBTOPCI1_MASK);
 		addr |= (func << 8);
 		addr |= (off & ~3);
 	} else {
@@ -205,13 +202,11 @@ out:
 static int ssbn_pcicore_read_config(struct pci_bus *bus, unsigned int devfn,
 				   int reg, int size, u32 *val)
 {
-	unsigned long flags;
 	int err;
 
-	spin_lock_irqsave(&cfgspace_lock, flags);
+	guard(spinlock_irqsave)(&cfgspace_lock);
 	err = ssbn_extpci_read_config(extpci_core, bus->number, PCI_SLOT(devfn),
 				     PCI_FUNC(devfn), reg, val, size);
-	spin_unlock_irqrestore(&cfgspace_lock, flags);
 
 	return err ? PCIBIOS_DEVICE_NOT_FOUND : PCIBIOS_SUCCESSFUL;
 }
@@ -219,13 +214,11 @@ static int ssbn_pcicore_read_config(struct pci_bus *bus, unsigned int devfn,
 static int ssbn_pcicore_write_config(struct pci_bus *bus, unsigned int devfn,
 				    int reg, int size, u32 val)
 {
-	unsigned long flags;
 	int err;
 
-	spin_lock_irqsave(&cfgspace_lock, flags);
+	guard(spinlock_irqsave)(&cfgspace_lock);
 	err = ssbn_extpci_write_config(extpci_core, bus->number, PCI_SLOT(devfn),
 				      PCI_FUNC(devfn), reg, &val, size);
-	spin_unlock_irqrestore(&cfgspace_lock, flags);
 
 	return err ? PCIBIOS_DEVICE_NOT_FOUND : PCIBIOS_SUCCESSFUL;
 }
@@ -368,7 +361,7 @@ static void ssbn_pcicore_init_hostmode(struct ssbn_pcicore *pc)
 	 * The same problem was reported for WRT350N v1 (BCM4705), so we just
 	 * sleep here unconditionally.
 	 */
-	usleep_range(1000, 2000);
+	fsleep(1000);
 
 	/* Enable PCI bridge BAR0 prefetch and burst */
 	val = PCI_COMMAND_MASTER | PCI_COMMAND_MEMORY;
@@ -472,7 +465,7 @@ static void ssbn_pcicore_pci_setup_workarounds(struct ssbn_pcicore *pc)
 		tmp &= ~SSBN_IMCFGLO_SERTO;
 		tmp |= 2;
 		tmp &= ~SSBN_IMCFGLO_REQTO;
-		tmp |= 3 << SSBN_IMCFGLO_REQTO_SHIFT;
+		tmp |= FIELD_PREP(SSBN_IMCFGLO_REQTO, 3);
 		ssbn_write32(pdev, SSBN_IMCFGLO, tmp);
 		ssbn_commit_settings(bus);
 	} else if (pdev->id.revision >= 11) {
@@ -584,22 +577,17 @@ static void ssbn_pcie_mdio_set_phy(struct ssbn_pcicore *pc, u8 phy)
 	const u16 mdio_control = 0x128;
 	const u16 mdio_data = 0x12C;
 	u32 v;
-	int i;
 
-	v = (1 << 30); /* Start of Transaction */
-	v |= (1 << 28); /* Write Transaction */
-	v |= (1 << 17); /* Turnaround */
+	v = BIT(30); /* Start of Transaction */
+	v |= BIT(28); /* Write Transaction */
+	v |= BIT(17); /* Turnaround */
 	v |= (0x1F << 18);
 	v |= (phy << 4);
 	pcicore_write32(pc, mdio_data, v);
 
 	udelay(10);
-	for (i = 0; i < 200; i++) {
-		v = pcicore_read32(pc, mdio_control);
-		if (v & 0x100 /* Trans complete */)
-			break;
-		msleep(1);
-	}
+	read_poll_timeout(pcicore_read32, v, v & 0x100 /* Trans complete */,
+			  1000, 200 * USEC_PER_MSEC, false, pc, mdio_control);
 }
 
 static u16 ssbn_pcie_mdio_read(struct ssbn_pcicore *pc, u8 device, u8 address)
@@ -609,7 +597,6 @@ static u16 ssbn_pcie_mdio_read(struct ssbn_pcicore *pc, u8 device, u8 address)
 	int max_retries = 10;
 	u16 ret = 0;
 	u32 v;
-	int i;
 
 	v = 0x80; /* Enable Preamble Sequence */
 	v |= 0x2; /* MDIO Clock Divisor */
@@ -620,23 +607,21 @@ static u16 ssbn_pcie_mdio_read(struct ssbn_pcicore *pc, u8 device, u8 address)
 		ssbn_pcie_mdio_set_phy(pc, device);
 	}
 
-	v = (1 << 30); /* Start of Transaction */
-	v |= (1 << 29); /* Read Transaction */
-	v |= (1 << 17); /* Turnaround */
+	v = BIT(30); /* Start of Transaction */
+	v |= BIT(29); /* Read Transaction */
+	v |= BIT(17); /* Turnaround */
 	if (pc->dev->id.revision < 10)
 		v |= (u32)device << 22;
 	v |= (u32)address << 18;
 	pcicore_write32(pc, mdio_data, v);
 	/* Wait for the device to complete the transaction */
 	udelay(10);
-	for (i = 0; i < max_retries; i++) {
-		v = pcicore_read32(pc, mdio_control);
-		if (v & 0x100 /* Trans complete */) {
-			udelay(10);
-			ret = pcicore_read32(pc, mdio_data);
-			break;
-		}
-		msleep(1);
+	if (!read_poll_timeout(pcicore_read32, v,
+			       v & 0x100 /* Trans complete */,
+			       1000, max_retries * USEC_PER_MSEC, false,
+			       pc, mdio_control)) {
+		udelay(10);
+		ret = pcicore_read32(pc, mdio_data);
 	}
 	pcicore_write32(pc, mdio_control, 0);
 	return ret;
@@ -649,7 +634,6 @@ static void ssbn_pcie_mdio_write(struct ssbn_pcicore *pc, u8 device,
 	const u16 mdio_data = 0x12C;
 	int max_retries = 10;
 	u32 v;
-	int i;
 
 	v = 0x80; /* Enable Preamble Sequence */
 	v |= 0x2; /* MDIO Clock Divisor */
@@ -660,9 +644,9 @@ static void ssbn_pcie_mdio_write(struct ssbn_pcicore *pc, u8 device,
 		ssbn_pcie_mdio_set_phy(pc, device);
 	}
 
-	v = (1 << 30); /* Start of Transaction */
-	v |= (1 << 28); /* Write Transaction */
-	v |= (1 << 17); /* Turnaround */
+	v = BIT(30); /* Start of Transaction */
+	v |= BIT(28); /* Write Transaction */
+	v |= BIT(17); /* Turnaround */
 	if (pc->dev->id.revision < 10)
 		v |= (u32)device << 22;
 	v |= (u32)address << 18;
@@ -670,12 +654,9 @@ static void ssbn_pcie_mdio_write(struct ssbn_pcicore *pc, u8 device,
 	pcicore_write32(pc, mdio_data, v);
 	/* Wait for the device to complete the transaction */
 	udelay(10);
-	for (i = 0; i < max_retries; i++) {
-		v = pcicore_read32(pc, mdio_control);
-		if (v & 0x100 /* Trans complete */)
-			break;
-		msleep(1);
-	}
+	read_poll_timeout(pcicore_read32, v, v & 0x100 /* Trans complete */,
+			  1000, max_retries * USEC_PER_MSEC, false,
+			  pc, mdio_control);
 	pcicore_write32(pc, mdio_control, 0);
 }
 
@@ -706,7 +687,7 @@ int ssbn_pcicore_dev_irqvecs_enable(struct ssbn_pcicore *pc,
 		u32 coremask;
 
 		/* Calculate the "coremask" for the device. */
-		coremask = (1 << dev->core_index);
+		coremask = (BIT(dev->core_index));
 
 		WARN_ON(bus->bustype != SSBN_BUSTYPE_PCI);
 		err = pci_read_config_dword(bus->host_pci, SSBN_PCI_IRQMASK, &tmp);
@@ -722,7 +703,7 @@ int ssbn_pcicore_dev_irqvecs_enable(struct ssbn_pcicore *pc,
 		intvec = ssbn_read32(pdev, SSBN_INTVEC);
 		tmp = ssbn_read32(dev, SSBN_TPSFLAG);
 		tmp &= SSBN_TPSFLAG_BPFLAG;
-		intvec |= (1 << tmp);
+		intvec |= BIT(tmp);
 		ssbn_write32(pdev, SSBN_INTVEC, intvec);
 	}
 
@@ -739,4 +720,3 @@ int ssbn_pcicore_dev_irqvecs_enable(struct ssbn_pcicore *pc,
 out:
 	return err;
 }
-EXPORT_SYMBOL(ssbn_pcicore_dev_irqvecs_enable);

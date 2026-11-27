@@ -45,11 +45,11 @@
 /** EXTIF core registers **/
 
 #define SSBN_EXTIF_CTL			0x0000
-#define  SSBN_EXTIF_CTL_UARTEN		(1 << 0) /* UART enable */
+#define  SSBN_EXTIF_CTL_UARTEN		BIT(0) /* UART enable */
 #define SSBN_EXTIF_EXTSTAT		0x0004
-#define  SSBN_EXTIF_EXTSTAT_EMODE	(1 << 0) /* Endian mode (ro) */
-#define  SSBN_EXTIF_EXTSTAT_EIRQPIN	(1 << 1) /* External interrupt pin (ro) */
-#define  SSBN_EXTIF_EXTSTAT_GPIOIRQPIN	(1 << 2) /* GPIO interrupt pin (ro) */
+#define  SSBN_EXTIF_EXTSTAT_EMODE	BIT(0) /* Endian mode (ro) */
+#define  SSBN_EXTIF_EXTSTAT_EIRQPIN	BIT(1) /* External interrupt pin (ro) */
+#define  SSBN_EXTIF_EXTSTAT_GPIOIRQPIN	BIT(2) /* GPIO interrupt pin (ro) */
 #define SSBN_EXTIF_PCMCIA_CFG		0x0010
 #define SSBN_EXTIF_PCMCIA_MEMWAIT	0x0014
 #define SSBN_EXTIF_PCMCIA_ATTRWAIT	0x0018
@@ -82,21 +82,21 @@
 
 
 /* pcmcia/prog/flash_config */
-#define	SSBN_EXTCFG_EN			(1 << 0)	/* enable */
+#define	SSBN_EXTCFG_EN			BIT(0)	/* enable */
 #define	SSBN_EXTCFG_MODE			0xE		/* mode */
 #define	SSBN_EXTCFG_MODE_SHIFT		1
 #define	 SSBN_EXTCFG_MODE_FLASH		0x0		/* flash/asynchronous mode */
 #define	 SSBN_EXTCFG_MODE_SYNC		0x2		/* synchronous mode */
 #define	 SSBN_EXTCFG_MODE_PCMCIA		0x4		/* pcmcia mode */
-#define	SSBN_EXTCFG_DS16			(1 << 4)	/* destsize:  0=8bit, 1=16bit */
-#define	SSBN_EXTCFG_BSWAP		(1 << 5)	/* byteswap */
+#define	SSBN_EXTCFG_DS16			BIT(4)	/* destsize:  0=8bit, 1=16bit */
+#define	SSBN_EXTCFG_BSWAP		BIT(5)	/* byteswap */
 #define	SSBN_EXTCFG_CLKDIV		0xC0		/* clock divider */
 #define	SSBN_EXTCFG_CLKDIV_SHIFT		6
 #define	 SSBN_EXTCFG_CLKDIV_2		0x0		/* backplane/2 */
 #define	 SSBN_EXTCFG_CLKDIV_3		0x40		/* backplane/3 */
 #define	 SSBN_EXTCFG_CLKDIV_4		0x80		/* backplane/4 */
-#define	SSBN_EXTCFG_CLKEN		(1 << 8)	/* clock enable */
-#define	SSBN_EXTCFG_STROBE		(1 << 9)	/* size/bytestrobe (synch only) */
+#define	SSBN_EXTCFG_CLKEN		BIT(8)	/* clock enable */
+#define	SSBN_EXTCFG_STROBE		BIT(9)	/* size/bytestrobe (synch only) */
 
 /* pcmcia_memwait */
 #define	SSBN_PCMCIA_MEMW_0		0x0000003F	/* waitcount0 */
@@ -128,11 +128,8 @@
 /* prog_waitcount */
 #define	SSBN_PROG_WCNT_0			0x0000001F	/* waitcount0 */
 #define	SSBN_PROG_WCNT_1			0x00001F00	/* waitcount1 */
-#define	SSBN_PROG_WCNT_1_SHIFT		8
 #define	SSBN_PROG_WCNT_2			0x001F0000	/* waitcount2 */
-#define	SSBN_PROG_WCNT_2_SHIFT		16
 #define	SSBN_PROG_WCNT_3			0x1F000000	/* waitcount3 */
-#define	SSBN_PROG_WCNT_3_SHIFT		24
 
 #define SSBN_PROG_W0			0x0000000C
 #define SSBN_PROG_W1			0x00000A00
@@ -142,11 +139,9 @@
 /* flash_waitcount */
 #define	SSBN_FLASH_WCNT_0		0x0000001F	/* waitcount0 */
 #define	SSBN_FLASH_WCNT_1		0x00001F00	/* waitcount1 */
-#define	SSBN_FLASH_WCNT_1_SHIFT		8
 #define	SSBN_FLASH_WCNT_2		0x001F0000	/* waitcount2 */
 #define	SSBN_FLASH_WCNT_2_SHIFT		16
 #define	SSBN_FLASH_WCNT_3		0x1F000000	/* waitcount3 */
-#define	SSBN_FLASH_WCNT_3_SHIFT		24
 
 /* watchdog */
 #define SSBN_EXTIF_WATCHDOG_CLK		48000000	/* Hz */

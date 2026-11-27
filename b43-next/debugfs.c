@@ -36,9 +36,8 @@ struct b43_debugfs_fops {
 	size_t file_struct_offset;
 };
 
-static inline
-struct b43_dfs_file *fops_to_dfs_file(struct b43_wldev *dev,
-				      const struct b43_debugfs_fops *dfops)
+static struct b43_dfs_file *fops_to_dfs_file(struct b43_wldev *dev,
+					     const struct b43_debugfs_fops *dfops)
 {
 	void *p;
 
@@ -56,7 +55,7 @@ struct b43_dfs_file *fops_to_dfs_file(struct b43_wldev *dev,
 					  bufsize - count,	\
 					  fmt , ##x);		\
 		else						\
-			printk(KERN_ERR "b43: fappend overflow\n"); \
+			pr_err("b43: fappend overflow\n");	\
 	} while (0)
 
 
@@ -240,10 +239,8 @@ static int mmio16read__write_file(struct b43_wldev *dev,
 				  const char *buf, size_t count)
 {
 	unsigned int addr;
-	int res;
 
-	res = sscanf(buf, "0x%X", &addr);
-	if (res != 1)
+	if (kstrtouint(buf, 16, &addr))
 		return -EINVAL;
 	if (addr > B43_MAX_MMIO_ACCESS)
 		return -EADDRNOTAVAIL;
@@ -304,10 +301,8 @@ static int mmio32read__write_file(struct b43_wldev *dev,
 				  const char *buf, size_t count)
 {
 	unsigned int addr;
-	int res;
 
-	res = sscanf(buf, "0x%X", &addr);
-	if (res != 1)
+	if (kstrtouint(buf, 16, &addr))
 		return -EINVAL;
 	if (addr > B43_MAX_MMIO_ACCESS)
 		return -EADDRNOTAVAIL;
@@ -447,8 +442,8 @@ static ssize_t loctls_read_file(struct b43_wldev *dev,
 		calc_expire_secs(now, lo->txctl_measured_time,
 				 B43_LO_TXCTL_EXPIRE));
 	fappend("Power Vector: 0x%08X%08X  (expires in %lu sec)\n",
-		(unsigned int)((lo->power_vector & 0xFFFFFFFF00000000ULL) >> 32),
-		(unsigned int)(lo->power_vector & 0x00000000FFFFFFFFULL),
+		upper_32_bits(lo->power_vector),
+		lower_32_bits(lo->power_vector),
 		calc_expire_secs(now, lo->pwr_vec_read_time,
 				 B43_LO_PWRVEC_EXPIRE));
 
@@ -495,9 +490,7 @@ static ssize_t b43_debugfs_read(struct file *file, char __user *userbuf,
 	const struct b43_debugfs_fops *dfops;
 	struct b43_dfs_file *dfile;
 	ssize_t ret;
-	char *buf;
 	const size_t bufsize = 1024 * 16; /* 16 kiB buffer */
-	int err = 0;
 
 	if (!count)
 		return 0;
@@ -505,33 +498,25 @@ static ssize_t b43_debugfs_read(struct file *file, char __user *userbuf,
 	if (!dev)
 		return -ENODEV;
 
-	mutex_lock(&dev->wl->mutex);
-	if (b43_status(dev) < B43_STAT_INITIALIZED) {
-		err = -ENODEV;
-		goto out_unlock;
-	}
+	guard(mutex)(&dev->wl->mutex);
+	if (b43_status(dev) < B43_STAT_INITIALIZED)
+		return -ENODEV;
 
 	dfops = debugfs_get_aux(file);
-	if (!dfops->read) {
-		err = -ENOSYS;
-		goto out_unlock;
-	}
+	if (!dfops->read)
+		return -ENOSYS;
 	dfile = fops_to_dfs_file(dev, dfops);
 
 	if (!dfile->buffer) {
-		buf = kzalloc(bufsize, GFP_KERNEL);
-		if (!buf) {
-			err = -ENOMEM;
-			goto out_unlock;
-		}
+		char *buf __free(kfree) = kzalloc(bufsize, GFP_KERNEL);
+
+		if (!buf)
+			return -ENOMEM;
 		ret = dfops->read(dev, buf, bufsize);
-		if (ret <= 0) {
-			kfree(buf);
-			err = ret;
-			goto out_unlock;
-		}
+		if (ret <= 0)
+			return ret;
 		dfile->data_len = ret;
-		dfile->buffer = buf;
+		dfile->buffer = no_free_ptr(buf);
 	}
 
 	ret = simple_read_from_buffer(userbuf, count, ppos,
@@ -542,10 +527,8 @@ static ssize_t b43_debugfs_read(struct file *file, char __user *userbuf,
 		dfile->buffer = NULL;
 		dfile->data_len = 0;
 	}
-out_unlock:
-	mutex_unlock(&dev->wl->mutex);
 
-	return err ? err : ret;
+	return ret;
 }
 
 static ssize_t b43_debugfs_write(struct file *file,
@@ -554,47 +537,29 @@ static ssize_t b43_debugfs_write(struct file *file,
 {
 	struct b43_wldev *dev;
 	const struct b43_debugfs_fops *dfops;
-	char *buf;
-	int err = 0;
+	int err;
 
 	if (!count)
 		return 0;
-	if (count > PAGE_SIZE)
+	if (count >= PAGE_SIZE)
 		return -E2BIG;
 	dev = file->private_data;
 	if (!dev)
 		return -ENODEV;
 
-	mutex_lock(&dev->wl->mutex);
-	if (b43_status(dev) < B43_STAT_INITIALIZED) {
-		err = -ENODEV;
-		goto out_unlock;
-	}
+	char *buf __free(kfree) = memdup_user_nul(userbuf, count);
+	if (IS_ERR(buf))
+		return PTR_ERR(buf);
+
+	guard(mutex)(&dev->wl->mutex);
+	if (b43_status(dev) < B43_STAT_INITIALIZED)
+		return -ENODEV;
 
 	dfops = debugfs_get_aux(file);
-	if (!dfops->write) {
-		err = -ENOSYS;
-		goto out_unlock;
-	}
+	if (!dfops->write)
+		return -ENOSYS;
 
-	buf = kzalloc(PAGE_SIZE, GFP_KERNEL);
-	if (!buf) {
-		err = -ENOMEM;
-		goto out_unlock;
-	}
-	if (copy_from_user(buf, userbuf, count)) {
-		err = -EFAULT;
-		goto out_freepage;
-	}
 	err = dfops->write(dev, buf, count);
-	if (err)
-		goto out_freepage;
-
-out_freepage:
-	kfree(buf);
-out_unlock:
-	mutex_unlock(&dev->wl->mutex);
-
 	return err ? err : count;
 }
 
@@ -649,13 +614,12 @@ static int b43_cal_show(struct seq_file *s, void *unused)
 	struct b43_calstat *cs = v->cs;
 	unsigned int entry, age;
 	u32 seq = 0;
-	char *buf;
 	int a;
 
-	buf = kmalloc(B43_CAL_LINE_MAX, GFP_KERNEL);
+	char *buf __free(kfree) = kmalloc(B43_CAL_LINE_MAX, GFP_KERNEL);
 	if (!buf)
 		return -ENOMEM;
-	mutex_lock(&cs->dev->wl->mutex);
+	guard(mutex)(&cs->dev->wl->mutex);
 	if (v->entry < 0) {
 		while (b43_cal_next(cs, &seq, &entry, &age))
 			if (b43_cal_format(cs, entry, age, B43_CAL_FMT_CONTEXT,
@@ -667,8 +631,6 @@ static int b43_cal_show(struct seq_file *s, void *unused)
 					   buf, B43_CAL_LINE_MAX) >= 0)
 				seq_printf(s, "%s\n", buf);
 	}
-	mutex_unlock(&cs->dev->wl->mutex);
-	kfree(buf);
 	return 0;
 }
 DEFINE_SHOW_ATTRIBUTE(b43_cal);
@@ -700,11 +662,11 @@ static ssize_t b43_cal_enable_write(struct file *file, const char __user *buf,
 			return -ENOMEM;
 	}
 
-	mutex_lock(&cs->dev->wl->mutex);
-	old = b43_calstat_stop(cs);
-	if (mem)
-		b43_calstat_start(cs, mem);
-	mutex_unlock(&cs->dev->wl->mutex);
+	scoped_guard(mutex, &cs->dev->wl->mutex) {
+		old = b43_calstat_stop(cs);
+		if (mem)
+			b43_calstat_start(cs, mem);
+	}
 
 	kvfree(old);
 	return count;
@@ -770,11 +732,10 @@ static void b43_cal_remove(struct b43_wldev *dev, struct b43_dfsentry *e)
 	kfree(e->cal);
 }
 #else
-static inline void b43_cal_add(struct b43_wldev *dev, struct b43_dfsentry *e)
+static void b43_cal_add(struct b43_wldev *dev, struct b43_dfsentry *e)
 {
 }
-static inline void b43_cal_remove(struct b43_wldev *dev,
-				  struct b43_dfsentry *e)
+static void b43_cal_remove(struct b43_wldev *dev, struct b43_dfsentry *e)
 {
 }
 #endif
@@ -820,7 +781,6 @@ void b43_debugfs_add_device(struct b43_wldev *dev)
 {
 	struct b43_dfsentry *e;
 	struct b43_txstatus_log *log;
-	char devdir[16];
 
 	B43_WARN_ON(!dev);
 	e = kzalloc_obj(*e);
@@ -840,8 +800,7 @@ void b43_debugfs_add_device(struct b43_wldev *dev)
 
 	dev->dfsentry = e;
 
-	snprintf(devdir, sizeof(devdir), "%s", wiphy_name(dev->wl->hw->wiphy));
-	e->subdir = debugfs_create_dir(devdir, rootdir);
+	e->subdir = debugfs_create_dir(wiphy_name(dev->wl->hw->wiphy), rootdir);
 
 	e->mmio16read_next = 0xFFFF; /* invalid address */
 	e->mmio32read_next = 0xFFFF; /* invalid address */

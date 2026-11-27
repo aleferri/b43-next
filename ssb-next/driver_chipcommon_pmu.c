@@ -13,8 +13,9 @@
 #include <ssb-next/ssbn.h>
 #include <ssb-next/ssbn_regs.h>
 #include <ssb-next/ssbn_driver_chipcommon.h>
+#include <linux/bitfield.h>
 #include <linux/delay.h>
-#include <linux/export.h>
+#include <linux/iopoll.h>
 #ifdef CONFIG_BCM47XX
 #include <linux/bcm47xx_nvram.h>
 #endif
@@ -93,19 +94,19 @@ static void ssbn_pmu0_pllinit_r0(struct ssbn_chipcommon *cc,
 	struct ssbn_bus *bus = cc->dev->bus;
 	const struct pmu0_plltab_entry *e = NULL;
 	u32 pmuctl, tmp, pllctl;
-	unsigned int i;
 
 	if (crystalfreq)
 		e = pmu0_plltab_find_entry(crystalfreq);
 	if (!e)
 		e = pmu0_plltab_find_entry(SSBN_PMU0_DEFAULT_XTALFREQ);
-	BUG_ON(!e);
+	if (WARN_ON(!e))
+		return;
 	crystalfreq = e->freq;
 	cc->pmu.crystalfreq = e->freq;
 
 	/* Check if the PLL already is programmed to this frequency. */
 	pmuctl = chipco_read32(cc, SSBN_CHIPCO_PMU_CTL);
-	if (((pmuctl & SSBN_CHIPCO_PMU_CTL_XTALFREQ) >> SSBN_CHIPCO_PMU_CTL_XTALFREQ_SHIFT) == e->xf) {
+	if (FIELD_GET(SSBN_CHIPCO_PMU_CTL_XTALFREQ, pmuctl) == e->xf) {
 		/* We're already there... */
 		return;
 	}
@@ -117,27 +118,23 @@ static void ssbn_pmu0_pllinit_r0(struct ssbn_chipcommon *cc,
 	switch (bus->chip_id) {
 	case 0x4328:
 		chipco_mask32(cc, SSBN_CHIPCO_PMU_MINRES_MSK,
-			      ~(1 << SSBN_PMURES_4328_BB_PLL_PU));
+			      ~BIT(SSBN_PMURES_4328_BB_PLL_PU));
 		chipco_mask32(cc, SSBN_CHIPCO_PMU_MAXRES_MSK,
-			      ~(1 << SSBN_PMURES_4328_BB_PLL_PU));
+			      ~BIT(SSBN_PMURES_4328_BB_PLL_PU));
 		break;
 	case 0x5354:
 		chipco_mask32(cc, SSBN_CHIPCO_PMU_MINRES_MSK,
-			      ~(1 << SSBN_PMURES_5354_BB_PLL_PU));
+			      ~BIT(SSBN_PMURES_5354_BB_PLL_PU));
 		chipco_mask32(cc, SSBN_CHIPCO_PMU_MAXRES_MSK,
-			      ~(1 << SSBN_PMURES_5354_BB_PLL_PU));
+			      ~BIT(SSBN_PMURES_5354_BB_PLL_PU));
 		break;
 	default:
 		WARN_ON(1);
 	}
-	for (i = 1500; i; i--) {
-		tmp = chipco_read32(cc, SSBN_CHIPCO_CLKCTLST);
-		if (!(tmp & SSBN_CHIPCO_CLKCTLST_HAVEHT))
-			break;
-		udelay(10);
-	}
-	tmp = chipco_read32(cc, SSBN_CHIPCO_CLKCTLST);
-	if (tmp & SSBN_CHIPCO_CLKCTLST_HAVEHT)
+	if (read_poll_timeout_atomic(chipco_read32, tmp,
+				     !(tmp & SSBN_CHIPCO_CLKCTLST_HAVEHT),
+				     10, 15000, false,
+				     cc, SSBN_CHIPCO_CLKCTLST))
 		dev_emerg(cc->dev->dev, "Failed to turn the PLL off!\n");
 
 	/* Set PDIV in PLL control 0. */
@@ -152,8 +149,8 @@ static void ssbn_pmu0_pllinit_r0(struct ssbn_chipcommon *cc,
 	pllctl = ssbn_chipco_pll_read(cc, SSBN_PMU0_PLLCTL1);
 	pllctl &= ~SSBN_PMU0_PLLCTL1_STOPMOD;
 	pllctl &= ~(SSBN_PMU0_PLLCTL1_WILD_IMSK | SSBN_PMU0_PLLCTL1_WILD_FMSK);
-	pllctl |= ((u32)e->wb_int << SSBN_PMU0_PLLCTL1_WILD_IMSK_SHIFT) & SSBN_PMU0_PLLCTL1_WILD_IMSK;
-	pllctl |= ((u32)e->wb_frac << SSBN_PMU0_PLLCTL1_WILD_FMSK_SHIFT) & SSBN_PMU0_PLLCTL1_WILD_FMSK;
+	pllctl |= FIELD_PREP(SSBN_PMU0_PLLCTL1_WILD_IMSK, (u32)e->wb_int);
+	pllctl |= FIELD_PREP(SSBN_PMU0_PLLCTL1_WILD_FMSK, (u32)e->wb_frac);
 	if (e->wb_frac == 0)
 		pllctl |= SSBN_PMU0_PLLCTL1_STOPMOD;
 	ssbn_chipco_pll_write(cc, SSBN_PMU0_PLLCTL1, pllctl);
@@ -161,16 +158,16 @@ static void ssbn_pmu0_pllinit_r0(struct ssbn_chipcommon *cc,
 	/* Set WILD in PLL control 2. */
 	pllctl = ssbn_chipco_pll_read(cc, SSBN_PMU0_PLLCTL2);
 	pllctl &= ~SSBN_PMU0_PLLCTL2_WILD_IMSKHI;
-	pllctl |= (((u32)e->wb_int >> 4) << SSBN_PMU0_PLLCTL2_WILD_IMSKHI_SHIFT) & SSBN_PMU0_PLLCTL2_WILD_IMSKHI;
+	pllctl |= FIELD_PREP(SSBN_PMU0_PLLCTL2_WILD_IMSKHI, (u32)e->wb_int >> 4);
 	ssbn_chipco_pll_write(cc, SSBN_PMU0_PLLCTL2, pllctl);
 
 	/* Set the crystalfrequency and the divisor. */
 	pmuctl = chipco_read32(cc, SSBN_CHIPCO_PMU_CTL);
 	pmuctl &= ~SSBN_CHIPCO_PMU_CTL_ILP_DIV;
-	pmuctl |= (((crystalfreq + 127) / 128 - 1) << SSBN_CHIPCO_PMU_CTL_ILP_DIV_SHIFT)
-			& SSBN_CHIPCO_PMU_CTL_ILP_DIV;
+	pmuctl |= FIELD_PREP(SSBN_CHIPCO_PMU_CTL_ILP_DIV,
+			     (crystalfreq + 127) / 128 - 1);
 	pmuctl &= ~SSBN_CHIPCO_PMU_CTL_XTALFREQ;
-	pmuctl |= ((u32)e->xf << SSBN_CHIPCO_PMU_CTL_XTALFREQ_SHIFT) & SSBN_CHIPCO_PMU_CTL_XTALFREQ;
+	pmuctl |= FIELD_PREP(SSBN_CHIPCO_PMU_CTL_XTALFREQ, (u32)e->xf);
 	chipco_write32(cc, SSBN_CHIPCO_PMU_CTL, pmuctl);
 }
 
@@ -225,7 +222,6 @@ static void ssbn_pmu1_pllinit_r0(struct ssbn_chipcommon *cc,
 	const struct pmu1_plltab_entry *e = NULL;
 	u32 buffer_strength = 0;
 	u32 tmp, pllctl, pmuctl;
-	unsigned int i;
 
 	if (bus->chip_id == 0x4312) {
 		/* We do not touch the BCM4312 PLL and assume
@@ -238,13 +234,14 @@ static void ssbn_pmu1_pllinit_r0(struct ssbn_chipcommon *cc,
 		e = pmu1_plltab_find_entry(crystalfreq);
 	if (!e)
 		e = pmu1_plltab_find_entry(SSBN_PMU1_DEFAULT_XTALFREQ);
-	BUG_ON(!e);
+	if (WARN_ON(!e))
+		return;
 	crystalfreq = e->freq;
 	cc->pmu.crystalfreq = e->freq;
 
 	/* Check if the PLL already is programmed to this frequency. */
 	pmuctl = chipco_read32(cc, SSBN_CHIPCO_PMU_CTL);
-	if (((pmuctl & SSBN_CHIPCO_PMU_CTL_XTALFREQ) >> SSBN_CHIPCO_PMU_CTL_XTALFREQ_SHIFT) == e->xf) {
+	if (FIELD_GET(SSBN_CHIPCO_PMU_CTL_XTALFREQ, pmuctl) == e->xf) {
 		/* We're already there... */
 		return;
 	}
@@ -256,61 +253,57 @@ static void ssbn_pmu1_pllinit_r0(struct ssbn_chipcommon *cc,
 	switch (bus->chip_id) {
 	case 0x4325:
 		chipco_mask32(cc, SSBN_CHIPCO_PMU_MINRES_MSK,
-			      ~((1 << SSBN_PMURES_4325_BBPLL_PWRSW_PU) |
-				(1 << SSBN_PMURES_4325_HT_AVAIL)));
+			      ~(BIT(SSBN_PMURES_4325_BBPLL_PWRSW_PU) |
+				BIT(SSBN_PMURES_4325_HT_AVAIL)));
 		chipco_mask32(cc, SSBN_CHIPCO_PMU_MAXRES_MSK,
-			      ~((1 << SSBN_PMURES_4325_BBPLL_PWRSW_PU) |
-				(1 << SSBN_PMURES_4325_HT_AVAIL)));
+			      ~(BIT(SSBN_PMURES_4325_BBPLL_PWRSW_PU) |
+				BIT(SSBN_PMURES_4325_HT_AVAIL)));
 		/* Adjust the BBPLL to 2 on all channels later. */
 		buffer_strength = 0x222222;
 		break;
 	default:
 		WARN_ON(1);
 	}
-	for (i = 1500; i; i--) {
-		tmp = chipco_read32(cc, SSBN_CHIPCO_CLKCTLST);
-		if (!(tmp & SSBN_CHIPCO_CLKCTLST_HAVEHT))
-			break;
-		udelay(10);
-	}
-	tmp = chipco_read32(cc, SSBN_CHIPCO_CLKCTLST);
-	if (tmp & SSBN_CHIPCO_CLKCTLST_HAVEHT)
+	if (read_poll_timeout_atomic(chipco_read32, tmp,
+				     !(tmp & SSBN_CHIPCO_CLKCTLST_HAVEHT),
+				     10, 15000, false,
+				     cc, SSBN_CHIPCO_CLKCTLST))
 		dev_emerg(cc->dev->dev, "Failed to turn the PLL off!\n");
 
 	/* Set p1div and p2div. */
 	pllctl = ssbn_chipco_pll_read(cc, SSBN_PMU1_PLLCTL0);
 	pllctl &= ~(SSBN_PMU1_PLLCTL0_P1DIV | SSBN_PMU1_PLLCTL0_P2DIV);
-	pllctl |= ((u32)e->p1div << SSBN_PMU1_PLLCTL0_P1DIV_SHIFT) & SSBN_PMU1_PLLCTL0_P1DIV;
-	pllctl |= ((u32)e->p2div << SSBN_PMU1_PLLCTL0_P2DIV_SHIFT) & SSBN_PMU1_PLLCTL0_P2DIV;
+	pllctl |= FIELD_PREP(SSBN_PMU1_PLLCTL0_P1DIV, (u32)e->p1div);
+	pllctl |= FIELD_PREP(SSBN_PMU1_PLLCTL0_P2DIV, (u32)e->p2div);
 	ssbn_chipco_pll_write(cc, SSBN_PMU1_PLLCTL0, pllctl);
 
 	/* Set ndiv int and ndiv mode */
 	pllctl = ssbn_chipco_pll_read(cc, SSBN_PMU1_PLLCTL2);
 	pllctl &= ~(SSBN_PMU1_PLLCTL2_NDIVINT | SSBN_PMU1_PLLCTL2_NDIVMODE);
-	pllctl |= ((u32)e->ndiv_int << SSBN_PMU1_PLLCTL2_NDIVINT_SHIFT) & SSBN_PMU1_PLLCTL2_NDIVINT;
-	pllctl |= (1 << SSBN_PMU1_PLLCTL2_NDIVMODE_SHIFT) & SSBN_PMU1_PLLCTL2_NDIVMODE;
+	pllctl |= FIELD_PREP(SSBN_PMU1_PLLCTL2_NDIVINT, (u32)e->ndiv_int);
+	pllctl |= FIELD_PREP(SSBN_PMU1_PLLCTL2_NDIVMODE, 1);
 	ssbn_chipco_pll_write(cc, SSBN_PMU1_PLLCTL2, pllctl);
 
 	/* Set ndiv frac */
 	pllctl = ssbn_chipco_pll_read(cc, SSBN_PMU1_PLLCTL3);
 	pllctl &= ~SSBN_PMU1_PLLCTL3_NDIVFRAC;
-	pllctl |= ((u32)e->ndiv_frac << SSBN_PMU1_PLLCTL3_NDIVFRAC_SHIFT) & SSBN_PMU1_PLLCTL3_NDIVFRAC;
+	pllctl |= FIELD_PREP(SSBN_PMU1_PLLCTL3_NDIVFRAC, (u32)e->ndiv_frac);
 	ssbn_chipco_pll_write(cc, SSBN_PMU1_PLLCTL3, pllctl);
 
 	/* Change the drive strength, if required. */
 	if (buffer_strength) {
 		pllctl = ssbn_chipco_pll_read(cc, SSBN_PMU1_PLLCTL5);
 		pllctl &= ~SSBN_PMU1_PLLCTL5_CLKDRV;
-		pllctl |= (buffer_strength << SSBN_PMU1_PLLCTL5_CLKDRV_SHIFT) & SSBN_PMU1_PLLCTL5_CLKDRV;
+		pllctl |= FIELD_PREP(SSBN_PMU1_PLLCTL5_CLKDRV, buffer_strength);
 		ssbn_chipco_pll_write(cc, SSBN_PMU1_PLLCTL5, pllctl);
 	}
 
 	/* Tune the crystalfreq and the divisor. */
 	pmuctl = chipco_read32(cc, SSBN_CHIPCO_PMU_CTL);
 	pmuctl &= ~(SSBN_CHIPCO_PMU_CTL_ILP_DIV | SSBN_CHIPCO_PMU_CTL_XTALFREQ);
-	pmuctl |= ((((u32)e->freq + 127) / 128 - 1) << SSBN_CHIPCO_PMU_CTL_ILP_DIV_SHIFT)
-			& SSBN_CHIPCO_PMU_CTL_ILP_DIV;
-	pmuctl |= ((u32)e->xf << SSBN_CHIPCO_PMU_CTL_XTALFREQ_SHIFT) & SSBN_CHIPCO_PMU_CTL_XTALFREQ;
+	pmuctl |= FIELD_PREP(SSBN_CHIPCO_PMU_CTL_ILP_DIV,
+			     ((u32)e->freq + 127) / 128 - 1);
+	pmuctl |= FIELD_PREP(SSBN_CHIPCO_PMU_CTL_XTALFREQ, (u32)e->xf);
 	chipco_write32(cc, SSBN_CHIPCO_PMU_CTL, pmuctl);
 }
 
@@ -322,8 +315,10 @@ static void ssbn_pmu_pll_init(struct ssbn_chipcommon *cc)
 	if (bus->bustype == SSBN_BUSTYPE_SSB) {
 #ifdef CONFIG_BCM47XX
 		char buf[20];
-		if (bcm47xx_nvram_getenv("xtalfreq", buf, sizeof(buf)) >= 0)
-			crystalfreq = simple_strtoul(buf, NULL, 0);
+
+		if (bcm47xx_nvram_getenv("xtalfreq", buf, sizeof(buf)) >= 0 &&
+		    kstrtou32(buf, 0, &crystalfreq))
+			crystalfreq = 0;
 #endif
 	}
 
@@ -399,8 +394,8 @@ static const struct pmu_res_depend_tab_entry pmu_res_depend_tab_4328a0[] = {
 		/* Adjust ILP Request to avoid forcing EXT/BB into burst mode. */
 		.resource = SSBN_PMURES_4328_ILP_REQUEST,
 		.task = PMU_RES_DEP_SET,
-		.depend = ((1 << SSBN_PMURES_4328_EXT_SWITCHER_PWM) |
-			   (1 << SSBN_PMURES_4328_BB_SWITCHER_PWM)),
+		.depend = (BIT(SSBN_PMURES_4328_EXT_SWITCHER_PWM) |
+			   BIT(SSBN_PMURES_4328_BB_SWITCHER_PWM)),
 	},
 };
 
@@ -413,10 +408,10 @@ static const struct pmu_res_depend_tab_entry pmu_res_depend_tab_4325a0[] = {
 		/* Adjust HT-Available dependencies. */
 		.resource = SSBN_PMURES_4325_HT_AVAIL,
 		.task = PMU_RES_DEP_ADD,
-		.depend = ((1 << SSBN_PMURES_4325_RX_PWRSW_PU) |
-			   (1 << SSBN_PMURES_4325_TX_PWRSW_PU) |
-			   (1 << SSBN_PMURES_4325_LOGEN_PWRSW_PU) |
-			   (1 << SSBN_PMURES_4325_AFE_PWRSW_PU)),
+		.depend = (BIT(SSBN_PMURES_4325_RX_PWRSW_PU) |
+			   BIT(SSBN_PMURES_4325_TX_PWRSW_PU) |
+			   BIT(SSBN_PMURES_4325_LOGEN_PWRSW_PU) |
+			   BIT(SSBN_PMURES_4325_AFE_PWRSW_PU)),
 	},
 };
 
@@ -443,11 +438,11 @@ static void ssbn_pmu_resources_init(struct ssbn_chipcommon *cc)
 		break;
 	case 0x4325:
 		/* Power OTP down later. */
-		min_msk = (1 << SSBN_PMURES_4325_CBUCK_BURST) |
-			  (1 << SSBN_PMURES_4325_LNLDO2_PU);
+		min_msk = BIT(SSBN_PMURES_4325_CBUCK_BURST) |
+			  BIT(SSBN_PMURES_4325_LNLDO2_PU);
 		if (chipco_read32(cc, SSBN_CHIPCO_CHIPSTAT) &
 		    SSBN_CHIPCO_CHST_4325_PMUTOP_2B)
-			min_msk |= (1 << SSBN_PMURES_4325_CLDO_CBUCK_BURST);
+			min_msk |= BIT(SSBN_PMURES_4325_CLDO_CBUCK_BURST);
 		/* The PLL may turn on, if it decides so. */
 		max_msk = 0xFFFFF;
 		updown_tab = pmu_res_updown_tab_4325a0;
@@ -456,9 +451,9 @@ static void ssbn_pmu_resources_init(struct ssbn_chipcommon *cc)
 		depend_tab_size = ARRAY_SIZE(pmu_res_depend_tab_4325a0);
 		break;
 	case 0x4328:
-		min_msk = (1 << SSBN_PMURES_4328_EXT_SWITCHER_PWM) |
-			  (1 << SSBN_PMURES_4328_BB_SWITCHER_PWM) |
-			  (1 << SSBN_PMURES_4328_XTAL_EN);
+		min_msk = BIT(SSBN_PMURES_4328_EXT_SWITCHER_PWM) |
+			  BIT(SSBN_PMURES_4328_BB_SWITCHER_PWM) |
+			  BIT(SSBN_PMURES_4328_XTAL_EN);
 		/* The PLL may turn on, if it decides so. */
 		max_msk = 0xFFFFF;
 		updown_tab = pmu_res_updown_tab_4328a0;
@@ -607,24 +602,23 @@ void ssbn_pmu_set_ldo_paref(struct ssbn_chipcommon *cc, bool on)
 	}
 
 	if (on)
-		chipco_set32(cc, SSBN_CHIPCO_PMU_MINRES_MSK, 1 << ldo);
+		chipco_set32(cc, SSBN_CHIPCO_PMU_MINRES_MSK, BIT(ldo));
 	else
-		chipco_mask32(cc, SSBN_CHIPCO_PMU_MINRES_MSK, ~(1 << ldo));
+		chipco_mask32(cc, SSBN_CHIPCO_PMU_MINRES_MSK, ~BIT(ldo));
 	chipco_read32(cc, SSBN_CHIPCO_PMU_MINRES_MSK); //SPEC FIXME found via mmiotrace - dummy read?
 }
 
-EXPORT_SYMBOL(ssbn_pmu_set_ldo_voltage);
-EXPORT_SYMBOL(ssbn_pmu_set_ldo_paref);
 
 static u32 ssbn_pmu_get_alp_clock_clk0(struct ssbn_chipcommon *cc)
 {
 	u32 crystalfreq;
 	const struct pmu0_plltab_entry *e = NULL;
 
-	crystalfreq = (chipco_read32(cc, SSBN_CHIPCO_PMU_CTL) &
-		       SSBN_CHIPCO_PMU_CTL_XTALFREQ)  >> SSBN_CHIPCO_PMU_CTL_XTALFREQ_SHIFT;
+	crystalfreq = FIELD_GET(SSBN_CHIPCO_PMU_CTL_XTALFREQ,
+				chipco_read32(cc, SSBN_CHIPCO_PMU_CTL));
 	e = pmu0_plltab_find_entry(crystalfreq);
-	BUG_ON(!e);
+	if (WARN_ON(!e))
+		return SSBN_PMU0_DEFAULT_XTALFREQ * 1000;
 	return e->freq * 1000;
 }
 
@@ -713,4 +707,3 @@ void ssbn_pmu_spuravoid_pllupdate(struct ssbn_chipcommon *cc, int spuravoid)
 
 	chipco_set32(cc, SSBN_CHIPCO_PMU_CTL, pmu_ctl);
 }
-EXPORT_SYMBOL_GPL(ssbn_pmu_spuravoid_pllupdate);

@@ -34,9 +34,7 @@
 #define B43_PHY_RFOVERVAL		B43_PHY_EXTG(0x12)	/* RF override value */
 #define  B43_PHY_RFOVERVAL_EXTLNA	0x8000
 #define  B43_PHY_RFOVERVAL_LNA		0x7000
-#define  B43_PHY_RFOVERVAL_LNA_SHIFT	12
 #define  B43_PHY_RFOVERVAL_PGA		0x0F00
-#define  B43_PHY_RFOVERVAL_PGA_SHIFT	8
 #define  B43_PHY_RFOVERVAL_UNK		0x0010	/* Unknown, always set. */
 #define  B43_PHY_RFOVERVAL_TRSWRX	0x00E0
 #define  B43_PHY_RFOVERVAL_BW		0x0003	/* Bandwidth flags */

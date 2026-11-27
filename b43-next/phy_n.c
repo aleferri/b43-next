@@ -10,6 +10,7 @@
 
 */
 
+#include <linux/bitfield.h>
 #include <linux/delay.h>
 #include <linux/iopoll.h>
 #include <linux/slab.h>
@@ -140,7 +141,7 @@ enum n_rail_type {
 	N_RAIL_Q = 1,
 };
 
-static inline bool b43_nphy_ipa(struct b43_wldev *dev)
+static bool b43_nphy_ipa(struct b43_wldev *dev)
 {
 	enum nl80211_band band = b43_current_band(dev->wl);
 	return ((dev->phy.n->ipa2g_on && band == NL80211_BAND_2GHZ) ||
@@ -166,8 +167,8 @@ static bool b43_nphy_2057_rev9_2g(struct b43_wldev *dev)
 /* https://bcm-v4.sipsolutions.net/802.11/PHY/N/RxCoreGetState */
 static u8 b43_nphy_get_rx_core_state(struct b43_wldev *dev)
 {
-	return (b43_phy_read(dev, B43_NPHY_RFSEQCA) & B43_NPHY_RFSEQCA_RXEN) >>
-		B43_NPHY_RFSEQCA_RXEN_SHIFT;
+	return FIELD_GET(B43_NPHY_RFSEQCA_RXEN,
+			 b43_phy_read(dev, B43_NPHY_RFSEQCA));
 }
 
 /**************************************************
@@ -186,7 +187,7 @@ static void b43_nphy_force_rf_sequence(struct b43_wldev *dev,
 		[B43_RFSEQ_UPDATE_GAINL]	= B43_NPHY_RFSEQTR_UPGL,
 		[B43_RFSEQ_UPDATE_GAINU]	= B43_NPHY_RFSEQTR_UPGU,
 	};
-	int i;
+	u16 st;
 	u16 seq_mode = b43_phy_read(dev, B43_NPHY_RFSEQMODE);
 
 	B43_WARN_ON(seq >= ARRAY_SIZE(trigger));
@@ -194,13 +195,10 @@ static void b43_nphy_force_rf_sequence(struct b43_wldev *dev,
 	b43_phy_set(dev, B43_NPHY_RFSEQMODE,
 		    B43_NPHY_RFSEQMODE_CAOVER | B43_NPHY_RFSEQMODE_TROVER);
 	b43_phy_set(dev, B43_NPHY_RFSEQTR, trigger[seq]);
-	for (i = 0; i < 200; i++) {
-		if (!(b43_phy_read(dev, B43_NPHY_RFSEQST) & trigger[seq]))
-			goto ok;
-		msleep(1);
-	}
-	b43err(dev->wl, "RF sequence status timeout\n");
-ok:
+	if (read_poll_timeout(b43_phy_read, st, !(st & trigger[seq]),
+			      1000, 200 * USEC_PER_MSEC, false,
+			      dev, B43_NPHY_RFSEQST))
+		b43err(dev->wl, "RF sequence status timeout\n");
 	b43_phy_write(dev, B43_NPHY_RFSEQMODE, seq_mode);
 }
 
@@ -249,7 +247,7 @@ static void b43_nphy_rf_ctl_override_rev7(struct b43_wldev *dev, u16 field,
 			if (e) /* Do it safer, better than wl */
 				b43_phy_mask(dev, val_addr, ~e->val_mask);
 		} else {
-			if (!core || (core & (1 << i))) {
+			if (!core || (core & BIT(i))) {
 				b43_phy_set(dev, en_addr, en_mask);
 				if (e)
 					b43_phy_maskset(dev, val_addr, ~e->val_mask, (value << e->val_shift));
@@ -311,7 +309,7 @@ static void b43_nphy_rf_ctl_override(struct b43_wldev *dev, u16 field,
 	u8 index = fls(field);
 	u8 addr, en_addr, val_addr;
 	/* we expect only one bit set */
-	B43_WARN_ON(field & (~(1 << (index - 1))));
+	B43_WARN_ON(field & ~BIT(index - 1));
 
 	if (dev->phy.rev >= 3) {
 		const struct nphy_rf_control_override_rev3 *rf_ctrl;
@@ -333,7 +331,7 @@ static void b43_nphy_rf_ctl_override(struct b43_wldev *dev, u16 field,
 				b43_phy_mask(dev, val_addr,
 						~(rf_ctrl->val_mask));
 			} else {
-				if (core == 0 || ((1 << i) & core)) {
+				if (core == 0 || (BIT(i) & core)) {
 					b43_phy_set(dev, en_addr, field);
 					b43_phy_maskset(dev, val_addr,
 						~(rf_ctrl->val_mask),
@@ -366,7 +364,7 @@ static void b43_nphy_rf_ctl_override(struct b43_wldev *dev, u16 field,
 			addr = B43_PHY_N((i == 0) ?
 				rf_ctrl->addr0 : rf_ctrl->addr1);
 
-			if ((1 << i) & core)
+			if (BIT(i) & core)
 				b43_phy_maskset(dev, addr, ~(rf_ctrl->bmask),
 						(value << rf_ctrl->shift));
 
@@ -687,9 +685,9 @@ static void b43_nphy_adjust_lna_gain_table(struct b43_wldev *dev)
 	}
 
 	b43_phy_maskset(dev, B43_NPHY_C1_MINMAX_GAIN, ~B43_NPHY_C1_MINGAIN,
-				minmax[0] << B43_NPHY_C1_MINGAIN_SHIFT);
+				FIELD_PREP(B43_NPHY_C1_MINGAIN, minmax[0]));
 	b43_phy_maskset(dev, B43_NPHY_C2_MINMAX_GAIN, ~B43_NPHY_C2_MINGAIN,
-				minmax[1] << B43_NPHY_C2_MINGAIN_SHIFT);
+				FIELD_PREP(B43_NPHY_C2_MINGAIN, minmax[1]));
 
 	if (nphy->hang_avoid)
 		b43_nphy_stay_in_carrier_search(dev, 0);
@@ -787,7 +785,7 @@ static void b43_radio_2057_vcocal(struct b43_wldev *dev)
 	b43_radio_mask(dev, R2057_RFPLL_MISC_CAL_RESETN, ~0x04);
 	b43_radio_set(dev, R2057_RFPLL_MISC_CAL_RESETN, 0x4);
 	b43_radio_set(dev, R2057_RFPLL_MISC_EN, 0x01);
-	usleep_range(300, 600);
+	fsleep(300);
 }
 
 static void b43_radio_2057_setup(struct b43_wldev *dev,
@@ -882,7 +880,7 @@ static void b43_radio_2057_setup(struct b43_wldev *dev,
 					pad2g_tune_pus - pad40[1]);
 	}
 
-	usleep_range(50, 100);
+	fsleep(50);
 
 	b43_radio_2057_vcocal(dev);
 }
@@ -959,7 +957,7 @@ static u8 b43_radio_2057_rcal(struct b43_wldev *dev)
 
 	/* Start */
 	b43_radio_set(dev, R2057_RCAL_CONFIG, 0x2);
-	usleep_range(100, 200);
+	fsleep(100);
 
 	/* Stop */
 	b43_radio_mask(dev, R2057_RCAL_CONFIG, ~0x2);
@@ -1113,7 +1111,7 @@ static void b43_radio_2057_init_post(struct b43_wldev *dev)
 
 	b43_radio_set(dev, R2057_RFPLL_MISC_CAL_RESETN, 0x78);
 	b43_radio_set(dev, R2057_XTAL_CONFIG2, 0x80);
-	usleep_range(2000, 3000);
+	fsleep(2000);
 	b43_radio_mask(dev, R2057_RFPLL_MISC_CAL_RESETN, ~0x78);
 	b43_radio_mask(dev, R2057_XTAL_CONFIG2, ~0x80);
 
@@ -1443,7 +1441,7 @@ static void b43_radio_init2056_post(struct b43_wldev *dev)
 	b43_radio_set(dev, B2056_SYN_COM_CTRL, 0xB);
 	b43_radio_set(dev, B2056_SYN_COM_PU, 0x2);
 	b43_radio_set(dev, B2056_SYN_COM_RESET, 0x2);
-	msleep(1);
+	fsleep(1000);
 	b43_radio_mask(dev, B2056_SYN_COM_RESET, ~0x2);
 	b43_radio_mask(dev, B2056_SYN_PLL_MAST2, ~0xFC);
 	b43_radio_mask(dev, B2056_SYN_RCCAL_CTRL0, ~0x1);
@@ -1553,7 +1551,7 @@ static void b43_radio_init2055_post(struct b43_wldev *dev)
 	b43_radio_mask(dev, B2055_CAL_MISC, 0xFFBE);
 	b43_radio_set(dev, B2055_CAL_LPOCTL, 0x80);
 	b43_radio_set(dev, B2055_CAL_MISC, 0x1);
-	msleep(1);
+	fsleep(1000);
 	b43_radio_set(dev, B2055_CAL_MISC, 0x40);
 	if (!b43_radio_wait_value(dev, B2055_CAL_COUT2, 0x80, 0x80, 10, 2000))
 		b43err(dev->wl, "radio post init timeout\n");
@@ -1654,7 +1652,6 @@ static void b43_nphy_run_samples(struct b43_wldev *dev, u16 samps, u16 loops,
 {
 	struct b43_phy *phy = &dev->phy;
 	struct b43_phy_n *nphy = dev->phy.n;
-	int i;
 	u16 seq_mode;
 	u32 tmp;
 
@@ -1721,14 +1718,8 @@ static void b43_nphy_run_samples(struct b43_wldev *dev, u16 samps, u16 loops,
 		tmp = dac_test ? 5 : 1;
 		b43_phy_write(dev, B43_NPHY_SAMP_CMD, tmp);
 	}
-	for (i = 0; i < 100; i++) {
-		if (!(b43_phy_read(dev, B43_NPHY_RFSEQST) & 1)) {
-			i = 0;
-			break;
-		}
-		udelay(10);
-	}
-	if (i)
+	if (read_poll_timeout_atomic(b43_phy_read, tmp, !(tmp & 1), 10, 1000,
+				     false, dev, B43_NPHY_RFSEQST))
 		b43err(dev->wl, "run samples timeout\n");
 
 	b43_phy_write(dev, B43_NPHY_RFSEQMODE, seq_mode);
@@ -1978,7 +1969,7 @@ static void b43_nphy_rev2_rssi_select(struct b43_wldev *dev, u8 code,
 				~(B43_NPHY_RFCTL_CMD_RXEN |
 				  B43_NPHY_RFCTL_CMD_CORESEL),
 				(B43_NPHY_RFCTL_CMD_RXEN |
-				 code << B43_NPHY_RFCTL_CMD_CORESEL_SHIFT));
+				 FIELD_PREP(B43_NPHY_RFCTL_CMD_CORESEL, code)));
 			b43_phy_set(dev, B43_NPHY_RFCTL_OVER,
 				(0x1 << 12 |
 				  0x1 << 5 |
@@ -2181,7 +2172,8 @@ static void b43_nphy_rev3_rssi_cal(struct b43_wldev *dev)
 		regs_to_store = regs_to_store_rev3;
 		regs_amount = ARRAY_SIZE(regs_to_store_rev3);
 	}
-	BUG_ON(regs_amount > ARRAY_SIZE(saved_regs_phy));
+	BUILD_BUG_ON(ARRAY_SIZE(regs_to_store_rev3) > ARRAY_SIZE(saved_regs_phy));
+	BUILD_BUG_ON(ARRAY_SIZE(regs_to_store_rev7) > ARRAY_SIZE(saved_regs_phy));
 
 	class = b43_nphy_classifier(dev, 0, 0);
 	b43_nphy_classifier(dev, 7, 4);
@@ -2232,7 +2224,7 @@ static void b43_nphy_rev3_rssi_cal(struct b43_wldev *dev)
 
 	rx_core_state = b43_nphy_get_rx_core_state(dev);
 	for (core = 0; core < 2; core++) {
-		if (!(rx_core_state & (1 << core)))
+		if (!(rx_core_state & BIT(core)))
 			continue;
 		r = core ? B2056_RX1 : B2056_RX0;
 		b43_nphy_scale_offset_rssi(dev, 0, 0, core + 1, N_RAIL_I,
@@ -2311,7 +2303,7 @@ static void b43_nphy_rev3_rssi_cal(struct b43_wldev *dev)
 	}
 
 	for (core = 0; core < 2; core++) {
-		if (!(rx_core_state & (1 << core)))
+		if (!(rx_core_state & BIT(core)))
 			continue;
 		for (i = 0; i < 2; i++) {
 			b43_nphy_scale_offset_rssi(dev, 0, 0, core + 1,
@@ -2905,9 +2897,9 @@ static void b43_nphy_gain_ctl_workarounds_rev1_2(struct b43_wldev *dev)
 
 	/* Set HPVGA2 index */
 	b43_phy_maskset(dev, B43_NPHY_C1_INITGAIN, ~B43_NPHY_C1_INITGAIN_HPVGA2,
-			code << B43_NPHY_C1_INITGAIN_HPVGA2_SHIFT);
+			FIELD_PREP(B43_NPHY_C1_INITGAIN_HPVGA2, code));
 	b43_phy_maskset(dev, B43_NPHY_C2_INITGAIN, ~B43_NPHY_C2_INITGAIN_HPVGA2,
-			code << B43_NPHY_C2_INITGAIN_HPVGA2_SHIFT);
+			FIELD_PREP(B43_NPHY_C2_INITGAIN_HPVGA2, code));
 
 	b43_phy_write(dev, B43_NPHY_TABLE_ADDR, 0x1D06);
 	/* specs say about 2 loops, but wl does 4 */
@@ -2951,7 +2943,7 @@ static void b43_nphy_gain_ctl_workarounds_rev1_2(struct b43_wldev *dev)
 	b43_nphy_set_rf_sequence(dev, 5, rfseq_events, rfseq_delays, 3);
 	b43_phy_maskset(dev, B43_NPHY_OVER_DGAIN1,
 		~B43_NPHY_OVER_DGAIN_CCKDGECV & 0xFFFF,
-		0x5A << B43_NPHY_OVER_DGAIN_CCKDGECV_SHIFT);
+		FIELD_PREP(B43_NPHY_OVER_DGAIN_CCKDGECV, 0x5A));
 
 	if (b43_current_band(dev->wl) == NL80211_BAND_2GHZ)
 		b43_phy_maskset(dev, B43_PHY_N(0xC5D), 0xFF80, 4);
@@ -3963,14 +3955,12 @@ static void b43_nphy_tx_power_ctrl(struct b43_wldev *dev, bool enable)
 		      B43_NPHY_TXPCTL_CMD_HWPCTLEN |
 		      B43_NPHY_TXPCTL_CMD_PCTLEN))) {
 			/* We disable enabled TX pwr ctl, save it's state */
-			nphy->tx_pwr_idx[0] = (b43_phy_read(dev,
-						B43_NPHY_C1_TXPCTL_STAT) &
-						B43_NPHY_TXPCTL_STAT_BIDX) >>
-						B43_NPHY_TXPCTL_STAT_BIDX_SHIFT;
-			nphy->tx_pwr_idx[1] = (b43_phy_read(dev,
-						B43_NPHY_C2_TXPCTL_STAT) &
-						B43_NPHY_TXPCTL_STAT_BIDX) >>
-						B43_NPHY_TXPCTL_STAT_BIDX_SHIFT;
+			nphy->tx_pwr_idx[0] =
+				FIELD_GET(B43_NPHY_TXPCTL_STAT_BIDX,
+					  b43_phy_read(dev, B43_NPHY_C1_TXPCTL_STAT));
+			nphy->tx_pwr_idx[1] =
+				FIELD_GET(B43_NPHY_TXPCTL_STAT_BIDX,
+					  b43_phy_read(dev, B43_NPHY_C2_TXPCTL_STAT));
 		}
 
 		b43_phy_write(dev, B43_NPHY_TABLE_ADDR, 0x6840);
@@ -4573,15 +4563,15 @@ static void b43_nphy_tx_power_ctl_setup(struct b43_wldev *dev)
 		b43_maskset32(dev, B43_MMIO_MACCTL, ~0x200000, 0);
 
 	b43_phy_write(dev, B43_NPHY_TXPCTL_N,
-		      0xF0 << B43_NPHY_TXPCTL_N_TSSID_SHIFT |
-		      3 << B43_NPHY_TXPCTL_N_NPTIL2_SHIFT);
+		      FIELD_PREP(B43_NPHY_TXPCTL_N_TSSID, 0xF0) |
+		      FIELD_PREP(B43_NPHY_TXPCTL_N_NPTIL2, 3));
 	b43_phy_write(dev, B43_NPHY_TXPCTL_ITSSI,
-		      idle[0] << B43_NPHY_TXPCTL_ITSSI_0_SHIFT |
-		      idle[1] << B43_NPHY_TXPCTL_ITSSI_1_SHIFT |
+		      FIELD_PREP(B43_NPHY_TXPCTL_ITSSI_0, idle[0]) |
+		      FIELD_PREP(B43_NPHY_TXPCTL_ITSSI_1, idle[1]) |
 		      B43_NPHY_TXPCTL_ITSSI_BINF);
 	b43_phy_write(dev, B43_NPHY_TXPCTL_TPWR,
-		      target[0] << B43_NPHY_TXPCTL_TPWR_0_SHIFT |
-		      target[1] << B43_NPHY_TXPCTL_TPWR_1_SHIFT);
+		      FIELD_PREP(B43_NPHY_TXPCTL_TPWR_0, target[0]) |
+		      FIELD_PREP(B43_NPHY_TXPCTL_TPWR_1, target[1]));
 
 	for (c = 0; c < 2; c++) {
 		for (i = 0; i < 64; i++) {
@@ -4723,7 +4713,6 @@ static void b43_nphy_tx_lpf_bw(struct b43_wldev *dev)
 static void b43_nphy_rx_iq_est(struct b43_wldev *dev, struct nphy_iq_est *est,
 				u16 samps, u8 time, bool wait)
 {
-	int i;
 	u16 tmp;
 
 	b43_phy_write(dev, B43_NPHY_IQEST_SAMCNT, samps);
@@ -4735,27 +4724,27 @@ static void b43_nphy_rx_iq_est(struct b43_wldev *dev, struct nphy_iq_est *est,
 
 	b43_phy_set(dev, B43_NPHY_IQEST_CMD, B43_NPHY_IQEST_CMD_START);
 
-	for (i = 1000; i; i--) {
-		tmp = b43_phy_read(dev, B43_NPHY_IQEST_CMD);
-		if (!(tmp & B43_NPHY_IQEST_CMD_START)) {
-			est->i0_pwr = (b43_phy_read(dev, B43_NPHY_IQEST_IPACC_HI0) << 16) |
-					b43_phy_read(dev, B43_NPHY_IQEST_IPACC_LO0);
-			est->q0_pwr = (b43_phy_read(dev, B43_NPHY_IQEST_QPACC_HI0) << 16) |
-					b43_phy_read(dev, B43_NPHY_IQEST_QPACC_LO0);
-			est->iq0_prod = (b43_phy_read(dev, B43_NPHY_IQEST_IQACC_HI0) << 16) |
-					b43_phy_read(dev, B43_NPHY_IQEST_IQACC_LO0);
-
-			est->i1_pwr = (b43_phy_read(dev, B43_NPHY_IQEST_IPACC_HI1) << 16) |
-					b43_phy_read(dev, B43_NPHY_IQEST_IPACC_LO1);
-			est->q1_pwr = (b43_phy_read(dev, B43_NPHY_IQEST_QPACC_HI1) << 16) |
-					b43_phy_read(dev, B43_NPHY_IQEST_QPACC_LO1);
-			est->iq1_prod = (b43_phy_read(dev, B43_NPHY_IQEST_IQACC_HI1) << 16) |
-					b43_phy_read(dev, B43_NPHY_IQEST_IQACC_LO1);
-			return;
-		}
-		udelay(10);
+	if (read_poll_timeout_atomic(b43_phy_read, tmp,
+				     !(tmp & B43_NPHY_IQEST_CMD_START),
+				     10, 10000, false,
+				     dev, B43_NPHY_IQEST_CMD)) {
+		memset(est, 0, sizeof(*est));
+		return;
 	}
-	memset(est, 0, sizeof(*est));
+
+	est->i0_pwr = (b43_phy_read(dev, B43_NPHY_IQEST_IPACC_HI0) << 16) |
+			b43_phy_read(dev, B43_NPHY_IQEST_IPACC_LO0);
+	est->q0_pwr = (b43_phy_read(dev, B43_NPHY_IQEST_QPACC_HI0) << 16) |
+			b43_phy_read(dev, B43_NPHY_IQEST_QPACC_LO0);
+	est->iq0_prod = (b43_phy_read(dev, B43_NPHY_IQEST_IQACC_HI0) << 16) |
+			b43_phy_read(dev, B43_NPHY_IQEST_IQACC_LO0);
+
+	est->i1_pwr = (b43_phy_read(dev, B43_NPHY_IQEST_IPACC_HI1) << 16) |
+			b43_phy_read(dev, B43_NPHY_IQEST_IPACC_LO1);
+	est->q1_pwr = (b43_phy_read(dev, B43_NPHY_IQEST_QPACC_HI1) << 16) |
+			b43_phy_read(dev, B43_NPHY_IQEST_QPACC_LO1);
+	est->iq1_prod = (b43_phy_read(dev, B43_NPHY_IQEST_IQACC_HI1) << 16) |
+			b43_phy_read(dev, B43_NPHY_IQEST_IQACC_LO1);
 }
 
 /* https://bcm-v4.sipsolutions.net/802.11/PHY/N/RxIqCoeffs */
@@ -5363,12 +5352,12 @@ static u16 b43_nphy_precal_txgain_2057_rev14_epa(struct b43_wldev *dev)
 	}
 
 	/* The power indices the calibration restores at its end */
-	nphy->cal_orig_pwr_idx[0] = (b43_phy_read(dev, B43_NPHY_C1_TXPCTL_STAT) &
-				     B43_NPHY_TXPCTL_STAT_BIDX) >>
-				    B43_NPHY_TXPCTL_STAT_BIDX_SHIFT;
-	nphy->cal_orig_pwr_idx[1] = (b43_phy_read(dev, B43_NPHY_C2_TXPCTL_STAT) &
-				     B43_NPHY_TXPCTL_STAT_BIDX) >>
-				    B43_NPHY_TXPCTL_STAT_BIDX_SHIFT;
+	nphy->cal_orig_pwr_idx[0] =
+		FIELD_GET(B43_NPHY_TXPCTL_STAT_BIDX,
+			  b43_phy_read(dev, B43_NPHY_C1_TXPCTL_STAT));
+	nphy->cal_orig_pwr_idx[1] =
+		FIELD_GET(B43_NPHY_TXPCTL_STAT_BIDX,
+			  b43_phy_read(dev, B43_NPHY_C2_TXPCTL_STAT));
 
 	b43_phy_mask(dev, B43_NPHY_TXPCTL_CMD,
 		     (u16)~(B43_NPHY_TXPCTL_CMD_COEFF |
@@ -5513,7 +5502,7 @@ static int b43_nphy_cal_tx_iq_lo(struct b43_wldev *dev,
 				 struct nphy_txgains target,
 				 bool full, bool mphase);
 static int b43_nphy_cal_rx_iq(struct b43_wldev *dev,
-			      struct nphy_txgains target, u8 type, bool debug);
+			      struct nphy_txgains target, u8 type);
 static void b43_nphy_save_cal(struct b43_wldev *dev);
 static void b43_nphy_tx_pwr_ctrl_coef_setup(struct b43_wldev *dev);
 static void b43_nphy_tx_pwr_index(struct b43_wldev *dev, u8 core_mask,
@@ -5653,7 +5642,7 @@ static void b43_nphy_init_cal_2057_rev14_epa(struct b43_wldev *dev, u16 g)
 		target.tx_lpf[c] = (g & 0x8000) >> 15;
 	}
 	if (!b43_nphy_cal_tx_iq_lo_phases(dev, target) &&
-	    b43_nphy_cal_rx_iq(dev, target, 2, 0) == 0) {
+	    b43_nphy_cal_rx_iq(dev, target, 2) == 0) {
 		b43_nphy_save_cal(dev);
 		b43_nphy_tx_pwr_ctrl_coef_setup(dev);
 	}
@@ -5714,12 +5703,10 @@ static struct nphy_txgains b43_nphy_get_tx_gains(struct b43_wldev *dev)
 	} else {
 		int i;
 		u16 index[2];
-		index[0] = (b43_phy_read(dev, B43_NPHY_C1_TXPCTL_STAT) &
-			B43_NPHY_TXPCTL_STAT_BIDX) >>
-			B43_NPHY_TXPCTL_STAT_BIDX_SHIFT;
-		index[1] = (b43_phy_read(dev, B43_NPHY_C2_TXPCTL_STAT) &
-			B43_NPHY_TXPCTL_STAT_BIDX) >>
-			B43_NPHY_TXPCTL_STAT_BIDX_SHIFT;
+		index[0] = FIELD_GET(B43_NPHY_TXPCTL_STAT_BIDX,
+				     b43_phy_read(dev, B43_NPHY_C1_TXPCTL_STAT));
+		index[1] = FIELD_GET(B43_NPHY_TXPCTL_STAT_BIDX,
+				     b43_phy_read(dev, B43_NPHY_C2_TXPCTL_STAT));
 
 		for (i = 0; i < 2; ++i) {
 			table = b43_nphy_get_tx_gain_table(dev);
@@ -6251,13 +6238,10 @@ static int b43_nphy_cal_tx_iq_lo(struct b43_wldev *dev,
 
 			/* The engine keeps 0xC000 set while it runs */
 			b43_phy_write(dev, B43_NPHY_IQLOCAL_CMD, cmd);
-			for (i = 0; i < 2000; i++) {
-				tmp = b43_phy_read(dev, B43_NPHY_IQLOCAL_CMD);
-				if (!(tmp & 0xC000))
-					break;
-				udelay(10);
-			}
-			if (tmp & 0xC000) {
+			if (read_poll_timeout_atomic(b43_phy_read, tmp,
+						     !(tmp & 0xC000),
+						     10, 20000, false, dev,
+						     B43_NPHY_IQLOCAL_CMD)) {
 				b43err(dev->wl,
 				       "TX IQ/LO cal command 0x%04X timed out\n",
 				       cmd);
@@ -6400,7 +6384,7 @@ static void b43_nphy_reapply_tx_cal_coeffs(struct b43_wldev *dev)
 
 /* https://bcm-v4.sipsolutions.net/802.11/PHY/N/CalRxIqRev2 */
 static int b43_nphy_rev2_cal_rx_iq(struct b43_wldev *dev,
-			struct nphy_txgains target, u8 type, bool debug)
+			struct nphy_txgains target, u8 type)
 {
 	struct b43_phy_n *nphy = dev->phy.n;
 	int i, j, index;
@@ -6455,7 +6439,7 @@ static int b43_nphy_rev2_cal_rx_iq(struct b43_wldev *dev,
 
 		b43_phy_maskset(dev, B43_NPHY_RFSEQCA,
 				~B43_NPHY_RFSEQCA_RXDIS & 0xFFFF,
-				((1 - i) << B43_NPHY_RFSEQCA_RXDIS_SHIFT));
+				FIELD_PREP(B43_NPHY_RFSEQCA_RXDIS, 1 - i));
 		b43_phy_maskset(dev, B43_NPHY_RFSEQCA, ~B43_NPHY_RFSEQCA_TXEN,
 				(1 - i));
 		b43_phy_set(dev, afectl_core, 0x0006);
@@ -6549,7 +6533,7 @@ static int b43_nphy_rev2_cal_rx_iq(struct b43_wldev *dev,
 					}
 					power[j] = ((real + imag) / 1024) + 1;
 				} else {
-					b43_nphy_calc_rx_iq_comp(dev, 1 << i);
+					b43_nphy_calc_rx_iq_comp(dev, BIT(i));
 				}
 				b43_nphy_stop_playback(dev);
 			}
@@ -6662,7 +6646,7 @@ static void b43_nphy_tx_pwr_index(struct b43_wldev *dev, u8 core_mask,
 		b43_nphy_stay_in_carrier_search(dev, true);
 
 	for (core = 0; core < 2; core++) {
-		if (!(core_mask & (1 << core)))
+		if (!(core_mask & BIT(core)))
 			continue;
 
 		txpi = &nphy->txpwrindex[core];
@@ -6924,21 +6908,21 @@ static void b43_nphy_rx_cal_phy_setup(struct b43_wldev *dev, u8 rx_core)
 
 	if (phy->rev >= 7) {
 		b43_phy_maskset(dev, B43_NPHY_RFSEQCA, ~B43_NPHY_RFSEQCA_TXEN,
-				(1 << tx_core) << B43_NPHY_RFSEQCA_TXEN_SHIFT);
+				FIELD_PREP(B43_NPHY_RFSEQCA_TXEN, BIT(tx_core)));
 		b43_phy_maskset(dev, B43_NPHY_RFSEQCA,
 				~B43_NPHY_RFSEQCA_RXDIS & 0xFFFF,
-				(1 << (1 - rx_core)) <<
-				B43_NPHY_RFSEQCA_RXDIS_SHIFT);
+				FIELD_PREP(B43_NPHY_RFSEQCA_RXDIS,
+					   BIT(1 - rx_core)));
 	} else {
 		b43_phy_maskset(dev, B43_NPHY_RFSEQCA,
 				~B43_NPHY_RFSEQCA_RXDIS & 0xFFFF,
-				(1 << tx_core) << B43_NPHY_RFSEQCA_RXDIS_SHIFT);
+				FIELD_PREP(B43_NPHY_RFSEQCA_RXDIS, BIT(tx_core)));
 		b43_phy_maskset(dev, B43_NPHY_RFSEQCA, ~B43_NPHY_RFSEQCA_TXEN,
-				(1 << tx_core) << B43_NPHY_RFSEQCA_TXEN_SHIFT);
+				FIELD_PREP(B43_NPHY_RFSEQCA_TXEN, BIT(tx_core)));
 		b43_phy_maskset(dev, B43_NPHY_RFSEQCA, ~B43_NPHY_RFSEQCA_RXEN,
-				(1 << rx_core) << B43_NPHY_RFSEQCA_RXEN_SHIFT);
+				FIELD_PREP(B43_NPHY_RFSEQCA_RXEN, BIT(rx_core)));
 		b43_phy_maskset(dev, B43_NPHY_RFSEQCA, ~B43_NPHY_RFSEQCA_TXDIS,
-				(1 << rx_core) << B43_NPHY_RFSEQCA_TXDIS_SHIFT);
+				FIELD_PREP(B43_NPHY_RFSEQCA_TXDIS, BIT(rx_core)));
 	}
 
 	b43_phy_mask(dev, afectl_core, ~0x0004);
@@ -7266,7 +7250,7 @@ static void b43_nphy_rx_cal_gain_ctl(struct b43_wldev *dev, u8 rx_core,
 						     N_RF_CTL_OVER_CMD_RX_GAIN,
 						     rxgain, 0x3, false);
 	} else {
-		hpvga = (u16)max(min(((int)hpvga) + delta_pwr, 10), 0);
+		hpvga = clamp((int)hpvga + delta_pwr, 0, 10);
 		rxgain = (hpvga << 12) | (lpf_biq1 << 10) | (lpf_biq0 << 8) |
 			 (mix_tia_gain << 4) | (lna2 << 2) | lna1;
 		b43_nphy_rf_ctl_override(dev, 0x1000, rxgain, 0x3, false);
@@ -7495,7 +7479,7 @@ static u8 b43_nphy_rc_sweep(struct b43_wldev *dev, u8 core_idx,
 
 /* https://bcm-v4.sipsolutions.net/802.11/PHY/N/CalRxIqRev3 */
 static int b43_nphy_rev3_cal_rx_iq(struct b43_wldev *dev,
-			struct nphy_txgains target, u8 type, bool debug)
+			struct nphy_txgains target, u8 type)
 {
 	struct b43_phy *phy = &dev->phy;
 	struct b43_phy_n *nphy = phy->n;
@@ -7530,7 +7514,7 @@ static int b43_nphy_rev3_cal_rx_iq(struct b43_wldev *dev,
 	rxcore_state = b43_nphy_get_rx_core_state(dev);
 
 	for (rx_core = 0; rx_core < 2; rx_core++) {
-		skip_rxiqcal = !(rxcore_state & (1 << rx_core));
+		skip_rxiqcal = !(rxcore_state & BIT(rx_core));
 
 		b43_nphy_rx_cal_phy_setup(dev, rx_core);
 		b43_nphy_rx_cal_radio_setup(dev, rx_core);
@@ -7543,9 +7527,6 @@ static int b43_nphy_rev3_cal_rx_iq(struct b43_wldev *dev,
 					 B43_NPHY_RXCAL_TONEFREQ_20MHZ,
 					 B43_NPHY_RXCAL_TONEAMP, false,
 					 type == 1, false);
-
-			if (debug)
-				mdelay(4000);
 
 			b43_nphy_calc_rx_iq_comp(dev, rx_core + 1);
 			b43_nphy_stop_playback(dev);
@@ -7593,10 +7574,8 @@ static int b43_nphy_rev3_cal_rx_iq(struct b43_wldev *dev,
 			}
 
 			/* As brcmsmac, negative values clamp to 31 */
-			rxlpf_rccal_hpc = max_t(int, min_t(u8, rxlpf_rccal_hpc,
-							   31), 0);
-			txlpf_rccal_lpc = max_t(int, min_t(u8, txlpf_rccal_lpc,
-							   31), 0);
+			rxlpf_rccal_hpc = min_t(u8, rxlpf_rccal_hpc, 31);
+			txlpf_rccal_lpc = min_t(u8, txlpf_rccal_lpc, 31);
 
 			b43_radio_write(dev, B2056_RX_RXLPF_RCCAL_HPC |
 					(rx_core == 0 ? B2056_RX0 : B2056_RX1),
@@ -7635,16 +7614,16 @@ static int b43_nphy_rev3_cal_rx_iq(struct b43_wldev *dev,
 
 /* https://bcm-v4.sipsolutions.net/802.11/PHY/N/CalRxIq */
 static int b43_nphy_cal_rx_iq(struct b43_wldev *dev,
-			struct nphy_txgains target, u8 type, bool debug)
+			struct nphy_txgains target, u8 type)
 {
 	b43_cal_begin(dev, B43_CAL_RXIQ);
 	if (dev->phy.rev >= 7)
 		type = 0;
 
 	if (dev->phy.rev >= 3)
-		return b43_nphy_rev3_cal_rx_iq(dev, target, type, debug);
+		return b43_nphy_rev3_cal_rx_iq(dev, target, type);
 	else
-		return b43_nphy_rev2_cal_rx_iq(dev, target, type, debug);
+		return b43_nphy_rev2_cal_rx_iq(dev, target, type);
 }
 
 static const u32 b43_nphy_papd_scalar[] = {
@@ -7713,21 +7692,21 @@ static void b43_nphy_papd_cal_setup(struct b43_wldev *dev,
 
 	b43_nphy_rf_ctl_override_rev7(dev, 0x80, b43_nphy_read_lpf_ctl(dev, 0),
 				      0, false, 1);
-	b43_nphy_rf_ctl_override_rev7(dev, 0x800, 0, 1 << core, false, 0);
+	b43_nphy_rf_ctl_override_rev7(dev, 0x800, 0, BIT(core), false, 0);
 	b43_nphy_rf_ctl_override_one_to_many(dev, N_RF_CTL_OVER_CMD_TX_PU, 1,
-					     1 << core, false);
+					     BIT(core), false);
 	b43_nphy_rf_ctl_override_one_to_many(dev, N_RF_CTL_OVER_CMD_TX_PU, 0,
-					     1 << off_core, false);
+					     BIT(off_core), false);
 	b43_nphy_rf_ctl_override_rev7(dev, 0x8, 0, 3, false, 0);
-	b43_nphy_rf_ctl_override_rev7(dev, 0x4, 1, 1 << core, false, 1);
-	b43_nphy_rf_ctl_override_rev7(dev, 0x1, 0, 1 << core, false, 1);
-	b43_nphy_rf_ctl_override_rev7(dev, 0x2, 1, 1 << core, false, 2);
-	b43_nphy_rf_ctl_override_rev7(dev, 0x100, 0, 1 << core, false, 1);
-	b43_nphy_rf_ctl_override_rev7(dev, 0x200, 1, 1 << core, false, 1);
-	b43_nphy_rf_ctl_override_rev7(dev, 0x400, 0, 1 << core, false, 1);
-	b43_nphy_rf_ctl_override_rev7(dev, 0x8, 1, 1 << core, false, 1);
-	b43_nphy_rf_ctl_override_rev7(dev, 0x20, 0, 1 << core, false, 1);
-	b43_nphy_rf_ctl_override_rev7(dev, 0x10, 0, 1 << core, false, 1);
+	b43_nphy_rf_ctl_override_rev7(dev, 0x4, 1, BIT(core), false, 1);
+	b43_nphy_rf_ctl_override_rev7(dev, 0x1, 0, BIT(core), false, 1);
+	b43_nphy_rf_ctl_override_rev7(dev, 0x2, 1, BIT(core), false, 2);
+	b43_nphy_rf_ctl_override_rev7(dev, 0x100, 0, BIT(core), false, 1);
+	b43_nphy_rf_ctl_override_rev7(dev, 0x200, 1, BIT(core), false, 1);
+	b43_nphy_rf_ctl_override_rev7(dev, 0x400, 0, BIT(core), false, 1);
+	b43_nphy_rf_ctl_override_rev7(dev, 0x8, 1, BIT(core), false, 1);
+	b43_nphy_rf_ctl_override_rev7(dev, 0x20, 0, BIT(core), false, 1);
+	b43_nphy_rf_ctl_override_rev7(dev, 0x10, 0, BIT(core), false, 1);
 
 	for (i = 0; i < 2; i++) {
 		state->afectl[i] = b43_phy_read(dev, afectl[i]);
@@ -7795,7 +7774,7 @@ static bool b43_nphy_papd_cal_core(struct b43_wldev *dev, u8 core, u8 pad,
 	txgain = (gains.tx_lpf[core] << 15) | (gains.txgm[core] << 12) |
 		 (gains.pga[core] << 8) | (pad << 3) | gains.ipa[core];
 	b43_nphy_rf_ctl_override_one_to_many(dev, N_RF_CTL_OVER_CMD_TX_GAIN,
-					     txgain, 1 << core, false);
+					     txgain, BIT(core), false);
 
 	b43_nphy_papd_set_bbmult(dev, core ? bbmult : bbmult << 8);
 	b43_nphy_papd_select_core(dev, core);
@@ -7810,8 +7789,8 @@ static bool b43_nphy_papd_cal_core(struct b43_wldev *dev, u8 core, u8 pad,
 	b43_phy_maskset(dev, B43_NPHY_PAPD_CAL_ADDRESS, ~0x3F3F,
 			(63 << 8) | (gain_search ? 55 : 25));
 
-	b43_nphy_rf_ctl_override_rev7(dev, 0x8, 1, 1 << core, false, 0);
-	b43_nphy_rf_ctl_override_rev7(dev, 0x8, 0, 1 << off_core, false, 0);
+	b43_nphy_rf_ctl_override_rev7(dev, 0x8, 1, BIT(core), false, 0);
+	b43_nphy_rf_ctl_override_rev7(dev, 0x8, 0, BIT(off_core), false, 0);
 
 	b43_phy_write(dev, 0x2BE, 1);
 	if (read_poll_timeout(b43_phy_read, cmd, !cmd, 100, 10 * USEC_PER_SEC,
@@ -7824,7 +7803,7 @@ static bool b43_nphy_papd_cal_core(struct b43_wldev *dev, u8 core, u8 pad,
 	eps = b43_ntab_read(dev, B43_NTAB32(31 + 2 * core, 63));
 
 	b43_nphy_rf_ctl_override_one_to_many(dev, N_RF_CTL_OVER_CMD_TX_GAIN,
-					     txgain, 1 << core, true);
+					     txgain, BIT(core), true);
 
 	eps_i = sign_extend32(eps, 12);
 	eps_q = sign_extend32(eps >> 13, 12);
@@ -7862,8 +7841,7 @@ static u8 b43_nphy_txpwr_idx_cur(struct b43_wldev *dev, u8 core)
 	u16 stat = b43_phy_read(dev, core ? B43_NPHY_C2_TXPCTL_STAT :
 					    B43_NPHY_C1_TXPCTL_STAT);
 
-	return (stat & B43_NPHY_TXPCTL_STAT_BIDX) >>
-		B43_NPHY_TXPCTL_STAT_BIDX_SHIFT;
+	return FIELD_GET(B43_NPHY_TXPCTL_STAT_BIDX, stat);
 }
 
 static void b43_nphy_papd_cal(struct b43_wldev *dev)
@@ -7960,7 +7938,7 @@ static void b43_nphy_set_rx_core_state(struct b43_wldev *dev, u8 mask)
 		b43_nphy_stay_in_carrier_search(dev, true);
 
 	b43_phy_maskset(dev, B43_NPHY_RFSEQCA, ~B43_NPHY_RFSEQCA_RXEN,
-			(mask & 0x3) << B43_NPHY_RFSEQCA_RXEN_SHIFT);
+			FIELD_PREP(B43_NPHY_RFSEQCA_RXEN, mask & 0x3));
 
 	if ((mask & 0x3) != 0x3) {
 		b43_phy_write(dev, B43_NPHY_HPANT_SWTHRES, 1);
@@ -8391,7 +8369,7 @@ static void b43_nphy_perical_run(struct b43_wldev *dev)
 		nphy->mphase_cal_phase_id++;
 		break;
 	case 9:
-		if (!b43_nphy_cal_rx_iq(dev, target, 0, false))
+		if (!b43_nphy_cal_rx_iq(dev, target, 0))
 			b43_nphy_save_cal(dev);
 		nphy->mphase_cal_phase_id++;
 		break;
@@ -8444,13 +8422,13 @@ static void b43_nphy_perical_work(struct work_struct *work)
 	struct b43_wldev *dev = nphy->dev;
 	unsigned long delay = msecs_to_jiffies(5);
 
-	mutex_lock(&dev->wl->mutex);
+	guard(mutex)(&dev->wl->mutex);
 	if (!nphy->mphase_cal_phase_id)
-		goto out;
+		return;
 	if (b43_status(dev) < B43_STAT_STARTED || !dev->phy.radio_on ||
 	    !b43_nphy_2057_rev9_2g(dev)) {
 		b43_nphy_perical_mphase_reset(dev);
-		goto out;
+		return;
 	}
 
 	if (dev->wl->hw->conf.flags & IEEE80211_CONF_OFFCHANNEL) {
@@ -8462,8 +8440,6 @@ static void b43_nphy_perical_work(struct work_struct *work)
 	if (nphy->mphase_cal_phase_id)
 		ieee80211_queue_delayed_work(dev->wl->hw, &nphy->perical_work,
 					     delay);
-out:
-	mutex_unlock(&dev->wl->mutex);
 }
 
 /* Called without wl->mutex, as the work takes it */
@@ -8601,7 +8577,7 @@ static int b43_phy_initn(struct b43_wldev *dev)
 		tmp = (dev->phy.rev == 2) ? 0x3B : 0x40;
 		b43_phy_maskset(dev, B43_NPHY_BPHY_CTL3,
 				~B43_NPHY_BPHY_CTL3_SCALE,
-				tmp << B43_NPHY_BPHY_CTL3_SCALE_SHIFT);
+				FIELD_PREP(B43_NPHY_BPHY_CTL3_SCALE, tmp));
 	}
 	b43_phy_write(dev, B43_NPHY_AFESEQ_TX2RX_PUD_20M, 0x20);
 	b43_phy_write(dev, B43_NPHY_AFESEQ_TX2RX_PUD_40M, 0x20);
@@ -8714,7 +8690,7 @@ static int b43_phy_initn(struct b43_wldev *dev)
 					target = b43_nphy_get_tx_gains(dev);
 				}
 				if (!b43_nphy_cal_tx_iq_lo(dev, target, true, false))
-					if (b43_nphy_cal_rx_iq(dev, target, 2, 0) == 0)
+					if (b43_nphy_cal_rx_iq(dev, target, 2) == 0)
 						b43_nphy_save_cal(dev);
 				b43_nphy_precal_tx_gain_restore(dev);
 			} else if (nphy->mphase_cal_phase_id == 0 &&
@@ -8742,13 +8718,13 @@ static int b43_phy_initn(struct b43_wldev *dev)
 					target = b43_nphy_get_tx_gains(dev);
 					if (!b43_nphy_cal_tx_iq_lo(dev, target,
 								   true, false) &&
-					    b43_nphy_cal_rx_iq(dev, target, 2,
-							       0) == 0)
+					    b43_nphy_cal_rx_iq(dev, target,
+							       2) == 0)
 						b43_nphy_save_cal(dev);
 					b43_nphy_precal_tx_gain_restore(dev);
 				} else if (phy->rev >= 3 && phy->rev < 7 &&
-					   b43_nphy_cal_rx_iq(dev, target, 2,
-							      0) == 0) {
+					   b43_nphy_cal_rx_iq(dev, target,
+							      2) == 0) {
 					b43_nphy_save_cal(dev);
 				}
 			}
@@ -9030,8 +9006,7 @@ static void b43_nphy_op_ofdm_tx(struct b43_wldev *dev)
 	} else {
 		c1 = b43_phy_read(dev, B43_NPHY_C1_TXPCTL_STAT);
 		c2 = b43_phy_read(dev, B43_NPHY_C2_TXPCTL_STAT);
-		nphy->txpctl_bidx = (c1 & B43_NPHY_TXPCTL_STAT_BIDX) >>
-				    B43_NPHY_TXPCTL_STAT_BIDX_SHIFT;
+		nphy->txpctl_bidx = FIELD_GET(B43_NPHY_TXPCTL_STAT_BIDX, c1);
 		nphy->txpctl_bidx |= c2 & B43_NPHY_TXPCTL_STAT_BIDX;
 		nphy->txpctl_bidx_valid = true;
 	}
@@ -9081,12 +9056,6 @@ static int b43_nphy_set_channel(struct b43_wldev *dev,
 	   own to let this function's subcalls work properly. */
 	phy->channel = channel->hw_value;
 	b43_nphy_txpctl_bidx_reset(dev);
-
-#if 0
-	if (b43_channel_type_is_40mhz(phy->channel_type) !=
-		b43_channel_type_is_40mhz(channel_type))
-		; /* TODO: BMAC BW Set (channel_type) */
-#endif
 
 	if (channel_type == NL80211_CHAN_HT40MINUS) {
 		b43_phy_set(dev, B43_NPHY_RXCTL, B43_NPHY_RXCTL_BSELU20);
@@ -9225,7 +9194,7 @@ static void b43_nphy_op_exit(struct b43_wldev *dev)
 	b43_nphy_perical_mphase_reset(dev);
 }
 
-static inline void check_phyreg(struct b43_wldev *dev, u16 offset)
+static void check_phyreg(struct b43_wldev *dev, u16 offset)
 {
 #if B43_DEBUG
 	if ((offset & B43_PHYROUTE) == B43_PHYROUTE_OFDM_GPHY) {
@@ -9487,7 +9456,7 @@ static void b43_nphy_op_noise_sample_done(struct b43_wldev *dev)
 
 static void b43_nphy_op_pwork_15sec(struct b43_wldev *dev)
 {
-	if (time_after_eq(jiffies, dev->phy.n->perical_last + 120 * HZ))
+	if (time_after_eq(jiffies, dev->phy.n->perical_last + secs_to_jiffies(120)))
 		b43_nphy_perical(dev, B43_NPHY_PERICAL_WATCHDOG);
 	b43_nphy_txpwr_papd_cal(dev);
 }
