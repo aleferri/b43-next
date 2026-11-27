@@ -1678,6 +1678,7 @@ void udelay(unsigned long us)         { (void)us; }
 void mdelay(unsigned long ms)         { (void)ms; }
 void msleep(unsigned int ms)          { (void)ms; }
 void usleep_range(unsigned long a, unsigned long b) { (void)a; (void)b; }
+void fsleep(unsigned long us)         { (void)us; }
 
 /* ============ bcma chipcommon (no wrap: definitions, not wraps) ============
  * These accessors are called directly by phy_ac.c (op_init, rfkill,

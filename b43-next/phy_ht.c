@@ -9,6 +9,7 @@
 
 */
 
+#include <linux/iopoll.h>
 #include <linux/slab.h>
 
 #include "b43.h"
@@ -2273,18 +2274,16 @@ struct b43_phy_ht_iq_est {
 static void b43_phy_ht_rx_iq_est(struct b43_wldev *dev,
 				 struct b43_phy_ht_iq_est *est, u16 samps)
 {
-	int c, i;
+	int c;
+	u16 v;
 
 	b43_phy_read(dev, 0x0b1);
 	b43_phy_write(dev, 0x12b, samps);
 	b43_phy_maskset(dev, 0x12a, ~0xff, 32);
 	b43_phy_mask(dev, 0x129, ~0x2);
 	b43_phy_set(dev, 0x129, 0x1);
-	for (i = 0; i < 1000; i++) {
-		if (!(b43_phy_read(dev, 0x129) & 0x1))
-			break;
-		udelay(10);
-	}
+	read_poll_timeout_atomic(b43_phy_read, v, !(v & 0x1), 10, 10000, false,
+				 dev, 0x129);
 	if (b43_phy_read(dev, 0x129) & 0x1)
 		b43err(dev->wl, "HT-PHY: RX I/Q estimate timeout\n");
 	for (c = 0; c < 3; c++) {

@@ -37,6 +37,7 @@
  * check it with `b43trace anchors span` before relying on it.
  */
 
+#include <linux/iopoll.h>
 #include <linux/slab.h>
 #include "b43.h"
 #include "phy_ac.h"
@@ -601,7 +602,8 @@ static void b43_r2069_rccal_setup(struct b43_wldev *dev, unsigned int pass)
 static bool b43_r2069_rccal_run(struct b43_wldev *dev)
 {
 	B43_AC_FN();
-	unsigned int i;
+	u16 stat;
+	bool done;
 
 	r2069_mod(dev, R2069_RCCAL_CFG, R2069_RCCAL_CFG_START, 0);
 	udelay(1);
@@ -610,15 +612,14 @@ static bool b43_r2069_rccal_run(struct b43_wldev *dev)
 	udelay(35);
 	r2069_mod(dev, R2069_RCCAL_KICK, R2069_RCCAL_KICK_GO, R2069_RCCAL_KICK_GO);
 
-	for (i = 0; i < R2069_RCCAL_POLL_MAX; i++) {
-		udelay(100);
-		if (b43_radio_read(dev, R2069_RCCAL_STAT) & R2069_RCCAL_STAT_DONE)
-			break;
-	}
+	done = !read_poll_timeout(b43_radio_read, stat,
+				  stat & R2069_RCCAL_STAT_DONE, 100,
+				  100 * R2069_RCCAL_POLL_MAX, true,
+				  dev, R2069_RCCAL_STAT);
 
 	r2069_mod(dev, R2069_RCCAL_KICK, R2069_RCCAL_KICK_GO, 0);
 
-	return i < R2069_RCCAL_POLL_MAX;
+	return done;
 }
 
 /* Pass 1: the measured RC code into the per-core trim registers. */
@@ -784,7 +785,7 @@ static void b43_radio_2069_afecal(struct b43_wldev *dev)
 		r2069_mod(dev, R2069_AFE_CAL_CLK | rbase, R2069_AFE_CAL_CLK_EN, 0);
 	}
 
-	udelay(100);
+	fsleep(100);
 
 	/* Pass 2: launch every active core, then finalize its PHY regs. */
 	for_each_set_bit(core, &ac->coremask, ac->num_cores) {
@@ -854,7 +855,7 @@ void b43_radio_2069_init(struct b43_wldev *dev)
 
 	b43_phy_write(dev, B43_PHY_AC_RFCTL_CMD, 0x0c01);
 	/* Hold armed 1032us for the RF/analog lock to complete. */
-	udelay(1032);
+	fsleep(1032);
 	b43_phy_write(dev, B43_PHY_AC_RFCTL_CMD, 0x0c00);
 
 	if (dev->phy.radio_rev == 4)
@@ -896,10 +897,10 @@ void b43_radio_2069_init(struct b43_wldev *dev)
 	/* --- Epilogue, the same on every chip --- */
 	b43_radio_mask(dev, 0x040c, (u16)~0x0010);
 	b43_phy_write(dev, B43_PHY_AC_RFCTL_CMD, 0x0c06);
-	udelay(100);
+	fsleep(100);
 	b43_radio_set(dev, 0x040c, 0x0010);
 	b43_phy_write(dev, 0x0417, 0x000d);
-	udelay(100);
+	fsleep(100);
 	b43_phy_write(dev, B43_PHY_AC_RFCTL_CMD, 0x0c02);
 	b43_phy_write(dev, 0x0728, saved_728 | 0x0180);
 	b43_phy_write(dev, 0x0417, 0x0004);
@@ -935,11 +936,11 @@ static void b43_radio_2069_pwron(struct b43_wldev *dev)
 	b43_radio_set(dev,   R2069_PWRON, R2069_PWRON_KICK);
 
 	/* Polled every 10 us, then read once more, as the vendor does. */
-	for (polls = 1; polls <= R2069_PWRON_POLL_MAX; polls++) {
-		udelay(10);
-		if (b43_radio_read(dev, R2069_PWRON) & R2069_PWRON_DONE)
-			break;
-	}
+	polls = 0;
+	poll_timeout_us_atomic((polls++,
+				pon = b43_radio_read(dev, R2069_PWRON)),
+			       pon & R2069_PWRON_DONE,
+			       10, 10 * R2069_PWRON_POLL_MAX, true);
 	pon = b43_radio_read(dev, R2069_PWRON);
 	if (!(pon & R2069_PWRON_DONE))
 		b43warn(dev->wl, "radio 2069: power-on timeout (0x040b=0x%04x)\n",
@@ -2199,7 +2200,7 @@ static void b43_phy_ac_idle_tssi_meas(struct b43_wldev *dev)
 
 		/* The bbmult cells as they stand mid-sequence, written back. */
 		b43_phy_ac_tbl_write_unlock(dev, gate);
-		udelay(100);
+		fsleep(100);
 		for_each_set_bit(c, &ac->coremask, ac->num_cores) {
 			b43_actab_read_bulk(dev, B43_ACTAB_IQLOCAL, (u16)(0x0063 + 4 * c),
 					    16, 1, &st[c].inner);
@@ -2210,7 +2211,7 @@ static void b43_phy_ac_idle_tssi_meas(struct b43_wldev *dev)
 
 		b43_phy_ac_cca_pulse(dev);
 		b43_phy_ac_run_samples(dev, 0x0000, false);
-		udelay(100);
+		fsleep(100);
 
 		/* Gain override on every chain, then put back in reverse. */
 		for_each_set_bit(c, &ac->coremask, ac->num_cores) {
@@ -2233,7 +2234,7 @@ static void b43_phy_ac_idle_tssi_meas(struct b43_wldev *dev)
 			b43_phy_write(dev, 0x073a + s, st[c].r73a);
 			b43_phy_write(dev, B43_PHY_AC_AFE_C1_OVER + s, st[c].r739);
 		}
-		udelay(100);
+		fsleep(100);
 		/*
 		 * Sample the measurement and average it. Each pass arms the
 		 * measurement and reads 0x0013 then 0x0012; a pass with a zero
@@ -3066,11 +3067,11 @@ static void b43_phy_ac_rxcore_setstate(struct b43_wldev *dev, u8 coremask)
 	/*
 	 * RX-gain override companion of 0x06d8, bracketing the core-state
 	 * change: forced wide open (0xffff) before, set back to what 0x06d8
-	 * read after. The capture delays 5848 us after the wide-open write;
-	 * mdelay(), since ARM refuses a udelay() constant above 2 ms.
+	 * read after. The capture delays 5848 us after the wide-open write,
+	 * rounded up here to 6 ms.
 	 */
 	b43_phy_write(dev, 0x16d8, 0xffff);
-	mdelay(6);
+	fsleep(6000);
 
 	b43_phy_maskset(dev, 0x0160, (u16)~0x0007, coremask);
 	b43_phy_maskset(dev, B43_PHY_AC_RF_SEQ_MODE, (u16)~0x0070,
@@ -3361,17 +3362,16 @@ static void b43_phy_ac_set_analog_tx_lpf(struct b43_wldev *dev, u16 stages,
 /*
  * Wait for the RF sequencer to clear @busy in 0x0403: the bit of the command
  * kicked in 0x0402, bit 0 for the sample play. One read, then 10 us and
- * another while busy, for at most @turns reads.
+ * another while busy, for up to @turns times 10 us.
  */
 static bool b43_phy_ac_rfseq_wait_done(struct b43_wldev *dev, u16 busy,
 				       unsigned int turns)
 {
-	while (turns--) {
-		if (!(b43_phy_read_log(dev, B43_PHY_AC_RF_SEQ_STATUS) & busy))
-			return true;
-		udelay(10);
-	}
-	return false;
+	u16 stat;
+
+	return !read_poll_timeout_atomic(b43_phy_read_log, stat, !(stat & busy),
+					 10, 10 * turns, false,
+					 dev, B43_PHY_AC_RF_SEQ_STATUS);
 }
 
 static void b43_phy_ac_chan_tables(struct b43_wldev *dev);
@@ -5383,16 +5383,11 @@ static void b43_phy_ac_txpwrctrl_enable(struct b43_wldev *dev)
 	 * PLL has not locked.
 	 */
 	{
-		unsigned int tries;
-		u16 stat = 0;
+		u16 stat;
 
-		for (tries = 0; tries < 100; tries++) {
-			udelay(10);
-			stat = b43_radio_read(dev, 0x090b);
-			if (stat & 0x0100)
-				break;
-		}
-		if (!(stat & 0x0100))
+		if (read_poll_timeout_atomic(b43_radio_read, stat,
+					     stat & 0x0100, 10, 1000, true,
+					     dev, 0x090b))
 			b43warn(dev->wl,
 			       "radio 2069: PLL lock timeout (0x90b=0x%04x)\n",
 			       stat);
@@ -7642,14 +7637,10 @@ static void b43_phy_ac_txiqlo_cmd(struct b43_wldev *dev,
 	 * the calibration but is not fatal.
 	 */
 	{
-		unsigned int tries;
+		u16 v;
 
-		for (tries = 0; tries < 1000; tries++) {
-			if (!(b43_phy_read(dev, 0x0380) & 0x8000))
-				break;
-			udelay(1);
-		}
-		if (tries == 1000)
+		if (read_poll_timeout_atomic(b43_phy_read, v, !(v & 0x8000),
+					     1, 1000, false, dev, 0x0380))
 			b43err(dev->wl,
 			       "AC-PHY: TX IQ/LO cal busy timeout (0x0380 stuck, cmd=0x%04x)\n",
 			       cmd);
@@ -8574,14 +8565,12 @@ static void b43_phy_ac_rx_tone_play(struct b43_wldev *dev)
  */
 static void b43_phy_ac_iqest_wait(struct b43_wldev *dev)
 {
-	unsigned int tries;
+	u16 v;
 
-	for (tries = 0; tries < 1000; tries++) {
-		if (!(b43_phy_read(dev, 0x0270) & 0x0001))
-			return;
-		udelay(1);
-	}
-	b43err(dev->wl, "AC-PHY: IQ estimator busy timeout (0x0270 stuck)\n");
+	if (read_poll_timeout_atomic(b43_phy_read, v, !(v & 0x0001), 1, 1000,
+				     false, dev, 0x0270))
+		b43err(dev->wl,
+		       "AC-PHY: IQ estimator busy timeout (0x0270 stuck)\n");
 }
 
 /*
