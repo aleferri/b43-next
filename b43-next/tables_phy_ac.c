@@ -146,8 +146,8 @@ void b43_actab_zerofill_locked(struct b43_wldev *dev,
 }
 
 /*
- * Self-contained variant, as used in phase B4: each table write carries its own
- * gate scope, b43_phy_ac_tbl_write_lock() and unlock() around it. This is the
+ * Self-contained variant: each table write carries its own gate scope,
+ * b43_phy_ac_tbl_write_lock() and unlock() around it. This is the
  * pattern for callers that do not hold an outer lock across several
  * consecutive operations.
  */
@@ -909,8 +909,7 @@ struct b43_phy_ac_table_desc {
  * captures containing the init table load are the two agcombo ones, and in
  * neither does TABLE_ID take 0x06, nor does the payload appear at any other
  * id. The blob has a descriptor for it, so it is presumably written under a
- * condition none of the captures exercise -- 2.4 GHz is the obvious
- * candidate, and is out of scope here.
+ * condition none of the captures exercise.
  */
 
 static const u8 acphy_tx_evm_tbl_rev0[38] = {
@@ -1040,8 +1039,8 @@ static const u32 papd_cal_scalars_tbl_rev0[64] = {
 
 /*
  * acphytbl_info_rev0 entries, in the order the vendor emits them, taken
- * from its TABLE_ID sequence. The zero-fills are interleaved
- * here rather than run as a separate pass: the vendor puts 0x04/0x03 between
+ * from its TABLE_ID sequence. The zero-fills are interleaved here rather
+ * than run as a separate pass: the vendor puts 0x04/0x03 between
  * tx_evm and phasetrack, and the per-core ones between est_pwr and
  * papd_comp_rfpwr. Order matters in this block -- est_pwr and papd_comp_rfpwr
  * target the same cells -- so keep the sequence, and note that the per-core

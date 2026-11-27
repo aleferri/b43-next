@@ -97,10 +97,7 @@ struct ieee80211_channel;
 #define B43_PHY_AC_AFE_C2			0x925	/* by stride from C1 */
 #define B43_PHY_AC_AFE_C2_OVER			0x939
 
-/*
- * Not used by name: b43_phy_ac_clip_det() writes 0x06d4 + core * 0x200 inline
- * so the correlator resolves the stride, see the comment there.
- */
+/* Not used by name: b43_phy_ac_clip_det() writes 0x06d4 + core * 0x200. */
 #define B43_PHY_AC_C1_CLIP			0x6d4
 #define  B43_PHY_AC_C1_CLIP_DIS			0x4000
 #define B43_PHY_AC_C2_CLIP			0x8d4
@@ -147,9 +144,10 @@ struct ieee80211_channel;
 #define B43_PHY_AC_STATE_CLIP_ALL_DIS	(B43_PHY_AC_STATE_CLIP_C0_DIS | \
 					 B43_PHY_AC_STATE_CLIP_C1_DIS | \
 					 B43_PHY_AC_STATE_CLIP_C2_DIS)
-#define B43_PHY_AC_STATE_PHY_RUN	0x0080	/* BBCFG bit 0x8000: 1=running, 0=quiesced */
+#define B43_PHY_AC_STATE_PHY_RUN	0x0080	/* BBCFG bit 0x8000: running */
 #define B43_PHY_AC_STATE_CCA_RESET	0x0100	/* BBCFG bit 0x4000 (RSTCCA active) */
-#define B43_PHY_AC_STATE_AFE_OFF		0x0200	/* RF front-end powered down (enable_afe OFF); 0x1720 bit 9 */
+/* RF front end powered down (enable_afe OFF): 0x1720 bit 9 */
+#define B43_PHY_AC_STATE_AFE_OFF	0x0200
 /*
  * The PHY held for reconfiguration: the WAITED classifier alone and every
  * core's clip detector frozen, with CCA out of reset. The channel setup and
@@ -239,8 +237,9 @@ struct b43_phy_ac_iq_acc {
  * Per-rate TX power limits, in quarter-dBm.
  *
  * Same shape and units as struct txpwr_limits in brcmsmac/phy/phy_hal.h,
- * since it is filled by the same computation. The register this feeds, 0x0646, is in
- * the same unit; the SROM and regulatory values are in whole dB.
+ * since it is filled by the same computation. The register this feeds,
+ * 0x0646, is in the same unit; the SROM and regulatory values are in whole
+ * dB.
  *
  * Each modulation, bandwidth and stream count has its own row, so no single
  * constant fits the captured 0x0646 values. The AC-PHY reduces this to the
@@ -366,10 +365,11 @@ struct b43_phy_ac {
 	 */
 	u16 probe_mode;
 	/*
-	 * Channel of the last completed calibration, 0 when none has run. The
-	 * irregular first probe group follows a channel change, not a first
-	 * bring-up: across the d6220's 32 warm cycles it appears in exactly the
-	 * 16 that follow a channel change.
+	 * Channel of the last completed calibration, 0 when none has run;
+	 * nothing in the driver reads it yet. The irregular first probe group
+	 * follows a channel change, not a first bring-up: across the d6220's
+	 * 32 warm cycles it appears in exactly the 16 that follow a channel
+	 * change.
 	 */
 	u16 last_cal_channel;
 	/*
@@ -584,7 +584,7 @@ struct b43_phy_ac {
 	u8 txpwr_max[B43_PHY_AC_MAX_CORES];
 	/* maxp5ga of the lowest core, 0 when the SROM declares no power. */
 	u8 txpwr_maxp;
-	/* Limit on the legacy OFDM rates before the margin, 0 when none. */
+	/* The configuration the target was last computed for. */
 	u16 txpwr_calc_chan;
 	enum nl80211_chan_width txpwr_calc_width;
 	u16 txpwr_calc_ceiling;

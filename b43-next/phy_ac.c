@@ -527,14 +527,12 @@ static void b43_radio_2069_channel_setup(struct b43_wldev *dev,
 	if (!e)
 		return;
 
-	/* AFE gate pulse on bit 8 of 0x0728. Present in every d6220 capture --
-	 * attach, attach at 40 MHz, attach on ch44, and down-to-up -- and in
-	 * both agcombo ones, immediately after the RX freeze and before the
-	 * channel-setup radio writes.
-	 *
-	 * The meaning is not established. b43_radio_2069_afe_lpf_stage() also
-	 * touches bit 8 of 0x0728, setting then clearing it, so it is some kind
-	 * of AFE-related trigger. */
+	/*
+	 * AFE gate pulse on bit 8 of 0x0728, in every d6220 and agcombo
+	 * capture right after the RX freeze and before the channel-setup
+	 * radio writes. Meaning not established; b43_radio_2069_afe_lpf_stage()
+	 * pulses the same bit.
+	 */
 	b43_phy_maskset(dev, 0x0728, (u16)~0x0100, 0x0100);
 	udelay(1);
 	b43_phy_maskset(dev, 0x0728, (u16)~0x0100, 0x0000);
@@ -582,9 +580,8 @@ static void b43_radio_2069_channel_setup(struct b43_wldev *dev,
 	/*
 	 * One extra write on the lowest 40 MHz block of the band, right after
 	 * the one above and on the chain below it: 0x83e9 against 0x83e0, the
-	 * same register with the low nibble set. Likely a synthesiser edge case
-	 * rather than configuration: the ch36 block sits against the bottom of
-	 * U-NII-1, centre 5190 MHz.
+	 * same register with the low nibble set. The ch36 block sits against
+	 * the bottom of U-NII-1, centre 5190 MHz.
 	 *
 	 * Twenty-one observations agree (d6220 cold, agcombo cold and hot):
 	 * three positive on ch36/40 and eighteen negative on every other 40 MHz
@@ -904,9 +901,8 @@ void b43_radio_2069_init(struct b43_wldev *dev)
 	b43_phy_write(dev, 0x0417, 0x0000);
 	b43_phy_write(dev, 0x0416, 0x000d);
 
-	/* 0x728 &= 0x7e7f (clears 0x8000/0x0100/0x0080); wl7 writes 0x720 = 0x03ff. */
 	b43_phy_write(dev, 0x0728, saved_728 & 0x7e7f);
-	b43_phy_read_log(dev, 0x0720);	/* base logged for HW; the write below is absolute */
+	b43_phy_read_log(dev, 0x0720);
 	b43_phy_write(dev, 0x0720, 0x03ff);
 	b43_phy_write(dev, B43_PHY_AC_RFCTL_CMD, 0x0c00);
 
@@ -1089,7 +1085,6 @@ static void b43_phy_ac_farrow_setup(struct b43_wldev *dev,
  * order, on bit 0x0010:
  *   hold = true  sets it: ADC hold, i.e. RX release
  *   hold = false clears it: RX arm
- * Keep it a call: inlining it breaks the op order.
  * [capture-ref: router-data/d6220/cold-sweep.zip!cold01-ch36-bw20.txt;
  *   5014-5017, 11403-11406, 11436-11439, 12186-12189, 14971-14974,
  *   15721-15724, 15747-15750, 16497-16500, 16535-16538, 22896-22899,
@@ -1109,13 +1104,6 @@ static void b43_phy_ac_adc_hold(struct b43_wldev *dev, bool hold)
 	b43_phy_maskset(dev, 0x02f5, (u16)~0x0010, set);
 	b43_phy_maskset(dev, 0x02f9, (u16)~0x0010, set);
 }
-
-/*
- * Several registers move by a fixed amount per bandwidth step, b43_ppr_bw():
- * 0 at 20 MHz, 1 at 40, 2 at 80. Each user says which law it follows: the
- * law is a compact way of writing the three measured points. There is no
- * 160 MHz capture.
- */
 
 /*
  * The sample count of a calibration tone's play: 0x27 at 20 MHz, 0x4f at 40,
@@ -1206,13 +1194,11 @@ static unsigned int b43_phy_ac_meas_passes(struct b43_wldev *dev)
  * d6220 has them at 0x4c6-0x50c. A fixed stride would hit the right cells
  * only for one rateset, and no gate would notice.
  *
- * Offsets within a block are in bytes, like brcmsmac's M_RT_*.
- */
-/*
- * The block layout differs from brcmsmac's for some fields: SIGNAL is at +8
- * and +10 and the duration at +12, where brcmsmac has PLCP_POS 10 and
- * PRS_DUR_POS 16 (decoding SIGNAL settles it: at +10 the rate nibble reads
- * zero). OFDM_PCTL1 is at 18 in both; brcmsmac has nothing at +14.
+ * Offsets within a block are in bytes, like brcmsmac's M_RT_*. The layout
+ * differs from brcmsmac's for some fields: SIGNAL is at +8 and +10 and the
+ * duration at +12, where brcmsmac has PLCP_POS 10 and PRS_DUR_POS 16
+ * (decoding SIGNAL settles it: at +10 the rate nibble reads zero).
+ * OFDM_PCTL1 is at 18 in both; brcmsmac has nothing at +14.
  */
 #define B43_AC_RT_PLCP		8		/* SIGNAL at +8/+10, duration at +12 */
 #define B43_AC_RT_RATE_PO	14		/* mcsbw*po nibble, << 3 */
@@ -1236,7 +1222,8 @@ static unsigned int b43_phy_ac_ofdm_slot(unsigned int i)
  * This is brcmsmac's brcms_upd_ofdm_pctl1_table(): it reads
  * entry_ptr + M_RT_OFDM_PCTL1_POS, puts the STF mode bits back and rewrites.
  * On one chain hw_stf_ss_opmode is zero, so the value read goes straight
- * back.
+ * back. The values read are constant (0x44, 0x3c, 0x34, 0x30, 0x2c, 0x2c,
+ * 0x28, 0x28 on two D6220 channels and on a BCM4360): microcode defaults.
  *
  * The stock driver runs it twice per attach: in the MAC config block, and
  * after the MHF3 write in channel_setup().
@@ -1257,12 +1244,6 @@ static void b43_phy_ac_ofdm_pctl1_readback(struct b43_wldev *dev)
 /*
  * Shared-memory block between the PHY write of 0x0339 and the host flag that
  * follows: CW and slot time, PHYTYPE/PHYVER, and the OFDM_PCTL1 read-back.
- *
- * Nothing written here is transcribed. The read-back values are constant
- * (0x44, 0x3c, 0x34, 0x30, 0x2c, 0x2c, 0x28, 0x28 on two D6220 channels and
- * on a BCM4360), so they are microcode defaults; why the stock driver
- * touches them is not known.
- *
  * These are MAC cells and belong in the core, but the core has no hook at
  * this point; see docs/retrace-todo.md.
  * [capture-ref: router-data/d6220/cold-sweep.zip!cold01-ch36-bw20.txt;
@@ -1616,9 +1597,9 @@ static void b43_phy_ac_chainmask_block(struct b43_wldev *dev,
 }
 
 /*
- * The beacon PHY control word carries in bits 8:6 the chain mask of 0x05d6, which the
- * chain-mask block of the same site writes a few ops later, and a constant
- * 0x0004 below. Bit 0 is the core's, set by the BSS configuration.
+ * The beacon PHY control word carries in bits 8:6 the chain mask of 0x05d6,
+ * which the chain-mask block of the same site writes a few ops later, and a
+ * constant 0x0004 below. Bit 0 is the core's, set by the BSS configuration.
  *
  * From every write of the cell on the two cold sweeps: 0x44, 0xc4, 0x144 and
  * 0x1c4 where 0x05d6 is 1, 3, 5 and 7, following the site where the mask
@@ -2022,10 +2003,7 @@ static void b43_phy_ac_classctl_write(struct b43_wldev *dev, bool arm)
 				      B43_PHY_AC_STATE_RX_OFDM));
 }
 
-/*
- * Peeked CLASSCTL write, the common pattern (35 cases in the capture). Do
- * not inline the write.
- */
+/* Peeked CLASSCTL write, the common pattern (35 cases in the capture). */
 static void b43_phy_ac_classctl_write_peeked(struct b43_wldev *dev, bool arm)
 {
 	b43_phy_read_log(dev, B43_PHY_AC_CLASSCTL);
@@ -2410,7 +2388,7 @@ static void b43_phy_ac_idle_tssi_meas(struct b43_wldev *dev)
 		b43_cal_report(dev, AC_CAL_IDLE_TSSI_IDX, core, base_index, r464);
 	}
 
-	/* Closing ops of iteration 1, emitted once. */
+	/* After the per-core loop: RF_SEQ_MODE back to every core, RX armed. */
 	b43_phy_write(dev, B43_PHY_AC_RF_SEQ_MODE, b43_phy_ac_rfseq_mode_all(dev));
 	b43_phy_ac_rx_gate_with_adc_hold(dev, false);
 }
@@ -2857,12 +2835,12 @@ void b43_phy_ac_txpwr_by_index(struct b43_wldev *dev, u8 idx)
 		g1     = (e[1] >> 8) | ((e[2] & 0x00ff) << 8);
 		g2     =  e[2] >> 8;
 
-		/* Batch A: 3 fast WR TBL 0x0007 (gain code) */
+		/* The gain code, three RFSEQ cells. */
 		b43_actab_write_bulk(dev, B43_ACTAB_RFSEQ, (u16)(core + 0x0100), 16, 1, &g0);
 		b43_actab_write_bulk(dev, B43_ACTAB_RFSEQ, (u16)(core + 0x0103), 16, 1, &g1);
 		b43_actab_write_bulk(dev, B43_ACTAB_RFSEQ, (u16)(core + 0x0106), 16, 1, &g2);
 
-		/* Batch B: 2 fast WR TBL 0x000c (bbmult per-antenna), nested */
+		/* bbmult, both IQLOCAL cells, under a nested lock. */
 		inner = b43_phy_ac_tbl_write_lock(dev);
 		b43_actab_write_bulk(dev, B43_ACTAB_IQLOCAL, bbmult_lo[core], 16, 1, &bbmult);
 		b43_actab_write_bulk(dev, B43_ACTAB_IQLOCAL, bbmult_hi[core], 16, 1, &bbmult);
@@ -3030,9 +3008,6 @@ static void b43_phy_ac_clip_det(struct b43_wldev *dev, bool enable)
 	 * Every silicon core, including an antenna-less core 2: the stock
 	 * driver freezes the clip bit on all of them, so gate on presence, not
 	 * on the active-chain mask.
-	 *
-	 * `0x06d4 + core * 0x200` is written inline because the correlator
-	 * recognises that idiom as a per-core stride.
 	 */
 	for (core = 0; core < dev->phy.ac->num_cores; core++) {
 		u16 bit = (u16)(B43_PHY_AC_STATE_CLIP_C0_DIS << core);
@@ -3594,8 +3569,7 @@ static u16 b43_phy_ac_post_rfseq_misc_setup(struct b43_wldev *dev)
 
 /*
  * Per-core radio setup, step 1, the same on the d6220 and the agcombo:
- *   1. once, program 0x0548-0x054c (probably an LO calibration output
- *      buffer) and clear bit 0 of 0x040b;
+ *   1. once, program 0x0548-0x054c and clear bit 0 of 0x040b;
  *   2. per core, seven masksets: 0x001a three times, the shared 0x054b/c,
  *      then 0x0017, 0x001f and 0x0170, at a +0x200 stride.
  * [capture-ref: router-data/d6220/cold-sweep.zip!cold01-ch36-bw20.txt;
@@ -3772,8 +3746,8 @@ static void b43_phy_ac_coeff_bank_init(struct b43_wldev *dev)
 
 	/*
 	 * The 0x034d-0x0353 ladder (13 bits each) with 0x028d and 0x04d7/0x04db.
-	 * b43 did not write them, so they kept the power-on set (lo) unless wl
-	 * had run before a warm reboot. Under wl 7.14 they read back lo at
+	 * Unwritten they keep the power-on set (lo), or what wl left before a
+	 * warm reboot. Under wl 7.14 they read back lo at
 	 * 5 GHz 20 and 80 MHz and hi at 5 GHz 40 MHz (RT-AC66U B1). On 2.4 GHz
 	 * they read back lo at ch1/20 and hi at ch6/20, ch11/20 and ch6/40, so
 	 * band and width do not decide the set there. No write of them by wl
@@ -3781,7 +3755,7 @@ static void b43_phy_ac_coeff_bank_init(struct b43_wldev *dev)
 	 * RT-AC66U B1 and the R7000), so what sets them is not known. On that
 	 * board b43 needs hi at 5 GHz 80 MHz: with lo the AP's 80 MHz downlink
 	 * drops to 3-30 Mbit/s or stops, with hi it carries 153-160 Mbit/s.
-	 * Elsewhere lo, which b43 has always run with.
+	 * Elsewhere lo.
 	 */
 	{
 		static const u16 lo[7] = { 0x012c, 0x0145, 0x015e, 0x0177,
@@ -3841,9 +3815,8 @@ static void b43_phy_ac_coeff_bank_init(struct b43_wldev *dev)
  * which includes 0x0358-0x035a.
  *
  * Not per-core: no capture shows 0x0750/0x0950/0x0b50. The values are
- * transcribed; the identical pairs (1000/1000, 500/500) look like settle
- * windows rather than gain codes. 0x0554 and 0x0555 are adjusted later by
- * the periodic watchdog; see b43_phy_ac_op_pwork_60sec().
+ * transcribed. The watchdog's peek, b43_phy_ac_wd_peek(), rewrites 0x0554
+ * and 0x0555.
  * [capture-ref: router-data/d6220/cold-sweep.zip!cold01-ch36-bw20.txt;
  *   1202-1214, 5253-5268]
  * [capture-ref: router-data/d6220/hot-sweep.zip!segmenti/01-up-ch36-bw20.txt;
@@ -4112,8 +4085,8 @@ static void b43_phy_ac_set_reg_on_reset(struct b43_wldev *dev)
  * The board may give it in NVRAM as AvVmid_c0..2 (Av,Vmid for 2g, 5gl,
  * 5gml, 5gmu, 5gh), which the stock driver uses only when boardflags3 has
  * BFL3_AvVim ("load AvVim from nvram"). Otherwise the pair is the default
- * set indexed by pdgain2g on 2.4 GHz and pdgain5g on 5 GHz. All four boards here have boardflags3=0 and no
- * AvVmid in NVRAM.
+ * set indexed by pdgain2g on 2.4 GHz and pdgain5g on 5 GHz. All four boards
+ * here have boardflags3=0 and no AvVmid in NVRAM.
  *
  * The default sets are the stock driver's avvmid_set[] (wlD6220.o, 7.14.89,
  * 720 bytes of .rodata): 24 sets, five bands each, the three chains' Av
@@ -4556,9 +4529,9 @@ static void b43_phy_ac_channel_setup(struct b43_wldev *dev,
 
 	/*
 	 * 0x0197 and 0x0198, then unlock coeff_bank_init()'s gate so that the
-	 * raw PHY writes that follow get through. Both step once from 20 to 40 MHz and
-	 * hold: 0x14 and 0x10 at 20 MHz, 0x1e and 0x14 from 40 on, on every
-	 * channel.
+	 * raw PHY writes that follow get through. Both step once from 20 to
+	 * 40 MHz and hold: 0x14 and 0x10 at 20 MHz, 0x1e and 0x14 from 40 on, on
+	 * every channel.
 	 */
 	if (dev->phy.ac->cal_width == NL80211_CHAN_WIDTH_20) {
 		b43_phy_write(dev, 0x0197, 0x0014);
@@ -5155,8 +5128,8 @@ b43_phy_ac_post_noise_shaping_core_transition(struct b43_wldev *dev,
 
 /*
  * Post-noise-shaping block: for every silicon core (num_cores, not the
- * coremask) the body and the transition. The registers are not identified; RX gain or RSSI
- * programming is the likely purpose.
+ * coremask) the body and the transition: the five RX gain settings of
+ * b43_phy_ac_agc_settings().
  * [capture-ref: router-data/d6220/cold-sweep.zip!cold01-ch36-bw20.txt;
  *   11058-11218]
  * [capture-ref: router-data/d6220/hot-sweep.zip!segmenti/01-up-ch36-bw20.txt;
@@ -5191,8 +5164,8 @@ static const u16 b43_phy_ac_rxgain_regs[14] = {
  * on it: each value is the same on every channel of its width in the sweep
  * (36 to 140, DFS included). The other 22 fields do not move.
  *
- * Three measured values, not a law: 0x0739[6:1] holds between 20 and 40 and
- * changes at 80, 0x073a[6:5] does the opposite. There is no 160 MHz row.
+ * Three measured rows: 0x0739[6:1] holds between 20 and 40 and changes at
+ * 80, 0x073a[6:5] does the opposite. There is no 160 MHz row.
  */
 struct b43_phy_ac_rxgain_bw {
 	u16 f73a_07, f739_7e, f73a_08, f73a_60;
@@ -5479,7 +5452,6 @@ static void b43_phy_ac_txpwrctrl_enable(struct b43_wldev *dev)
 			       stat);
 	}
 
-	/* PHY update strobe. */
 	b43_phy_ac_cca_pulse(dev);
 
 	/*
@@ -5489,7 +5461,6 @@ static void b43_phy_ac_txpwrctrl_enable(struct b43_wldev *dev)
 	 */
 	b43_phy_ac_rx_gate_with_adc_hold(dev, false);
 
-	/* ADC config. */
 	b43_phy_write(dev, 0x0339, 0x0fff);
 	/*
 	 * The radar detector, armed or not. Not armed is MHF slot 0 bit 13
@@ -5531,10 +5502,7 @@ static void b43_phy_ac_txpwrctrl_enable(struct b43_wldev *dev)
 	b43_phy_ac_rx_gate_with_adc_hold(dev, true);
 	b43_phy_write(dev, 0x0339, 0x0000);
 
-	/*
-	 * PHY update strobe. The per-core TSSI-path enable is emitted by
-	 * idle_tssi_meas(), not here.
-	 */
+	/* The per-core TSSI-path enable is idle_tssi_meas()'s, not here. */
 	b43_phy_ac_cca_pulse(dev);
 }
 
@@ -5811,9 +5779,9 @@ static void b43_phy_ac_prog_bank_0910(struct b43_wldev *dev)
 }
 
 /*
- * The AFE gain registers, emitted at two points of cal_restore() (block
- * E and the final tail) through b43_phy_ac_afe_gain_regs_reemit(), and
- * around txpwrctrl_setup() with their own condition:
+ * The AFE gain registers, emitted at the end of cal_restore() (block E)
+ * and in b43_phy_ac_down() through b43_phy_ac_afe_gain_regs_reemit(), and
+ * after txpwrctrl_setup() with their own condition:
  *   0x0070 set 0xe000        top-3 gain enable bits
  *   0x?644 = 0x14, mask 0x7f per-core AFE gain word
  *   0x?678 clear bit 2       per-core AFE bypass
@@ -6090,7 +6058,7 @@ static void b43_phy_ac_pwr_report(struct b43_wldev *dev)
 				     sub, ARRAY_SIZE(sub));
 	}
 
-	/* The SROM rev 11 loader fills the SISO rows only: the target is their maximum */
+	/* The rev 11 loader fills the SISO rows only: the target is their max. */
 	n = 0;
 	v[n++] = bw;
 	for (i = 0; i < B43_PPR_CCK_RATES; i++)
@@ -6101,7 +6069,7 @@ static void b43_phy_ac_pwr_report(struct b43_wldev *dev)
 		v[n++] = ppr->mcs[bw][B43_PPR_SISO][i];
 	b43_cal_report_values(dev, AC_CAL_TXPWR_PPR, v, n);
 
-	/* The per-rate offsets below the target, as the TX path writes them */
+	/* The per-rate offsets below the target, as the TX path writes them. */
 	n = 0;
 	v[n++] = ac->rate_po_cck;
 	for (i = 0; i < ARRAY_SIZE(ac->rate_po_ofdm); i++)
@@ -6951,18 +6919,13 @@ static void b43_phy_ac_switch_analog_once(struct b43_wldev *dev, bool on,
 			   saved_417, saved_416);
 
 	/*
-	 * Cold attach only: the radar pulse threshold, right after the unit
-	 * above and before the MHF block and the second copy of the unit. One
-	 * op on that register in the cold preamble of both boards, 0x0f00 on
-	 * the 4352 and the 4360 alike. A later bring-up of the d6220 does not
-	 * touch 0x02e4. The 0x0800 set_channel writes on the 4360 is a
-	 * different site.
+	 * The radar pulse threshold, right after the unit above and before the
+	 * MHF block and the second copy of the unit. One op on that register in
+	 * the cold preamble of both boards, 0x0f00 on the 4352 and the 4360
+	 * alike. A later bring-up of the d6220 does not touch 0x02e4. The
+	 * 0x0800 set_channel writes on the 4360 is a different site.
 	 */
-	if (!cold)
-		return;
-
 	b43_phy_ac_radar_thresh(dev);
-
 
 	/*
 	 * Tail of the preamble: the seven MHF clears, then the second copy of
@@ -7066,13 +7029,6 @@ static void b43_phy_ac_op_software_rfkill(struct b43_wldev *dev, bool blocked)
 	 * RCCAL_EN cleanup and before the op_init analog reset.
 	 */
 	b43_radio_2069_afe_lpf_stage(dev, 0x0800);
-
-	/*
-	 * software_rfkill ends with the radio front end up. The two-phase GPIO
-	 * front end, the per-core PA bias and the final PMU regctl enable,
-	 * which the stock driver emits only in steady state, come from the
-	 * rxiqcal / TX-enable path.
-	 */
 }
 
 /*
@@ -7145,7 +7101,7 @@ static void b43_phy_ac_cal_mac_suspend(struct b43_wldev *dev)
 /*
  * RX-cal iteration 3, the third and last idle-TSSI measurement: an RX
  * suspend, the statistics clear, the MAC suspend with the CTS duration, a
- * diagnostic preamble, the A1 restore and the measurement, whose base index
+ * diagnostic preamble, the RX gate armed and the measurement, whose base index
  * returns to iteration 1's. What follows is b43_phy_ac_txcal_setup().
  * [capture-ref: router-data/d6220/cold-sweep.zip!cold01-ch36-bw20.txt;
  *   15728-16503]
@@ -7528,7 +7484,7 @@ static void b43_phy_ac_txcal_setup(struct b43_wldev *dev)
 		 */
 		b43_phy_ac_rxgain_perchan_tail(dev);
 
-		/* B2m-B3: the chains' gain-curve entries into table 0x0007. */
+		/* B2m: the chains' gain-curve entries into table 0x0007. */
 		b43_phy_ac_tx_gain_bbmult_load(dev);
 	}
 }
@@ -7966,7 +7922,7 @@ static void b43_phy_ac_txcal_restore(struct b43_wldev *dev)
 				      gain_cfg[k].val);
 	}
 
-	/* The gate and 0x040f the previous step saved, then the commit pulse */
+	/* The gate and 0x040f the previous step saved, then the commit pulse. */
 	b43_phy_write(dev, B43_PHY_AC_REG_TBL_WRITE_GATE,
 		      dev->phy.ac->cal_gate_saved);
 	b43_phy_write(dev, 0x040f, dev->phy.ac->cal_040f_saved);
@@ -7975,10 +7931,10 @@ static void b43_phy_ac_txcal_restore(struct b43_wldev *dev)
 
 /*
  * Mixed RX and TX chain setup: restore the per-chain radio registers saved
- * by the previous step of the cal, open a bracket (classifier, ADC hold, clip detect) that closes
- * to a net zero, and with @with_tune add per-chain read-back and tuning.
- * The steps are labelled 3a to 3r in the stock driver's order. What the
- * bits of 0x02ed/f1/f5/f9 and the closing pulse do is not known.
+ * by the previous step of the cal, open a bracket (classifier, ADC hold,
+ * clip detect) that closes to a net zero, and with @with_tune add per-chain
+ * read-back and tuning. The steps are labelled 3a to 3r in the stock
+ * driver's order.
  * [capture-ref: router-data/d6220/cold-sweep.zip!cold01-ch36-bw20.txt;
  *   22878-23027, 27668-27709]
  * [capture-ref: router-data/d6220/hot-sweep.zip!segmenti/01-up-ch36-bw20.txt;
@@ -8054,9 +8010,8 @@ static void b43_phy_ac_cal_chain_restore(struct b43_wldev *dev, bool with_tune)
 }
 
 /*
- * Tail shared by txiq_setup(),
- * b43_phy_ac_rx_tone_play() and the B2l block of
- * txcal_setup(): per active chain, read 0x?739, 0x?73a and 0x?725 and
+ * Tail shared by txiq_setup(), b43_phy_ac_rx_tone_play() and the B2l block
+ * of txcal_setup(): per active chain, read 0x?739, 0x?73a and 0x?725 and
  * write them back with bit 7, nothing and bit 2 set; then, from the highest
  * chain down, put back what was read. The same at every occurrence.
  * [capture-ref: router-data/d6220/cold-sweep.zip!cold01-ch36-bw20.txt;
@@ -8291,8 +8246,8 @@ static void b43_phy_ac_rxiqcal_setup(struct b43_wldev *dev)
 
 /*
  * RX gain configuration a core carries across the RX-IQ cal, in the stock
- * read order: rxgain_save() saves it,
- * rxgain_restore() restores it (0x0727 before 0x0726 there).
+ * read order: rxgain_save() saves it, rxgain_restore() restores it (0x0727
+ * before 0x0726 there).
  */
 static const u16 b43_phy_ac_rxgain_cfg_regs[25] = {
 		0x0720, 0x0721, 0x0722, 0x0723, 0x0724, 0x0725, 0x0726, 0x0727,
@@ -8715,10 +8670,10 @@ static void b43_phy_ac_loopback_gain_measure(struct b43_wldev *dev)
 }
 
 /*
- * Gain sub-block of the v2 variant, run before each core's measurement on the
- * other wired chains: four peeks and four MODs per chain in core order, one
- * arm and wait, four writes per chain in reverse core order, and one extra
- * peek. With two chains it is one chain each way; the agcombo and the
+ * Gain sub-block of rxiqcal_tone_measure(), run before each core's
+ * measurement on the other wired chains: four peeks and four MODs per chain
+ * in core order, one arm and wait, four writes per chain in reverse core
+ * order, and one extra peek. With two chains it is one chain each way; the agcombo and the
  * tg789vac run it on both of the other two.
  */
 static void rxiqcal_meas_gain_prog_poll(struct b43_wldev *dev, unsigned long others)
@@ -8838,9 +8793,10 @@ static bool b43_phy_ac_loopback_step(struct b43_wldev *dev, unsigned int core,
 }
 
 /*
- * Loopback gain search, rounds 6 to 9 of the txpwr apply. Each round writes
- * the current indices through loopback_gain_apply(), runs a tone and a
- * measurement pass (dds_seed, then meas, which reads the accumulators with
+ * Loopback gain search of b43_phy_ac_rxiqcal(), before the tone
+ * measurements. Each round writes the current indices through
+ * loopback_gain_apply(), loads the +1 tone and measures it
+ * (loopback_gain_measure(), which reads the accumulators with
  * iq_acc_peek()), then advances the indices with b43_phy_ac_loopback_step()
  * until every measured core converges. A converged core leaves the round's
  * set, but the measurement still reads every core (ch132/40: round 4 writes
@@ -8967,8 +8923,8 @@ static void rxiqcal_meas_peek_c0_c5(struct b43_wldev *dev, unsigned int core)
 }
 
 /*
- * Setup of the v2 variant: 0x0272 is 0x4000 at 20 and 40 MHz and 0x3000 at
- * 80, on the d6220, the agcombo and the tg789vac.
+ * Setup of rxiqcal_tone_measure(): 0x0272 is 0x4000 at 20 and 40 MHz and
+ * 0x3000 at 80, on the d6220, the agcombo and the tg789vac.
  */
 static void rxiqcal_meas_setup(struct b43_wldev *dev)
 {
@@ -9052,7 +9008,7 @@ static void b43_phy_ac_rxiqcal_tone_measure(struct b43_wldev *dev)
 		}
 	}
 
-	/* G: per-core bbmult apply, as in v1 */
+	/* G: per-core bbmult apply, as in loopback_gain_measure(). */
 	b43_phy_read_log(dev, 0x0464);
 	b43_phy_set(dev,      B43_PHY_AC_SAMP_PLAY_CTL, B43_PHY_AC_SAMP_PLAY_STOP);
 	b43_phy_mask(dev,     B43_PHY_AC_SAMP_PLAY_CTL, (u16)~0x0004);
@@ -9130,9 +9086,9 @@ static void b43_phy_ac_rxiqcal_solve(struct b43_phy_ac_iq_acc *acc,
  * the same on three boards and every channel.
  *
  * A chain's row follows the slope of its per-tone a over the tones at +-1,
- * +-3, +-4, the part b43_phy_ac_rxiqcal_solve() averages away. On the 56 80 MHz
- * points (d6220, tg789vac, agcombo, cold and hot, bss-up included) the
- * least-squares slope, in units of a per step, separates the rows:
+ * +-3, +-4, the part b43_phy_ac_rxiqcal_solve() averages away. On the 56
+ * 80 MHz points (d6220, tg789vac, agcombo, cold and hot, bss-up included)
+ * the least-squares slope, in units of a per step, separates the rows:
  *
  *   row          0          A           D           B           C
  *   slope     -1.1..1.2  1.7..3.9    4.2..6.0    6.3..8.5    8.9..9.7
@@ -9273,9 +9229,9 @@ static void b43_phy_ac_loopback_radio_restore(struct b43_wldev *dev)
 }
 
 /*
- * The RX gain state rxgain_save() kept, back (185 ops): per wired
- * chain, the saved gain codes written back around a read of the gain curve at 0x40 and its
- * bbmult written twice, then the gain registers restored.
+ * The RX gain state rxgain_save() kept, back (185 ops): per wired chain, the
+ * saved gain codes written back around a read of the gain curve at 0x40 and
+ * its bbmult written twice, then the gain registers restored.
  * [capture-ref: router-data/d6220/cold-sweep.zip!cold01-ch36-bw20.txt;
  *   30398-30613]
  * [capture-ref: router-data/d6220/hot-sweep.zip!segmenti/01-up-ch36-bw20.txt;
@@ -9530,9 +9486,6 @@ static void b43_phy_ac_wd_sample_phase_opt(struct b43_wldev *dev, bool peek,
  *   true, 2                      the full shape
  *   true, 0                      sweep only: the three polls of the up path
  *   false, 1                     second half, one pass: the MAC config block
- *
- * Plausibly the passes are missing where the MAC has not counted anything
- * yet; unproven.
  * [capture-ref: router-data/d6220/cold-sweep.zip!cold01-ch36-bw20.txt;
  *   12894-12956, 12961-13003, 13481-13523, 13540-13582, 30919-31061,
  *   31100-31309, 31336-31478, 31505-31647, 31700-31842, 31895-32037,
@@ -9983,10 +9936,9 @@ void b43_phy_ac_cal_restore(struct b43_wldev *dev, u16 gate)
 	}
 
 	/*
-	 * Block E, 28 ops: AFE, CRS and noise-floor reconfiguration: the AFE
-	 * gain registers; a MAC toggle, MHF and GPIO sequence of the MAC/GPIO
-	 * layer; the eight CRS registers at 0x34; the 0x0910-0x0913 bank; a
-	 * closing MAC.MCTRL toggle.
+	 * Block E: the AFE gain registers. The CRS registers and the
+	 * 0x0910-0x0913 bank of the stock block come with the next noise
+	 * sample, b43_phy_ac_crs_block_e().
 	 */
 	b43_phy_ac_afe_gain_regs_reemit(dev);
 
@@ -10469,9 +10421,9 @@ static void b43_phy_ac_down(struct b43_wldev *dev)
 	 * Third and last pass of the twelve-rate loop, with the second one's
 	 * shm prologue: chain mask into the beacon PHY control word, beacon
 	 * power offset, zero into 0x00d0, then the chain-mask block. Three
-	 * beacon power offset writes on every cold segment and four on every hot up segment, on
-	 * every channel and width, unlike the beacon reloads, whose count the
-	 * host decides.
+	 * beacon power offset writes on every cold segment and four on every
+	 * hot up segment, on every channel and width, unlike the beacon
+	 * reloads, whose count the host decides.
 	 *
 	 * 0x00d0 is a bitfield the ucode slices, left at zero on all 849 writes
 	 * of the three boards; a condition that sets it would require revising
@@ -10588,8 +10540,6 @@ static int b43_phy_ac_op_switch_channel(struct b43_wldev *dev, unsigned int new_
 	 */
 	if (!dev->mac_suspended)
 		b43_mac_suspend(dev);
-
-	/* 5 GHz: the channel table is the filter (unknown channels: -ESRCH). */
 
 	b43info(dev->wl, "phy-ac: set_channel ch%u (%u MHz) start\n",
 	       channel->hw_value, channel->center_freq);
@@ -10865,8 +10815,9 @@ static int b43_phy_ac_op_switch_channel(struct b43_wldev *dev, unsigned int new_
 	B43_AC_BLOCK(dev, "shm_readback");
 	b43_phy_ac_shm_readback_block(dev);
 	/*
-	 * The synthesizer pre-wakeup in microseconds (M_SYNTHPU_DLY, 0x4a*2). The constant is per PHY type: brcmsmac has 3700 for A-PHY,
-	 * 1050 for B-PHY, 2048 for N-PHY rev >= 3 and 300 for LCN, chosen in
+	 * The synthesizer pre-wakeup in microseconds (M_SYNTHPU_DLY, 0x4a*2).
+	 * The constant is per PHY type: brcmsmac has 3700 for A-PHY, 1050 for
+	 * B-PHY, 2048 for N-PHY rev >= 3 and 300 for LCN, chosen in
 	 * brcms_b_upd_synthpu(); 512 is the AC member of that family.
 	 *
 	 * b43_set_synth_pu_delay() in main.c rewrites the cell with the same
@@ -10930,7 +10881,6 @@ static int b43_phy_ac_op_switch_channel(struct b43_wldev *dev, unsigned int new_
 	b43_shm_write16(dev, B43_SHM_SHARED, 0x018c, 0xffba);
 	B43_AC_CORE_SITE(dev, MACFILTER_FIRST);
 	b43_phy_ac_wd_stats_poll_opt(dev, true, 0);
-	/* After the sweep and the four CCK blocks not understood yet. */
 	b43_phy_ac_chainmask_block(dev, B43_PHY_AC_CHAIN_SETUP);
 	b43_phy_ac_prb_rsp_rate_po(dev, B43_PHY_AC_CHAIN_SETUP);
 	gate = b43_phy_ac_tbl_write_lock(dev);
@@ -10938,17 +10888,10 @@ static int b43_phy_ac_op_switch_channel(struct b43_wldev *dev, unsigned int new_
 	B43_AC_BLOCK(dev, "txpwrctrl_setup");
 	b43_phy_ac_txpwrctrl_setup(dev, channel->center_freq);
 
-	/*
-	 * Transition between the first and second txpwrctrl_setup(): release
-	 * the gate, enable TX power control, restore the per-core current
-	 * index, wake the MAC so that the firmware picks up the new
-	 * configuration, then suspend it again.
-	 */
 	b43_phy_ac_tbl_write_unlock(dev, gate);
 	/*
 	 * TX power control enable. The gain word is absent on a first bring-up,
-	 * here and in adc_reset(), but always present in the tail of
-	 * cal_restore().
+	 * here and in adc_reset(); cal_restore() has it wherever block D ran.
 	 */
 	B43_AC_BLOCK(dev, "afe_gain");
 	b43_phy_ac_afe_gain_regs(dev, !(dev->phy.ac->status_mask &
@@ -10956,9 +10899,10 @@ static int b43_phy_ac_op_switch_channel(struct b43_wldev *dev, unsigned int new_
 	b43_phy_ac_mhf_maskset(dev, 3, (u16)~0x0040, 0x0040);
 	b43_phy_ac_ofdm_pctl1_readback(dev);
 	/*
-	 * No timeout for the firmware's probe response. Not transcribed: it is what b43_chip_init() writes. It overrides the 1
-	 * that b43_wireless_core_init() writes before the PHY comes up; the
-	 * offload stays off through HOSTF2 bit 0, below.
+	 * No timeout for the firmware's probe response, what b43_chip_init()
+	 * writes. It overrides the 1 that b43_wireless_core_init() writes
+	 * before the PHY comes up; the offload stays off through HOSTF2 bit 0,
+	 * below.
 	 */
 	B43_AC_BLOCK(dev, "shm_tail");
 	b43_shm_write16(dev, B43_SHM_SHARED, B43_SHM_SH_PRMAXTIME, 0x0000);
@@ -11070,7 +11014,7 @@ static void b43_phy_ac_op_write(struct b43_wldev *dev, u16 reg, u16 value)
 	b43_write16(dev, B43_MMIO_PHY_DATA, value);
 }
 
-/* The calibration statistics; est_pwr_lut holds the LUT at 0, 16 ... 112, 127 */
+/* The calibration statistics; est_pwr_lut holds the LUT at 0, 16 .. 112, 127 */
 B43_CAL_TABLE(b43_phy_ac_cal_entries) = {
 	B43_CAL_ENTRY(AC_CAL_RCCAL_TIMEOUT, RCCAL, "timeout", EVALUATED, 3,
 		      B43_CAL_U(pass)),

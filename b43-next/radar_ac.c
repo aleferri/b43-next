@@ -9,11 +9,10 @@
  * short-pulse radar test signals of ETSI EN 301 893 (reference DFS test
  * signals 1-6, Table D.4) and FCC KDB 905462 D02 (radar types 0-4 and 6,
  * Tables 5 and 7): a burst of pulses of one width at one pulse repetition
- * interval. A pulse
- * that fits a type's width is the end of a candidate train with every
- * earlier pulse in that type's PRI range; the train is the pulses at whole
- * multiples of that interval, so missed pulses leave gaps but do not break
- * it. A type is reported when its train reaches the type's count.
+ * interval. A pulse that fits a type's width is the end of a candidate train
+ * with every earlier pulse in that type's PRI range; the train is the pulses
+ * at whole multiples of that interval, so missed pulses leave gaps but do not
+ * break it. A type is reported when its train reaches the type's count.
  *
  * A burst at a staggered PRF (ETSI 5 and 6) takes two or three intervals in
  * turn, so each third or second pulse is on a train at their sum: those
