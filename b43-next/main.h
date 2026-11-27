@@ -126,4 +126,6 @@ void b43_do_release_fw(struct b43_firmware_file *fw);
 
 void b43_ampdu_kick_arm(struct b43_wldev *dev);
 
+void b43_board_chains(struct b43_wldev *dev, u8 *rxchain, u8 *txchain);
+
 #endif /* B43_MAIN_H_ */

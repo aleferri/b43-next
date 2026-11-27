@@ -401,6 +401,9 @@ static void mount_board(const struct board_profile *p)
 	g_wldev.phy.dacbuf_cap = g_ac.dacbuf_cap;
 	g_wldev.phy.lpf_cap    = g_ac.lpf_cap0;
 	g_wldev.phy.ac         = &g_ac;
+	/* As b43_setup_chains() sets them: the board's chains, its coremask. */
+	g_wldev.rxchain        = g_ac.coremask;
+	g_wldev.txchain        = g_ac.coremask;
 	g_wldev.cac_pending    = g_cac_pending;
 		/*
 		 * Like b43_phy_init(): the PHY looks at phy.chandef, not inside

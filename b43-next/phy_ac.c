@@ -1526,7 +1526,7 @@ static u16 b43_phy_ac_chain_mask(u16 coremask, unsigned int n)
 static u16 b43_phy_ac_throttle_chain(struct b43_wldev *dev)
 {
 	u16 coremask = dev->phy.ac->coremask;
-	u16 tx = dev->dev->bus_sprom->txchain & coremask;
+	u16 tx = dev->txchain & coremask;
 
 	return b43_phy_ac_chain_mask(tx ? tx : coremask, 1);
 }
@@ -6553,14 +6553,15 @@ static void b43_phy_ac_op_channel_calibrate(struct b43_wldev *dev,
  * num_cores is the physical core count from PHY 0x000b, 3 on the 4352 and
  * the 4360 alike, and bounds every per-core access: touching a core past it
  * hangs the device. coremask is the chains wired to the front end, the
- * SROM's rxchain: 0x3 on the 4352, whose core 2 is present but unconnected,
- * 0x7 on the 4360. Per-core loops follow one or the other as the stock
- * driver does. Cores 0 and 1 are assumed when rxchain is unset.
+ * board's RX chains (b43_board_chains()): 0x3 on the 4352, whose core 2 is
+ * present but unconnected, 0x7 on the 4360. Per-core loops follow one or
+ * the other as the stock driver does.
  */
 static void b43_phy_ac_probe_cores(struct b43_wldev *dev)
 {
 	B43_AC_FN();
 	struct b43_phy_ac *ac = dev->phy.ac;
+	u8 rx, tx;
 
 	if (ac->num_cores)
 		return;
@@ -6569,9 +6570,8 @@ static void b43_phy_ac_probe_cores(struct b43_wldev *dev)
 	if (ac->num_cores > B43_PHY_AC_MAX_CORES)
 		ac->num_cores = B43_PHY_AC_MAX_CORES;
 
-	ac->coremask = dev->dev->bus_sprom->rxchain & 0x07;
-	if (!ac->coremask)
-		ac->coremask = 3;
+	b43_board_chains(dev, &rx, &tx);
+	ac->coremask = rx;
 
 	b43dbg(dev->wl, "phy-ac: num_cores=%u coremask=0x%lx\n",
 	       ac->num_cores, ac->coremask);

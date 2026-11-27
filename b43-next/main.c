@@ -975,13 +975,6 @@ static void b43_shm_macaddr_set(struct b43_wldev *dev, const u8 *mac)
 				get_unaligned_le16(mac + i));
 }
 
-static u8 b43_txbf_txchain(struct b43_wldev *dev)
-{
-	u8 txchain = dev->dev->bus_sprom->txchain & 0x07;
-
-	return txchain ? : 0x03;
-}
-
 /*
  * One beamformee's slot, as wl 7.14 fills it when a beamformee joins on the
  * RT-AC66U B1 (router-data/rt-ac66u-b1/mmio-txbf-5g36-80.zip and
@@ -1054,7 +1047,7 @@ static void b43_txbf_init(struct b43_wldev *dev)
 	dev->txbf_base = 0;
 	if (!modparam_txbf || dev->phy.type != B43_PHYTYPE_AC ||
 	    !dev->fw.layout.txbf ||
-	    hweight8(b43_txbf_txchain(dev)) < 2)
+	    hweight8(dev->txchain) < 2)
 		return;
 
 	base = b43_shm_read16(dev, B43_SHM_SHARED, B43_SHM_SH_TXBF_BLK);
@@ -8122,25 +8115,18 @@ static const struct ieee80211_iface_combination b43_if_comb_dfs = {
  * VHT frame of the stock driver's is.
  *
  * The stock beacon carries the 4360's three streams; the streams here are
- * the board's chains, the SROM rxchain the PHY also uses for receiving and
- * the txchain for transmitting.
+ * the board's chains (b43_setup_chains()), the ones the PHY also uses for
+ * receiving and transmitting.
  */
 static void b43_ac_set_ht_vht_cap(struct b43_wldev *dev,
 				  struct ieee80211_supported_band *band)
 {
 	struct ieee80211_sta_ht_cap *ht = &band->ht_cap;
 	struct ieee80211_sta_vht_cap *vht = &band->vht_cap;
-	u8 chains = dev->dev->bus_sprom->rxchain & 0x07;
-	u8 txchains = dev->dev->bus_sprom->txchain & 0x07;
-	unsigned int nss, tx_nss, i;
+	unsigned int nss = hweight8(dev->rxchain);
+	unsigned int tx_nss = hweight8(dev->txchain);
+	unsigned int i;
 	u16 map = 0, tx_map = 0;
-
-	if (!chains)
-		chains = 0x03;
-	if (!txchains)
-		txchains = chains;
-	nss = hweight8(chains);
-	tx_nss = hweight8(txchains);
 
 	memset(ht, 0, sizeof(*ht));
 	ht->ht_supported = true;
@@ -8184,6 +8170,64 @@ static void b43_ac_set_ht_vht_cap(struct b43_wldev *dev,
 			    IEEE80211_VHT_CAP_SOUNDING_DIMENSIONS_SHIFT;
 }
 
+/*
+ * The board's RX and TX chains, as masks of the PHY's cores: the SROM's (or
+ * NVRAM's) rxchain and txchain, within the chains the PHY can have. Those are
+ * three on the AC-PHY (the 4366's four would need wider masks), two on its
+ * 2x2 parts: the BCM4352, whose core 2 is present but not wired, and the
+ * BCM4360 of the MacBooks (boardtype 0x117, the MacBookAir6,1, and 0x137),
+ * whose SROM has rxchain 3. Three on the HT-PHY, two on the N-PHY, one on
+ * the older PHYs. An unset rxchain is all of them (the R7000's 2.4 GHz card
+ * has none), an unset txchain the RX chains. On the AC-PHY, whose TX core
+ * table follows the RX chains (the coremask), the TX chains stay within
+ * those.
+ *
+ * It needs only the SROM and the ids. The AC-PHY takes its coremask, the
+ * chains wired to the front end, from here too, so that it does not follow
+ * dev->rxchain should set_antenna ever change that.
+ */
+void b43_board_chains(struct b43_wldev *dev, u8 *rxchain, u8 *txchain)
+{
+	const struct ssbn_sprom *sprom = dev->dev->bus_sprom;
+	u16 chip = dev->dev->chip_id;
+	u16 board = dev->dev->board_type;
+	u8 cap, rx, tx;
+
+	switch (dev->phy.type) {
+	case B43_PHYTYPE_AC:
+		if (chip == 0x4352 ||
+		    (chip == 0x4360 && (board == 0x117 || board == 0x137)))
+			cap = 0x3;
+		else
+			cap = 0x7;
+		break;
+	case B43_PHYTYPE_HT:
+		cap = 0x7;
+		break;
+	case B43_PHYTYPE_N:
+		cap = 0x3;
+		break;
+	default:
+		cap = 0x1;
+	}
+
+	rx = sprom->rxchain & cap ? : cap;
+	tx = sprom->txchain & cap ? : rx;
+	if (dev->phy.type == B43_PHYTYPE_AC)
+		tx = tx & rx ? : rx;
+	*rxchain = rx;
+	*txchain = tx;
+}
+
+/*
+ * dev->rxchain and dev->txchain, for every PHY. Only the cores with HT and
+ * the AC-PHY use them; on the others no frame has HT rates.
+ */
+static void b43_setup_chains(struct b43_wldev *dev)
+{
+	b43_board_chains(dev, &dev->rxchain, &dev->txchain);
+}
+
 static int b43_setup_bands(struct b43_wldev *dev,
 			   bool have_2ghz_phy, bool have_5ghz_phy)
 {
@@ -8199,6 +8243,8 @@ static int b43_setup_bands(struct b43_wldev *dev,
 		band_2g = &b43_band_2ghz_limited;
 	limited_5g = phy->radio_ver == 0x2057 &&
 		     phy->radio_rev == 9;
+
+	b43_setup_chains(dev);
 
 	if (have_2ghz_phy)
 		hw->wiphy->bands[NL80211_BAND_2GHZ] = band_2g;
@@ -8272,11 +8318,6 @@ static int b43_setup_bands(struct b43_wldev *dev,
 	}
 
 	if (dev->phy.nphy_ht) {
-		const struct ssbn_sprom *sprom = dev->dev->bus_sprom;
-
-		/* The board's chains, as on the AC; unset is both cores. */
-		dev->rxchain = sprom->rxchain & 0x3 ? : 0x3;
-		dev->txchain = sprom->txchain & 0x3 ? : dev->rxchain;
 		hw->wiphy->available_antennas_tx = dev->txchain;
 		hw->wiphy->available_antennas_rx = dev->rxchain;
 		/* Station power save, off by default (b43_ps_update()). */
@@ -8287,13 +8328,6 @@ static int b43_setup_bands(struct b43_wldev *dev,
 		 * also for each A-MPDU member.
 		 */
 		ieee80211_hw_set(hw, REPORTS_TX_ACK_STATUS);
-	}
-	if (dev->phy.type == B43_PHYTYPE_HT) {
-		const struct ssbn_sprom *sprom = dev->dev->bus_sprom;
-
-		/* The board's chains; unset is all three. */
-		dev->rxchain = sprom->rxchain & 0x7 ? : 0x7;
-		dev->txchain = sprom->txchain & 0x7 ? : dev->rxchain;
 	}
 	/* An HT STA is a QoS STA. The shared legacy band templates stay
 	 * unchanged.

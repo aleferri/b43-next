@@ -1492,6 +1492,16 @@ void b43_shm_write16(struct b43_wldev *dev, u16 routing, u16 offset, u16 val)
 	fprintf(trace(), "cpu1 OBJ.WR   addr=0x%04x val=0x%04x\n", offset, val);
 }
 
+/* ============ chains ============
+ * main.c's b43_board_chains(): the harness's board sets the chains and the
+ * coremask from its profile (mount_board()), so they are returned as set.
+ */
+void b43_board_chains(struct b43_wldev *dev, u8 *rxchain, u8 *txchain)
+{
+	*rxchain = dev->rxchain;
+	*txchain = dev->txchain;
+}
+
 /* ============ rate maps ============
  * main.c's b43_rate_block(), which phy_ac.c calls: main.c is not built here.
  * The direct map is read through the SHM wrap, so the read is in the trace
