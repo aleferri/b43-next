@@ -310,6 +310,9 @@ struct b43_wldev {
 	int mac_suspended;
 	struct b43_wl *wl;
 	struct b43_phy phy;
+	/* Come in-tree: le catene della scheda (b43_setup_chains()). */
+	u8 txchain;
+	u8 rxchain;
 	/* Come in-tree: il channel availability check tiene ferma la TX. */
 	bool cac_pending;
 	/* Come in-tree: l'AP rileva i radar, il detector e' armato. */

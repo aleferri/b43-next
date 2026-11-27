@@ -10,7 +10,8 @@ Every other NVRAM variable is consumed by the core or not at all.
 
 | field | use |
 |---|---|
-| `rxchain` | `& 0x07` → coremask |
+| `rxchain` | → coremask and RX streams (`b43_board_chains()`): masked with `0x3` on the BCM4352 and on the BCM4360 of boardtype `0x117`/`0x137` (MacBooks), with `0x7` otherwise; unset is that mask |
+| `txchain` | within the coremask → TX streams, beamforming, the chain left under thermal throttling (`b43_board_chains()`); unset is the coremask |
 | `subband5gver` | sub-band boundaries of `b43_phy_ac_pa5g_group()` (5250/5500/5745) |
 | `core_pwr_info[].pa5ga` | est_pwr transfer function |
 | `core_pwr_info[].maxp5ga` | PPR maximum per core and sub-band; `0` is a sub-band unavailable on that chain, not 0 dBm |

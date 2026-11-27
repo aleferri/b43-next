@@ -963,9 +963,9 @@ static void b43_txhdr_ac_txbf(struct b43_wldev *dev,
 			      const struct ieee80211_tx_info *info,
 			      const struct ieee80211_hdr *hdr)
 {
-	u8 txchain = dev->dev->bus_sprom->txchain & 0x07;
 	struct ieee80211_sta *sta;
 	unsigned int slot = 0, i;
+	u8 txchain;
 
 	if (!dev->txbf_base || !info->control.vif ||
 	    !ieee80211_is_data(hdr->frame_control) ||
@@ -979,8 +979,7 @@ static void b43_txhdr_ac_txbf(struct b43_wldev *dev,
 	rcu_read_unlock();
 	if (!slot)
 		return;
-	if (!txchain)
-		txchain = 0x03;
+	txchain = dev->txchain;
 
 	for (i = 0; i < n; i++) {
 		struct b43_txhdr_ac_rate *r = &txhdr->rate[i];
