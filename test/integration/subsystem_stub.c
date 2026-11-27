@@ -1,24 +1,24 @@
 // SPDX-License-Identifier: GPL-2.0
 /*
- * Il resto del livello sotto: controllo bcma, ssb, mac80211 e i sottosistemi
- * di b43 che non emettono op.
+ * The rest of the layer below: bcma control, ssb, mac80211 and the b43
+ * subsystems that emit no ops.
  *
- * Compilato coi flag del KERNEL, non come utente, e non per gusto: qui
- * servono i tipi veri. `ieee80211_alloc_hw_nm` deve restituire una
- * `struct ieee80211_hw` la cui `priv` sia allineata come nel kernel, perche'
- * b43 ci mette la sua `b43_wl` e la rilegge con `hw_to_b43_wl()`. Con una
- * struttura inventata il puntatore cadrebbe altrove e il difetto si vedrebbe
- * mille op piu' tardi.
+ * Compiled with the KERNEL's flags, not as user code, and not by taste: the
+ * real types are needed here. `ieee80211_alloc_hw_nm` must return a `struct
+ * ieee80211_hw` whose `priv` is aligned as in the kernel, because b43 puts
+ * its `b43_wl` there and reads it back with `hw_to_b43_wl()`. With an
+ * invented structure the pointer would land elsewhere and the defect would
+ * show a thousand ops later.
  *
- * Cosa emette op e cosa no, per non cercarlo dopo: le op passano SOLO dalla
- * vtable di bcmn_stub.c. I dieci simboli `bcmn_*` qui sotto sono clock,
- * enable, GPIO e PLL, e nella traccia del vendor non compaiono -- il tracer di
- * wl aggancia le funzioni di accesso, non quelle di gestione del core. Quindi
- * no-op e' la risposta giusta, non una scorciatoia.
+ * What emits ops and what does not, so as not to look for it later: the ops
+ * go ONLY through bcma_stub.c's vtable. The ten `bcmn_*` symbols below are
+ * clock, enable, GPIO and PLL, and they do not appear in the vendor's trace
+ * -- wl's tracer hooks the access functions, not the core management ones. So
+ * a no-op is the right answer, not a shortcut.
  *
- * `ssbn_*` sono no-op perche' qui serve solo BCMA: b43 compila con
- * CONFIG_B43_NEXT_BCMA e il ramo ssb non viene percorso, ma il link li chiede
- * comunque.
+ * `ssbn_*` are no-ops because only BCMA is needed here: b43 compiles with
+ * CONFIG_B43_NEXT_BCMA and the ssb branch is not taken, but the link asks for
+ * them anyway.
  */
 #include <linux/platform_device.h>
 #include <bcma-next/bcmn.h>
@@ -32,7 +32,7 @@
 #include "trace_out.h"
 #include "chip_link.h"
 
-/* --- bcma: il lato host PCI, che passa dallo spazio di configurazione --- */
+/* --- bcma: the PCI host side, through the configuration space ------- */
 
 void bcmn_host_pci_up(struct bcmn_bus *bus) { }
 void bcmn_host_pci_down(struct bcmn_bus *bus) { }
@@ -42,15 +42,15 @@ int bcmn_host_pci_irq_ctl(struct bcmn_bus *bus, struct bcmn_device *core,
 	return 0;
 }
 
-/* --- ChipCommon e PMU -----------------------------------------------------
+/* --- ChipCommon and PMU ---------------------------------------------------
  *
- * Sono il codice vero di bcma (driver_chipcommon.c, driver_chipcommon_pmu.c,
- * driver_pcie2.c): i loro accessi passano dallo stub del bus come quelli del
- * core 802.11, e escono come CC.RD/CC.WR e PCIE.RD/PCIE.WR al bus, la stessa
- * classe che reverse-tools/mmio2ops.py da' alla cattura.
+ * They are bcma's real code (driver_chipcommon.c, driver_chipcommon_pmu.c,
+ * driver_pcie2.c): their accesses go through the bus stub like the 802.11
+ * core's, and come out as CC.RD/CC.WR and PCIE.RD/PCIE.WR at the bus, the
+ * same class reverse-tools/mmio2ops.py gives the capture.
  */
 
-/* Quello che il codice di bcma chiede al resto di bcma e al kernel. */
+/* What bcma's code asks of the rest of bcma and of the kernel. */
 bool bcmn_wait_value(struct bcmn_device *core, u16 reg, u32 mask, u32 value,
 		     int timeout)
 {
@@ -70,7 +70,7 @@ platform_device_register_full(const struct platform_device_info *pdevinfo)
 	return ERR_PTR(-ENODEV);
 }
 
-/* --- ssb: non percorso, ma il link lo chiede -------------------------- */
+/* --- ssb: not taken, but the link asks for it ------------------------- */
 
 int ssbn_bus_powerup(struct ssbn_bus *bus, bool dynamic_pctl) { return 0; }
 int ssbn_bus_may_powerdown(struct ssbn_bus *bus) { return 0; }
@@ -87,7 +87,7 @@ int ssbn_pcicore_dev_irqvecs_enable(struct ssbn_pcicore *pc,
 	return 0;
 }
 
-/* --- mac80211: la sola che deve restituire qualcosa di usabile -------- */
+/* --- mac80211: the only one that has to return something usable ------ */
 
 struct ieee80211_hw *ieee80211_alloc_hw_nm(size_t priv_data_len,
 					   const struct ieee80211_ops *ops,
@@ -99,9 +99,9 @@ struct ieee80211_hw *ieee80211_alloc_hw_nm(size_t priv_data_len,
 	extern struct ieee80211_hw *b43_test_hw;
 
 	/*
-	 * Nel kernel `priv` sta dopo la struttura, allineata; qui si fa lo
-	 * stesso con una sola allocazione, cosi' `hw->priv` e' un puntatore
-	 * valido e b43 ci scrive la sua b43_wl.
+	 * In the kernel `priv` follows the structure, aligned; here the same is
+	 * done with a single allocation, so `hw->priv` is a valid pointer and
+	 * b43 writes its b43_wl there.
 	 */
 	hw = kzalloc(sizeof(*hw) + priv_data_len, GFP_KERNEL);
 	if (!hw)
@@ -121,34 +121,32 @@ void ieee80211_free_hw(struct ieee80211_hw *hw)
 }
 
 /*
- * La vtable di b43, catturata come `__bcmn_driver_register` cattura la probe:
- * b43_op_start e' statica, e senza questo l'harness non ha modo di far
- * partire il bring-up dopo la probe.
+ * b43's vtable, captured as `__bcmn_driver_register` captures the probe:
+ * b43_op_start is static, and without this the harness has no way to start
+ * the bring-up after the probe.
  */
 const struct ieee80211_ops *b43_test_hw_ops;
 struct ieee80211_hw *b43_test_hw;
 
 /*
- * register_hw sceglie il canale, che nel kernel fa mac80211 e non b43:
- * b43_phy_init() (phy_common.c:93) legge
- * dev->wl->hw->conf.chandef.chan->hw_value, e se nessuno ha impostato quel
- * puntatore il bring-up muore la'.
+ * register_hw chooses the channel, which in the kernel mac80211 does, not
+ * b43: b43_phy_init() reads dev->wl->hw->conf.chandef.chan->hw_value, and if
+ * nobody set that pointer the bring-up dies there.
  *
- * Il canale e la larghezza si prendono dall'ambiente, `B43_CHANNEL` e
- * `B43_BW`, perche' i 26 segmenti dello sweep sono 26 configurazioni e una
- * suite che sa fare solo la prima non li misura. Sono gli stessi due
- * parametri che `../unit` prende come AC_CHANNEL e AC_BW; il prefisso e'
- * B43_ per stare con B43_READ_ORACLE e B43_TRACE_OUT di questa suite.
+ * Channel and width come from the environment, `B43_CHANNEL` and `B43_BW`,
+ * because the sweep's 26 segments are 26 configurations and a suite that can
+ * only do the first does not measure them. They are the same two parameters
+ * `../unit` takes as AC_CHANNEL and AC_BW; the prefix is B43_ to go with this
+ * suite's B43_READ_ORACLE and B43_TRACE_OUT.
  *
- * Il canale non si inventa: si cerca fra quelli che b43 ha registrato in
- * b43_setup_bands() (main.c:5267), che e' la stessa restrizione che ha
- * mac80211. Se `B43_CHANNEL` non e' fra quelli lo si dice e si prende il
- * primo, invece di lasciare un puntatore a un canale che il driver non
- * conosce.
+ * The channel is not invented: it is looked for among the ones b43
+ * registered in b43_setup_bands(), the same restriction mac80211 has. If
+ * `B43_CHANNEL` is not among them the suite says so and takes the first,
+ * instead of leaving a pointer to a channel the driver does not know.
  *
- * `center_freq1` per BW40 e BW80 e' il centro del blocco legato, non del
- * canale: e' quello che b43_phy_ac_write_chanspec() legge per comporre il
- * chanspec. La formula e' la stessa di ../unit/main.c.
+ * `center_freq1` for BW40 and BW80 is the centre of the bonded block, not of
+ * the channel: it is what b43_phy_ac_write_chanspec() reads to compose the
+ * chanspec. The formula is the same as ../unit/main.c's.
  */
 static enum nl80211_chan_width shim_width(long bw)
 {
@@ -160,10 +158,10 @@ static enum nl80211_chan_width shim_width(long bw)
 }
 
 /*
- * Quello che cfg80211_chandef_usable() chiede alla banda prima di accettare
- * una larghezza: il 40 vuole HT con SUP_WIDTH_20_40, l'80 vuole VHT. Senza,
- * hostapd non arriva a start_ap con quella chandef, e una suite che la
- * imponesse misurerebbe una configurazione che sul ferro non esiste.
+ * What cfg80211_chandef_usable() asks of the band before accepting a width:
+ * 40 wants HT with SUP_WIDTH_20_40, 80 wants VHT. Without it hostapd does not
+ * reach start_ap with that chandef, and a suite imposing it would measure a
+ * configuration that does not exist on the hardware.
  */
 static bool shim_width_usable(const struct ieee80211_supported_band *sb,
 			      long bw)
@@ -182,18 +180,18 @@ static bool shim_width_usable(const struct ieee80211_supported_band *sb,
 static struct ieee80211_hw *g_hw;
 
 /*
- * Il regdomain che cfg80211 applica ai canali alla registrazione. La cattura
- * a freddo e' di un wl con ccode= vuoto nel NVRAM, cioe' con la sua locale
- * interna, i cui tetti sono per larghezza di banda e stanno in
- * b43_phy_ac_locale_ceiling(). Qui non si abbassa il max_power dei canali:
- * un tetto per canale da 20 MHz, come cfg80211 lo esprime, varrebbe anche
- * per i blocchi da 40 e 80 MHz, dove la locale del vendor e' piu' alta.
+ * The regdomain cfg80211 applies to the channels at registration. The cold
+ * capture is of a wl with an empty ccode= in the NVRAM, with its internal
+ * locale, whose ceilings are per bandwidth and are in
+ * b43_phy_ac_locale_ceiling(). The channels' max_power is not lowered here:
+ * a ceiling per 20 MHz channel, as cfg80211 expresses it, would also hold for
+ * the 40 and 80 MHz blocks, where the vendor's locale is higher.
  */
 static void apply_regdomain(struct ieee80211_supported_band *sb)
 {
 	unsigned int i;
 
-	/* Il dovere radar, come lo marca cfg80211: U-NII-2A e U-NII-2C. */
+	/* The radar duty, as cfg80211 marks it: U-NII-2A and U-NII-2C. */
 	for (i = 0; i < sb->n_channels; i++) {
 		u32 f = sb->channels[i].center_freq;
 
@@ -231,19 +229,19 @@ int ieee80211_register_hw(struct ieee80211_hw *hw)
 
 	if (!pick) {
 		if (want)
-			b43_trace_note("B43_CHANNEL=%d non e' fra i canali che "
-				       "b43 ha registrato; uso il primo\n",
+			b43_trace_note("B43_CHANNEL=%d is not among the channels "
+				       "b43 registered; using the first\n",
 				       (int)want);
 		pick = first;
 	}
 	if (!pick) {
-		b43_trace_note("b43 non ha registrato nessuna banda%d\n", 0);
+		b43_trace_note("b43 registered no band%d\n", 0);
 		return 0;
 	}
 
 	if (!shim_width_usable(hw->wiphy->bands[pick->band], bw)) {
-		b43_trace_note("B43_BW=%d: la banda non annuncia la larghezza, "
-			       "cfg80211 la rifiuterebbe\n", (int)bw);
+		b43_trace_note("B43_BW=%d: the band does not announce the width, "
+			       "cfg80211 would reject it\n", (int)bw);
 		return -EINVAL;
 	}
 
@@ -279,7 +277,7 @@ void skb_queue_purge_reason(struct sk_buff_head *list,
 			    enum skb_drop_reason reason) { }
 void ieee80211_handle_wake_tx_queue(struct ieee80211_hw *hw,
 				    struct ieee80211_txq *txq) { }
-/* Le txq da cui l'AC tira i frame (b43_tx_pull()): vuote. */
+/* The txqs the AC pulls frames from (b43_tx_pull()): empty. */
 void ieee80211_txq_schedule_start(struct ieee80211_hw *hw, u8 ac) { }
 struct ieee80211_txq *ieee80211_next_txq(struct ieee80211_hw *hw, u8 ac)
 {
@@ -289,7 +287,7 @@ struct sk_buff *ieee80211_tx_dequeue(struct ieee80211_hw *hw,
 				     struct ieee80211_txq *txq) { return NULL; }
 void __ieee80211_schedule_txq(struct ieee80211_hw *hw,
 			      struct ieee80211_txq *txq, bool force) { }
-/* Nessuna stazione e nessuna sessione block ack: le catture non ne hanno. */
+/* No station and no block ack session: the captures have none. */
 struct ieee80211_sta *ieee80211_find_sta(struct ieee80211_vif *vif,
 					 const u8 *addr) { return NULL; }
 struct ieee80211_sta *ieee80211_find_sta_by_ifaddr(struct ieee80211_hw *hw,
@@ -300,8 +298,8 @@ void ieee80211_stop_tx_ba_cb_irqsafe(struct ieee80211_vif *vif,
 				     const u8 *ra, u16 tid) { }
 void __rcu_read_lock(void) { }
 void __rcu_read_unlock(void) { }
-/* In linea, come queue_work_on(): la suite e' a un thread, e il work che
- * b43_phy_txpower_check() accoda e' adjust_txpower, cioe' op da confrontare. */
+/* Inline, like queue_work_on(): the suite is single-threaded, and the work
+ * b43_phy_txpower_check() queues is adjust_txpower, ops to compare. */
 void ieee80211_queue_work(struct ieee80211_hw *hw, struct work_struct *work)
 {
 	if (work && work->func)
@@ -309,10 +307,10 @@ void ieee80211_queue_work(struct ieee80211_hw *hw, struct work_struct *work)
 }
 
 /*
- * I delayed work sono i timer del driver: il periodic work, il poll del
- * radar. Si tengono qui con la loro scadenza in jiffies, e li fa scattare
- * b43_test_run_until() quando main.c porta avanti l'orologio. Un work gia'
- * accodato non si riaccoda, come nel kernel.
+ * The delayed works are the driver's timers: the periodic work, the radar
+ * poll. They are kept here with their expiry in jiffies, and
+ * b43_test_run_until() fires them when main.c moves the clock forward. A work
+ * already queued is not queued again, as in the kernel.
  */
 #define SHIM_DWORKS	8
 
@@ -337,7 +335,7 @@ static bool shim_dwork_queue(struct delayed_work *work, unsigned long delay,
 			free = i;
 	}
 	if (free < 0) {
-		b43_trace_note("troppi delayed work in coda%d\n", 0);
+		b43_trace_note("too many delayed works queued%d\n", 0);
 		return false;
 	}
 	dworks[free].work = work;
@@ -393,7 +391,7 @@ ktime_t ktime_get(void)
 	return (ktime_t)jiffies * (NSEC_PER_SEC / HZ);
 }
 
-/* Fa scattare, in ordine di scadenza, i work che scadono entro @until. */
+/* Fire, in expiry order, the works that expire by @until. */
 /* With the virtual chip, jiffies that pass are its time too. */
 void b43_chip_deliver_irq(void);
 
@@ -430,10 +428,10 @@ void b43_test_run_until(unsigned long until)
 }
 
 /*
- * Il beacon che mac80211 darebbe a b43_update_templates(): intestazione,
- * SSID, rate e TIM, cioe' quel che b43_write_beacon_template() legge per
- * TIMBPOS e DTIMPER. La lunghezza dell'SSID e' B43_SSID_LEN, come AC_SSID_LEN
- * di ../unit, perche' entra nella lunghezza del template.
+ * The beacon mac80211 would give b43_update_templates(): header, SSID, rates
+ * and TIM, what b43_write_beacon_template() reads for TIMBPOS and DTIMPER.
+ * The SSID length is B43_SSID_LEN, like ../unit's AC_SSID_LEN, because it
+ * goes into the template length.
  */
 static struct sk_buff shim_beacon_skb;
 static u8 shim_beacon[256];
@@ -556,12 +554,12 @@ ieee80211_get_response_rate(struct ieee80211_supported_band *sband,
 	return rate ? rate : &sband->bitrates[0];
 }
 
-/* --- i sottosistemi di b43 -------------------------------------------------
+/* --- b43's subsystems -----------------------------------------------------
  *
- * dma.c si compila com'e', con dma_stub.c sotto: programma gli anelli e
- * serve i frame che la timeline consegna con gli eventi IRQ. PIO e' l'altro
- * percorso dati, che b43 non prende su PCIe: init deve riuscire lo stesso o
- * b43_wireless_core_init esce prima di b43_security_init.
+ * dma.c is compiled as it is, with dma_stub.c below: it programs the rings
+ * and serves the frames the timeline delivers with the IRQ events. PIO is
+ * the other data path, which b43 does not take on PCIe: init has to succeed
+ * anyway or b43_wireless_core_init leaves before b43_security_init.
  */
 struct b43_wldev;
 
@@ -570,19 +568,14 @@ void b43_pio_free(struct b43_wldev *dev) { }
 void b43_pio_tx(struct b43_wldev *dev, struct sk_buff *skb) { }
 void b43_pio_rx(void *q) { }
 bool b43_pio_tx_empty(struct b43_wldev *dev) { return true; }
-/*
- * Non stubbati: stanno in xmit.c, che si compila. Erano qui quando xmit.c
- * non era nella lista, e tenerli darebbe "multiple definition".
- *   b43_handle_txstatus, b43_generate_plcp_hdr
- */
 
 /*
- * leds.c e rfkill.c si compilano: sotto di loro stanno il LED core e i
- * trigger di mac80211, che qui non ci sono. La registrazione riesce e i
- * trigger hanno un nome, perche' con un nome nullo b43_register_led()
- * ritorna -EINVAL e il percorso dei LED -- il mask per b43_gpio_init() e le
- * scritture di GPIO_CONTROL in b43_leds_init() -- non gira affatto. Il LED
- * core non richiama mai brightness_set: nessun trigger scatta senza traffico.
+ * leds.c and rfkill.c are compiled: below them are the LED core and the
+ * mac80211 triggers, which are not here. The registration succeeds and the
+ * triggers have a name, because with a null name b43_register_led() returns
+ * -EINVAL and the LED path -- the mask for b43_gpio_init() and the
+ * GPIO_CONTROL writes in b43_leds_init() -- does not run at all. The LED core
+ * never calls brightness_set back: no trigger fires without traffic.
  */
 int led_classdev_register_ext(struct device *parent,
 			      struct led_classdev *led_cdev,
@@ -596,20 +589,20 @@ void wiphy_rfkill_set_hw_state_reason(struct wiphy *wiphy, bool blocked,
 				      enum rfkill_hard_block_reasons reason) { }
 
 /*
- * Sospensione e ripresa delle code TX, e lo stato TX: percorso dati, nessuna
- * op sul bring-up. `handle_txstatus` non viene chiamato affatto qui, non
- * essendoci trasmissione.
+ * Suspend and resume of the TX queues, and the TX state: data path, no op on
+ * the bring-up. `handle_txstatus` is not called at all here, since there is
+ * no transmission.
  */
 void b43_pio_tx_suspend(struct b43_wldev *dev) { }
 void b43_pio_tx_resume(struct b43_wldev *dev) { }
 void b43_pio_handle_txstatus(struct b43_wldev *dev, const void *status) { }
 
-/* --- mac80211: utilita' pure, nessuna emette op ----------------------- */
+/* --- mac80211: pure utilities, none emits ops ------------------------- */
 
 unsigned int ieee80211_hdrlen(__le16 fc) { return 24; }
 u32 ieee80211_channel_to_freq_khz(int chan, enum nl80211_band band)
 {
-	/* 5 GHz: la formula di mac80211, non un valore inventato. */
+	/* 5 GHz: mac80211's formula, not an invented value. */
 	if (band == NL80211_BAND_5GHZ)
 		return (5000 + chan * 5) * 1000;
 	return 0;
@@ -723,11 +716,11 @@ struct wireless_dev *ieee80211_vif_to_wdev(struct ieee80211_vif *vif)
 }
 
 /*
- * Le vtable dei PHY che la suite non compila: a NULL, e non e' pigrizia.
- * b43_phy_allocate() dispaccia su phy->type, quindi prende solo il ramo AC o
- * HT della board: se un giorno prendesse un altro ramo il puntatore nullo lo
- * fa vedere subito, invece di far girare una vtable finta e produrre una
- * traccia plausibile del PHY sbagliato.
+ * The vtables of the PHYs the suite does not compile: NULL, and not out of
+ * laziness. b43_phy_allocate() dispatches on phy->type, so it takes only the
+ * board's AC or HT branch: if it ever took another branch the null pointer
+ * would show it at once, instead of running a fake vtable and producing a
+ * plausible trace of the wrong PHY.
  */
 const struct b43_phy_operations *b43_phyops_g;
 const struct b43_phy_operations *b43_phyops_n;
@@ -735,21 +728,20 @@ const struct b43_phy_operations *b43_phyops_lp;
 void b43_nphy_cancel_perical(struct b43_wldev *dev) { }
 
 /*
- * I work item si eseguono in linea, non si accodano.
+ * The work items run inline, they are not queued.
  *
- * Non e' una comodita': b43_bcma_probe() (main.c:5851) chiede il firmware da
- * un work -- INIT_WORK(&wl->firmware_load, b43_request_firmware) piu'
- * schedule_work -- e con un queue_work no-op quel lavoro non gira mai.
- * dev->fw.ucode.data resta nullo e b43_upload_microcode() muore a main.c:2761
- * dereferenziandolo, dentro il bring-up e non nella probe, cioe' lontano
- * dalla causa.
+ * Not a convenience: b43_bcma_probe() requests the firmware from a work --
+ * INIT_WORK(&wl->firmware_load, b43_request_firmware) plus schedule_work --
+ * and with a no-op queue_work that work never runs. dev->fw.ucode.data stays
+ * null and b43_upload_microcode() dies dereferencing it, inside the bring-up
+ * and not in the probe, far from the cause.
  *
- * Eseguirlo qui e' lo stesso ragionamento dei lock: la suite e' a un thread,
- * e se il lavoro girasse davvero in parallelo la traccia non sarebbe piu'
- * ordinata e il confronto posizionale non avrebbe senso. La differenza
- * rispetto al kernel e' che la' il work parte dopo che la probe e' ritornata,
- * qui parte dentro schedule_work(): se una fase dipendesse da quell'ordine si
- * vedrebbe come op fuori posto, non come un crash.
+ * Running it here is the same reasoning as the locks: the suite is
+ * single-threaded, and if the work really ran in parallel the trace would no
+ * longer be ordered and the positional comparison would make no sense. The
+ * difference from the kernel is that there the work starts after the probe
+ * has returned, here it starts inside schedule_work(): if a phase depended
+ * on that order it would show as ops out of place, not as a crash.
  */
 bool queue_work_on(int cpu, struct workqueue_struct *wq,
 		   struct work_struct *work)

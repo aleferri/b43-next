@@ -1,17 +1,16 @@
 // SPDX-License-Identifier: GPL-2.0
 /*
- * L'emissione delle op, nel formato di ../unit/wrap.c.
+ * The emission of the ops, in ../unit/wrap.c's format.
  *
- * Compilato come codice UTENTE, non kernel: qui servono stdio e getenv, e
- * questo file non e' codice di driver. Il resto della suite si compila con
- * -nostdinc contro gli header kernel, quindi le due meta' non condividono
- * intestazioni di sistema -- solo trace_out.h, che dichiara i tipi che serve.
+ * Compiled as USER code, not kernel: stdio and getenv are needed here, and
+ * this file is not driver code. The rest of the suite is compiled with
+ * -nostdinc against the kernel headers, so the two halves share no system
+ * headers -- only trace_out.h, which declares the types it needs.
  *
- * Le letture ritornano quello che l'oracolo dice. Senza oracolo ritornano
- * zero, e zero su un bit di stato auto-azzerante e' il valore che fa girare
- * un poll fino al timeout: e' lo stesso problema che ../unit risolve con
- * AC_READ_ORACLE e i read plan. Qui l'oracolo si aggancia in una sola
- * funzione, oracle_lookup(), perche' quando arrivera' vada in un posto solo.
+ * The reads return what the oracle says. Without an oracle they return zero,
+ * and zero on a self-clearing status bit is the value that spins a poll
+ * until the timeout: the same problem ../unit solves with AC_READ_ORACLE and
+ * the read plans. The oracle hooks in a single function, oracle_lookup().
  */
 #include <stdio.h>
 #include <stdlib.h>
@@ -33,9 +32,9 @@ static FILE *stream(void)
 		if (!out)
 			out = stdout;
 		/*
-		 * Una riga per op, subito: finche' la probe muore a meta'
-		 * attach, cio' che ha emesso prima e' l'unica cosa da
-		 * confrontare, e con il buffer pieno di stdio si perde tutto.
+		 * One line per op, right away: if the probe dies halfway through
+		 * the attach, what it emitted before is the only thing to compare,
+		 * and with stdio's buffer full everything is lost.
 		 */
 		setvbuf(out, NULL, _IOLBF, 0);
 	}
@@ -43,35 +42,34 @@ static FILE *stream(void)
 }
 
 /*
- * L'oracolo delle letture.
+ * The reads' oracle.
  *
- * Serve per la ragione che ../unit ha imparato: senza, ogni lettura ritorna
- * zero, e zero su un bit di stato auto-azzerante fa terminare subito un poll
- * che dovrebbe girare, mentre su un bit che l'hardware alza da se' lo fa
- * girare fino al timeout. Una traccia con letture inventate sembra buona e
- * non e' una misura.
+ * Needed for the reason ../unit learned: without it every read returns zero,
+ * and zero on a self-clearing status bit ends at once a poll that should
+ * spin, while on a bit the hardware raises by itself it spins it until the
+ * timeout. A trace with invented reads looks good and is not a measurement.
  *
- * Formato e semantica sono quelli di ../unit: una cattura del vendor coi
- * RETVAL ripiegati (`trace_filter.py --retvals`), servita in ORDINE per
- * (classe, indirizzo). Una coda per chiave, non un valore per chiave: il
- * vendor legge lo stesso registro molte volte e i valori sono diversi, ed e'
- * la successione a contare -- appiattirla su un valore fisso e' esattamente
- * cio' che fa terminare i poll a sproposito.
+ * Format and semantics are ../unit's: a vendor capture with the RETVALs
+ * folded (`trace_filter.py --retvals`), served IN ORDER per (class,
+ * address). A queue per key, not a value per key: the vendor reads the same
+ * register many times with different values, and the succession is what
+ * counts -- flattening it on a fixed value is exactly what ends the polls at
+ * the wrong time.
  *
- * Esaurita la coda si ritorna l'ultimo valore visto, non zero: e' il
- * comportamento meno sbagliato quando il port legge piu' del vendor, e lo
- * dice una volta su stderr.
+ * Once the queue is exhausted the last value seen is returned, not zero: the
+ * least wrong behaviour when the port reads more than the vendor, and it is
+ * said once on stderr.
  *
- * La coda e' quella del bus, non quella del tracer: un PHY.MOD del vendor e'
- * una lettura seguita da una scrittura, e la lettura non ha valore
- * registrato. Senza un posto in coda per quella lettura, il maskset del
- * driver -- che sul bus legge davvero -- consuma il valore della lettura
- * successiva e da li' in avanti l'indirizzo e' sfasato: sul segmento di
- * riferimento il primo PHY.RD 0x19e dello switch prendeva 0x3d2 invece di
- * 0x0. Il posto lo tiene ORACLE_SHADOW, che rende l'ultimo valore noto del
- * registro, letto o scritto: e' cio' che l'hardware avrebbe risposto salvo
- * bit che si muovono da soli. I RAD.MOD non ne hanno bisogno: il tracer del
- * vendor registra anche la RAD.RD e la RAD.WR interne, con i valori.
+ * The queue is the bus's, not the tracer's: a vendor PHY.MOD is a read
+ * followed by a write, and the read has no recorded value. Without a slot in
+ * the queue for that read, the driver's maskset -- which really reads on the
+ * bus -- would consume the value of the next read and from then on the
+ * address would be off by one (on the reference segment the switch's first
+ * PHY.RD 0x19e would get 0x3d2 instead of 0x0). ORACLE_SHADOW holds the
+ * slot, returning the register's last known value, read or written: what the
+ * hardware would have answered, bits that move by themselves aside. The
+ * RAD.MODs do not need it: the vendor tracer also records the inner RAD.RD
+ * and RAD.WR, with the values.
  */
 #define ORACLE_KEYS	4096
 #define ORACLE_MAX	65536
@@ -87,9 +85,9 @@ struct oracle_key {
 };
 
 /*
- * Registri che rileggono l'ultimo valore scritto: dopo la prima scrittura
- * del driver si rende l'ombra, prima la coda. Dalla coda, una lettura in piu'
- * o in meno del port sfaserebbe tutte le successive.
+ * Registers that read back the last value written: after the driver's first
+ * write the shadow is returned, the queue before it. From the queue, one read
+ * more or less on the port's side would shift all the following ones.
  *
  *   0x019e  B43_PHY_AC_REG_TBL_WRITE_GATE
  */
@@ -98,12 +96,12 @@ static const struct { const char *cls; u16 addr; } oracle_latch[] = {
 };
 
 /*
- * Le letture dalle porte dati delle tabelle del PHY hanno una coda per
- * indirizzo di tabella: le letture di un accesso consumano in ordine la coda
- * del suo indirizzo d'inizio, e una tabella che il port legge e il vendor no
- * non tocca le code delle altre. Sull'AC le porte sono 0x000f-0x0011, con
- * l'id da 0x000d e l'offset da 0x000e; sull'HT 0x0073 e 0x0074, con id e
- * offset insieme in 0x0072 (id << 10 | offset).
+ * The reads from the PHY's table data ports have a queue per table address:
+ * the reads of an access consume in order the queue of its start address,
+ * and a table the port reads and the vendor does not leaves the others'
+ * queues alone. On the AC the ports are 0x000f-0x0011, with the id from
+ * 0x000d and the offset from 0x000e; on the HT 0x0073 and 0x0074, with id
+ * and offset together in 0x0072 (id << 10 | offset).
  */
 static u16 vendor_tbl_id, vendor_tbl_off, port_tbl_id, port_tbl_off;
 static int tbl_ht;
@@ -194,24 +192,24 @@ static void oracle_push(const char *cls, u16 addr, u32 val)
 }
 
 /*
- * Una cattura a freddo dello sweep porta DUE attach in testa: `wl` al
- * caricamento fa l'attach di tutti i core, quindi prima di wl1 -- l'AC -- c'e'
- * quello di wl0, l'N-PHY a 2.4 GHz. Sono 46 op, e reverse-tools/
- * strip_other_core.py le toglie.
+ * A cold capture of the sweep carries TWO attaches at its head: `wl` at load
+ * time attaches all the cores, so before wl1 -- the AC -- there is wl0's, the
+ * 2.4 GHz N-PHY. They are 46 ops, and reverse-tools/strip_other_core.py
+ * removes them.
  *
- * Qui l'oracolo carica il file intero e non ha una finestra, quindi quelle op
- * finiscono in testa alle code per indirizzo e il driver sotto esame si legge
- * lo stato dell'altro core. Non e' un caso ipotetico: `UCODEREV` (0x0000) e
- * `UCODEPATCH` (0x0002) sono lette da b43_validate_chipaccess() su entrambi i
- * core, e senza il taglio il port riceve i pattern del self-test di wl0,
- * 0x55aa e 0xaa55, al posto dei valori veri.
+ * Here the oracle loads the whole file and has no window, so those ops end
+ * up at the head of the per-address queues and the driver under test reads
+ * the other core's state. Not a hypothetical case: `UCODEREV` (0x0000) and
+ * `UCODEPATCH` (0x0002) are read by b43_validate_chipaccess() on both cores,
+ * and without the cut the port gets wl0's self-test patterns, 0x55aa and
+ * 0xaa55, instead of the real values.
  *
- * Il testimone e' il confine che definisce il taglio: fra la prima e la
- * seconda coppia OTP.RDR/OTP.INIT. Se prima della prima op PHY dell'attach AC
- * -- la lettura di 0x0739 -- ce ne sono due, la cattura non e' tagliata.
+ * The witness is the boundary that defines the cut: between the first and
+ * the second OTP.RDR/OTP.INIT pair. If there are two before the AC attach's
+ * first PHY op -- the read of 0x0739 -- the capture is not cut.
  *
- * Si rifiuta invece di avvisare: quattro valori sbagliati in mezzo a
- * ventimila op non si notano, e il resto della corsa sembra buono.
+ * It refuses instead of warning: four wrong values among twenty thousand ops
+ * go unnoticed, and the rest of the run looks good.
  */
 static int oracle_has_other_core(FILE *f)
 {
@@ -229,11 +227,11 @@ static int oracle_has_other_core(FILE *f)
 }
 
 /*
- * La shared memory ha piu' spazi -- SHARED, SCRATCH, UCODE, ... -- con gli
- * stessi indirizzi, e la cattura li distingue col campo `sel=` (la routing di
- * B43_MMIO_SHM_CONTROL nei 16 bit alti). La coda e' per spazio: una sola coda
- * per indirizzo darebbe alla lettura di UCODEREV il valore di un'altra
- * routing allo stesso offset.
+ * The shared memory has several spaces -- SHARED, SCRATCH, UCODE, ... -- with
+ * the same addresses, and the capture tells them apart with the `sel=` field
+ * (the routing of B43_MMIO_SHM_CONTROL in the high 16 bits). The queue is per
+ * space: a single queue per address would give the UCODEREV read the value
+ * of another routing at the same offset.
  */
 static void shm_key(char *buf, size_t len, u32 routing)
 {
@@ -241,13 +239,12 @@ static void shm_key(char *buf, size_t len, u32 routing)
 }
 
 /*
- * Le righe della cattura: `<ts> #<ep> cpuN <CLASSE> addr=0x.. val=0x..`, e
- * `off=` al posto di `addr=` per i registri del MAC (REG.RD), che porta solo
- * una cattura presa al bus (reverse-tools/mmio2ops.py).
- * Si prendono le letture, perche' l'oracolo risponde a quelle; delle
- * scritture del vendor solo l'indirizzo di tabella (0x000d, 0x000e), che da'
- * la chiave alle letture delle porte dati. Le altre sono il termine di
- * confronto, non un ingresso.
+ * The capture's lines: `<ts> #<ep> cpuN <CLASS> addr=0x.. val=0x..`, and
+ * `off=` instead of `addr=` for the MAC's registers (REG.RD), which only a
+ * capture taken at the bus carries (reverse-tools/mmio2ops.py). The reads are
+ * taken, because the oracle answers those; of the vendor's writes only the
+ * table address (0x000d, 0x000e), which gives the data port reads their key.
+ * The others are the comparison's reference, not an input.
  */
 static void oracle_load(void)
 {
@@ -262,22 +259,22 @@ static void oracle_load(void)
 	f = fopen(path, "r");
 	if (!f) {
 		fprintf(stderr, "b43-integration: B43_READ_ORACLE=%s "
-			"non si apre\n", path);
+			"cannot be opened\n", path);
 		return;
 	}
 	if (oracle_has_other_core(f)) {
 		fprintf(stderr,
-			"b43-integration: %s porta ancora l'attach di wl0 in "
-			"testa: due coppie OTP.RDR/OTP.INIT prima della prima "
+			"b43-integration: %s still carries wl0's attach at its "
+			"head: two OTP.RDR/OTP.INIT pairs before the first "
 			"PHY.RD 0x0739.\n"
-			"b43-integration:   Le code per indirizzo servirebbero "
-			"al driver lo stato dell'altro core -- 0x0000 e 0x0002 "
-			"col self-test di wl0.\n"
-			"b43-integration:   Taglia prima:\n"
+			"b43-integration:   The per-address queues would feed "
+			"the driver the other core's state -- 0x0000 and 0x0002 "
+			"with wl0's self-test.\n"
+			"b43-integration:   Cut it first:\n"
 			"b43-integration:     python3 reverse-tools/"
-			"strip_other_core.py <segmento> /tmp/seg\n"
+			"strip_other_core.py <segment> /tmp/seg\n"
 			"b43-integration:     python3 reverse-tools/"
-			"trace_filter.py --retvals /tmp/seg /tmp/oracolo\n",
+			"trace_filter.py --retvals /tmp/seg /tmp/oracle\n",
 			path);
 		fclose(f);
 		abort();
@@ -316,7 +313,7 @@ static void oracle_load(void)
 			oracle_push("PHY.RD", (u16)addr, ORACLE_SHADOW);
 	}
 	fclose(f);
-	fprintf(stderr, "b43-integration: oracolo da %s, %u chiavi\n",
+	fprintf(stderr, "b43-integration: oracle from %s, %u keys\n",
 		path, n_okeys);
 }
 
@@ -331,9 +328,9 @@ static u32 oracle_lookup(const char *cls, u16 addr, int width)
 		if (!oracle_absent_warned) {
 			oracle_absent_warned = 1;
 			fprintf(stderr,
-				"b43-integration: nessun oracolo "
-				"(B43_READ_ORACLE non impostato), ogni lettura "
-				"ritorna 0. La traccia NON e' una misura del "
+				"b43-integration: no oracle "
+				"(B43_READ_ORACLE not set), every read "
+				"returns 0. The trace is NOT a measurement of the "
 				"driver.\n");
 		}
 		return 0;
@@ -357,10 +354,10 @@ static u32 oracle_lookup(const char *cls, u16 addr, int width)
 		k->last = v;
 		return v;
 	}
-	return k->last;	/* coda esaurita: l'ultimo visto */
+	return k->last;	/* queue exhausted: the last one seen */
 }
 
-/* Una scrittura del driver aggiorna l'ombra che i segnaposto rendono. */
+/* A driver write updates the shadow the placeholders return. */
 static void oracle_note_write(const char *wr_cls, u16 addr, u32 val)
 {
 	char cls[32];
@@ -380,13 +377,13 @@ static void oracle_note_write(const char *wr_cls, u16 addr, u32 val)
 }
 
 /*
- * Marcatori di confine (B43_AC_FN e B43_AC_BLOCK in phy_ac.h), gli stessi che
- * emette ../unit e che fn_map.py legge. Servono a attribuire le op di questa
- * traccia alle funzioni del driver: senza, il confronto fra la sequenza di b43
- * intero e quella dell'harness si puo' allineare ma non spiegare.
+ * Boundary markers (B43_AC_FN and B43_AC_BLOCK in phy_ac.h), the same ones
+ * ../unit emits and fn_map.py reads. They attribute this trace's ops to the
+ * driver's functions: without them the comparison between the sequence of
+ * the whole of b43 and the harness's can be aligned but not explained.
  *
- * Silenziosi se B43_FN_MARKERS non e' nell'ambiente, perche' la traccia di
- * default e' un termine di confronto e i marcatori non sono op.
+ * Silent unless B43_FN_MARKERS is in the environment, because the default
+ * trace is a comparison reference and the markers are not ops.
  */
 static int fn_markers_enabled(void)
 {
@@ -424,8 +421,8 @@ static FILE *timeline_file(void)
 	if (!timeline && path && *path) {
 		timeline = fopen(path, "r");
 		if (!timeline)
-			fprintf(stderr, "b43-integration: B43_TIMELINE=%s non si "
-				"apre\n", path);
+			fprintf(stderr, "b43-integration: B43_TIMELINE=%s cannot "
+				"be opened\n", path);
 	}
 	return timeline;
 }
@@ -472,7 +469,7 @@ int b43_test_timeline_next(long long *t_us, char *kind, int len,
 	return 0;
 }
 
-/* Per i messaggi di main.c, che e' compilato senza stdio. */
+/* For main.c's messages, which is compiled without stdio. */
 void b43_trace_note(const char *fmt, int arg)
 {
 	fprintf(stderr, "b43-integration: ");
@@ -491,33 +488,32 @@ void b43_trace_op(const char *cls, u16 addr, u32 val, u16 mask, int has_mask)
 }
 
 /*
- * MACCONTROL nella forma del vendor, che lo traccia come maskset a 32 bit
- * senza indirizzo. Sul bus e' una scrittura intera: la mask non c'e', e il
- * confronto a maschera di compare.py vincola i bit che il vendor ha toccato.
+ * MACCONTROL in the vendor's form, which traces it as a 32-bit maskset
+ * without an address. On the bus it is a whole write: there is no mask, and
+ * compare.py's mask comparison binds the bits the vendor touched.
  */
 void b43_trace_macctl(u32 val)
 {
 	fprintf(stream(), "cpu%d MAC.MCTRL val=0x%08x\n", cpu, val);
 }
 
-/* Maskset a 32 bit con indirizzo: i registri del PMU. */
+/* 32-bit maskset with an address: the PMU's registers. */
 void b43_trace_op32(const char *cls, u16 addr, u32 val, u32 mask)
 {
 	fprintf(stream(), "cpu%d %s addr=0x%x val=0x%08x mask=0x%08x\n",
 		cpu, cls, addr, val, mask);
 }
 
-/* Le GPIO del chipcommon: registro implicito nella classe, come nel vendor. */
+/* The chipcommon GPIOs: register implicit in the class, as in the vendor. */
 void b43_trace_gpio(const char *cls, u32 val, u32 mask)
 {
 	fprintf(stream(), "cpu%d %s val=0x%08x mask=0x%08x\n", cpu, cls, val, mask);
 }
 
 /*
- * La shared memory: b43 scrive (routing << 16) | offset nel registro di
- * controllo, quindi l'offset e il routing si separano qui. Il routing e' il
- * campo che le catture del d6220 non hanno -- il decoder di allora non lo
- * emetteva -- e che quelle del DSL chiamano `sel`.
+ * The shared memory: b43 writes (routing << 16) | offset into the control
+ * register, so offset and routing are split here. The routing is the field
+ * the d6220's captures do not have and the DSL's call `sel`.
  */
 void b43_trace_shm(const char *cls, u32 routing_off, u32 val, int width)
 {
@@ -590,9 +586,9 @@ void b43_trace_consume_shm_if(u32 routing, u16 addr, u32 val)
 }
 
 /*
- * I file compilati con gli header del kernel non hanno stdlib: `-nostdinc` e
- * getenv() finisce dichiarata implicitamente, cioe' troncata a int. Per questo
- * l'ambiente si legge da qui, che e' codice utente.
+ * The files compiled with the kernel headers have no stdlib: with
+ * `-nostdinc` getenv() ends up implicitly declared, truncated to int. That is
+ * why the environment is read from here, which is user code.
  */
 const char *b43_test_env(const char *name)
 {

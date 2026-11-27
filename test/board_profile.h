@@ -1,16 +1,11 @@
 /* SPDX-License-Identifier: GPL-2.0 */
 /*
- * Profili di board condivisi fra le due suite.
+ * Board profiles shared by the two suites.
  *
- * Stavano in unit/main.c e l'integrazione non li aveva affatto: girava con la
- * SROM azzerata, quindi con femctrl=0 -- che il driver segnala -- rxchain=0,
- * coremask=0, subband5gver=0 e le tabelle pa5ga/maxp5ga tutte a zero. Ogni
- * misura fatta la' sopra era su una board che non esiste.
- *
- * Sono la stessa board, quindi il profilo sta in un posto solo. Ogni suite lo
- * monta a modo suo: `unit` ha una struct ssbn_sprom di stub, `integration` ha
- * quella vera degli header del kernel, e i nomi dei campi coincidono perche' i
- * campi rev-11 li aggiunge bcma/include/ssb-next/ssbn.h con quei nomi.
+ * Each suite mounts the profile its own way: `unit` has a stub struct
+ * ssbn_sprom, `integration` the real one from the kernel headers, and the
+ * field names coincide because bcma/include/ssb-next/ssbn.h adds the rev-11
+ * fields with those names.
  */
 #ifndef B43_TEST_BOARD_PROFILE_H_
 #define B43_TEST_BOARD_PROFILE_H_
@@ -20,8 +15,9 @@
 struct board_profile {
 	const char *name;
 	u16 chip_id;
-	/* chiprev e deviceid PCI, da `wl revinfo`: b43 legge il secondo per
-	 * decidere le bande, e l'integrazione li monta su chipinfo e host_pci. */
+	/* chiprev and PCI deviceid, from `wl revinfo`: b43 reads the second to
+	 * decide the bands, and the integration suite mounts them on chipinfo and
+	 * host_pci. */
 	u8  chip_rev;
 	u16 pci_device;
 	u8  radio_rev;
@@ -31,17 +27,17 @@ struct board_profile {
 	u8  coremask;
 	u8  rxchain;
 	u8  subband5gver;
-	/* Word raw del blocco FEM/PA, come lette dai dump SROM. */
+	/* Raw words of the FEM/PA block, as read from the SROM dumps. */
 	u16 fem_cfg1;
 	u16 fem_cfg2;
-	/* Word raw della temperatura: 87 (tempthresh, tempoffset) e 92
+	/* Raw temperature words: 87 (tempthresh, tempoffset) and 92
 	 * (phycal_tempdelta, temps_period, temps_hysteresis). */
 	u16 thermal;
 	u16 tempdelta;
 	u16 tssifloor5g[4];
-	/* pa5ga per-core (3 core), 12 u16 = 4 gruppi (5g band) × 3 (a1,b0,b1).
-	 * Dal file NVRAM del router, keys pa5ga0/pa5ga1/pa5ga2. Se tutti 0,
-	 * mount_board lascia pa5ga = 0 (il caller cade sui pwrdet_def).
+	/* Per-core pa5ga (3 cores), 12 u16 = 4 groups (5g band) x 3 (a1,b0,b1).
+	 * From the router's NVRAM file, keys pa5ga0/pa5ga1/pa5ga2. If all 0,
+	 * mount_board leaves pa5ga = 0 (the caller falls back on pwrdet_def).
 	 */
 	u16 pa5ga[3][12];
 	/* maxp5ga per-core (3 core), 4 sub-band u8. NVRAM keys maxp5ga{0,1,2}.
@@ -73,9 +69,9 @@ struct board_profile {
 	u16 rpcal[5];
 	/* mcsbw{20,40}5g{l,m,h}po, NVRAM. Index 0 = 5gl, 1 = 5gm, 2 = 5gh. */
 	u32 mcsbw5g_po[3][3];	/* [sotto-banda][bw20, bw40, bw80] */
-	/* rxgains_5gl per-core (3 core). NVRAM keys rxgains5gelnagaina{0,1,2}
-	 * e rxgains5gtrisoa{0,1,2}. Usati per computare hdr = (elnagain+3)<<1
-	 * e gainctx = ((triso+4)<<1)+2 nel body Phase 3 di noise-shaping. */
+	/* Per-core rxgains_5gl (3 cores). NVRAM keys rxgains5gelnagaina{0,1,2}
+	 * and rxgains5gtrisoa{0,1,2}. Used to compute hdr = (elnagain+3)<<1
+	 * and gainctx = ((triso+4)<<1)+2 in the noise-shaping Phase 3 body. */
 	u8 rxgains_5gl_elnagain[3];
 	u8 rxgains_5gl_triso[3];
 	/* rxgains5gh per core, with trelnabyp: the SROM boards have the byte
@@ -100,13 +96,13 @@ struct board_profile {
 	/* R2069_RCCAL_G (radio 0x0416), read post-apply: dacbuf_cap =
 	 * (rccal_g & 0x03e0) >> 5. Per-board analog measurement. */
 	u16 rccal_g;
-	/* macaddr dell'NVRAM. Lo consuma emit_core_shm_macaddr(), che sta in
-	 * piedi per il core: e' dato di board, non una costante. */
+	/* NVRAM macaddr. Consumed by emit_core_shm_macaddr(), which stands in
+	 * for the core: board data, not a constant. */
 	u8 macaddr[6];
-	/* Revisione del core 802.11 e MAC_HW_CAP. Li consuma
-	 * emit_core_shm_chipinit(): b43 li scrive in shared memory al core
-	 * init, il primo da dev->dev->core_rev e il secondo da una lettura
-	 * MMIO di B43_MMIO_MAC_HW_CAP che l'harness non modella. */
+	/* 802.11 core revision and MAC_HW_CAP. Consumed by
+	 * emit_core_shm_chipinit(): b43 writes them to shared memory at core
+	 * init, the first from dev->dev->core_rev and the second from an MMIO
+	 * read of B43_MMIO_MAC_HW_CAP the harness does not model. */
 	u16 core_rev;
 	u32 mac_hw_cap;
 	/* boardflags, boardflags2, boardflags3: SROM words 66-71 on rev 11. */
@@ -147,7 +143,7 @@ static const struct board_profile PROFILE_D6220 = {
 	.chip_rev = 0x3, .pci_device = 0x43b3,
 	/* macaddr=00:00:00:00:00:03 (wl1_nvram.txt) */
 	.macaddr = { 0x00, 0x00, 0x00, 0x00, 0x00, 0x03 },
-	/* WLCOREREV e MACHW_L/H come li scrive il vendor: cold01 #652-#654 */
+	/* WLCOREREV and MACHW_L/H as the vendor writes them: cold01 #652-#654 */
 	.core_rev = 42, .mac_hw_cap = 0x30518c05,
 	/* SROM words 77-78 = 0xffff; NVRAM ledbh10=0x88: gpio 10, active-low,
 	 * activity. Together with the gpio 0-2 defaults this is the 0x407
@@ -161,7 +157,7 @@ static const struct board_profile PROFILE_D6220 = {
 	.fem_cfg2     = 0x00a1,
 	.thermal      = 0xffff,
 	.tempdelta    = 0xffff,
-	/* word 96..99 = 0xffff, mascherate 0x03ff: campo non programmato. */
+	/* words 96..99 = 0xffff, masked 0x03ff: field not programmed. */
 	.tssifloor5g  = { 0x3ff, 0x3ff, 0x3ff, 0x3ff },
 	.pa5ga = {
 		{ 0xff33, 0x175b, 0xfd32, 0xff23, 0x1672, 0xfd36,
@@ -214,16 +210,16 @@ static const struct board_profile PROFILE_AGCOMBO = {
 	.macaddr = { 0x00, 0xc0, 0x02, 0x01, 0x07, 0x24 },
 	.core_rev = 42, .mac_hw_cap = 0x30518c05,
 	/*
-	 * Blocco FEM/PA sintetizzato dalla NVRAM agcombo con le maschere
-	 * canoniche (SROM11_FEM_CFG1/2): femctrl=6 pdgain=10 tssiposslope=1,
-	 * il resto a zero -- gli stessi valori del d6220, quindi stesse word.
-	 * Il dump SROM agcombo in repo e' tutto a zero, quindi la sorgente e'
-	 * la NVRAM. Senza questo il guard su femctrl scattava e la tabella di
-	 * controllo FEM non veniva scritta su questa board.
+	 * FEM/PA block synthesized from the agcombo NVRAM with the
+	 * canonical masks (SROM11_FEM_CFG1/2): femctrl=6 pdgain=10
+	 * tssiposslope=1, the rest zero -- the d6220's values, so the same
+	 * words. The agcombo SROM dump in the repo is all zero, so the
+	 * source is the NVRAM. Without it the femctrl guard would fire and
+	 * the FEM control table would not be written on this board.
 	 */
 	.fem_cfg1 = 0x30a1, .fem_cfg2 = 0x00a1,
-	/* Dall'NVRAM: tempthresh=255 tempoffset=255, phycal_tempdelta=255
-	 * temps_period=15 temps_hysteresis=15, cioe' tutto non programmato. */
+	/* From the NVRAM: tempthresh=255 tempoffset=255, phycal_tempdelta=255
+	 * temps_period=15 temps_hysteresis=15, all unprogrammed. */
 	.thermal = 0xffff, .tempdelta = 0xffff,
 	.tssifloor5g = { 0x3ff, 0x3ff, 0x3ff, 0x3ff },
 	.radio_ver = 0x2069, .phy_rev = 1,
@@ -263,9 +259,9 @@ static const struct board_profile PROFILE_AGCOMBO = {
 	.pdoffset80ma = { 0x0100, 0x0100, 0x0100 },
 	.mcsbw5g_po = {
 		/*
-		 * mcsbw{20,40,80}5g{l,m,h}po di vd625-agcombo/wl1_nvram.txt, che li porta
-		 * in esadecimale. Su questa board le tre larghezze hanno la
-		 * stessa word: 5gl e 5gm a 0x88644220, 5gh a 0xcca88440.
+		 * mcsbw{20,40,80}5g{l,m,h}po of vd625-agcombo/wl1_nvram.txt,
+		 * which has them in hex. On this board the three widths have
+		 * the same word: 5gl and 5gm at 0x88644220, 5gh at 0xcca88440.
 		 */
 		{ 0x88644220, 0x88644220, 0x88644220 },
 		{ 0x88644220, 0x88644220, 0x88644220 },
@@ -285,8 +281,8 @@ static const struct board_profile PROFILE_DSL = {
 	.boardflags = 0x10000000, .boardflags2 = 0x2, .boardflags3 = 0x0,
 	.name = "dsl", .chip_id = 0x4352, .radio_rev = 4,
 	.ucode = 784,
-	/* deviceid dalla lista PCI di router_info.txt; il chiprev di wl1 non
-	 * e' in nessun dump, e' quello del D6220, stesso chip. */
+	/* deviceid from router_info.txt's PCI list; wl1's chiprev is in no
+	 * dump, it is the D6220's, the same chip. */
 	.chip_rev = 0x3, .pci_device = 0x43b3,
 	.radio_ver = 0x2069, .phy_rev = 1,
 	/* Same SROM words and the same ledbh10=0x88 as the D6220. */
@@ -298,7 +294,7 @@ static const struct board_profile PROFILE_DSL = {
 	.fem_cfg2     = 0x00a1,
 	.thermal      = 0xffff,
 	.tempdelta    = 0xffff,
-	/* word 96..99 = 0xffff, mascherate 0x03ff: campo non programmato. */
+	/* words 96..99 = 0xffff, masked 0x03ff: field not programmed. */
 	.tssifloor5g  = { 0x3ff, 0x3ff, 0x3ff, 0x3ff },
 	.pa5ga = {
 		{ 0xff4d, 0x1690, 0xfd24, 0xff59, 0x1710, 0xfd28,
@@ -326,9 +322,9 @@ static const struct board_profile PROFILE_DSL = {
 	.pdoffset80ma = { 0, 0, 0 },
 	.mcsbw5g_po = {
 		/*
-		 * mcsbw{20,40,80}5g{l,m,h}po di wl1_nvram.txt, che li porta in
-		 * decimale. Come sull'agcombo le tre larghezze hanno la stessa
-		 * word; 5gm e 5gh coincidono anche fra loro.
+		 * mcsbw{20,40,80}5g{l,m,h}po of wl1_nvram.txt, which has them in
+		 * decimal. As on the agcombo the three widths have the same word;
+		 * 5gm and 5gh also coincide.
 		 */
 		{ 0xeca86420, 0xeca86420, 0xeca86420 },
 		{ 0xcca86420, 0xcca86420, 0xcca86420 },
@@ -337,10 +333,10 @@ static const struct board_profile PROFILE_DSL = {
 };
 
 /*
- * TG789vac v2: BCM4360 3x3 su wl 7.14.89, lo stesso driverrev del d6220.
- * Valori da router-data/tg789vac-v2/wl1_nvram.txt, verificati word per word
- * contro wl1_srom_raw.txt: la SROM qui e' la NVRAM mappata in memoria, quindi
- * le due fonti sono la stessa board.
+ * TG789vac v2: BCM4360 3x3 on wl 7.14.89, the same driverrev as the d6220.
+ * Values from router-data/tg789vac-v2/wl1_nvram.txt, checked word by word
+ * against wl1_srom_raw.txt: the SROM here is the NVRAM mapped in memory, so
+ * the two sources are the same board.
  */
 static const struct board_profile PROFILE_TG789 = {
 	/* boardflags, boardflags2, boardflags3 (NVRAM). */
@@ -349,23 +345,23 @@ static const struct board_profile PROFILE_TG789 = {
 	.cc_caps = 0x58680001, .cc_capext = 0x00000003,
 	.cc_chipstatus = 0x0000024d, .pmu_caps = 0x10a22b11,
 	.chip_rev = 0x3, .pci_device = 0x43a2,
-	/* macaddr=12:13:31:f6:da:77, il segnaposto del file di mappa. */
+	/* macaddr=12:13:31:f6:da:77, the map file's placeholder. */
 	.macaddr = { 0x12, 0x13, 0x31, 0xf6, 0xda, 0x77 },
-	/* corerev 0x2a (wl1_revinfo) e MACHW_L/H come li scrive il vendor:
+	/* corerev 0x2a (wl1_revinfo) and MACHW_L/H as the vendor writes them:
 	 * cold01-ch36-bw20 #590-#592. */
 	.core_rev = 42, .mac_hw_cap = 0x30518c05,
-	/* srom[77-78] = 0xffff e nessun ledbh nella NVRAM: il vendor pilota
-	 * solo i gpio 0-2 (maschera 0x7 su GPIO.OE/OUT/CTL, senza 0x400). */
+	/* srom[77-78] = 0xffff and no ledbh in the NVRAM: the vendor drives
+	 * only gpios 0-2 (mask 0x7 on GPIO.OE/OUT/CTL, without 0x400). */
 	.ledbh = { [0] = 0xff, [1] = 0xff, [2] = 0xff, [3] = 0xff },
 	.radio_ver = 0x2069, .phy_rev = 1,
 	.num_cores = 3, .coremask = 0x7, .rxchain = 7,
 	.subband5gver = 0x4,
-	/* srom[85-86]: femctrl=6 tssiposslope=1 come gli altri, pdgain=19
-	 * invece di 10 su entrambe le bande. */
+	/* srom[85-86]: femctrl=6 tssiposslope=1 like the others, pdgain=19
+	 * instead of 10 on both bands. */
 	.fem_cfg1     = 0x3131,
 	.fem_cfg2     = 0x0131,
 	/* tempthresh=120 tempoffset=0; phycal_tempdelta=0 temps_period=5
-	 * temps_hysteresis=5: l'unica board con la temperatura programmata. */
+	 * temps_hysteresis=5: the only board with the temperature programmed. */
 	.thermal      = 0x7800,
 	.tempdelta    = 0x5500,
 	.tssifloor5g  = { 0x3ff, 0x3ff, 0x3ff, 0x3ff },
@@ -390,13 +386,13 @@ static const struct board_profile PROFILE_TG789 = {
 		{ 90, 88, 92, 88 },
 		{ 90, 88, 92, 88 },
 		},
-	/* agbg0=0, aga0=68. Qui aga2=67 differisce da aga0/aga1: quale dei
-	 * tre legga wl non e' stato verificato. */
+	/* agbg0=0, aga0=68. Here aga2=67 differs from aga0/aga1: which of the
+	 * three wl reads has not been checked. */
 	.antgain_raw = { 0, 68 },
 	.pdoffset40ma = { 0x5444, 0x5444, 0x5344 },
 	.pdoffset80ma = { 0x2111, 0x0111, 0x2011 },
 	.mcsbw5g_po = {
-		/* mcsbw{20,40,80}5g{l,m,h}po, in decimale nella NVRAM. */
+		/* mcsbw{20,40,80}5g{l,m,h}po, in decimal in the NVRAM. */
 		{ 0x77542222, 0x97542211, 0x98542222 },
 		{ 0x66432000, 0x86531000, 0x76532222 },
 		{ 0x99752200, 0x98653112, 0x97543333 },
@@ -649,7 +645,7 @@ static const struct board_profile PROFILE_R6400V1 = {
 };
 
 /* One-shot mock storage. Lives for the whole run. */
-/* Il profilo per nome, come lo passano le due suite (argv o B43_BOARD). */
+/* The profile by name, as the two suites pass it (argv or B43_BOARD). */
 static inline const struct board_profile *board_profile_lookup(const char *name)
 {
 	if (name && !strcmp(name, "agcombo"))
@@ -672,10 +668,11 @@ static inline const struct board_profile *board_profile_lookup(const char *name)
 }
 
 /*
- * Profilo -> SROM, con le stesse maschere che bcmn_sprom_extract_r11() usa
- * (SROM11_FEM_CFG1/2, offset 0x0AA/0x0AC). Il profilo sta al posto di bcma:
- * sull'hardware i per-rate li riempie bcmn_sprom_extract_r11() di
- * bcma/bcma-next/sprom.c, dai word 176/178/180 e dai due blocchi successivi a passo 8.
+ * Profile -> SROM, with the same masks bcmn_sprom_extract_r11() uses
+ * (SROM11_FEM_CFG1/2, offsets 0x0AA/0x0AC). The profile stands in for bcma:
+ * on the hardware the per-rate fields are filled by bcma/bcma-next/sprom.c's
+ * bcmn_sprom_extract_r11(), from words 176/178/180 and the two blocks after
+ * them at stride 8.
  */
 static inline void board_profile_to_sprom(const struct board_profile *p,
 					  struct ssbn_sprom *s)

@@ -1,28 +1,27 @@
 // SPDX-License-Identifier: GPL-2.0
 /*
- * Gli shim del kernel: quello che serve perche' gli oggetti di b43 linkino
- * in userspace.
+ * The kernel shims: what b43's objects need to link in userspace.
  *
- * Codice UTENTE, come trace_out.c: non e' codice di driver, e gli servono
- * malloc e printf. Le firme non combaciano con quelle del kernel e non
- * devono: il link in C risolve per nome, e questi simboli b43 li chiama ma
- * non ne usa il valore in nessun modo che conti per la traccia delle op.
+ * USER code, like trace_out.c: it is not driver code, and it needs malloc and
+ * printf. The signatures do not match the kernel's and need not: C links by
+ * name, and b43 calls these symbols but does not use their value in any way
+ * that matters to the op trace.
  *
- * Quello che NON e' un no-op, ed e' scritto qui perche' altrimenti la suite
- * gira e mente:
+ * What is NOT a no-op, written here because otherwise the suite runs and
+ * lies:
  *
- *   - i lock non serializzano niente: la suite e' a un thread, e se un giorno
- *     non lo fosse la traccia non sarebbe piu' ordinata e il confronto
- *     posizionale non avrebbe senso.
- *   - i delay non aspettano. Va bene per la traccia, che e' una sequenza di
- *     op e non un profilo temporale, ma vuol dire che un poll su un bit che
- *     l'hardware alza dopo N microsecondi qui gira a vuoto: e' l'oracolo a
- *     dover rispondere, non il tempo.
- *   - request_firmware RIESCE, con un blob minimo valido: se fallisce,
- *     b43_chip_init ritorna errore e b43_phy_init non viene mai chiamata.
- *     L'ucode vero non serve, e dev->fw.rev nemmeno si inietta: b43 lo legge
- *     dalla shared memory, quindi lo serve l'oracolo. Con B43_FW_DIR i
- *     file si leggono da li'. Vedi il commento sul firmware piu' sotto.
+ *   - the locks serialize nothing: the suite is single-threaded, and if it
+ *     ever were not the trace would no longer be ordered and the positional
+ *     comparison would make no sense.
+ *   - the delays do not wait. Fine for the trace, which is a sequence of ops
+ *     and not a timing profile, but it means a poll on a bit the hardware
+ *     raises after N microseconds spins idle here: the oracle has to answer,
+ *     not time.
+ *   - request_firmware SUCCEEDS, with a minimal valid blob: if it fails,
+ *     b43_chip_init returns an error and b43_phy_init is never called. The
+ *     real ucode is not needed, and dev->fw.rev is not injected either: b43
+ *     reads it from shared memory, so the oracle serves it. With B43_FW_DIR
+ *     the files are read from there. See the firmware comment further down.
  */
 #include <stdarg.h>
 #include <stdio.h>
@@ -31,23 +30,21 @@
 
 #include "chip_link.h"
 
-/* Il debug dinamico del kernel: muto. */
+/* The kernel's dynamic debug: silent. */
 void __dynamic_pr_debug(void *descriptor, const char *fmt, ...) { }
 void __dynamic_dev_dbg(void *descriptor, const void *dev, const char *fmt, ...) { }
 
-/* --- diagnostica ------------------------------------------------------- */
+/* --- diagnostics ------------------------------------------------------ */
 
 /*
- * NON muto: b43err e b43info passano da qui, e sono il modo in cui b43 dice
- * quale gate lo ha respinto. Con un _printk vuoto la probe ritorna -95 e
- * l'unica via per sapere perche' e' il debugger -- che e' come ho perso due
- * giri. Va su stderr, cosi' la traccia su stdout resta confrontabile.
- */
-/*
- * b43err e compagnia usano %pV, il formato ricorsivo del kernel: l'argomento
- * e' una struct va_format col vero fmt e i suoi argomenti dentro. Un
- * vfprintf normale stampa il puntatore e il messaggio si perde, che e'
- * esattamente cio' che mi ha fatto perdere due giri.
+ * NOT silent: b43err and b43info go through here, and they are how b43 says
+ * which gate rejected it. With an empty _printk the probe returns -95 and
+ * the only way to know why is the debugger. It goes to stderr, so the trace
+ * on stdout stays comparable.
+ *
+ * b43err and friends use %pV, the kernel's recursive format: the argument is
+ * a struct va_format with the real fmt and its arguments inside. A plain
+ * vfprintf would print the pointer and lose the message.
  */
 struct shim_va_format {
 	const char *fmt;
@@ -61,7 +58,7 @@ int _printk(const char *fmt, ...)
 
 	va_start(ap, fmt);
 	if (pv) {
-		/* la parte prima di %pV, poi il messaggio annidato */
+			/* the part before %pV, then the nested message */
 		char head[256];
 		size_t n = (size_t)(pv - fmt);
 		struct shim_va_format *v;
@@ -86,8 +83,8 @@ void __warn_printk(const char *fmt, ...)
 }
 
 /*
- * dev_err/dev_warn/dev_info, che bcma usa per i suoi messaggi: stesso
- * canale di _printk. Il device non si stampa, la suite ne ha uno solo.
+ * dev_err/dev_warn/dev_info, which bcma uses for its messages: same channel
+ * as _printk. The device is not printed, the suite has only one.
  */
 static void shim_dev_printk(const char *level, const char *fmt, va_list ap)
 {
@@ -139,13 +136,13 @@ unsigned int cfg80211_calculate_bitrate(void *rate)
 }
 
 /*
- * Il page pool dei buffer RX: page_pool_create() fallisce (dma_stub.c),
- * quindi dma.c non arriva mai qui. Un'esecuzione che ci arriva ha un pool,
- * e lo shim non lo sa servire.
+ * The RX buffers' page pool: page_pool_create() fails (dma_stub.c), so dma.c
+ * never gets here. A run that gets here has a pool, and the shim cannot
+ * serve it.
  */
 static void shim_no_page_pool(const char *fn)
 {
-	fprintf(stderr, "b43-integration: %s senza page pool\n", fn);
+	fprintf(stderr, "b43-integration: %s without a page pool\n", fn);
 	abort();
 }
 
@@ -175,8 +172,8 @@ void *build_skb(void *data, unsigned int frag_size)
 }
 
 /*
- * Lo allarga b43_rx_amsdu() per attaccarci i pezzi di un A-MSDU ricevuto.
- * I buffer RX qui portano il poison, frame_len 0, e dma.c li scarta prima.
+ * b43_rx_amsdu() grows it to attach the pieces of a received A-MSDU. The RX
+ * buffers here carry the poison, frame_len 0, and dma.c drops them first.
  */
 int pskb_expand_head(void *skb, int nhead, int ntail, unsigned int gfp)
 {
@@ -185,8 +182,8 @@ int pskb_expand_head(void *skb, int nhead, int ntail, unsigned int gfp)
 }
 
 /*
- * Lo chiama skb_linearize() nel path TX di b43, su un frame con frag_list.
- * Le code TX qui sono vuote: nessun frame ci arriva.
+ * skb_linearize() calls it in b43's TX path, on a frame with a frag_list.
+ * The TX queues here are empty: no frame gets here.
  */
 void *__pskb_pull_tail(void *skb, int delta)
 {
@@ -214,7 +211,7 @@ void *memchr_inv(const void *start, int c, size_t bytes)
 	return NULL;
 }
 
-/* --- lock: la suite e' a un thread ------------------------------------ */
+/* --- locks: the suite is single-threaded ------------------------------ */
 
 void _raw_spin_lock(void *l) { }
 void _raw_spin_unlock(void *l) { }
@@ -227,7 +224,7 @@ void mutex_lock(void *l) { }
 void mutex_unlock(void *l) { }
 int mutex_is_locked(void *l) { return 0; }
 
-/* --- tempo: non si aspetta, vedi il commento in testa ----------------- */
+/* --- time: nothing waits, see the comment at the top ------------------ */
 
 unsigned long jiffies;
 /*
@@ -258,23 +255,23 @@ void delayed_work_timer_fn(void *t) { }
 void __SCT__might_resched(void) { }
 void __init_swait_queue_head(void *q, const char *n, void *k) { }
 
-/* --- lavoro differito: eseguito subito o ignorato --------------------- */
+/* --- deferred work: run at once or ignored ---------------------------- */
 
 void *system_wq;
 void *system_percpu_wq;
-/* queue_work_on() sta in subsystem_stub.c: ha bisogno di struct
- * work_struct, e questo file e' codice utente senza header kernel. */
+/* queue_work_on() is in subsystem_stub.c: it needs struct work_struct, and
+ * this file is user code without kernel headers. */
 int cancel_work_sync(void *w) { return 0; }
-/* Il registro dei delayed work sta in subsystem_stub.c, coi tipi del kernel. */
+/* The delayed work registry is in subsystem_stub.c, with the kernel types. */
 int b43_test_dwork_cancel(void *w);
 int cancel_delayed_work_sync(void *w) { return b43_test_dwork_cancel(w); }
 void complete(void *c) { }
 void wait_for_completion(void *c) { }
 
-/* --- memoria ---------------------------------------------------------- */
+/* --- memory ----------------------------------------------------------- */
 
-/* Nel kernel e' bidimensionale: [NR_KMALLOC_TYPES][KMALLOC_SHIFT_HIGH+1].
- * Sottodimensionarlo fa indicizzare fuori dall oggetto. */
+/* Two-dimensional in the kernel: [NR_KMALLOC_TYPES][KMALLOC_SHIFT_HIGH+1].
+ * Undersizing it makes the index go outside the object. */
 void *kmalloc_caches[8][64];
 unsigned long random_kmalloc_seed;
 
@@ -283,7 +280,7 @@ void *__kmalloc_cache_noprof(void *s, unsigned int flags, unsigned long size)
 	return calloc(1, size ? size : 1);
 }
 
-/* Le allocazioni grandi non passano dalle cache: kmalloc() dispaccia qui. */
+/* Large allocations do not go through the caches: kmalloc() dispatches here. */
 void *__kmalloc_noprof(unsigned long size, unsigned int flags)
 {
 	return calloc(1, size ? size : 1);
@@ -300,9 +297,9 @@ void kfree(const void *p)
 }
 
 /*
- * L'ultimo gruppo, che compare solo dopo che si compila il nostro phy_ac.c:
- * `int_sqrt` la usa il solve della RX IQ, e NON e' un no-op -- ritornare zero
- * falserebbe i coefficienti in silenzio. Le altre sono contorno.
+ * The last group, which appears only once our phy_ac.c is compiled:
+ * `int_sqrt` is used by the RX IQ solve, and is NOT a no-op -- returning zero
+ * would silently falsify the coefficients. The others are trimmings.
  */
 unsigned long int_sqrt(unsigned long x)
 {
@@ -324,14 +321,14 @@ unsigned long int_sqrt(unsigned long x)
 }
 
 /*
- * Chiamata da un inline asm degli header (arch/x86/include/asm/arch_hweight.h)
- * che dichiara solo %rdi in ingresso e %rax in uscita: e' il chiamante ad
- * assumere che ogni altro registro sopravviva, perche' la versione del kernel
- * (arch/x86/lib/hweight.S) li preserva. Una funzione C qui non puo' onorare
- * quel contratto, e con -O2 il puntatore che il chiamante teneva in %rdx o
- * %rcx viene sovrascritto: la corruzione emerge migliaia di op dopo, come
- * free() su un puntatore invalido o SEGV su dev->phy.ac. Stessa sequenza
- * dell'originale, stesso vincolo sui registri.
+ * Called by an inline asm of the headers (arch/x86/include/asm/arch_hweight.h)
+ * that declares only %rdi as input and %rax as output: the caller assumes
+ * every other register survives, because the kernel's version
+ * (arch/x86/lib/hweight.S) preserves them. A C function here cannot honour
+ * that contract, and with -O2 the pointer the caller kept in %rdx or %rcx is
+ * overwritten: the corruption surfaces thousands of ops later, as free() on
+ * an invalid pointer or a SEGV on dev->phy.ac. Same sequence as the
+ * original, same constraint on the registers.
  */
 asm(
 "	.text\n"
@@ -363,13 +360,13 @@ asm(
 );
 
 /*
- * Chiamata dal wrapper inline find_next_bit() di include/linux/find.h ogni
- * volta che size non e' una costante di compilazione -- il caso di
- * dev->phy.ac->num_cores nei for_each_set_bit() del port. Non e' un no-op:
- * un valore inventato sposterebbe le operazioni sul core sbagliato, lo stesso
- * modo di sbagliare di uno stub a zero. Stessa semantica della versione del
- * kernel (lib/find_bit.c), un bit alla volta invece che una parola alla
- * volta: qui conta la correttezza, non la velocita'.
+ * Called by the inline wrapper find_next_bit() of include/linux/find.h every
+ * time size is not a compile-time constant -- the case of
+ * dev->phy.ac->num_cores in the port's for_each_set_bit(). Not a no-op: an
+ * invented value would move the operations to the wrong core, the same way
+ * of being wrong as a stub returning zero. Same semantics as the kernel's
+ * version (lib/find_bit.c), one bit at a time instead of one word at a time:
+ * here correctness matters, not speed.
  */
 unsigned long _find_next_bit(const unsigned long *addr1, unsigned long nbits,
 			      unsigned long start)
@@ -422,7 +419,7 @@ unsigned long strnlen(const char *s, unsigned long n)
 	return i;
 }
 
-/* Il contratto del kernel: -E2BIG (-7) se tronca, altrimenti la lunghezza. */
+/* The kernel's contract: -E2BIG (-7) if it truncates, the length otherwise. */
 long sized_strscpy(char *dst, const char *src, unsigned long n)
 {
 	unsigned long len = strnlen(src, n);
@@ -439,44 +436,45 @@ long sized_strscpy(char *dst, const char *src, unsigned long n)
 	return (long)len;
 }
 
-/* --- firmware: RIESCE, con un blob minimo valido ------------------------
+/* --- firmware: SUCCEEDS, with a minimal valid blob -----------------------
  *
- * Deve riuscire: se `request_firmware` fallisce, `b43_upload_microcode` esce,
- * `b43_chip_init` ritorna errore e `b43_wireless_core_init` non arriva mai a
- * `b43_phy_init` -- cioe' salta esattamente cio' che questa suite deve
- * misurare.
+ * It must succeed: if `request_firmware` fails, `b43_upload_microcode`
+ * leaves, `b43_chip_init` returns an error and `b43_wireless_core_init`
+ * never reaches `b43_phy_init` -- skipping exactly what this suite has to
+ * measure.
  *
- * Non serve un ucode vero. Serve un blob che passi la validazione di
- * `b43_do_request_fw` (main.c:2188): almeno `sizeof(struct b43_fw_header)`
- * byte, `type` fra UCODE/PCM/IV, `ver == 1`, e per UCODE e PCM `be32(size)`
- * uguale ai byte che seguono l'header.
+ * No real ucode is needed. A blob is needed that passes
+ * `b43_do_request_fw`'s validation: at least `sizeof(struct b43_fw_header)`
+ * bytes, `type` among UCODE/PCM/IV, `ver == 1`, and for UCODE and PCM
+ * `be32(size)` equal to the bytes after the header.
  *
- * E NON serve iniettare `dev->fw.rev`: `b43_upload_microcode` lo legge dalla
- * shared memory -- `B43_SHM_SH_UCODEREV` a 0x0000, `UCODEPATCH` a 0x0002 --
- * quindi lo serve l'ORACOLO. Nel segmento di riferimento del d6220 quelle due
- * celle valgono 0x03a0 e 0x2715, che ricomposte danno l'`ucoderev 0x3a02715`
- * della revinfo. Il gate duro `if (fwrev <= 0x128) goto error` passa con
- * 0x3a0 = 928, e `fw.rev >= 598` porta sul ramo nuovo: sono i gate che
- * decidono meta del bring-up, e vengono dai dati, non da una costante qui.
+ * And `dev->fw.rev` need NOT be injected: `b43_upload_microcode` reads it
+ * from shared memory -- `B43_SHM_SH_UCODEREV` at 0x0000, `UCODEPATCH` at
+ * 0x0002 -- so the ORACLE serves it. In the d6220's reference segment those
+ * two cells are 0x03a0 and 0x2715, which put together give the revinfo's
+ * `ucoderev 0x3a02715`. The hard gate `if (fwrev <= 0x128) goto error`
+ * passes with 0x3a0 = 928, and `fw.rev >= 598` leads to the new branch: they
+ * are the gates that decide half the bring-up, and they come from the data,
+ * not from a constant here.
  */
 #define FW_HDR_LEN	8		/* type, ver, 2 pad, be32 size */
 #define FW_PAYLOAD	64
 
-struct shim_firmware {			/* prefisso di struct firmware */
+struct shim_firmware {			/* prefix of struct firmware */
 	unsigned long size;
 	const unsigned char *data;
 	void *priv;
 };
 
 /*
- * Un blob PER TIPO, non uno solo condiviso.
+ * One blob PER TYPE, not a single shared one.
  *
- * b43 tiene quattro firmware vivi insieme -- dev->fw.ucode, .pcm, .initvals,
- * .initvals_band -- e li usa dopo, non al momento della richiesta: con un
- * unico blob statico l'ultima richiesta sovrascriverebbe le altre e
- * b43_upload_microcode() leggerebbe l'header di una lista di initval. Gli IV
- * ne condividono uno perche' le due richieste sono dello stesso tipo e con
- * zero voci.
+ * b43 keeps four firmwares alive together -- dev->fw.ucode, .pcm,
+ * .initvals, .initvals_band -- and uses them later, not at request time: with
+ * a single static blob the last request would overwrite the others and
+ * b43_upload_microcode() would read the header of an initval list. The IVs
+ * share one because the two requests are of the same type and have zero
+ * entries.
  */
 enum { SHIM_FW_UCODE, SHIM_FW_PCM, SHIM_FW_IV, SHIM_FW_SLOTS };
 
@@ -500,9 +498,9 @@ static struct shim_firmware *shim_fw_build(const char *name)
 	blob = shim_fw_blob[slot];
 	memset(blob, 0, FW_HDR_LEN + FW_PAYLOAD);
 	blob[0] = type;
-	blob[1] = 1;			/* ver: l'unica accettata */
-	/* be32(size) = i byte che seguono l'header. Per gli IV e' il numero
-	 * di IV, e zero e' valido: una lista vuota non emette op. */
+	blob[1] = 1;			/* ver: the only one accepted */
+		/* be32(size) = the bytes after the header. For the IVs it is the
+		 * number of IVs, and zero is valid: an empty list emits no op. */
 	if (type == 'i') {
 		shim_fw[slot].size = FW_HDR_LEN;
 	} else {
@@ -517,13 +515,13 @@ static struct shim_firmware *shim_fw_build(const char *name)
 }
 
 /*
- * Il firmware vero, se B43_FW_DIR lo indica: `name` e' il percorso che b43
- * chiede a /lib/firmware ("b43/ucode42.fw"), qui relativo a quella cartella.
- * reverse-tools/fw_from_capture.py la ricava da una cattura al bus del `up`
- * del driver stock, che scrive ucode e initvals dalle stesse porte di b43:
- * con il blob minimo gli initvals sono vuoti e lo stato finale del core non
- * si puo' confrontare con quello della cattura. Un file che manca nella
- * cartella prende il blob minimo, come senza B43_FW_DIR.
+ * The real firmware, if B43_FW_DIR points at it: `name` is the path b43 asks
+ * /lib/firmware for ("b43/ucode42.fw"), here relative to that directory.
+ * reverse-tools/fw_from_capture.py derives it from a bus capture of the
+ * stock driver's `up`, which writes ucode and initvals through the same
+ * ports as b43: with the minimal blob the initvals are empty and the core's
+ * final state cannot be compared with the capture's. A file missing from the
+ * directory gets the minimal blob, as without B43_FW_DIR.
  */
 static struct shim_firmware *shim_fw_load(const char *name)
 {
@@ -571,19 +569,18 @@ int request_firmware(const void **fw, const char *name, void *dev)
 }
 
 /*
- * La via che b43 usa davvero, e per un po' questa ritornava -2.
+ * The path b43 really uses. It must not fail: b43_do_request_fw() calls the
+ * nowait variant and, if it returns negative, prints "Unable to load
+ * firmware" and **returns the error** -- the comment about falling through to
+ * the synchronous path holds only for a result >= 0 -- and
+ * b43_upload_microcode() then dereferences a null dev->fw.ucode.data.
  *
- * b43_do_request_fw() (main.c:2364) chiama la nowait e, se ritorna negativo,
- * stampa "Unable to load firmware" e **ritorna l'errore**: il commento sul
- * fall-through al percorso sincrono vale solo per un esito >= 0. Quindi con
- * -2 il firmware non si caricava, dev->fw.ucode.data restava nullo e
- * b43_upload_microcode() moriva dereferenziandolo a main.c:2761.
- *
- * Qui si chiama la continuazione in linea, che e' b43_fw_cb(): mette il blob
- * in ctx->blob e completa. Poi wait_for_completion() ritorna subito -- nello
- * shim non aspetta -- e b43 trova ctx->blob e prosegue. E' lo stesso
- * ragionamento dei work item in subsystem_stub.c: la suite e' a un thread, e
- * un caricamento davvero asincrono renderebbe la traccia non ordinata.
+ * The continuation is called inline here, which is b43_fw_cb(): it puts the
+ * blob in ctx->blob and completes. Then wait_for_completion() returns at once
+ * -- in the shim it does not wait -- and b43 finds ctx->blob and goes on. It
+ * is the same reasoning as the work items in subsystem_stub.c: the suite is
+ * single-threaded, and a really asynchronous load would make the trace
+ * unordered.
  */
 int request_firmware_nowait(void *mod, int uevent, const char *name,
 			    void *dev, unsigned int gfp, void *ctx, void *cont)
@@ -598,13 +595,13 @@ int request_firmware_nowait(void *mod, int uevent, const char *name,
 
 void release_firmware(const void *fw) { }
 
-/* --- interruzioni, skb, rng, rfkill: niente di tutto questo emette op -- */
+/* --- interrupts, skb, rng, rfkill: none of this emits ops ------------- */
 
 /*
- * I due handler di b43, per consegnare le interruzioni che la timeline porta:
- * il campione di rumore pronto. L'hard handler legge la causa dal registro,
- * e la causa la serve bcmn_stub.c; se chiede il thread, il thread segue
- * subito, come fa il kernel su una sola CPU.
+ * b43's two handlers, to deliver the interrupts the timeline brings: the
+ * noise sample ready. The hard handler reads the reason from the register,
+ * and bcma_stub.c serves the reason; if it asks for the thread, the thread
+ * follows right away, as the kernel does on a single CPU.
  */
 static int (*irq_hard)(int, void *);
 static int (*irq_thread)(int, void *);
@@ -654,7 +651,7 @@ void free_irq(unsigned int irq, void *dev)
 	irq_thread = NULL;
 }
 void dev_kfree_skb_any_reason(void *skb, int reason) { }
-/* L'unico skb che b43 clona e' il beacon, che subsystem_stub.c tiene fermo. */
+/* The only skb b43 clones is the beacon, which subsystem_stub.c holds. */
 void *skb_clone(void *skb, unsigned int gfp) { return skb; }
 void *skb_dequeue(void *list) { return NULL; }
 void skb_queue_head(void *list, void *skb) { }
@@ -663,13 +660,13 @@ int hwrng_register(void *rng) { return 0; }
 void hwrng_unregister(void *rng) { }
 void wiphy_rfkill_start_polling(void *wiphy) { }
 
-/* --- registrazione dei driver di bus ---------------------------------- */
+/* --- bus driver registration ------------------------------------------ */
 
 /*
- * Non registriamo niente: catturiamo la probe. `b43_bcma_probe` e' statica,
- * quindi l'unico modo di chiamarla senza toccare b43 e' prenderla dalla
- * struttura che b43 stesso passa qui. Gli offset sono quelli di
- * `struct bcmn_driver`: name, id_table, probe, remove.
+ * Nothing is registered: the probe is captured. `b43_bcma_probe` is static,
+ * so the only way to call it without touching b43 is to take it from the
+ * structure b43 itself passes here. The offsets are `struct bcmn_driver`'s:
+ * name, id_table, probe, remove.
  */
 int (*b43_test_probe)(void *core);
 void (*b43_test_remove)(void *core);
@@ -698,7 +695,7 @@ void bcmn_modexit(void) { }
 int ssbn_modinit(void) { return 0; }
 void ssbn_modexit(void) { }
 
-/* --- parametri del modulo --------------------------------------------- */
+/* --- module parameters ------------------------------------------------ */
 
 char __this_module[512];
 char param_ops_int[64];
@@ -706,11 +703,11 @@ char param_ops_string[64];
 
 #ifdef __SANITIZE_ADDRESS__
 /*
- * Gli header del kernel, quando vedono __SANITIZE_ADDRESS__, rimappano
- * memcpy/memset/memmove sulle varianti KASAN, che qui non esistono. Sono tre
- * alias sui builtin: bastano a far linkare la build ASAN=1, che e' il solo
- * modo di far dire al sanitizer *chi* corrompe la memoria invece di guardare
- * il sintomo -- una free() invalida in un build e un SIGSEGV in un altro.
+ * The kernel headers, when they see __SANITIZE_ADDRESS__, remap
+ * memcpy/memset/memmove onto the KASAN variants, which do not exist here.
+ * Three aliases on the builtins: enough to link the ASAN=1 build, the only
+ * way to make the sanitizer say *who* corrupts the memory instead of looking
+ * at the symptom -- an invalid free() in one build and a SIGSEGV in another.
  */
 void *__hwasan_memcpy(void *d, const void *s, size_t n);
 void *__hwasan_memset(void *d, int c, size_t n);
@@ -732,7 +729,7 @@ void *__hwasan_memmove(void *d, const void *s, size_t n)
 }
 #endif
 
-/* --- the NVRAM, for nvram/bcm47xx_sprom.c ---------------------------- */
+/* --- the NVRAM, for nvram/bcm47xx_sprom.c ----------------------------- */
 
 /*
  * A board without a SROM takes it from the router's NVRAM: B43_NVRAM is a
