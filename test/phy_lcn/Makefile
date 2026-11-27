@@ -35,7 +35,7 @@ KFLAGS += $(if $(shell grep -s '^CONFIG_FUNCTION_TRACER=y' $(AUTOCONF)),-DCC_USI
 # As in Kbuild: the headers' own typed allocators, if they have kzalloc_flex().
 KFLAGS += $(if $(shell grep -sw 'define kzalloc_flex' $(K)/include/linux/slab.h),-DB43_NEXT_HAVE_KZALLOC_OBJ)
 
-UFLAGS := -O2 -g -Wall -Werror -std=gnu11
+UFLAGS := -O2 -g -Wall -Werror -std=gnu++17
 
 # flows.c includes phy_lcn.c; the others are linked as they are.
 DRIVER := $(filter-out phy_lcn.c,$(b43n-phy-lcn)) $(b43n-phy)
@@ -61,11 +61,11 @@ $(B)/int_sqrt.o: $(K)/lib/math/int_sqrt.c | $(B)
 $(B)/flows.o: flows.c lcn_trace.h $(REPO)/b43-next/phy_lcn.c | $(B)
 	$(CC) -c $< -o $@ $(KFLAGS) -I.
 
-$(B)/trace.o: trace.c lcn_trace.h | $(B)
-	$(CC) -c $< -o $@ $(UFLAGS)
+$(B)/trace.o: trace.cpp lcn_trace.h | $(B)
+	$(CXX) -c $< -o $@ $(UFLAGS)
 
 lcn-trace: $(OBJS)
-	$(CC) -no-pie $^ -o $@
+	$(CXX) -no-pie $^ -o $@
 
 clean:
 	rm -rf $(B) lcn-trace

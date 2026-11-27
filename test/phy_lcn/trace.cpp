@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0
 /*
- * User side of the LCN-PHY harness, ../phy_n/trace.c on the LCN-PHY's table
+ * User side of the LCN-PHY harness, ../phy_n/trace.cpp on the LCN-PHY's table
  * port. It turns the driver's MMIO, agent and ChipCommon accesses into the
  * ops mmio2ops.py prints, serves every read from the capture's own reads,
  * and compares the flow's ops with the capture's, op by op.
@@ -16,6 +16,9 @@
 #include <stdlib.h>
 #include <string.h>
 #include <regex.h>
+#include <string>
+#include <unordered_map>
+#include <vector>
 #include "lcn_trace.h"
 
 #define PHY_CTL		0x3fc
@@ -25,6 +28,7 @@
 
 #define MAX_OPS		65536
 #define LINE		256
+#define MAX_KEYS	16384
 
 struct op {
 	char text[LINE];
@@ -35,21 +39,15 @@ static int nref, nout, nlog;
 
 /* One queue of read values per register, in the capture's order. */
 struct queue {
-	char key[24];
-	unsigned int *vals;
-	int n, cap, pos;
+	std::vector<unsigned int> vals;
+	size_t pos = 0;
 };
 /* Per register, and per table cell: thousands */
-static struct queue queues[16384];
-static int nqueues, exhausted;
+static std::unordered_map<std::string, queue> queues;
+static int exhausted;
 
 /* Last value written per register, for a read the capture does not have. */
-struct cell {
-	char key[24];
-	unsigned int val;
-};
-static struct cell cells[16384];
-static int ncells;
+static std::unordered_map<std::string, unsigned int> cells;
 
 static unsigned int phy_addr, radio_addr;
 
@@ -88,67 +86,41 @@ static void tbl_after(struct tbl_port *t, unsigned int a, unsigned int v,
 
 static char phy_last;
 
-static struct queue *queue(const char *key, int create)
+static void push(const char *key, unsigned int v)
 {
-	int i;
+	auto [entry, inserted] = queues.try_emplace(key);
 
-	for (i = 0; i < nqueues; i++)
-		if (!strcmp(queues[i].key, key))
-			return &queues[i];
-	if (!create)
-		return NULL;
-	if (nqueues == (int)(sizeof(queues) / sizeof(queues[0]))) {
+	if (inserted && queues.size() > MAX_KEYS) {
 		fprintf(stderr, "too many read queues\n");
 		exit(2);
 	}
-	snprintf(queues[nqueues].key, sizeof(queues[0].key), "%s", key);
-	return &queues[nqueues++];
-}
-
-static void push(const char *key, unsigned int v)
-{
-	struct queue *q = queue(key, 1);
-
-	if (q->n == q->cap) {
-		q->cap = q->cap ? 2 * q->cap : 16;
-		q->vals = realloc(q->vals, q->cap * sizeof(*q->vals));
-		if (!q->vals)
-			exit(2);
-	}
-	q->vals[q->n++] = v;
+	entry->second.vals.push_back(v);
 }
 
 static void store(const char *key, unsigned int val)
 {
-	int i;
-
-	for (i = 0; i < ncells; i++)
-		if (!strcmp(cells[i].key, key))
-			break;
-	if (i == ncells) {
-		if (ncells == (int)(sizeof(cells) / sizeof(cells[0]))) {
-			fprintf(stderr, "too many cells\n");
-			exit(2);
-		}
-		snprintf(cells[ncells++].key, sizeof(cells[0].key), "%s", key);
+	if (cells.insert_or_assign(key, val).second &&
+	    cells.size() > MAX_KEYS) {
+		fprintf(stderr, "too many cells\n");
+		exit(2);
 	}
-	cells[i].val = val;
 }
 
 static unsigned int serve(const char *key)
 {
-	struct queue *q = queue(key, 0);
-	int i;
+	auto entry = queues.find(key);
 
-	if (q && q->pos < q->n)
-		return q->vals[q->pos++];
+	if (entry != queues.end()) {
+		auto &q = entry->second;
+		if (q.pos < q.vals.size())
+			return q.vals[q.pos++];
+	}
 	exhausted++;
 	if (getenv("LCN_DEBUG"))
 		fprintf(stderr, "read past the window: %s (op %d)\n", key, nout + 1);
-	for (i = 0; i < ncells; i++)
-		if (!strcmp(cells[i].key, key))
-			return cells[i].val;
-	return 0;
+
+	auto cell = cells.find(key);
+	return cell == cells.end() ? 0 : cell->second;
 }
 
 static void emit(const char *fmt, const char *cls, unsigned int a,
@@ -455,7 +427,8 @@ int main(int argc, char **argv)
 {
 	int i, verbose = argc > 5 && !strcmp(argv[5], "-v");
 	const char *trace = argc > 6 && !strcmp(argv[5], "-o") ? argv[6] : NULL;
-	int unread = 0, excepted = 0, r = 1;
+	size_t unread = 0;
+	int excepted = 0, r = 1;
 
 	if (argc < 5) {
 		fprintf(stderr, "usage: %s FLOW OPS FIRST LAST [-v]\n", argv[0]);
@@ -468,8 +441,8 @@ int main(int argc, char **argv)
 		fprintf(stderr, "unknown flow %s\n", argv[1]);
 		return 2;
 	}
-	for (i = 0; i < nqueues; i++)
-		unread += queues[i].n - queues[i].pos;
+	for (const auto &entry : queues)
+		unread += entry.second.vals.size() - entry.second.pos;
 
 	if (verbose)
 		for (i = 0; i < nout; i++)
@@ -485,7 +458,7 @@ int main(int argc, char **argv)
 			fprintf(f, "cpu0 %s\n", out[i].text);
 		fclose(f);
 		fprintf(stderr, "%d ops; reads past the window %d, window reads "
-			"not taken %d, b43 messages %d\n", nout, exhausted,
+			"not taken %zu, b43 messages %d\n", nout, exhausted,
 			unread, nlog);
 		for (i = 0; i < ncore; i++)
 			fprintf(stderr, "core, no ops: %s x%d\n",
@@ -511,7 +484,7 @@ int main(int argc, char **argv)
 	if (i < nref || i < nout)
 		printf("     wl: %s\n     b43: %s\n", i < nref ? ref[i].text : "(end)",
 		       i < nout ? out[i].text : "(end)");
-	printf("     reads past the capture %d, capture reads not taken %d, "
+	printf("     reads past the capture %d, capture reads not taken %zu, "
 	       "b43 messages %d\n", exhausted, unread, nlog);
 	return 1;
 }
