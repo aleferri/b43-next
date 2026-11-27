@@ -1419,31 +1419,31 @@ void __wrap_b43_mac_phy_clock_set(struct b43_wldev *dev, bool on)
 { (void)dev; (void)on; }
 
 /*
- * AC-PHY-specific MHF (MAC host flag) maskset helper. It emits the label:
- *   MAC.MHF addr=<slot> val=<val> mask=<mask>
- * where val and mask are the 16 bits of the atomic maskset the MAC firmware
- * applies to the MHF word selected by slot (0..4).
- *
- * It differs from mainline b43_hf_write (which has a `u64 value` signature
- * and supports only 3 slots). See test/unit/stubs/b43.h for the reason.
+ * The core's host flags, as main.c keeps them: the shadow of the five
+ * words, the cell written when the word changes and the shadow is not held.
+ * Every update is also a MAC.MHF, the level at which the vendor's hook traces
+ * the call; the OBJ.WR, when there is one, comes out of b43_shm_write16.
  */
-void __real_b43_phy_ac_mhf_maskset(struct b43_wldev *dev,
-				   u16 slot, u16 mask, u16 val);
+static const u16 hostf_regs[5] = {
+	B43_SHM_SH_HOSTF1, B43_SHM_SH_HOSTF2, B43_SHM_SH_HOSTF3,
+	B43_SHM_SH_HOSTF4, B43_SHM_SH_HOSTF5,
+};
 
-void __wrap_b43_phy_ac_mhf_maskset(struct b43_wldev *dev,
-				   u16 slot, u16 mask, u16 val)
+void b43_mhf_write(struct b43_wldev *dev, unsigned int slot)
 {
-	fprintf(trace(), "cpu1 MAC.MHF  addr=0x%04x val=0x%04x mask=0x%04x\n",
-		slot, val, (u16)~mask);
+	b43_shm_write16(dev, B43_SHM_SHARED, hostf_regs[slot], dev->mhfs[slot]);
+}
 
-	/*
-	 * The decision to write the cell is in the real function, which keeps
-	 * the shadow of the five words: here only the MAC.MHF record is
-	 * emitted, the level at which the vendor's hook traces the call. The
-	 * OBJ.WR, when there is one, comes out of b43_shm_write16 as in the
-	 * driver.
-	 */
-	__real_b43_phy_ac_mhf_maskset(dev, slot, mask, val);
+void b43_mhf_maskset(struct b43_wldev *dev, unsigned int slot, u16 mask,
+		     u16 set)
+{
+	u16 old = dev->mhfs[slot];
+
+	fprintf(trace(), "cpu1 MAC.MHF  addr=0x%04x val=0x%04x mask=0x%04x\n",
+		slot, set, (u16)~mask);
+	dev->mhfs[slot] = (old & mask) | set;
+	if (!dev->mhf_hold && dev->mhfs[slot] != old)
+		b43_mhf_write(dev, slot);
 }
 
 void __wrap_b43_phyop_switch_analog_generic(struct b43_wldev *dev, bool on)

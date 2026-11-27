@@ -222,7 +222,7 @@ at the same point is under "Key-table clearing".
 ### Host-flag order
 
 The stock driver keeps a shadow of the five HOSTF cells and writes one only
-when the shadow changed (`b43_phy_ac_mhf_maskset()`). b43's core init writes
+when the shadow changed (`b43_mhf_maskset()`). b43's core init writes
 them between `WLCOREREV` and `MACHW`, much earlier; the harness follows the
 stock driver. The shadow survives a down/up, so a hot run needs a seed on the
 same lever as `AC_FIRST_INIT`.
@@ -352,7 +352,7 @@ active scan and cannot be joined. The 784 initvals leave `PRSSIDLEN` 14 and
 stock driver
 sets the bit at the `op_switch_channel` site (cold01 #9943 on the DSL,
 #13879 on the D6220, and on every `up`) because it runs the offload; b43
-writes the slot there on a first bring-up (`b43_phy_ac_mhf_write()`), with
+writes the slot there on a first bring-up (`b43_mhf_write()`), with
 the bit clear, and `b43_wireless_core_init()` ends HOSTF5 at `0x0088`.
 
 To implement the offload:
@@ -912,7 +912,7 @@ address-match table cleared row by row (`AMT.WR` + `OBJ.BULKR`/`BULKW`
 re-initialisation -- b43's `b43_wireless_core_init()` material, host flags,
 keys, TSF and BSS cells -- which the stock driver runs after the PHY where
 b43 runs it before. Not the PHY's, but the perimeter cannot drop it by
-pattern: the PHY's own `b43_phy_ac_mhf_maskset()` traces as `MAC.MHF` with a
+pattern: the PHY's `b43_mhf_maskset()` traces as `MAC.MHF` with a
 mask exactly like `b43_hf_write()` does, and the shared cells are not all in
 `b43.h`. Either the harness's `up` flow mirrors main.c's block in the stock
 order, as it already does for the BSS templates, or the perimeter learns the

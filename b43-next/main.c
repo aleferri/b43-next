@@ -714,6 +714,43 @@ void b43_shm_write16(struct b43_wldev *dev, u16 routing, u16 offset, u16 value)
 	b43_write16(dev, B43_MMIO_SHM_DATA, value);
 }
 
+/* The HOSTFn cells are not contiguous: HOSTF4 is +0x18 from HOSTF3, HOSTF5
+ * +0x5c from HOSTF4. */
+static const u16 b43_hostf_regs[] = {
+	B43_SHM_SH_HOSTF1,
+	B43_SHM_SH_HOSTF2,
+	B43_SHM_SH_HOSTF3,
+	B43_SHM_SH_HOSTF4,
+	B43_SHM_SH_HOSTF5,
+};
+
+/* Write one HOSTFn word as it stands, changed or not */
+void b43_mhf_write(struct b43_wldev *dev, unsigned int slot)
+{
+	if (WARN_ON(slot >= ARRAY_SIZE(b43_hostf_regs)))
+		return;
+	b43_shm_write16(dev, B43_SHM_SHARED, b43_hostf_regs[slot],
+			dev->mhfs[slot]);
+}
+
+/*
+ * brcms_b_mhf(): update one HOSTFn word, slot 0..4, keeping the bits of
+ * @mask and setting @set; the cell follows if the word changes and the
+ * shadow is not held.
+ */
+void b43_mhf_maskset(struct b43_wldev *dev, unsigned int slot, u16 mask,
+		     u16 set)
+{
+	u16 old;
+
+	if (WARN_ON(slot >= ARRAY_SIZE(b43_hostf_regs)))
+		return;
+	old = dev->mhfs[slot];
+	dev->mhfs[slot] = (old & mask) | set;
+	if (!dev->mhf_hold && dev->mhfs[slot] != old)
+		b43_mhf_write(dev, slot);
+}
+
 /* Read HostFlags */
 u64 b43_hf_read(struct b43_wldev *dev)
 {

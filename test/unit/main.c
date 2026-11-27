@@ -404,6 +404,8 @@ static void mount_board(const struct board_profile *p)
 	/* As b43_setup_chains() sets them: the board's chains, its coremask. */
 	g_wldev.rxchain        = g_ac.coremask;
 	g_wldev.txchain        = g_ac.coremask;
+	/* As b43_phy_ac_op_allocate(): the host flags stay in the shadow. */
+	g_wldev.mhf_hold       = true;
 	g_wldev.cac_pending    = g_cac_pending;
 		/*
 		 * Like b43_phy_init(): the PHY looks at phy.chandef, not inside

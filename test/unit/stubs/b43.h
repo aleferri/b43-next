@@ -316,6 +316,9 @@ struct b43_wldev {
 	struct {
 		struct b43_fw_layout layout;
 	} fw;
+	/* As in-tree: the shadow of the five HOSTFn words. */
+	u16 mhfs[5];
+	bool mhf_hold;
 };
 
 /*
@@ -369,25 +372,13 @@ void b43_mac_suspend_enable(struct b43_wldev *dev);
 void b43_mac_phy_clock_set(struct b43_wldev *dev, bool on);
 
 /*
- * Master host flag maskset, AC-PHY-specific helper.
- *
- * Mainline b43 has `void b43_hf_write(struct b43_wldev *dev, u64 value)`,
- * which writes 3 MHF words (SHM HOSTF1/2/3, slots 0-2). The vendor AC-PHY
- * blob uses 5 slots (0-4) with an atomic maskset semantics, visible to the
- * wl-diag tracer as `MAC.MHF addr=<slot> val=<val> mask=<mask>`.
- *
- * The real implementation is in b43-next/phy_ac.c, static, and writes the
- * B43_SHM_SH_HOSTFn cells in SHM (all already defined in the kernel's
- * b43.h). The Makefile moves it to phy_ac_hostflags.c, so the linker's
- * --wrap intercepts the call before it reaches the implementation.
- *
- * slot: 0..4  (0 = HOSTF1, 4 = HOSTF5)
- * mask: bits to keep (~mask are the bits changed)
- * val:  value of the bits changed
+ * The core's host flags (main.c): b43_mhf_maskset() and b43_mhf_write().
+ * wrap.c implements them as the core does, plus the MAC.MHF record with
+ * which the vendor's hook traces every update.
  */
-void b43_phy_ac_mhf_maskset(struct b43_wldev *dev,
-			    u16 slot, u16 mask, u16 val);
-void b43_phy_ac_mhf_write(struct b43_wldev *dev, u16 slot);
+void b43_mhf_maskset(struct b43_wldev *dev, unsigned int slot, u16 mask,
+		     u16 set);
+void b43_mhf_write(struct b43_wldev *dev, unsigned int slot);
 
 /* Generic switch-analog helper called by ops. */
 void b43_phyop_switch_analog_generic(struct b43_wldev *dev, bool on);

@@ -625,23 +625,6 @@ struct b43_phy_ac {
 	bool temp_valid;
 	bool temp_cal_valid;
 	/*
-	 * Shadow of the five HOSTFn shared-memory words, and whether a change
-	 * is written through to the cell.
-	 *
-	 * The vendor keeps the same shadow and writes the cell only when the
-	 * word changes, with the clock up and on the current band, so an
-	 * unchanged word emits nothing. The captures agree: no read of
-	 * the five cells, and the cell written on exactly the calls that change
-	 * the word (5 of 38 on the d6220, 4 of 56 on the DSL).
-	 *
-	 * @mhf_writethrough stands for the clk term: not b43's clock state, but
-	 * the point the captures put the transition at, between the slot 4 and
-	 * slot 0 writes of the front-end GPIO block. Every call is on the
-	 * operating band, so the band term does not appear.
-	 */
-	u16 mhfs[5];
-	bool mhf_writethrough;
-	/*
 	 * The attach part of the cold preamble has run (the AFE arm with the
 	 * 0x02e4 field, the PMU request, three host flags). Once per probe, at
 	 * the first switch_analog(dev, true) after op_allocate(), the attach

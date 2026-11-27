@@ -67,54 +67,6 @@ bool b43_phy_ac_require_failed(struct b43_wldev *dev, u16 want, u16 forbid,
 }
 
 /*
- * Update one of the five HOSTFn slots.
- *
- * The word is kept in dev->phy.ac->mhfs and the cell is written only when the
- * update changes it, which is what the stock driver does; see the comment on
- * the field. The cell is never read back.
- *
- * The HOSTFn registers are not contiguous (HOSTF4 is +0x18 from HOSTF3,
- * HOSTF5 is +0x5c from HOSTF4), hence the lookup table.
- *
- * slot: 0..4
- * mask: bits of the old value to preserve
- * val:  bits to force in, already masked to ~mask by the caller
- */
-static const u16 b43_phy_ac_hostf_regs[5] = {
-	B43_SHM_SH_HOSTF1,
-	B43_SHM_SH_HOSTF2,
-	B43_SHM_SH_HOSTF3,
-	B43_SHM_SH_HOSTF4,
-	B43_SHM_SH_HOSTF5,
-};
-
-static void b43_phy_ac_mhf_maskset(struct b43_wldev *dev, u16 slot, u16 mask, u16 val)
-{
-	struct b43_phy_ac *ac = dev->phy.ac;
-	u16 old;
-
-	if (WARN_ON(slot > 4))
-		return;
-
-	old = ac->mhfs[slot];
-	ac->mhfs[slot] = (old & mask) | val;
-
-	if (ac->mhf_writethrough && ac->mhfs[slot] != old)
-		b43_shm_write16(dev, B43_SHM_SHARED,
-				b43_phy_ac_hostf_regs[slot], ac->mhfs[slot]);
-}
-
-/* Write one HOSTFn slot as it stands, changed or not. */
-static void b43_phy_ac_mhf_write(struct b43_wldev *dev, u16 slot)
-{
-	if (WARN_ON(slot > 4))
-		return;
-
-	b43_shm_write16(dev, B43_SHM_SHARED, b43_phy_ac_hostf_regs[slot],
-			dev->phy.ac->mhfs[slot]);
-}
-
-/*
  * Force the PHY clock on or release it. The stock driver pairs the core's
  * forced gated clock with the MAC's side of it in PSM_PHY_HDR: set after the
  * IOCTL on the way in, cleared to CLOCK_EN before it on the way out (0x0006
@@ -143,6 +95,8 @@ static int b43_phy_ac_op_allocate(struct b43_wldev *dev)
 	if (!phy_ac)
 		return -ENOMEM;
 	dev->phy.ac = phy_ac;
+	/* The host flags reach the cells only from the bring-up's point */
+	dev->mhf_hold = true;
 
 	return 0;
 }
@@ -262,32 +216,24 @@ static void b43_phy_ac_op_adjust_txpower(struct b43_wldev *dev)
 static void b43_phy_ac_op_prepare_structs(struct b43_wldev *dev)
 {
 	struct b43_phy_ac *phy_ac = dev->phy.ac;
-	u16 mhfs[ARRAY_SIZE(phy_ac->mhfs)];
-	bool writethrough, attached;
+	bool attached;
 	u16 pmu_req;
 
 	/*
 	 * b43_wireless_core_init() calls this on every ifconfig up, but some
 	 * state must survive a down/up and be reset only by a module reload:
 	 *
-	 * - the host-flag shadow: a warm cycle flushes the values the previous
-	 *   cycle accumulated (0x0060 in HOSTF4, 0x0088 in HOSTF5) where a cold
-	 *   one flushes 0x0040 and 0x0080;
 	 * - the attach part of the cold preamble, which runs once per probe;
 	 * - the PMU request that preamble leaves raised until the first
 	 *   bring-up, since no reset lowers the chipcommon bit.
 	 *
-	 * All three are zeroed by the kzalloc in op_allocate().
+	 * Both are zeroed by the kzalloc in op_allocate().
 	 */
-	memcpy(mhfs, phy_ac->mhfs, sizeof(mhfs));
-	writethrough = phy_ac->mhf_writethrough;
 	attached = phy_ac->attach_preamble_done;
 	pmu_req = phy_ac->status_mask & B43_PHY_AC_STATE_PMU_REQ;
 
 	memset(phy_ac, 0, sizeof(*phy_ac));
 
-	memcpy(phy_ac->mhfs, mhfs, sizeof(mhfs));
-	phy_ac->mhf_writethrough = writethrough;
 	phy_ac->attach_preamble_done = attached;
 	phy_ac->status_mask = pmu_req;
 }
@@ -5464,7 +5410,7 @@ static void b43_phy_ac_txpwrctrl_enable(struct b43_wldev *dev)
 	b43_phy_write(dev, 0x0339, 0x0fff);
 	/*
 	 * The radar detector, armed or not. Not armed is MHF slot 0 bit 13
-	 * (B43_HF_RADARW) clear through b43_phy_ac_mhf_maskset():
+	 * (B43_HF_RADARW) clear through b43_mhf_maskset():
 	 * b43_hf_write() covers three slots, the AC-PHY uses five.
 	 */
 	b43_phy_ac_radar_arm(dev, dev->radar_arm);
@@ -6618,13 +6564,13 @@ static void b43_phy_ac_pre_init_frontend(struct b43_wldev *dev)
  */
 static void b43_phy_ac_mhf_bringup_clears(struct b43_wldev *dev)
 {
-	b43_phy_ac_mhf_maskset(dev, 0, (u16)~0x0010, 0);
-	b43_phy_ac_mhf_maskset(dev, 1, (u16)~0x0100, 0);
-	b43_phy_ac_mhf_maskset(dev, 2, (u16)~0x2000, 0);
-	b43_phy_ac_mhf_maskset(dev, 1, (u16)~0x0200, 0);
-	b43_phy_ac_mhf_maskset(dev, 2, (u16)~0x1504, 0);
-	b43_phy_ac_mhf_maskset(dev, 2, (u16)~0x1000, 0);
-	b43_phy_ac_mhf_maskset(dev, 4, (u16)~0x0006, 0);
+	b43_mhf_maskset(dev, 0, (u16)~0x0010, 0);
+	b43_mhf_maskset(dev, 1, (u16)~0x0100, 0);
+	b43_mhf_maskset(dev, 2, (u16)~0x2000, 0);
+	b43_mhf_maskset(dev, 1, (u16)~0x0200, 0);
+	b43_mhf_maskset(dev, 2, (u16)~0x1504, 0);
+	b43_mhf_maskset(dev, 2, (u16)~0x1000, 0);
+	b43_mhf_maskset(dev, 4, (u16)~0x0006, 0);
 }
 
 /*
@@ -6832,9 +6778,9 @@ static void b43_phy_ac_attach_mac_preamble(struct b43_wldev *dev)
 
 	b43_phy_ac_pmu_req(dev, true);
 
-	b43_phy_ac_mhf_maskset(dev, 2, (u16)~0x0040, 0);
-	b43_phy_ac_mhf_maskset(dev, 3, (u16)~0x0040, 0x0040);
-	b43_phy_ac_mhf_maskset(dev, 3, (u16)~0x0040, 0x0040);
+	b43_mhf_maskset(dev, 2, (u16)~0x0040, 0);
+	b43_mhf_maskset(dev, 3, (u16)~0x0040, 0x0040);
+	b43_mhf_maskset(dev, 3, (u16)~0x0040, 0x0040);
 }
 
 /*
@@ -6851,15 +6797,15 @@ static void b43_phy_ac_cold_mac_preamble(struct b43_wldev *dev)
 
 	B43_AC_CORE_SITE(dev, CORE_RESET);
 
-	b43_phy_ac_mhf_maskset(dev, 4, (u16)~0x0080, 0x0080);
+	b43_mhf_maskset(dev, 4, (u16)~0x0080, 0x0080);
 	B43_AC_CORE_SITE(dev, CORE_RESET);
 	B43_AC_CORE_SITE(dev, CORE_RESET);
 	/*
 	 * From here on a HOSTFn change reaches the cell: the slot 4 write above
 	 * leaves no OBJ.WR, the slot 0 write below does.
 	 */
-	dev->phy.ac->mhf_writethrough = true;
-	b43_phy_ac_mhf_maskset(dev, 0, (u16)~0x0100, 0x0100);
+	dev->mhf_hold = false;
+	b43_mhf_maskset(dev, 0, (u16)~0x0100, 0x0100);
 	B43_AC_CORE_SITE(dev, CORE_RESET);
 
 	/*
@@ -10148,7 +10094,7 @@ static void b43_phy_ac_radar_arm(struct b43_wldev *dev, bool on)
 	unsigned int i;
 
 	if (!on) {
-		b43_phy_ac_mhf_maskset(dev, 0, (u16)~B43_HF_RADARW, 0);
+		b43_mhf_maskset(dev, 0, (u16)~B43_HF_RADARW, 0);
 		/*
 		 * A bring-up without the radar writes only the flag; what the
 		 * arm changed goes back only after an arm.
@@ -10183,7 +10129,7 @@ static void b43_phy_ac_radar_arm(struct b43_wldev *dev, bool on)
 		b43_phy_write(dev, b43_phy_ac_radar_block[i].reg,
 			      b43_phy_ac_radar_on(dev, i));
 	}
-	b43_phy_ac_mhf_maskset(dev, 0, (u16)~B43_HF_RADARW, B43_HF_RADARW);
+	b43_mhf_maskset(dev, 0, (u16)~B43_HF_RADARW, B43_HF_RADARW);
 	ac->radar_armed = true;
 	b43_radar_reset(&ac->radar);
 	ac->radar.shift = 2 - b43_ppr_bw(dev->wl->hw->conf.chandef.width);
@@ -10358,7 +10304,7 @@ static void b43_phy_ac_post_bringup_tail(struct b43_wldev *dev)
 		(dev->phy.ac->status_mask & B43_PHY_AC_STATE_FIRST_BRINGUP)
 		? 0x0000 : 0x0004;
 
-	b43_phy_ac_mhf_maskset(dev, 0, (u16)~0x4000, 0);
+	b43_mhf_maskset(dev, 0, (u16)~0x4000, 0);
 
 	/* Between the host-flag clear and the beacon reloads, as captured. */
 	b43_phy_ac_cac_arm(dev);
@@ -10465,7 +10411,7 @@ static void b43_phy_ac_down(struct b43_wldev *dev)
 	 * register.
 	 */
 	B43_AC_CORE_SITE(dev, DOWN_OPMODE);
-	b43_phy_ac_mhf_maskset(dev, 0, (u16)~0x4000, 0);
+	b43_mhf_maskset(dev, 0, (u16)~0x4000, 0);
 	B43_AC_CORE_SITE(dev, DOWN_OPMODE_END);
 
 	/*
@@ -10833,7 +10779,7 @@ static int b43_phy_ac_op_switch_channel(struct b43_wldev *dev, unsigned int new_
 	 * 6.30.223 alternates 500 and 512 on every hop of a scan.
 	 */
 	b43_shm_write16(dev, B43_SHM_SHARED, B43_SHM_SH_SPUWKUP, 512);
-	b43_phy_ac_mhf_maskset(dev, 4, (u16)~0x0008, 0x0008);
+	b43_mhf_maskset(dev, 4, (u16)~0x0008, 0x0008);
 	/*
 	 * RFATT, right after the HOSTF5 write-through the call above causes:
 	 * 0x0480 on all 26 d6220 cold segments, once each, and the same on the
@@ -10876,7 +10822,7 @@ static int b43_phy_ac_op_switch_channel(struct b43_wldev *dev, unsigned int new_
 	 *   8546-9281]
 	 */
 	B43_AC_BLOCK(dev, "shm_mac_config");
-	b43_phy_ac_mhf_maskset(dev, 0, (u16)~0x4000, 0);
+	b43_mhf_maskset(dev, 0, (u16)~0x4000, 0);
 	b43_phy_ac_shm_mac_config_block(dev);
 	/* Second half of the poll with a single pass: no head and no sweep. */
 	b43_phy_ac_wd_stats_poll_opt(dev, false, 1);
@@ -10903,7 +10849,7 @@ static int b43_phy_ac_op_switch_channel(struct b43_wldev *dev, unsigned int new_
 	B43_AC_BLOCK(dev, "afe_gain");
 	b43_phy_ac_afe_gain_regs(dev, !(dev->phy.ac->status_mask &
 				       B43_PHY_AC_STATE_FIRST_BRINGUP));
-	b43_phy_ac_mhf_maskset(dev, 3, (u16)~0x0040, 0x0040);
+	b43_mhf_maskset(dev, 3, (u16)~0x0040, 0x0040);
 	b43_phy_ac_ofdm_pctl1_readback(dev);
 	/*
 	 * No timeout for the firmware's probe response, what b43_chip_init()
@@ -10945,7 +10891,7 @@ static int b43_phy_ac_op_switch_channel(struct b43_wldev *dev, unsigned int new_
 	 * as it stands at the same point.
 	 */
 	if (dev->phy.ac->status_mask & B43_PHY_AC_STATE_FIRST_BRINGUP)
-		b43_phy_ac_mhf_write(dev, 4);
+		b43_mhf_write(dev, 4);
 	/*
 	 * HOSTF2 bit 0 keeps the microcode from answering a probe request
 	 * itself: 784 tests it at 0x0ACF, its only use, and with it clear
@@ -10959,14 +10905,14 @@ static int b43_phy_ac_op_switch_channel(struct b43_wldev *dev, unsigned int new_
 	 * maskset writes nothing, so a first bring-up writes the word out.
 	 */
 	stale = (dev->phy.ac->status_mask & B43_PHY_AC_STATE_FIRST_BRINGUP) &&
-		(dev->phy.ac->mhfs[1] & 0x0001);
-	b43_phy_ac_mhf_maskset(dev, 1, (u16)~0x0001, 0x0001);
+		(dev->mhfs[1] & 0x0001);
+	b43_mhf_maskset(dev, 1, (u16)~0x0001, 0x0001);
 	if (stale)
-		b43_phy_ac_mhf_write(dev, 1);
+		b43_mhf_write(dev, 1);
 	b43_mac_suspend(dev);
 	/* Invariant across all 26 cold segments: an aging threshold of 800. */
 	b43_shm_write16(dev, B43_SHM_SHARED, B43_SHM_SH_AGING_THRSH, 0x0320);
-	b43_phy_ac_mhf_maskset(dev, 3, (u16)~0x0020, 0x0020);
+	b43_mhf_maskset(dev, 3, (u16)~0x0020, 0x0020);
 	b43_mac_enable(dev);
 	/*
 	 * Here the stock driver stops forcing the HT clock, which it holds
@@ -10987,7 +10933,7 @@ static int b43_phy_ac_op_switch_channel(struct b43_wldev *dev, unsigned int new_
 	b43_shm_write16(dev, B43_SHM_SHARED, B43_SHM_SH_IFSCTL1, ifs);
 	b43_write16(dev, 0x06c6, ifs);
 	b43_phy_maskset(dev, 0x0042, (u16)~0x8000, 0x8000);
-	b43_phy_ac_mhf_maskset(dev, 1, (u16)~0x0020, 0x0020);
+	b43_mhf_maskset(dev, 1, (u16)~0x0020, 0x0020);
 	b43_mac_suspend(dev);
 	b43_phy_ac_wd_stats_poll_opt(dev, true, 0);
 	B43_AC_CORE_SITE(dev, MACFILTER);

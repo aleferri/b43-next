@@ -705,7 +705,7 @@ PERIMETER = [
 
     dict(pattern=r'^MAC\.MHF\.RD\b',
          reason="bare read of the host flags. The PHY never reads them on "
-                "its own: its only access is b43_phy_ac_mhf_maskset(), which "
+                "its own: its only access is b43_mhf_maskset(), which "
                 "the harness traces as MAC.MHF with a mask, and the PHY has "
                 "no call to b43_hf_read(). In the segment it appears only "
                 "once, at #13537, in the middle of the core's MAC config "
