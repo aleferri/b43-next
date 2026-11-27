@@ -249,7 +249,6 @@ static void b43_phy_ac_rxiqcal_set_tone(struct b43_wldev *dev, u8 core,
 }
 
 /*
-/*
  * Gain override: apply the measurement gain on <core>, then micro-settle.
  * Two-step write sequence from the trace: first the "armed" values (0x00fa /
  * 0x01d3 / 0x07e6 at 20 MHz), then the settled values (0x007a / 0x01d3 /
