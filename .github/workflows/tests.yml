@@ -24,10 +24,10 @@ jobs:
       KG: /tmp/linux
     steps:
       - uses: actions/checkout@v7
-      - run: make -C test/unit trace check
+      - run: make -j4 -C test/unit trace check
       - name: sprom
         run: |
-          make -C test/sprom check-bcm4360usb test_nvram
+          make -j4 -C test/sprom check-bcm4360usb test_nvram
           test/sprom/test_nvram test/sprom/vectors/bcm4360usb.nvram
       - run: make -C test/radar check-synth
       # As in test/integration/README.md
@@ -41,18 +41,18 @@ jobs:
           make defconfig
           scripts/config --module B43
           make -j4 olddefconfig modules_prepare
-      - run: make -C test/txhdr check
+      - run: make -j4 -C test/txhdr check
       - name: phy_ht
         run: |
           test/linked.sh TRACES bcm4331-rev2/r6400v1
           test/linked.sh TRACE_TOOLS src
-          make -C test/phy_ht ht-trace
+          make -j4 -C test/phy_ht ht-trace
           test/phy_ht/check.sh
           test/phy_ht/gates.sh --min-block 8 --gap-tol 2
       - name: phy_n
         run: |
           test/linked.sh TRACES bcm43217-rev0/rt-ac56u
           test/linked.sh TRACE_TOOLS src
-          make -C test/phy_n n-trace
+          make -j4 -C test/phy_n n-trace
           test/phy_n/gates.sh --min-block 8 --gap-tol 2
-      - run: make -C test/integration b43-trace
+      - run: make -j4 -C test/integration b43-trace
