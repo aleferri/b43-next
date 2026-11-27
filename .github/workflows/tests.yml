@@ -55,4 +55,10 @@ jobs:
           test/linked.sh TRACE_TOOLS src
           make -j4 -C test/phy_n n-trace
           test/phy_n/gates.sh --min-block 8 --gap-tol 2
+      - name: phy_lcn
+        run: |
+          test/linked.sh TRACES bcm4313-rev1/compaq-cq57
+          test/linked.sh TRACE_TOOLS src
+          make -j4 -C test/phy_lcn lcn-trace
+          test/phy_lcn/gates.sh --min-block 8 --gap-tol 2
       - run: make -j4 -C test/integration b43-trace

@@ -50,7 +50,8 @@ last=$(awk -v i="$init" '{ n = substr($2, 2) + 0 }
 
 # wl's attach tunes channel 1: 0x657 = 965, channel 1's SFO
 echo "== attach, ops $first:$last, channel 1, 20 MHz"
-LCN_CHANNEL=1 ./lcn-trace full "$ops" "$first" "$last" -o "$T/attach.trace"
+LCN_CHANNEL=1 ./lcn-trace full "$ops" "$first" "$last" \
+	-o "$T/attach.trace" || exit 1
 python3 ../unit/cmp_skip.py "$ops" "$T/attach.trace" "$first:$last" \
 	--board compaq-cq57 --bus --rmw $B | grep -A2 '^raw '
 grep -E ' (PHY|RAD)\.' "$ops" > "$T/attach.phy.ops"
@@ -89,7 +90,8 @@ PY
 printf '\n%-8s %-14s %s\n' channel ops PHY+radio
 while read first last ch; do
 	env $(python3 calres.py "$ops" "$first") LCN_CHANNEL=$ch \
-		./lcn-trace switch "$ops" "$first" "$last" -o "$T/sw$ch.trace" 2>/dev/null
+		./lcn-trace switch "$ops" "$first" "$last" -o "$T/sw$ch.trace" \
+		2>/dev/null || exit 1
 	grep -E ' (PHY|RAD)\.' "$T/sw$ch.trace" > "$T/sw$ch.phy.trace"
 	printf '%-8s %-14s %s\n' "$ch" "$first:$last" "$(python3 ../unit/cmp_skip.py \
 		"$T/attach.phy.ops" "$T/sw$ch.phy.trace" "$first:$last" \
@@ -129,7 +131,7 @@ pass=0 all=0
 while read first last cnt; do
 	all=$((all + 1))
 	LCN_TSSI_TX_CNT=$cnt ./lcn-trace watchdog "$T/wd/$first.ops" "$first" \
-		"$last" -o "$T/wd.trace" 2>/dev/null
+		"$last" -o "$T/wd.trace" 2>/dev/null || exit 1
 	grep -E ' (PHY|RAD)\.' "$T/wd.trace" | cut -d' ' -f2- > "$T/wd.b43"
 	grep -E ' (PHY|RAD)\.' "$T/wd/$first.ops" |
 		sed 's/.* cpu[0-9]* //' > "$T/wd.wl"
