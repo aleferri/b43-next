@@ -431,9 +431,9 @@ struct b43_phy_ac {
 	 */
 	u8 cal_cycles;
 	/*
-	 * Low byte of the CRS min-power threshold as last written by one of the
-	 * three sites, so that the periodic hook does not rewrite it unchanged;
-	 * see b43_phy_ac_op_pwork_60sec(). Zero means never written: the ladder
+	 * Low byte of the CRS min-power threshold as b43_phy_ac_crs_write()
+	 * last wrote it, so that the periodic hook does not rewrite it
+	 * unchanged; see b43_phy_ac_op_pwork_60sec(). Zero means never written: the ladder
 	 * starts at 41.
 	 */
 	u16 crs_low;
@@ -546,8 +546,6 @@ struct b43_phy_ac {
 	 * write, common threshold plus bank. See b43_phy_ac_crs_moved().
 	 */
 	u8 crs_prog[B43_PHY_AC_MAX_CORES];
-	/* CRS value chanspec_tail() last wrote, for the statistics. */
-	u8 crs_written;
 	/*
 	 * Chanspec last written to B43_SHM_SH_CHAN, 0 when never. Its width
 	 * field is the one the MAC was last told about.

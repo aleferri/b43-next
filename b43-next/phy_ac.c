@@ -5710,35 +5710,6 @@ static u8 b43_phy_ac_crs_min_pwr(struct b43_wldev *dev, unsigned int idx,
 	return crs;
 }
 
-static void b43_phy_ac_op_pwork_60sec(struct b43_wldev *dev)
-{
-	bool cold = (dev->phy.ac->cal_cycles < 2);
-	unsigned int idx;
-	u8 crs;
-
-	B43_AC_FN();
-	B43_AC_BLOCK(dev, "pwork_60sec");
-
-	idx = b43_phy_ac_crs_index(dev, 0);
-	crs = b43_phy_ac_crs_min_pwr(dev, idx, cold);
-
-	if (dev->phy.ac->cal_cycles < 2)
-		dev->phy.ac->cal_cycles++;
-
-	/*
-	 * Only when the threshold changes. The core calls this every minute,
-	 * and the stock driver does not rewrite on a cadence: over the 43 cold
-	 * segments the CRS writes are chanspec_tail() and block E, plus at most
-	 * one or two at bss-up, never at a multiple of 60 s (none of the six
-	 * segments past 120 turns has one at turn 121).
-	 */
-	if (crs == dev->phy.ac->crs_low)
-		return;
-
-	b43_phy_ac_crs_regs_write(dev, crs);
-	dev->phy.ac->crs_prog[0] = (u8)idx;
-}
-
 /*
  * The 0x0910-0x0913 bank: for every chain past chain 0, the distance between
  * its own CRS threshold and the common one written just before, which is
@@ -5776,6 +5747,56 @@ static void b43_phy_ac_prog_bank_0910(struct b43_wldev *dev)
 		b43_phy_maskset(dev, base + 3, (u16)~0x00ff, lo);
 		b43_phy_maskset(dev, base + 3, (u16)~0xff00, hi);
 	}
+}
+
+/*
+ * The one place the CRS min-power threshold is written and reported: the
+ * eight registers at ladder entry @idx, then with @bank the 0x0910 bank of
+ * the other chains. pwork_60sec() writes the common threshold alone.
+ */
+static void b43_phy_ac_crs_write(struct b43_wldev *dev, unsigned int idx,
+				 bool cold, bool bank)
+{
+	u8 crs = b43_phy_ac_crs_min_pwr(dev, idx, cold);
+
+	b43_phy_ac_crs_regs_write(dev, crs);
+	if (bank) {
+		b43_phy_ac_prog_bank_0910(dev);
+		b43_phy_ac_crs_note_prog(dev, idx);
+	} else {
+		dev->phy.ac->crs_prog[0] = (u8)idx;
+	}
+
+	b43_cal_begin(dev, B43_CAL_CRS);
+	b43_cal_report(dev, AC_CAL_CRS_WRITTEN, idx, crs);
+}
+
+static void b43_phy_ac_op_pwork_60sec(struct b43_wldev *dev)
+{
+	bool cold = (dev->phy.ac->cal_cycles < 2);
+	unsigned int idx;
+	u8 crs;
+
+	B43_AC_FN();
+	B43_AC_BLOCK(dev, "pwork_60sec");
+
+	idx = b43_phy_ac_crs_index(dev, 0);
+	crs = b43_phy_ac_crs_min_pwr(dev, idx, cold);
+
+	if (dev->phy.ac->cal_cycles < 2)
+		dev->phy.ac->cal_cycles++;
+
+	/*
+	 * Only when the threshold changes. The core calls this every minute,
+	 * and the stock driver does not rewrite on a cadence: over the 43 cold
+	 * segments the CRS writes are chanspec_tail() and block E, plus at most
+	 * one or two at bss-up, never at a multiple of 60 s (none of the six
+	 * segments past 120 turns has one at turn 121).
+	 */
+	if (crs == dev->phy.ac->crs_low)
+		return;
+
+	b43_phy_ac_crs_write(dev, idx, cold, false);
 }
 
 /*
@@ -5843,7 +5864,6 @@ static void b43_phy_ac_chanspec_tail(struct b43_wldev *dev)
 		{ 0x00f5, 0x0080 },
 	};
 	u16 gain = 0x00bf;
-	u16 crs = 0x0031;
 	unsigned int crs_idx;
 	unsigned int i;
 
@@ -5871,12 +5891,6 @@ static void b43_phy_ac_chanspec_tail(struct b43_wldev *dev)
 		crs_idx = first_idx[b43_ppr_bw(dev->phy.ac->cal_width)];
 	} else
 		crs_idx = b43_phy_ac_crs_index(dev, 0);
-	crs = b43_phy_ac_crs_min_pwr(dev, crs_idx, true);
-
-	dev->phy.ac->crs_written = (u8)crs;
-	b43_cal_begin(dev, B43_CAL_CRS);
-	b43_cal_report(dev, AC_CAL_CRS_WRITTEN, crs_idx,
-		       dev->phy.ac->crs_written);
 
 	/*
 	 * The clear of 0x0164 bit 4 is skipped at 80 MHz, where the bandwidth
@@ -5892,9 +5906,7 @@ static void b43_phy_ac_chanspec_tail(struct b43_wldev *dev)
 	b43_phy_write(dev, 0x031e, gain);
 	b43_phy_write(dev, 0x031f, gain);
 
-	b43_phy_ac_crs_regs_write(dev, crs);
-	b43_phy_ac_prog_bank_0910(dev);
-	b43_phy_ac_crs_note_prog(dev, crs_idx);
+	b43_phy_ac_crs_write(dev, crs_idx, true, true);
 
 	b43_phy_read_log(dev, 0x03a9);
 	b43_phy_maskset(dev, 0x03a9, (u16)~0x007f, 0x0000);
@@ -10283,12 +10295,7 @@ static void b43_phy_ac_crs_block_e(struct b43_wldev *dev)
 	 * for the order), then the per-chain bank. Both come from the noise
 	 * rings, whose newest sample was latched just before.
 	 */
-	b43_phy_ac_crs_regs_write(dev,
-				  b43_phy_ac_crs_min_pwr(dev,
-							 b43_phy_ac_crs_index(dev, 0),
-							 true));
-	b43_phy_ac_prog_bank_0910(dev);
-	b43_phy_ac_crs_note_prog(dev, b43_phy_ac_crs_index(dev, 0));
+	b43_phy_ac_crs_write(dev, b43_phy_ac_crs_index(dev, 0), true, true);
 
 	/*
 	 * The MAC goes back up and stays up: what follows (the tick's
