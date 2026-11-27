@@ -36,18 +36,18 @@ the PHY calls of its core in its order: the analog switch of
 `b43_wireless_core_reset()`, `b43_phy_bringup()`'s analog switch,
 `b43_phy_init()` and RX antenna, and the TX power check of mac80211's first
 config. `../unit/cmp_skip.py --bus
---rmw` scores the two streams; the line to quote is `grezzo`, with its two
+--rmw` scores the two streams; the line to quote is `raw`, with its two
 parameters. The second row compares the PHY's and radio's operations only:
 the core's MMIO, shared memory and wrapper accesses are outside a harness
 that compiles no core, and its calls into the core are counted on stderr.
 
 On 2026-11-19, `--min-block 8 --gap-tol 2`:
 
-| capture | grezzo | PHY+radio |
+| capture | raw | PHY+radio |
 |---|---|---|
 | attach | 15926/19898 = 80.04% | 15718/16019 = 98.12% |
 
-The grezzo counts wl's core operations, which this harness cannot emit:
+The raw score counts wl's core operations, which this harness cannot emit:
 since the core reads the shared memory's address back as wl does, the 785
 reads of 0x160 in the window count among them, as it counts the reads of
 PHY_VER that flush every 24 writes on both sides, 310 of b43's against

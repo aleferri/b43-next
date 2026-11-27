@@ -44,9 +44,9 @@ awk -v p="$papd" 'NR > p && / MAC\.MCTRL val=0x[0-9a-f]*[13579bdf] *$/ { exit }
 echo "== attach, ops 1:$z"
 python3 ../unit/cmp_skip.py "$T/cap.m2o" "$T/b43.cut" "1:$z" \
 	--board compaq-cq57 --bus --rmw --anchor-values --min-block 8 --gap-tol 2 2>/dev/null |
-	grep -A2 '^grezzo'
+	grep -A2 '^raw '
 grep -E "$PHYSEL" "$T/cap.m2o" > "$T/cap.phy"
 grep -E "$PHYSEL" "$T/b43.cut" > "$T/b43.phy"
 python3 ../unit/cmp_skip.py "$T/cap.phy" "$T/b43.phy" "1:$z" \
 	--board compaq-cq57 --bus --rmw --anchor-values --min-block 8 --gap-tol 2 2>/dev/null |
-	grep -A2 '^grezzo' | sed '1s/^grezzo       /PHY+radio+MAC/'
+	grep -A2 '^raw ' | sed '1s/^raw          /PHY+radio+MAC/'

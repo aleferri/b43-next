@@ -52,12 +52,12 @@ last=$(awk -v i="$init" '{ n = substr($2, 2) + 0 }
 echo "== attach, ops $first:$last, channel 1, 20 MHz"
 LCN_CHANNEL=1 ./lcn-trace full "$ops" "$first" "$last" -o "$T/attach.trace"
 python3 ../unit/cmp_skip.py "$ops" "$T/attach.trace" "$first:$last" \
-	--board compaq-cq57 --bus --rmw $B | grep -A2 '^grezzo'
+	--board compaq-cq57 --bus --rmw $B | grep -A2 '^raw '
 grep -E ' (PHY|RAD)\.' "$ops" > "$T/attach.phy.ops"
 grep -E ' (PHY|RAD)\.' "$T/attach.trace" > "$T/attach.phy.trace"
 python3 ../unit/cmp_skip.py "$T/attach.phy.ops" "$T/attach.phy.trace" \
-	"$first:$last" --board compaq-cq57 --bus --rmw $B | grep -A2 '^grezzo' |
-	sed '1s/^grezzo   /PHY+radio/'
+	"$first:$last" --board compaq-cq57 --bus --rmw $B | grep -A2 '^raw ' |
+	sed '1s/^raw      /PHY+radio/'
 
 # The channel switches of wl's second scan, every 2.4 GHz channel but 14,
 # with the init's calibration results as wl holds them (calres.py): each
@@ -93,7 +93,7 @@ while read first last ch; do
 	grep -E ' (PHY|RAD)\.' "$T/sw$ch.trace" > "$T/sw$ch.phy.trace"
 	printf '%-8s %-14s %s\n' "$ch" "$first:$last" "$(python3 ../unit/cmp_skip.py \
 		"$T/attach.phy.ops" "$T/sw$ch.phy.trace" "$first:$last" \
-		--board compaq-cq57 --bus --rmw $B | sed -n 's/^grezzo *: //p' |
+		--board compaq-cq57 --bus --rmw $B | sed -n 's/^raw *: //p' |
 		cut -d' ' -f1-3)"
 done < "$T/switches"
 
