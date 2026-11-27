@@ -1503,7 +1503,8 @@ void b43_board_chains(struct b43_wldev *dev, u8 *rxchain, u8 *txchain)
 }
 
 /* ============ rate maps ============
- * main.c's b43_rate_block(), which phy_ac.c calls: main.c is not built here.
+ * main.c's b43_rate_block() and b43_rate_dirmap_read(), which phy_ac.c calls:
+ * main.c is not built here.
  * The direct map is read through the SHM wrap, so the read is in the trace
  * as on the hardware.
  */
@@ -1519,6 +1520,18 @@ u16 b43_rate_block(struct b43_wldev *dev, u16 hw_value)
 		slot = b43_plcp_get_ratecode_ofdm(hw_value) & 0xF;
 	}
 	return 2 * b43_shm_read16(dev, B43_SHM_SHARED, direct + 2 * slot);
+}
+
+void b43_rate_dirmap_read(struct b43_wldev *dev)
+{
+	unsigned int i;
+
+	for (i = 0; i < 16; i++)
+		dev->dirmap_ofdm[i] = b43_shm_read16(dev, B43_SHM_SHARED,
+						     B43_SHM_SH_OFDMDIRECT + 2 * i);
+	for (i = 0; i < 16; i++)
+		dev->dirmap_cck[i] = b43_shm_read16(dev, B43_SHM_SHARED,
+						    B43_SHM_SH_CCKDIRECT + 2 * i);
 }
 
 /* ============ template RAM (TPL) ============

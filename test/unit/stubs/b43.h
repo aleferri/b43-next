@@ -316,9 +316,11 @@ struct b43_wldev {
 	struct {
 		struct b43_fw_layout layout;
 	} fw;
-	/* As in-tree: the shadow of the five HOSTFn words. */
+	/* As in-tree: the shadow of the five HOSTFn words, the direct maps. */
 	u16 mhfs[5];
 	bool mhf_hold;
+	u16 dirmap_ofdm[16];
+	u16 dirmap_cck[16];
 };
 
 /*

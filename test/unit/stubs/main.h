@@ -16,6 +16,7 @@ static inline int b43_is_cck_rate(int rate)
 
 /* wrap.c's, as main.c's: its read of the direct map is a SHM.RD */
 u16 b43_rate_block(struct b43_wldev *dev, u16 hw_value);
+void b43_rate_dirmap_read(struct b43_wldev *dev);
 
 /* wrap.c's, as main.c's: the board's chains, those of the harness's board */
 void b43_board_chains(struct b43_wldev *dev, u8 *rxchain, u8 *txchain);

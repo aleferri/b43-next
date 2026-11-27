@@ -6218,6 +6218,19 @@ out_mac_enable:
 	return err;
 }
 
+/* The two direct maps, as wl scans them at the up */
+void b43_rate_dirmap_read(struct b43_wldev *dev)
+{
+	unsigned int i;
+
+	for (i = 0; i < ARRAY_SIZE(dev->dirmap_ofdm); i++)
+		dev->dirmap_ofdm[i] = b43_shm_read16(dev, B43_SHM_SHARED,
+						     B43_SHM_SH_OFDMDIRECT + 2 * i);
+	for (i = 0; i < ARRAY_SIZE(dev->dirmap_cck); i++)
+		dev->dirmap_cck[i] = b43_shm_read16(dev, B43_SHM_SHARED,
+						    B43_SHM_SH_CCKDIRECT + 2 * i);
+}
+
 static void b43_update_basic_rates(struct b43_wldev *dev, u32 brates)
 {
 	struct ieee80211_supported_band *sband =

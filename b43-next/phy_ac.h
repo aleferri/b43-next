@@ -631,13 +631,6 @@ struct b43_phy_ac {
 	 * reset.
 	 */
 	bool attach_preamble_done;
-	/*
-	 * Block pointers of the eight OFDM rates, from the direct-map scan in
-	 * op_switch_channel(). The stock driver does not read them again where
-	 * it builds the basic rate map, which is write-only, so they are
-	 * cached.
-	 */
-	u16 rate_ptr[8];
 };
 
 /*

@@ -1312,7 +1312,7 @@ static void b43_phy_ac_basic_rate_map(struct b43_wldev *dev)
 		b43_shm_write16(dev, B43_SHM_SHARED,
 				B43_SHM_SH_OFDMBASIC +
 				2 * b43_phy_ac_ofdm_slot(i),
-				dev->phy.ac->rate_ptr[basic_of[i]]);
+				dev->dirmap_ofdm[b43_phy_ac_ofdm_slot(basic_of[i])]);
 }
 
 /*
@@ -10789,23 +10789,10 @@ static int b43_phy_ac_op_switch_channel(struct b43_wldev *dev, unsigned int new_
 	b43_shm_write16(dev, B43_SHM_SHARED, B43_SHM_SH_RFATT, 0x0480);
 	/*
 	 * Read-only scan of the two direct-map tables, sixteen entries each,
-	 * closed by the read of 0x0056. The OFDM pointers are kept for
-	 * b43_phy_ac_basic_rate_map(); the rest is read because the stock
-	 * driver reads it.
+	 * closed by the read of 0x0056; b43_phy_ac_basic_rate_map() takes its
+	 * pointers from it.
 	 */
-	for (off = B43_SHM_SH_OFDMDIRECT;
-	     off <= B43_SHM_SH_OFDMDIRECT + 0x1e; off += 2) {
-		u16 v = b43_shm_read16(dev, B43_SHM_SHARED, off);
-		unsigned int k;
-
-		for (k = 0; k < ARRAY_SIZE(b43_phy_ac_ofdm_rates); k++)
-			if (B43_SHM_SH_OFDMDIRECT +
-			    2 * b43_phy_ac_ofdm_slot(k) == off)
-				dev->phy.ac->rate_ptr[k] = v;
-	}
-	for (off = B43_SHM_SH_CCKDIRECT;
-	     off <= B43_SHM_SH_CCKDIRECT + 0x1e; off += 2)
-		b43_shm_read16(dev, B43_SHM_SHARED, off);
+	b43_rate_dirmap_read(dev);
 	b43_shm_read16(dev, B43_SHM_SHARED, B43_SHM_SH_KTP);
 	/*
 	 * 0x0056 is the key table pointer, B43_SHM_SH_KTP: 0x087a, the key

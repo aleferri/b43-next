@@ -87,6 +87,7 @@ u16 b43_shm_read16(struct b43_wldev *dev, u16 routing, u16 offset);
 void b43_shm_write32(struct b43_wldev *dev, u16 routing, u16 offset, u32 value);
 void b43_shm_write16(struct b43_wldev *dev, u16 routing, u16 offset, u16 value);
 u16 b43_rate_block(struct b43_wldev *dev, u16 hw_value);
+void b43_rate_dirmap_read(struct b43_wldev *dev);
 
 u64 b43_hf_read(struct b43_wldev *dev);
 void b43_mhf_maskset(struct b43_wldev *dev, unsigned int slot, u16 mask,
