@@ -1,23 +1,22 @@
 // SPDX-License-Identifier: GPL-2.0
 /*
- * Il bus BCMA, finto, che emette le op invece di toccare il silicio.
+ * The fake BCMA bus, which emits the ops instead of touching the silicon.
  *
- * L'aggancio non e' sui dieci simboli `bcmn_*` che il link chiede -- quelli
- * sono controllo di clock, enable, GPIO e PLL. Le read e le write dei registri
- * passano per gli inline di <bcma-next/bcmn.h>, che dispacciano su
- * `core->bus->ops`, cioe' una vtable: fornire la nostra basta, e b43 non va
- * toccato.
+ * The hook is not on the ten `bcmn_*` symbols the link asks for -- those are
+ * clock, enable, GPIO and PLL control. Register reads and writes go through
+ * the inlines of <bcma-next/bcmn.h>, which dispatch on `core->bus->ops`, a
+ * vtable: providing ours is enough, and b43 is left untouched.
  *
- * Il formato delle righe e' quello di ../unit/wrap.c, cosi' l'output e'
- * confrontabile con le catture del vendor dagli stessi strumenti
- * (reverse-tools/tracelib.py, unit/compare.py). Le classi sono quelle del
- * decoder: PHY.RD/WR/MOD, RAD.*, OBJ.*, MAC.*, TBL.*.
+ * The line format is ../unit/wrap.c's, so the output can be compared with the
+ * vendor captures by the same tools (reverse-tools/tracelib.py,
+ * unit/compare.py). The classes are the decoder's: PHY.RD/WR/MOD, RAD.*,
+ * OBJ.*, MAC.*, TBL.*.
  *
- * Attenzione a cosa questo file NON fa: non modella l'hardware. Una lettura
- * ritorna quello che l'oracolo dice, e senza oracolo ritorna zero -- che per
- * un bit di stato auto-azzerante e' il valore che fa girare un poll fino al
- * timeout. E' lo stesso problema che in ../unit risolvono AC_READ_ORACLE e i
- * read plan, e qui si risolve nello stesso modo, non reinventandolo.
+ * Mind what this file does NOT do: it does not model the hardware. A read
+ * returns what the oracle says, and without an oracle it returns zero --
+ * which for a self-clearing status bit is the value that spins a poll until
+ * the timeout. It is the same problem AC_READ_ORACLE and the read plans
+ * solve in ../unit, and here it is solved the same way, not reinvented.
  */
 #include <bcma-next/bcmn.h>
 #include <linux/kernel.h>
@@ -26,26 +25,22 @@
 #include "chip_link.h"
 
 /*
- * I registri di b43 che ci interessano stanno nella finestra del core 802.11.
- * Le classi si ricavano dall'offset, come fa il decoder del vendor: il tracer
- * di wl aggancia le funzioni (wlc_bmac_write_objmem16 e compagnia) e ha i nomi
- * gia' fatti, noi abbiamo solo l'offset, quindi la traduzione sta qui.
- */
-/*
- * Gli offset NON sono ridefiniti qui: vengono da b43.h, che il tree fetchato
- * contiene. Ridefinirli e' come li avevo scritti la prima volta, e
- * B43_MMIO_PHY_VER era 0x030 invece di 0x3E0 -- risultato, b43 leggeva zero
- * e diceva "FOUND UNSUPPORTED PHY (Analog 0, Type 0, Revision 0)".
+ * The b43 registers we care about are in the 802.11 core's window. The
+ * classes are derived from the offset, as the vendor's decoder does: wl's
+ * tracer hooks the functions (wlc_bmac_write_objmem16 and friends) and has
+ * the names ready, we only have the offset, so the translation is here. The
+ * offsets themselves come from b43.h, not redefined here.
  */
 #include "b43.h"
 #include "dma.h"
 
 
 /*
- * Lo stato che serve a ricostruire un'op da piu' accessi: b43 scrive prima
- * l'indirizzo in un registro di controllo e poi il dato in quello di dato,
- * quindi la riga si emette sul secondo accesso, con l'indirizzo del primo.
- * E' la stessa ricostruzione che fa il decoder sulle tracce del vendor.
+ * The state needed to rebuild an op from several accesses: b43 first writes
+ * the address into a control register and then the data into the data one,
+ * so the line is emitted on the second access, with the first one's
+ * address. It is the same reconstruction the decoder does on the vendor's
+ * traces.
  */
 static u16 phy_addr;
 static u16 radio_addr;
@@ -61,55 +56,54 @@ static u32 shm_routing_off;
 static u16 radio16_addr;
 
 /*
- * Il registro di controllo porta, sopra l'indice, la routing negli 8 bit
- * bassi della meta' alta e i due bit di auto-incremento sopra quella
- * (B43_SHM_AUTOINC_W/_R): un accesso a 32 bit alla porta dati con il bit
- * del suo verso acceso fa avanzare l'indice di una parola, come fa
- * reverse-tools/mmio2ops.py per la cattura. Lo usano l'upload dell'ucode e
- * le liste di initval.
+ * The control register carries, above the index, the routing in the low 8
+ * bits of the high half and the two auto-increment bits above it
+ * (B43_SHM_AUTOINC_W/_R): a 32-bit access to the data port with the bit of
+ * its direction set advances the index by one word, as
+ * reverse-tools/mmio2ops.py does for the capture. The ucode upload and the
+ * initval lists use it.
  */
 #define SHM_CTL_ROUTING		0x00ff0000u
 #define SHM_CTL_AUTOINC_W	((u32)B43_SHM_AUTOINC_W << 16)
 #define SHM_CTL_AUTOINC_R	((u32)B43_SHM_AUTOINC_R << 16)
 
 /*
- * MACCONTROL non lo puo' servire l'oracolo: il tracer del vendor registra
- * l'argomento della maskset e non la rilettura, quindi le 137 MAC.MCTRL del
- * segmento di riferimento non hanno una sola RETVAL. Il valore lo determinano
- * per intero le scritture del driver -- b43 lo usa in read-modify-write, e
- * b43_validate_chipaccess() (main.c:3641) pretende di rileggere l'IHR_ENABLED
- * che b43_wireless_core_reset() ha appena messo. Quindi qui e' un latch, non
- * una lettura dalla cattura.
+ * The oracle cannot serve MACCONTROL: the vendor tracer records the
+ * maskset's argument and not the read back, so the 137 MAC.MCTRL of the
+ * reference segment do not have a single RETVAL. The driver's writes
+ * determine the value entirely -- b43 uses it in read-modify-write, and
+ * b43_validate_chipaccess() requires reading back the IHR_ENABLED that
+ * b43_wireless_core_reset() just set. So here it is a latch, not a read
+ * from the capture.
  */
 static u32 macctl;
 
 /*
- * Le cause d'interruzione che il microcodice alzerebbe: le mette main.c
- * quando la timeline consegna un evento, b43 le legge da
- * B43_MMIO_GEN_IRQ_REASON e le azzera con l'ACK, che su quel registro e' una
- * scrittura dei bit da togliere.
+ * The interrupt reasons the microcode would raise: main.c sets them when the
+ * timeline delivers an event, b43 reads them from B43_MMIO_GEN_IRQ_REASON and
+ * clears them with the ACK, which on that register is a write of the bits to
+ * remove.
  */
 static u32 irq_pending;
 
 void b43_test_raise_irq(u32 reason)
 {
-	/* MAC_SUSPENDED e' di stato e segue MACCONTROL, vedi la lettura. */
+	/* MAC_SUSPENDED is state and follows MACCONTROL, see the read. */
 	irq_pending |= reason & ~B43_IRQ_MAC_SUSPENDED;
 }
 
 /*
- * Lo stato d'interruzione del canale DMA 0, quello di ricezione: RX_DONE
- * quando la timeline porta un frame. b43 lo legge in B43_MMIO_DMA0_REASON e
- * lo azzera riscrivendolo; gli altri cinque canali qui non alzano niente.
- * Non passa dall'oracolo: il vendor legge il registro una volta per
- * interruzione, b43 una per ogni canale, e le code per indirizzo non
- * allineerebbero.
+ * The interrupt state of DMA channel 0, the receive one: RX_DONE when the
+ * timeline brings a frame. b43 reads it in B43_MMIO_DMA0_REASON and clears it
+ * by writing it back; the other five channels raise nothing here. It does not
+ * go through the oracle: the vendor reads the register once per interrupt,
+ * b43 once per channel, and the per-address queues would not line up.
  */
 static u32 dma0_pending;
 
-/* Il registro di controllo dell'anello di ricezione, per il suo stato. */
+/* The receive ring's control register, for its state. */
 static u32 rxctl;
-/* L'indirizzo che b43 ha dato all'anello di ricezione, per i suoi slot. */
+/* The address b43 gave the receive ring, for its slots. */
 static u32 rx_ringlo;
 
 /*
@@ -132,32 +126,32 @@ void b43_test_raise_dma0(u32 reason)
 }
 
 /*
- * Le quattro celle di b43_validate_chipaccess(), e solo quelle.
+ * The four cells of b43_validate_chipaccess(), and only those.
  *
- * Sono UCODEREV, UCODEPATCH, UCODEDATE e UCODETIME (SHM_SHARED 0x0000-0x0006).
- * Finche' il PSM e' fermo sono RAM del driver: il self-test ci scrive i suoi
- * pattern e li rilegge, b43_upload_microcode() le azzera con il resto della
- * shared memory. Quando il PSM parte le riscrive il microcodice, e da li' in
- * poi il valore e' suo: lo serve l'oracolo, perche' qui il microcodice non
- * c'e'.
+ * They are UCODEREV, UCODEPATCH, UCODEDATE and UCODETIME (SHM_SHARED
+ * 0x0000-0x0006). While the PSM is stopped they are the driver's RAM: the
+ * self-test writes its patterns there and reads them back,
+ * b43_upload_microcode() clears them with the rest of the shared memory.
+ * When the PSM starts the microcode rewrites them, and from then on the
+ * value is its own: the oracle serves it, because there is no microcode
+ * here.
  *
- * Il modello non puo' essere l'oracolo nemmeno a PSM fermo. La meta' non
- * allineata del self-test usa 0x1122/0x3344/0x5566/0x7788, che `wl` non
- * esegue, e la versione 7.14.43 del driver stock non esegue affatto il test:
- * le code per indirizzo non hanno quelle letture, e servirle dalla cattura
- * darebbe al self-test i valori dell'ucode, cioe' un probe che fallisce.
+ * The model cannot be the oracle even with the PSM stopped. The unaligned
+ * half of the self-test uses 0x1122/0x3344/0x5566/0x7788, which `wl` does not
+ * run, and version 7.14.43 of the stock driver does not run the test at all:
+ * the per-address queues do not have those reads, and serving them from the
+ * capture would give the self-test the ucode's values, a failing probe.
  *
- * Una lettura servita dal modello consuma dalla coda dell'oracolo la voce in
- * testa solo se ha lo stesso valore: e' la stessa lettura fatta dal vendor
- * (il D6220 esegue la meta' allineata, #511-#522 del segmento di
- * riferimento). Una voce diversa e' di una lettura successiva e resta al suo
- * posto.
+ * A read served by the model consumes the head entry of the oracle's queue
+ * only if it has the same value: it is the same read the vendor made (the
+ * D6220 runs the aligned half, #511-#522 of the reference segment). A
+ * different entry belongs to a later read and stays where it is.
  *
- * Il write-through NON e' corretto in generale: le celle che aggiorna il ucode
- * -- la finestra statistiche 0x0300-0x0314, i contatori 0x0768-0x0788, il TSSI
- * -- il port le azzera e le rilegge, e servirle dal modello restituirebbe
- * zero al posto dei valori del vendor, cioe' farebbe passare il gate del
- * watchdog misurando niente. Per questo la lista e' corta.
+ * The write-through is NOT right in general: the cells the ucode updates --
+ * the statistics window 0x0300-0x0314, the counters 0x0768-0x0788, the TSSI
+ * -- the port clears and reads back, and serving them from the model would
+ * return zero instead of the vendor's values, letting the watchdog gate pass
+ * while measuring nothing. That is why the list is short.
  */
 #define SHM_MODEL_CELLS	4		/* byte 0x0000, 0x0002, 0x0004, 0x0006 */
 
@@ -187,7 +181,7 @@ static void shm_model_store(u32 routing, u16 byte_off, u16 val)
 	shm_model_written[slot] = true;
 }
 
-/* Ritorna true e riempie *val se la cella e' modellata e gia' scritta. */
+/* Return true and fill *val if the cell is modelled and already written. */
 static bool shm_model_load(u32 routing, u16 byte_off, u16 *val)
 {
 	int slot = shm_model_slot(routing, byte_off);
@@ -200,17 +194,18 @@ static bool shm_model_load(u32 routing, u16 byte_off, u16 *val)
 }
 
 /*
- * L'indirizzo SHM che la traccia deve riportare e' l'offset in BYTE, che e'
- * cio' che il tracer del vendor prende dagli argomenti di wlc_bmac_read_shm.
- * Sul bus non passa quello: per B43_SHM_SHARED b43 mette nel registro di
- * controllo l'indice a 32 bit (offset >> 2) e distingue le due meta' con la
- * porta dati che usa -- B43_MMIO_SHM_DATA per la parola a byte 4w,
- * B43_MMIO_SHM_DATA_UNALIGNED per quella a 4w+2. Le altre routing (SCRATCH,
- * REGS, ...) b43 non le shifta, e la' l'indice e' gia' l'indirizzo.
+ * The SHM address the trace has to carry is the offset in BYTES, what the
+ * vendor tracer takes from wlc_bmac_read_shm's arguments. That is not what
+ * goes on the bus: for B43_SHM_SHARED b43 puts the 32-bit index (offset >> 2)
+ * in the control register and tells the two halves apart by the data port it
+ * uses -- B43_MMIO_SHM_DATA for the word at byte 4w,
+ * B43_MMIO_SHM_DATA_UNALIGNED for the one at 4w+2. b43 does not shift the
+ * other routings (SCRATCH, REGS, ...), and there the index is already the
+ * address.
  *
- * Senza questa ricostruzione ogni op OBJ della suite esce a offset/4 e non
- * combacia con nessuna op del vendor: il write-through degli host flag
- * usciva OBJ.WR addr=0x0017 dove la cattura ha addr=0x005e.
+ * Without this reconstruction every OBJ op of the suite would come out at
+ * offset/4 and match no vendor op: the host flags' write-through would give
+ * OBJ.WR addr=0x0017 where the capture has addr=0x005e.
  */
 static u16 shm_byte_off(u16 port)
 {
@@ -223,19 +218,19 @@ static u16 shm_byte_off(u16 port)
 }
 
 /*
- * Un accesso a 32 bit allineato e' UN accesso sul bus e DUE op per il vendor,
- * che legge e scrive la shared memory solo a 16 bit. La porta dati e'
- * little-endian come il resto del core: la parola all'offset porta la meta'
- * BASSA del valore, quella a +2 la meta' alta. E' la regola del ramo non
- * allineato di b43_shm_write32()/read32(), e la conferma la cattura al bus
- * dell'agcombo, dove `wl` scrive 0x002a0000 all'indice 5 e il corerev 42
- * finisce a B43_SHM_SH_WLCOREREV (0x0016).
+ * An aligned 32-bit access is ONE access on the bus and TWO ops for the
+ * vendor, which reads and writes the shared memory 16 bits at a time only.
+ * The data port is little-endian like the rest of the core: the word at the
+ * offset carries the LOW half of the value, the one at +2 the high half. It
+ * is the rule of the unaligned branch of b43_shm_write32()/read32(), and the
+ * agcombo's bus capture confirms it, where `wl` writes 0x002a0000 at index 5
+ * and corerev 42 ends up at B43_SHM_SH_WLCOREREV (0x0016).
  *
- * Il self-test di b43_validate_chipaccess() rilegge cio' che ha scritto
- * dalle quattro celle modellate qui sopra, quindi non dipende dai valori del
- * test del vendor, che usa pattern suoi a 16 bit. Vedi il commento di
- * shm_model_slot() per il perche' il write-through su quelle e' misurato e
- * perche' la lista e' corta.
+ * b43_validate_chipaccess()'s self-test reads back what it wrote from the
+ * four cells modelled above, so it does not depend on the values of the
+ * vendor's test, which uses 16-bit patterns of its own. See
+ * shm_model_slot()'s comment for why the write-through on those is measured
+ * and why the list is short.
  */
 static void shm_word_write(u32 routing, u16 off, u16 val)
 {
@@ -254,10 +249,10 @@ static u16 shm_word_read(u32 routing, u16 off)
 }
 
 /*
- * Le altre routing -- la tabella di match degli indirizzi (RCMTA), gli
- * scratch -- non hanno la meta' a 16 bit: l'indice e' di una parola a 32 bit,
- * e il vendor al bus le legge e scrive cosi', una op per parola
- * (OBJ.WR sel=0x40000 addr=0x007e val=0x0102c000 sulla riga della stazione).
+ * The other routings -- the address match table (RCMTA), the scratch -- do
+ * not have the 16-bit half: the index is a 32-bit word's, and the vendor at
+ * the bus reads and writes them so, one op per word (OBJ.WR sel=0x40000
+ * addr=0x007e val=0x0102c000 on the station's row).
  */
 static void shm_autoinc(u32 flag, int width)
 {
@@ -302,18 +297,18 @@ static u32 shm_note_read(u16 port, int width)
 }
 
 /*
- * clk_ctl_st del core 802.11 (BCMN_CLKCTLST), che bcmn_core_set_clockmode()
- * e bcmn_core_pll_ctl() di bcma-next/core.c scrivono e poi interrogano
- * finche' lo stato non segue la richiesta: fino a 1500 e 10000 giri, cioe'
- * tutta la traccia se la lettura torna zero.
+ * clk_ctl_st of the 802.11 core (BCMN_CLKCTLST), which
+ * bcmn_core_set_clockmode() and bcmn_core_pll_ctl() of bcma-next/core.c
+ * write and then poll until the state follows the request: up to 1500 and
+ * 10000 rounds, the whole trace if the read returns zero.
  *
- * La meta' bassa sono le richieste del driver e si rilegge come scritta. La
- * meta' alta e' lo stato, e il comportamento e' quello della cattura al bus
- * dell'agcombo (#119-#121, #19216-#19217): ALP e HT sono sempre disponibili,
- * il backplane gira su HT mentre FORCEHT e' alto e su ALP altrimenti, e le tre
- * risorse esterne sono su (EXTRESST = 7) anche senza richiesta, perche' le
- * tiene il PMU. Il valore iniziale delle richieste e' la prima lettura della
- * cattura quando c'e' (0x0040, HQCLKREQ, sull'agcombo), zero se no.
+ * The low half is the driver's requests and reads back as written. The high
+ * half is the state, and the behaviour is the agcombo's bus capture's
+ * (#119-#121, #19216-#19217): ALP and HT are always available, the backplane
+ * runs on HT while FORCEHT is high and on ALP otherwise, and the three
+ * external resources are up (EXTRESST = 7) even without a request, because
+ * the PMU holds them. The requests' initial value is the capture's first read
+ * when there is one (0x0040, HQCLKREQ, on the agcombo), zero otherwise.
  */
 static u32 clkctlst_req;
 static bool clkctlst_init;
@@ -413,7 +408,7 @@ static void note_write(struct bcmn_device *core, u16 off, u32 val, int width)
 	switch (off) {
 	case B43_MMIO_PHY_CONTROL:
 		phy_addr = (u16)val;
-		return;			/* meta' op: la riga esce col dato */
+		return;			/* half an op: the line goes out with the data */
 	case B43_MMIO_PHY_DATA:
 		b43_trace_op("PHY.WR", phy_addr, val, 0, -1);
 		return;
@@ -477,18 +472,18 @@ static void note_write(struct bcmn_device *core, u16 off, u32 val, int width)
 }
 
 /*
- * La versione del PHY, che b43 legge a `b43_phy_versioning` (main.c:4484), e
- * dalla cattura quando la ha (una presa al bus con le letture di flush), e
- * decodifica in analog_type, phy_type e phy_rev secondo i campi di
- * phy_common.h:30. Da phy_type dipende TUTTO il resto: la scelta della
- * vtable, e la selezione del firmware, che per corerev 42 prende `ucode42`
- * solo `if (phy->type == B43_PHYTYPE_AC)`. Senza questo valore phy_type e'
- * zero, b43 non trova un ucode e la probe ritorna -EOPNOTSUPP prima di
- * emettere una sola op.
+ * The PHY version, which b43 reads in `b43_phy_versioning`, from the capture
+ * when it has it (one taken at the bus with the flush reads), and decodes into
+ * analog_type, phy_type and phy_rev according to phy_common.h's fields.
+ * EVERYTHING else depends on phy_type: the choice of the vtable, and the
+ * firmware selection, which for corerev 42 takes `ucode42` only `if
+ * (phy->type == B43_PHYTYPE_AC)`. Without this value phy_type is zero, b43
+ * finds no ucode and the probe returns -EOPNOTSUPP before emitting a single
+ * op.
  *
- * Non e' una costante inventata: `wl1_revinfo.txt` del d6220 da phytype 0xb
- * e phyrev 0x1, cioe' AC rev1, e radiorev 0x42069. Un'altra board la da'
- * con b43_test_chip_identity(), dal suo profilo.
+ * It is not an invented constant: the d6220's `wl1_revinfo.txt` gives
+ * phytype 0xb and phyrev 0x1, AC rev1, and radiorev 0x42069. Another board
+ * gives it with b43_test_chip_identity(), from its profile.
  */
 static u16 id_phy_ver = 0x0b01, id_radio = 0x2069, id_radio_rev = 0x4;
 static unsigned int id_core_rev = 42;
@@ -596,17 +591,17 @@ static u32 note_read(struct bcmn_device *core, u16 off, int width)
 		    b43_trace_read("REG.RD", B43_MMIO_PHY_VER, width) :
 		    id_phy_ver;
 		break;
-	/*
-	 * L'identita' della radio, che b43 legge a `b43_radio_versioning`
-	 * (main.c:4679) per corerev 40/42: scrive 0 in RADIO24_CONTROL e la
-	 * lettura successiva da' radio_rev, scrive 1 e da' radio_id. Poi
-	 * pretende radio_manuf 0x17F -- che per quel ramo b43 mette da se' --
-	 * e per l'AC un radio_id 0x2069, o `unsupported`.
-	 *
-	 * I valori vengono da `wl1_revinfo.txt` del d6220: `radiorev 0x42069`,
-	 * cioe' id 0x2069 e revisione 4 -- il 2069 rev4, lo stesso di
-	 * reverse-tools/extract_chan_tuning_2069rev4.py.
-	 */
+		/*
+		 * The radio's identity, which b43 reads in `b43_radio_versioning`
+		 * for corerev 40/42: it writes 0 in RADIO24_CONTROL and the next
+		 * read gives radio_rev, writes 1 and gets radio_id. Then it requires
+		 * radio_manuf 0x17F -- which for that branch b43 sets itself -- and
+		 * for the AC a radio_id 0x2069, or `unsupported`.
+		 *
+		 * The values come from the d6220's `wl1_revinfo.txt`: `radiorev
+		 * 0x42069`, id 0x2069 and revision 4 -- the 2069 rev4, the same as
+		 * reverse-tools/extract_chan_tuning_2069rev4.py.
+		 */
 	case B43_MMIO_RADIO24_DATA:
 		if (radio_identity(radio_addr, &v16))
 			return v16;
@@ -646,43 +641,43 @@ static u32 note_read(struct bcmn_device *core, u16 off, int width)
 	case BCMN_CLKCTLST:
 		v = clkctlst_read();
 		break;
-	/*
-	 * La risposta del microcodice. b43_upload_microcode() (main.c:2790)
-	 * avvia il PSM e poi aspetta B43_IRQ_MAC_SUSPENDED qui, venti giri e
-	 * poi "Microcode not responding"; b43_mac_suspend() aspetta lo stesso
-	 * bit.
-	 *
-	 * L'oracolo non lo puo' servire. Le catture wl-diag non hanno le
-	 * letture MMIO grezze; quelle prese al bus le hanno, ma sono le
-	 * risposte a un'altra sequenza di eventi, e servite in coda darebbero
-	 * a b43 le cause di interruzione di wl fuori dal loro contesto. Il
-	 * valore lo produce il microcodice, e il microcodice qui e' lo shim --
-	 * il blob di kernel_shim.c e' un header valido senza codice dentro,
-	 * quindi il PSM non partirebbe mai. Rispondere e' il modello, non
-	 * un'invenzione: senza, ogni fase a MAC sospeso e' irraggiungibile.
-	 *
-	 * Non e' un latch come MACCONTROL: b43 scrive qui per fare l'ACK
-	 * degli interrupt, e un latch restituirebbe l'ACK invece dello stato.
-	 * MAC_SUSPENDED segue il bit ENABLED del latch di MACCONTROL, come il
-	 * microcodice: alto finche' il MAC e' fermo, basso quando gira, cosi'
-	 * le cause che la timeline porta arrivano a b43 come il vendor le ha
-	 * lette, senza quel bit sopra.
-	 */
+		/*
+		 * The microcode's answer. b43_upload_microcode() starts the PSM and
+		 * then waits for B43_IRQ_MAC_SUSPENDED here, twenty rounds and then
+		 * "Microcode not responding"; b43_mac_suspend() waits for the same
+		 * bit.
+		 *
+		 * The oracle cannot serve it. The wl-diag captures do not have the
+		 * raw MMIO reads; those taken at the bus have them, but they are the
+		 * answers to another sequence of events, and served in a queue they
+		 * would give b43 wl's interrupt reasons out of their context. The
+		 * microcode produces the value, and the microcode here is the shim --
+		 * kernel_shim.c's blob is a valid header with no code in it, so the
+		 * PSM would never start. Answering is the model, not an invention:
+		 * without it every phase with the MAC suspended is unreachable.
+		 *
+		 * It is not a latch like MACCONTROL: b43 writes here to ACK the
+		 * interrupts, and a latch would return the ACK instead of the state.
+		 * MAC_SUSPENDED follows the ENABLED bit of the MACCONTROL latch, like
+		 * the microcode: high while the MAC is stopped, low while it runs, so
+		 * the reasons the timeline brings reach b43 as the vendor read them,
+		 * without that bit on top.
+		 */
 	case B43_MMIO_GEN_IRQ_REASON:
 		v = irq_pending;
 		if (!(macctl & B43_MACCTL_ENABLED))
 			v |= B43_IRQ_MAC_SUSPENDED;
 		break;
 	case B43_MMIO_DMA64_BASE0 + B43_DMA64_RXSTATUS:
-		/*
-		 * Lo stato dell'anello di ricezione: lo slot corrente e' del
-		 * vendor, dall'oracolo, ma il campo di stato segue il registro
-		 * di controllo che b43 ha scritto, o il reset dell'anello che
-		 * il vendor non fa mai non finirebbe. Il vendor da' lo slot
-		 * come indirizzo del suo anello: dove la cattura ha quello
-		 * dell'anello, uno slot che vi cade dentro si riporta su
-		 * quello di b43.
-		 */
+			/*
+			 * The receive ring's state: the current slot is the
+			 * vendor's, from the oracle, but the state field follows the
+			 * control register b43 wrote, or the ring reset, which the
+			 * vendor never does, would not finish. The vendor gives the
+			 * slot as an address in its ring: where the capture has the
+			 * ring's address, a slot falling inside it is mapped onto
+			 * b43's.
+			 */
 		v = b43_trace_read_raw(off, width);
 		if (!(rxctl & B43_DMA64_RXENABLE))
 			v &= ~B43_DMA64_RXSTAT;
@@ -714,10 +709,10 @@ static u32 note_read(struct bcmn_device *core, u16 off, int width)
 		v = b43_trace_read_raw(off, width);
 		break;
 	}
-	/*
-	 * Un registro del MAC, non una porta: sul bus e' una lettura a se', e
-	 * una cattura presa li' la porta come REG.RD.
-	 */
+		/*
+		 * A MAC register, not a port: on the bus it is a read of its own,
+		 * and a capture taken there carries it as REG.RD.
+		 */
 	b43_trace_raw("REG.RD", off, v, width);
 	return v;
 }
@@ -753,9 +748,9 @@ static void stub_write32(struct bcmn_device *core, u16 off, u32 val)
 }
 
 /*
- * I blocchi: b43 li usa per le tabelle e per la template RAM. Il vendor li
- * traccia come un'intestazione (TBL.WR, OBJ.BULKW) seguita dalle op singole,
- * e qui si fa lo stesso, cosi' le due tracce si allineano.
+ * The blocks: b43 uses them for the tables and the template RAM. The vendor
+ * traces them as a header (TBL.WR, OBJ.BULKW) followed by the single ops,
+ * and the same is done here, so the two traces line up.
  */
 static void stub_block_read(struct bcmn_device *core, void *buf, size_t count,
 			    u16 off, u8 reg_width)
@@ -771,25 +766,25 @@ static void stub_block_write(struct bcmn_device *core, const void *buf,
 }
 
 /*
- * Lo spazio "agent" del core, il wrapper, che e' una vtable a parte:
- * `bcmn_aread32` non passa dalle read32 qui sopra. Ci passano il reset e i
- * clock del core -- bcmn_core_enable/disable, compilati dalla suite com'e'
- * in bcma-next/core.c -- e i bit PHY di IOCTL che b43 tocca da se'. Sul
- * bus e' la finestra 0x1000-0x1fff, che reverse-tools/mmio2ops.py riporta
- * come WRAP.RD/WR con l'offset nel wrapper: qui si traccia con lo stesso
- * nome.
+ * The core's "agent" space, the wrapper, which is a vtable of its own:
+ * `bcmn_aread32` does not go through the read32 above. The core's reset and
+ * clocks go through it -- bcmn_core_enable/disable, compiled by the suite as
+ * they are in bcma-next/core.c -- and the IOCTL PHY bits b43 touches itself.
+ * On the bus it is the 0x1000-0x1fff window, which reverse-tools/mmio2ops.py
+ * reports as WRAP.RD/WR with the offset in the wrapper: here it is traced
+ * with the same name.
  *
- * IOCTL e RESET_CTL sono registri di controllo e si rileggono come scritti:
- * un latch. RESET_ST e' lo stato di una transazione di reset in corso, e fuori
- * da una transazione vale zero, che e' cio' che bcmn_core_disable() aspetta.
+ * IOCTL and RESET_CTL are control registers and read back as written: a
+ * latch. RESET_ST is the state of a reset transaction in progress, and
+ * outside a transaction it is zero, which is what bcmn_core_disable() waits
+ * for.
  *
- * IOST lo serve l'oracolo quando la cattura e' presa al bus (0x100c
- * sull'agcombo: DMA64, FASTCLKA, DUALB). Le catture wl-diag non hanno lo
- * spazio agent, e allora vale la costante del D6220, dove wl1 e' il core
- * 5 GHz: da quella risposta b43_wireless_core_attach() (main.c:5393) ricava
- * have_2ghz_phy e have_5ghz_phy.
+ * The oracle serves IOST when the capture is taken at the bus (0x100c on the
+ * agcombo: DMA64, FASTCLKA, DUALB). The wl-diag captures do not have the
+ * agent space, and then the D6220's constant holds, where wl1 is the 5 GHz
+ * core: from that answer b43_wireless_core_attach() derives have_2ghz_phy
+ * and have_5ghz_phy. The values are b43.h's, not invented here.
  */
-/* I valori sono quelli di b43.h:509, non inventati qui. */
 #define B43_BCMA_IOST_2G_PHY	0x00000001	/* 2.4G capable phy */
 #define B43_BCMA_IOST_5G_PHY	0x00000002	/* 5G capable phy */
 

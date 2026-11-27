@@ -249,11 +249,12 @@ static void b43_phy_ac_rxiqcal_set_tone(struct b43_wldev *dev, u8 core,
 }
 
 /*
+/*
  * Gain override: apply the measurement gain on <core>, then micro-settle.
- * Two-step write sequence from the trace: first the "armed"
- * values (0x00fa / 0x01d3 / 0x07e6 a 20 MHz), then the settled values
- * (0x007a / 0x01d3 / 0x07e2). Le due parole su 0x0739 e 0x073a seguono la
- * larghezza; vedi b43_phy_ac_rxgain_bw(). The read-before-write is a save — we skip it here
+ * Two-step write sequence from the trace: first the "armed" values (0x00fa /
+ * 0x01d3 / 0x07e6 at 20 MHz), then the settled values (0x007a / 0x01d3 /
+ * 0x07e2). The two words at 0x0739 and 0x073a follow the width; see
+ * b43_phy_ac_rxgain_bw(). The read-before-write is a save -- we skip it here
  * because the caller saves and restores the registers.
  */
 static void b43_phy_ac_rxiqcal_apply_gain(struct b43_wldev *dev, u8 core)

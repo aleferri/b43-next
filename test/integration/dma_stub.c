@@ -1,25 +1,24 @@
 // SPDX-License-Identifier: GPL-2.0
 /*
- * Quel che serve a dma.c per girare qui: memoria per gli anelli, skb per i
- * buffer di ricezione, e un mapping DMA finto. Compilato coi flag del kernel
- * perche' gli skb sono `struct sk_buff` veri: dma.c li riempie con skb_put e
- * legge l'intestazione RX da skb->data.
+ * What dma.c needs to run here: memory for the rings, skbs for the receive
+ * buffers, and a fake DMA mapping. Compiled with the kernel's flags because
+ * the skbs are real `struct sk_buff`s: dma.c fills them with skb_put and
+ * reads the RX header from skb->data.
  *
- * Nessuna periferica scrive in questa memoria. I descrittori che dma.c
- * compila restano come li lascia, e l'intestazione dei buffer RX resta il
- * poison che ci mette lui: frame_len = 0. Cosi' quando la timeline consegna
- * un RX_DONE, b43_dma_rx() legge dal registro di stato lo slot corrente --
- * quello lo serve l'oracolo, dalla cattura -- percorre gli slot fino a li',
- * trova la lunghezza a zero, scarta e ricicla il buffer, e riscrive
- * l'indice: le stesse op di registro che il vendor emette per un frame, con
- * la geometria dell'anello di b43.
+ * No peripheral writes into this memory. The descriptors dma.c fills stay as
+ * it leaves them, and the RX buffers' header stays the poison it puts there:
+ * frame_len = 0. So when the timeline delivers an RX_DONE, b43_dma_rx() reads
+ * the current slot from the status register -- the oracle serves that, from
+ * the capture -- walks the slots up to it, finds the length at zero, drops
+ * and recycles the buffer, and writes the index back: the same register ops
+ * the vendor emits for a frame, with b43's ring geometry.
  *
- * Gli indirizzi DMA sono pseudo-fisici, distribuiti da un contatore che parte
- * dove la cattura dell'agcombo ha il primo anello (0x00c18000) e allineati
- * alla dimensione chiesta, come fa dma_alloc_coherent() con le potenze di
- * due: il valore non lo legge nessuno tranne i registri di base degli anelli,
- * che cosi' portano numeri dell'ordine di quelli del vendor e l'allineamento
- * che dma.c pretende dall'allocatore.
+ * The DMA addresses are pseudo-physical, handed out by a counter starting
+ * where the agcombo's capture has the first ring (0x00c18000) and aligned to
+ * the size asked, as dma_alloc_coherent() does with powers of two: nobody
+ * reads the value but the rings' base registers, which so carry numbers of
+ * the order of the vendor's and the alignment dma.c expects from the
+ * allocator.
  */
 #include <bcma-next/bcmn.h>
 #include <linux/dma-mapping.h>
@@ -32,9 +31,9 @@
 #include "trace_out.h"
 
 /*
- * Le costanti che virt_to_page() e __pa() usano in linea negli header di
- * x86. Con tutte e tre a zero __pa(x) == x e la pagina e' x / 64: qui si
- * vuole solo che il calcolo non tocchi memoria, non che dia una pagina vera.
+ * The constants virt_to_page() and __pa() use inline in the x86 headers.
+ * With all three at zero __pa(x) == x and the page is x / 64: here the
+ * computation only has to touch no memory, not give a real page.
  */
 unsigned long page_offset_base;
 unsigned long phys_base;
@@ -42,7 +41,7 @@ unsigned long vmemmap_base;
 
 bool is_vmalloc_addr(const void *x) { return false; }
 
-/* --- memoria coerente degli anelli --------------------------------------- */
+/* --- the rings' coherent memory ------------------------------------------ */
 
 #define SHIM_DMA_BASE	0x00c18000ull
 
@@ -66,7 +65,7 @@ void *dma_alloc_attrs(struct device *dev, size_t size, dma_addr_t *handle,
 void dma_free_attrs(struct device *dev, size_t size, void *vaddr,
 		    dma_addr_t handle, unsigned long attrs)
 {
-	/* La base non e' recuperabile dall'indirizzo allineato: resta. */
+		/* The base cannot be recovered from the aligned address: it stays. */
 }
 
 int dma_set_mask(struct device *dev, u64 mask) { return 0; }
@@ -94,7 +93,7 @@ void __dma_sync_single_for_device(struct device *dev, dma_addr_t addr,
 /* No syncs needed: dma.c keeps its streaming TX headers and RX buffers */
 bool __dma_need_sync(struct device *dev, dma_addr_t dma_addr) { return false; }
 
-/* --- skb: solo cio' che dma.c tocca --------------------------------------- */
+/* --- skb: only what dma.c touches ----------------------------------------- */
 
 struct sk_buff *__netdev_alloc_skb(struct net_device *dev, unsigned int len,
 				   gfp_t gfp)
@@ -134,10 +133,10 @@ void *skb_pull(struct sk_buff *skb, unsigned int len)
 }
 
 /*
- * Il page pool dei buffer RX non si crea: dma.c ripiega su
- * __dev_alloc_skb(), qui sopra, e i buffer restano quelli che il poison e
- * la traccia conoscono. Gli altri simboli del pool li chiedono solo i rami
- * con un pool, e stanno in kernel_shim.c.
+ * The RX buffers' page pool is not created: dma.c falls back on
+ * __dev_alloc_skb(), above, and the buffers stay the ones the poison and the
+ * trace know. The pool's other symbols are needed only by the branches with
+ * a pool, and are in kernel_shim.c.
  */
 struct page_pool *page_pool_create(const struct page_pool_params *params)
 {
@@ -148,7 +147,7 @@ struct page_pool *page_pool_create(const struct page_pool_params *params)
 void page_pool_destroy(struct page_pool *pool) { }
 #endif
 
-/* Letta in linea da virt_to_head_page() in page_pool_free_va(). */
+/* Read inline by virt_to_head_page() in page_pool_free_va(). */
 DEFINE_STATIC_KEY_FALSE(hugetlb_optimize_vmemmap_key);
 
 void consume_skb(struct sk_buff *skb)
@@ -170,6 +169,6 @@ void *kmemdup_noprof(const void *src, size_t len, gfp_t gfp)
 
 const char *dev_driver_string(const struct device *dev) { return "b43"; }
 
-/* Le code TX di mac80211 e lo stato di trasmissione: niente traffico qui. */
+/* mac80211's TX queues and the transmission state: no traffic here. */
 void ieee80211_wake_queue(struct ieee80211_hw *hw, int queue) { }
 void ieee80211_tx_status_skb(struct ieee80211_hw *hw, struct sk_buff *skb) { }

@@ -102,7 +102,7 @@ struct ieee80211_channel {
 
 struct ieee80211_conf {
 	struct cfg80211_chan_def chandef;
-	/* Come in-tree: mac80211 chiede il rilevamento dei radar. */
+	/* As in-tree: mac80211 asks for radar detection. */
 	bool radar_enabled;
 };
 
@@ -121,14 +121,9 @@ struct ieee80211_hw {
 struct ieee80211_channel *ieee80211_get_channel(struct wiphy *wiphy, int freq);
 void b43_test_reg_init(int dflt, const char *map);
 /*
- * Hook del vendor su wlc_bmac_bw_set. NON e' una scrittura di registro: il suo
- * equivalente GPL in brcmsmac, brcms_b_bw_set(), fa `pi->bw = bw` piu' un reset
- * e un init del PHY, e nelle catture fra il record e il prologo radio non c'e'
- * nessuna scrittura. In b43 la larghezza sta in phy.chandef e la imposta
- * b43_phy_init(): non c'e' niente da chiamare, e nessun codice del port emette
- * questa op. Vedi SOLO_VENDOR in test/compare.py.
- *
- * Il prototipo resta per non rompere link di scratch che lo usassero.
+ * phy_ac.c's b43_mac_bw_set(), static there: the Makefile's copy of phy_ac.c
+ * declares it instead of defining it, so the call reaches wrap.c, which emits
+ * the capture's MAC.BW.
  */
 void b43_mac_bw_set(struct b43_wldev *dev, u32 bw);
 void b43_test_oracle_coverage_report(void);
@@ -173,9 +168,9 @@ struct ssbn_sprom_rxgains {
 struct ssbn_sprom {
 	u8 il0mac[6];		/* MAC address of the 802.11 core */
 	/*
-	 * Offset di potenza per-rate a 5 GHz, per sotto-banda e larghezza.
-	 * Nomi e forma sono quelli di
-	 * bcma/include/ssb-next/ssbn.h -- campi piatti, non un array di struct.
+	 * Per-rate power offsets at 5 GHz, per sub-band and width. Names and
+	 * shape are bcma/include/ssb-next/ssbn.h's -- flat fields, not an array
+	 * of structs.
 	 */
 	u32 mcsbw205glpo, mcsbw405glpo, mcsbw805glpo;
 	u32 mcsbw205gmpo, mcsbw405gmpo, mcsbw805gmpo;
@@ -186,7 +181,7 @@ struct ssbn_sprom {
 	/* Antenna gain per band, quarter-dB, SROM ag0/ag1. Index 1 is 5 GHz. */
 	u16 pdoffset40ma[3];
 	u16 pdoffset80ma[3];
-	u8 pdoffset2g40ma[3];	/* 4 bit, con segno */
+	u8 pdoffset2g40ma[3];	/* 4 bits, signed */
 	u8 pdoffset2g40mvalid;
 	u16 rpcal2g;
 	u16 rpcal5gb[4];
@@ -217,19 +212,20 @@ struct ssbn_sprom {
 	u8 txchain;
 	u8 subband;
 	u8 subband5gver;
-	/* LED behaviour per GPIO pin: ledbh0-3 dalla SROM, 4-15 dalla NVRAM
-	 * (gpio_ext[] e' in bcma/include/ssb-next/ssbn.h). Il PHY non li legge; stanno qui perche'
-	 * board_profile.h li riempie per la suite di integrazione. */
+	/* LED behaviour per GPIO pin: ledbh0-3 from the SROM, 4-15 from the NVRAM
+	 * (gpio_ext[] is in bcma/include/ssb-next/ssbn.h). The PHY does not read
+	 * them; they are here because board_profile.h fills them for the
+	 * integration suite. */
 	u8 gpio0, gpio1, gpio2, gpio3;
 	u8 gpio_ext[12];
 	/* boardflags3 e AvVmid_c0..2 dalla NVRAM, come in bcma/. */
 	u32 boardflags3;
 	u8 avvmid[3][5][2];
 	u8 avvmid_valid;
-	/* Blocco FEM/PA (SROM11_FEM_CFG1/2), decodificato come in bcma. */
+	/* FEM/PA block (SROM11_FEM_CFG1/2), decoded as in bcma. */
 	u8 tssiposslope2g, epagain2g, pdgain2g, tworangetssi2g, papdcap2g, femctrl;
 	u8 tssiposslope5g, epagain5g, pdgain5g, tworangetssi5g, papdcap5g, gainctrlsph;
-	/* Campi della temperatura, gia' in ssb.h upstream. */
+	/* Temperature fields, already in upstream ssb.h. */
 	u8 tempthresh, tempoffset;
 	u8 phycal_tempdelta, temps_period, temps_hysteresis;
 	u16 tssifloor2g;
@@ -266,34 +262,33 @@ struct b43_bus_dev {
 
 struct b43_phy {
 	/*
-	 * Larghezza e canale correnti. In b43 li punta b43_phy_init() alla
-	 * config dell'hardware, prima di switch_analog() e di
-	 * b43_software_rfkill(), e b43_op_config() li ripunta a ogni cambio di
-	 * canale; b43_is_40mhz() legge da qui. L'harness lo fa in mount_board(),
-	 * cosi' il codice del PHY vede lo stesso oggetto.
+	 * Current width and channel. In b43 b43_phy_init() points them at the
+	 * hardware's config, before switch_analog() and b43_software_rfkill(),
+	 * and b43_op_config() points them again at every channel change;
+	 * b43_is_40mhz() reads from here. The harness does it in mount_board(),
+	 * so the PHY's code sees the same object.
 	 */
 	const struct cfg80211_chan_def *chandef;
 	/*
-	 * Tipo e revisione del PHY, che b43 pubblica in shared memory per
-	 * l'ucode; vedi b43_phy_ac_shm_readback_block().
+	 * PHY type and revision, which b43 publishes in shared memory for the
+	 * ucode; see b43_phy_ac_shm_readback_block().
 	 */
 	u8  type;
 	u8  rev;
 	u16 radio_ver;
 	u8  radio_rev;
-	/* Come in-tree: il canale, che le statistiche di calibrazione annotano. */
+	/* As in-tree: the channel, which the calibration statistics record. */
 	unsigned int channel;
 	struct b43_phy_ac *ac;
 	/* Some scratch code touches phy.dacbuf_cap / phy.lpf_cap directly. */
 	u8 dacbuf_cap;
 	u8 lpf_cap;
-	/* Come in-tree: il limite di potenza da mac80211, in dBm. */
+	/* As in-tree: the power limit from mac80211, in dBm. */
 	int desired_txpower;
 	/*
-	 * Primo bring-up contro bring-up successivo. In-tree lo gestisce
-	 * b43_phy_init(): true fino al primo ops->init riuscito. Qui lo imposta
-	 * il flow, cosi' lo stesso codice si misura contro una cattura attach
-	 * o contro una down->up.
+	 * First bring-up against a later one. In-tree b43_phy_init() handles it:
+	 * true until the first successful ops->init. Here the flow sets it, so
+	 * the same code is measured against an attach capture or a down->up one.
 	 */
 	bool do_full_init;
 };
@@ -306,18 +301,18 @@ struct b43_wl {
 struct b43_wldev {
 	struct b43_bus_dev *dev;
 	struct b43_calstat *calstat;
-	/* Come in-tree: profondita' di annidamento di b43_mac_suspend. */
+	/* As in-tree: nesting depth of b43_mac_suspend. */
 	int mac_suspended;
 	struct b43_wl *wl;
 	struct b43_phy phy;
-	/* Come in-tree: le catene della scheda (b43_setup_chains()). */
+	/* As in-tree: the chains of the board (b43_setup_chains()). */
 	u8 txchain;
 	u8 rxchain;
-	/* Come in-tree: il channel availability check tiene ferma la TX. */
+	/* As in-tree: the channel availability check holds TX. */
 	bool cac_pending;
-	/* Come in-tree: l'AP rileva i radar, il detector e' armato. */
+	/* As in-tree: the AP detects radars, the detector is armed. */
 	bool radar_arm;
-	/* Come in-tree: quello che dipende dalla microcode. */
+	/* As in-tree: what depends on the microcode. */
 	struct {
 		struct b43_fw_layout layout;
 	} fw;
@@ -356,8 +351,8 @@ void b43_write32(struct b43_wldev *dev, u16 offset, u32 val);
 void b43_write16(struct b43_wldev *dev, u16 offset, u16 val);
 void b43_write16f(struct b43_wldev *dev, u16 offset, u16 val);
 
-/* SHM (ucode shared memory) -- kernel: b43/main.h; il tracer li emette
- * come OBJ.RD/OBJ.WR (implementazione in wrap.c). */
+/* SHM (ucode shared memory) -- kernel: b43/main.h; the tracer emits them
+ * as OBJ.RD/OBJ.WR (implementation in wrap.c). */
 #define B43_SHM_SHARED 0x0001
 #define B43_SHM_SCRATCH 0x0002
 #define B43_SHM_SC_MINCONT 0x0003
@@ -374,21 +369,21 @@ void b43_mac_suspend_enable(struct b43_wldev *dev);
 void b43_mac_phy_clock_set(struct b43_wldev *dev, bool on);
 
 /*
- * Master Host Feature maskset — helper AC-PHY-specifico.
+ * Master host flag maskset, AC-PHY-specific helper.
  *
- * b43 mainline ha `void b43_hf_write(struct b43_wldev *dev, u64 value)`
- * che scrive 3 word MHF (SHM HOSTF1/2/3, slot 0-2). Il blob vendor AC-PHY
- * usa 5 slot (0-4) e ha una semantica maskset atomica visibile al tracer
- * WL-diag come `MAC.MHF addr=<slot> val=<val> mask=<mask>`.
+ * Mainline b43 has `void b43_hf_write(struct b43_wldev *dev, u64 value)`,
+ * which writes 3 MHF words (SHM HOSTF1/2/3, slots 0-2). The vendor AC-PHY
+ * blob uses 5 slots (0-4) with an atomic maskset semantics, visible to the
+ * wl-diag tracer as `MAC.MHF addr=<slot> val=<val> mask=<mask>`.
  *
- * L'implementazione reale è in b43-next/phy_ac.c, static, e scrive in SHM
- * i registri B43_SHM_SH_HOSTFn (tutti già definiti nel kernel b43.h). Il
- * Makefile la sposta in phy_ac_hostflags.c, perche' il --wrap del linker
- * intercetti la chiamata prima che raggiunga l'implementazione.
+ * The real implementation is in b43-next/phy_ac.c, static, and writes the
+ * B43_SHM_SH_HOSTFn cells in SHM (all already defined in the kernel's
+ * b43.h). The Makefile moves it to phy_ac_hostflags.c, so the linker's
+ * --wrap intercepts the call before it reaches the implementation.
  *
  * slot: 0..4  (0 = HOSTF1, 4 = HOSTF5)
- * mask: bit da preservare (~mask sono i bit modificati)
- * val:  valore dei bit modificati
+ * mask: bits to keep (~mask are the bits changed)
+ * val:  value of the bits changed
  */
 void b43_phy_ac_mhf_maskset(struct b43_wldev *dev,
 			    u16 slot, u16 mask, u16 val);
@@ -448,10 +443,10 @@ void bcmn_core_set_clockmode(struct bcmn_device *core,
 #define B43_MMIO_RADIO24_DATA     0x1FA
 
 /*
- * Celle di shared memory delle cinque word di host flag, e MACCTL: valori del
- * b43.h del kernel, serviti qui perche' le funzioni dei flag host di
- * phy_ac.c sono nel link (le loro decisioni, non solo la loro etichetta,
- * sono cio' che il confronto verifica).
+ * Shared memory cells of the five host flag words, and MACCTL: values from
+ * the kernel's b43.h, served here because phy_ac.c's host flag functions are
+ * in the link (their decisions, not only their label, are what the
+ * comparison checks).
  */
 #define B43_SHM_SH_HOSTF1         0x005E
 #define B43_SHM_SH_RADAR          0x0066

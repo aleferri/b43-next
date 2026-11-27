@@ -1928,12 +1928,12 @@ static void b43_phy_ac_shm_mac_config_block(struct b43_wldev *dev)
 {
 	B43_AC_FN();
 	/* Sixteen consecutive words from +0x40. */
-	static const u16 blocco_40[] = {
+	static const u16 words_40[] = {
 		0x3475, 0x3475, 0x3475, 0x217c, 0x237b, 0x217c, 0x217c, 0x217c,
 		0x3276, 0x3276, 0x3475, 0x187e, 0x217c, 0x167e, 0x1d7d, 0x1f7c,
 	};
 	/* Seven consecutive words from +0x16. */
-	static const u16 blocco_16[] = {
+	static const u16 words_16[] = {
 		0x41c2, 0x0000, 0x0017, 0x024b, 0x0097, 0x0500, 0x0000,
 	};
 	const struct b43_shm_layout *shm = dev->fw.layout.shm;
@@ -1967,14 +1967,14 @@ static void b43_phy_ac_shm_mac_config_block(struct b43_wldev *dev)
 	b43_shm_write16(dev, B43_SHM_SHARED, base + 0x600,
 			b43_shm_read16(dev, B43_SHM_SHARED, base + 0x600));
 
-	for (i = 0; i < ARRAY_SIZE(blocco_40); i++)
+	for (i = 0; i < ARRAY_SIZE(words_40); i++)
 		b43_shm_write16(dev, B43_SHM_SHARED,
-				(u16)(base + 0x40 + i * 2), blocco_40[i]);
+				(u16)(base + 0x40 + i * 2), words_40[i]);
 	if (!shm->mac_cfg_16)
 		return;
-	for (i = 0; i < ARRAY_SIZE(blocco_16); i++)
+	for (i = 0; i < ARRAY_SIZE(words_16); i++)
 		b43_shm_write16(dev, B43_SHM_SHARED,
-				(u16)(base + 0x16 + i * 2), blocco_16[i]);
+				(u16)(base + 0x16 + i * 2), words_16[i]);
 }
 
 /*
@@ -10518,7 +10518,7 @@ static void b43_phy_ac_down(struct b43_wldev *dev)
 	 * The solver runs again over the same accumulators and writes the same
 	 * pair as the first apply. The stock pair here is what block D's peek
 	 * returned, but using the peek would hide the solver's residual on b
-	 * from the score (see VAL_TOLLERANZA in test/unit/compare.py).
+	 * from the score (see VAL_TOLERANCE in test/unit/compare.py).
 	 */
 	if (dev->phy.ac->iqlo_saved) {
 		unsigned int c;

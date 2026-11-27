@@ -138,11 +138,11 @@ for c in $caps; do
 				./ht-trace ap_start "$win.ops" "$a" "$z" -o "$win.trace" \
 				2>/dev/null || exit 1
 			python3 ../unit/cmp_skip.py "$win.ops" "$win.trace" "$a:$z" \
-				--board r6400v1 --bus $B | grep -A2 '^grezzo'
+				--board r6400v1 --bus $B | grep -A2 '^raw '
 			grep -E "$PHYSEL" "$win.trace" > "$win.phy.trace"
 			python3 ../unit/cmp_skip.py "$win.phy.ops" "$win.phy.trace" \
-				"$a:$z" --board r6400v1 --bus $B | grep -A2 '^grezzo' |
-				sed '1s/^grezzo       /PHY+radio+MAC/'
+				"$a:$z" --board r6400v1 --bus $B | grep -A2 '^raw ' |
+				sed '1s/^raw          /PHY+radio+MAC/'
 		fi
 		before=$ch gain=10
 	done || exit 1

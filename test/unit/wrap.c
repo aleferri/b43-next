@@ -293,21 +293,20 @@ void b43_test_trace_to(FILE *f) { trace_stream = f; }
 
 /* ============ Read oracle ============
  *
- * Invece di read plan scritti a mano, i valori di ritorno possono venire dalla
- * cattura vendor: la N-esima lettura di un indirizzo restituisce la N-esima
- * lettura di quello stesso indirizzo nella cattura, in ordine di episodio.
- * Si attiva con AC_READ_ORACLE=<cattura passata per `trace_filter.py
- * --retvals`>, e
- * AC_READ_ORACLE_FROM=<episodio> limita il caricamento alla fase che il flow
- * copre. Serve: le code sono per indirizzo e in ordine, quindi caricare tutta
- * la cattura per un flow che ne esegue una fetta fa consumare valori di letture
- * precedenti alla fetta.
+ * Instead of hand-written read plans, the return values can come from the
+ * vendor capture: the N-th read of an address returns the N-th read of the
+ * same address in the capture, in episode order. It is enabled with
+ * AC_READ_ORACLE=<capture passed through `trace_filter.py --retvals`>, and
+ * AC_READ_ORACLE_FROM=<episode> limits the loading to the phase the flow
+ * covers. It is needed: the queues are per address and in order, so loading
+ * the whole capture for a flow that runs a slice of it would consume values
+ * of reads before the slice.
  *
- * Attenzione a cosa questo dimostra: le read combaciano per costruzione, non
- * perche' il driver le indovini. Il guadagno e' sulle *write derivate*, che
- * dipendono dai valori letti e diventano confrontabili. E l'esaurimento di una
- * coda (il driver legge un indirizzo piu' volte del vendor) e' un segnale, non
- * un dettaglio: viene contato e riportato da b43_test_oracle_report().
+ * Mind what this proves: the reads match by construction, not because the
+ * driver guesses them. The gain is on the *derived writes*, which depend on
+ * the values read and become comparable. And a queue running out (the
+ * driver reads an address more times than the vendor) is a signal, not a
+ * detail: b43_test_oracle_report() counts and reports it.
  */
 #define ORACLE_ADDRS	0x2000
 
@@ -544,13 +543,13 @@ static void oracle_init(void)
 			else
 				tbl_len = 0;
 		} else if ((p = strstr(line, "PHY.RDW")) != NULL) {
-			/*
-			 * Il data port riletto senza riselezionare
-			 * l'indirizzo: e' la parola successiva della cella
-			 * aperta dal marcatore. Il perche' sta in
-			 * resolve_wide_reads() di compare.py, che risolve lo
-			 * stesso record dal lato confronto.
-			 */
+				/*
+				 * The data port reread without reselecting the
+				 * address: the next word of the cell the marker
+				 * opened. The reason is in compare.py's
+				 * resolve_wide_reads(), which resolves the same
+				 * record on the comparison side.
+				 */
 			if (sscanf(p, "PHY.RDW %*[^=]=%x", &val) != 1)
 				continue;
 			if (tbl_len && tbl_words)
@@ -592,10 +591,9 @@ static void oracle_init(void)
 	oracle_flush_bulk(&bulk_addr, &bulk_words);
 	fclose(f);
 	oracle_on = 1;
-	fprintf(stderr, "wrap: oracle attivo da %s\n", path);
+	fprintf(stderr, "wrap: oracle active from %s\n", path);
 }
 
-/* Ritorna 1 e scrive *out se l'oracolo ha un valore per questo indirizzo. */
 /*
  * Complain once if the capture behind the oracle does not trace a class. The
  * flow may still be comparable on the classes that are there, but any argument
@@ -650,6 +648,7 @@ static void perturb_init(void)
 	perturb_addr_valid = 1;
 }
 
+/* Return 1 and write *out if the oracle has a value for this address. */
 static int oracle_take(struct oracle_q *tbl, u16 addr, u16 *out)
 {
 	struct oracle_q *q;
@@ -708,17 +707,17 @@ void b43_test_oracle_report(void)
 				partial++;
 			if (q[i]->iter != q[i]->n)
 				fprintf(stderr,
-					"oracle %s 0x%04x  consumate %d/%d\n",
+					"oracle %s 0x%04x  consumed %d/%d\n",
 					nm[i], a, q[i]->iter, q[i]->n);
 			else if (q[i]->over)
 				fprintf(stderr,
-					"oracle %s 0x%04x  esaurita, %d letture in eccesso\n",
+					"oracle %s 0x%04x  exhausted, %d reads too many\n",
 					nm[i], a, q[i]->over);
 		}
 	}
 	fprintf(stderr,
-		"oracle: %ld hit, %ld indirizzi senza voce, %ld code esaurite; "
-		"%d indirizzi noti, %d non consumati del tutto\n",
+		"oracle: %ld hit, %ld addresses without an entry, %ld queues exhausted; "
+		"%d addresses known, %d not fully consumed\n",
 		oracle_hits, oracle_miss_addr, oracle_miss_exhausted,
 		addrs, partial);
 }
@@ -750,9 +749,9 @@ static bool tbl_oracle_serve(u16 id, u16 offset, u8 width, size_t len)
 	}
 	if (width == 48) {
 		/*
-		 * Le tre parole della cella escono dalla stessa porta dati, una
-		 * dopo l'altra: il piano e' piatto, non una colonna per
-		 * registro come a 32 bit.
+		 * The cell's three words come out of the same data port, one after
+		 * the other: the plan is flat, not one column per register as at 32
+		 * bits.
 		 */
 		for (i = 0; i < len; i++) {
 			struct oracle_q *q = &oracle_tbl[id][offset + i];
@@ -818,14 +817,14 @@ static u16 phy_read_value(u16 reg)
 
 	if (p && p->iter < p->cap)
 		return p->results[p->iter++];
-	/* oracolo e plan assenti o esauriti: cadi sul mirror delle write. */
+	/* Oracle and plan absent or exhausted: fall back on the write mirror. */
 	v = (reg < MIRROR_PHY_SZ) ? mirror_phy[reg] : 0;
 	/*
-	 * Backstop, non un modello: le letture di 0x0270 arrivano dall'oracolo o
-	 * dal plan (readplan_0270.h). Se entrambi si esauriscono, il mirror
-	 * restituirebbe il bit di start ancora alto e il poll girerebbe fino al
-	 * timeout; qui l'attesa termina invece subito, cosi' un plan troppo
-	 * corto si vede come conteggio di op sbagliato e non come stallo.
+	 * A backstop, not a model: the reads of 0x0270 come from the oracle or
+	 * from the plan (readplan_0270.h). If both run out, the mirror would
+	 * return the start bit still high and the poll would spin until the
+	 * timeout; here the wait ends right away instead, so a plan too short
+	 * shows as a wrong op count and not as a stall.
 	 */
 	if (reg == 0x0270)
 		v &= (u16)~0x0001;
@@ -844,9 +843,10 @@ u16 __wrap_b43_phy_read(struct b43_wldev *dev, u16 reg)
 }
 
 /*
- * status_mask derivato dallo stato dei registri, non dalle op emesse. La tabella
- * e' la stessa di reverse-tools/annotate_enables.py, cosi' lo stato che le
- * REQUIRE dello scratch vedono e' lo stesso che l'annotatore ricava dalla
+ * status_mask derived from the registers' state, not from the ops emitted.
+ * The table is the same as reverse-tools/annotate_enables.py's, so the state
+ * the scratch's REQUIREs see is the same one the annotator derives from the
+ * capture.
  */
 static void phy_state_track(struct b43_wldev *dev, u16 reg, u16 val)
 {
@@ -957,11 +957,8 @@ void __wrap_b43_phy_maskset(struct b43_wldev *dev, u16 reg, u16 mask, u16 set)
 }
 
 /*
- * Il force delle clock gated. Stava come commento perche' le catture del d6220
- * non lo tracciavano: l'hook che lo registra, `PHY.FGC`, e' fra quelli aggiunti
- * con la ricattura, e su cold01 sono 80 op. Come commento il confronto non lo
- * vedeva, quindi il vendor le contava mancanti e il port non le aveva: ora si
- * confrontano.
+ * The clock-gating force. The capture's `PHY.FGC` hook records it (80 ops on
+ * cold01), so it is compared.
  */
 void __wrap_b43_phy_force_clock(struct b43_wldev *dev, bool force)
 {
@@ -1005,7 +1002,7 @@ void __wrap_b43_radio_mask(struct b43_wldev *dev, u16 reg, u16 mask)
 	u16 cur, nxt;
 	fprintf(trace(), "cpu1 RAD.MOD  addr=0x%04x val=0x0000 mask=0x%04x\n",
 		reg, (u16)~mask);
-	cur = __wrap_b43_radio_read(dev, reg);	/* emette RAD.RD + read plan */
+	cur = __wrap_b43_radio_read(dev, reg);	/* emits RAD.RD + read plan */
 	nxt = cur & mask;
 	fprintf(trace(), "cpu1 RAD.WR   addr=0x%04x val=0x%04x\n", reg, nxt);
 	if (reg < MIRROR_RADIO_SZ) mirror_radio[reg] = nxt;
@@ -1025,14 +1022,14 @@ void __wrap_b43_radio_set(struct b43_wldev *dev, u16 reg, u16 val)
 void __wrap_b43_radio_maskset(struct b43_wldev *dev, u16 reg, u16 mask, u16 set)
 {
 	/*
-	 * Il tracer wl-diag vendor espande OGNI radio maskset in tripletta
-	 * MOD + RD + WR (visibile l'RMW hardware reale: il chip non ha un
-	 * comando "maskset" atomico sul bus radio, il blob fa read+write e
-	 * wl-diag li mostra entrambi). Il PHY invece è tracciato atomico
-	 * (solo MOD). Riprodotto qui per coerenza col trace vendor. Il peek
-	 * RAD.RD è delegato a __wrap_b43_radio_read così onora eventuali
-	 * read plans registrati per riflettere lo stato pre-esistente del
-	 * silicio (bit non azzerati dallo scratch).
+	 * The vendor's wl-diag tracer expands EVERY radio maskset into a
+	 * MOD + RD + WR triplet (the real hardware RMW shows: the chip has no
+	 * atomic "maskset" command on the radio bus, the blob does read+write and
+	 * wl-diag shows both). The PHY instead is traced atomic (MOD only).
+	 * Reproduced here to match the vendor trace. The RAD.RD peek is
+	 * delegated to __wrap_b43_radio_read so it honours any read plans
+	 * registered to reflect the silicon's pre-existing state (bits the
+	 * scratch does not clear).
 	 */
 	u16 cur, nxt;
 	fprintf(trace(), "cpu1 RAD.MOD  addr=0x%04x val=0x%04x mask=0x%04x\n",
@@ -1149,9 +1146,9 @@ void __wrap_b43_actab_zerofill_locked(struct b43_wldev *dev,
 }
 
 /*
- * write_bulk_scoped: variante auto-contained (fase B4, vendor #41503+).
- * Emette lo stesso label TBL.WR; le op interne (peek + lock + WR ID + WR
- * data + unlock) sono generate dai wrap phy_read/phy_write/phy_maskset.
+ * write_bulk_scoped: self-contained variant (phase B4, vendor #41503+).
+ * It emits the same TBL.WR label; the inner ops (peek + lock + WR ID + WR
+ * data + unlock) are generated by the phy_read/phy_write/phy_maskset wraps.
  */
 void __real_b43_actab_write_bulk_scoped(struct b43_wldev *dev,
 					u16 id, u16 offset, u8 width,
@@ -1233,10 +1230,10 @@ static int txlpf_prestate(u16 id, u16 offset)
 }
 
 /*
- * Plan per cella di tabella, chiavato su (id, offset). Le letture di tabella
- * passano tutte dalla porta 0x000f, quindi un plan su quell'indirizzo dipende
- * dalla posizione nella coda globale; questo no. I valori vengono spinti nella
- * coda della porta appena prima della lettura, cosi' l'ordine si arrangia.
+ * Plan per table cell, keyed on (id, offset). Table reads all go through the
+ * 0x000f port, so a plan on that address depends on the position in the
+ * global queue; this one does not. The values are pushed into the port's
+ * queue right before the read, so the order sorts itself out.
  */
 #define MAX_TBL_PLANS 32
 struct tbl_plan {
@@ -1250,7 +1247,7 @@ static int tbl_plans_n;
 void b43_test_plan_table_cell(u16 id, u16 off, const u16 *vals, int n)
 {
 	if (tbl_plans_n == MAX_TBL_PLANS) {
-		fprintf(stderr, "wrap: MAX_TBL_PLANS superato (id 0x%04x off 0x%04x)\n",
+		fprintf(stderr, "wrap: MAX_TBL_PLANS exceeded (id 0x%04x off 0x%04x)\n",
 			id, off);
 		return;
 	}
@@ -1262,7 +1259,7 @@ void b43_test_plan_table_cell(u16 id, u16 off, const u16 *vals, int n)
 	tbl_plans_n++;
 }
 
-/* Consuma `len` valori dal plan della cella, avanzando il cursore. */
+/* Consume `len` values from the cell's plan, advancing the cursor. */
 static const u16 *tbl_plan_take(u16 id, u16 off, size_t len)
 {
 	int i;
@@ -1315,15 +1312,14 @@ void __wrap_b43_actab_read_bulk(struct b43_wldev *dev,
 /* ============ MAC / misc helpers ============ */
 
 /*
- * MAC.MCTRL come la traccia del vendor la registra, `new = (old & mask) | set`
- * col `mask` del tracer uguale ai bit toccati, ~mask. E' l'op delle
- * scritture di MACCONTROL del core che l'harness emette ai punti del vendor
- * (vedi b43_phy_ac_core_site() in main.c) e di b43_mac_suspend/enable qui
- * sotto.
+ * MAC.MCTRL as the vendor trace records it, `new = (old & mask) | set` with
+ * the tracer's `mask` equal to the bits touched, ~mask. It is the op of the
+ * core's MACCONTROL writes the harness emits at the vendor's points (see
+ * b43_phy_ac_core_site() in main.c) and of b43_mac_suspend/enable below.
  *
- * Lo stato del MAC per le REQUIRE del driver non si tiene qui: lo legge
- * b43_phy_ac_status() da dev->mac_suspended, che i wrapper di
- * b43_mac_suspend/enable qui sotto mantengono come fa il core.
+ * The MAC's state for the driver's REQUIREs is not kept here:
+ * b43_phy_ac_status() reads it from dev->mac_suspended, which the
+ * b43_mac_suspend/enable wrappers below maintain as the core does.
  */
 void b43_test_emit_mctrl(u32 mask, u32 set)
 {
@@ -1333,10 +1329,10 @@ void b43_test_emit_mctrl(u32 mask, u32 set)
 }
 
 /*
- * I registri a 32 bit del MAC, per la richiesta del campione di rumore su
- * MACCMD. Nessuna cattura porta la classe -- il tracer del vendor non aggancia
- * l'MMIO del MAC -- quindi la lettura rende zero e il confronto le scarta
- * entrambe, vedi SOLO_PORT_SENZA_CLASSE in compare.py.
+ * The MAC's 32-bit registers, for the noise sample request on MACCMD. No
+ * capture carries the class -- the vendor tracer does not hook the MAC's
+ * MMIO -- so the read returns zero and the comparison drops both, see
+ * PORT_ONLY_UNTRACED in compare.py.
  */
 u32 b43_read32(struct b43_wldev *dev, u16 off)
 {
@@ -1352,51 +1348,31 @@ void b43_write32(struct b43_wldev *dev, u16 off, u32 val)
 }
 
 /*
- * b43_mac_suspend/enable in-tree sono annidabili: tengono dev->mac_suspended e
- * toccano MACCTL solo sulle transizioni 0->1 e 1->0. E' il modello fedele, ed e'
- * il DEFAULT: AC_MAC_REFCOUNT=0 torna a una MAC.MCTRL per chiamata.
+ * The in-tree b43_mac_suspend/enable nest: they keep dev->mac_suspended and
+ * touch MACCTL only on the 0->1 and 1->0 transitions. It is the faithful
+ * model, and the DEFAULT: AC_MAC_REFCOUNT=0 goes back to one MAC.MCTRL per
+ * call.
  *
- * Il default era il contrario, con la nota che i call site erano stati
- * trascritti nell'assunzione senza contatore e che col contatore il MATCH di
- * switch_channel sarebbe caduto. La misura dice altro:
+ *                 MAC.MCTRL emitted (vendor 119)   similarity
+ *   with counter  flow1 113, flow2 124             99.30%, 99.19%
+ *   without       flow1  32, flow2 124             49.50%, 99.19%
  *
- *            MAC.MCTRL emesse      similarita'
- *   flow1    32 -> 113 (vendor 119)     49.50% -> 99.30%
- *   flow2    124 -> 124 (vendor 119)    99.19% -> 99.19%
+ * On switch_channel the flag has no effect: that path does not nest. The 6
+ * MAC.MCTRL still missing on flow1 are the variable length of the probe
+ * loop, not absent ops.
  *
- * Su switch_channel il flag non ha effetto: quel percorso non annida. Le 6
- * MAC.MCTRL che ancora mancano su flow1 sono la lunghezza variabile del ciclo
- * probe, non op assenti -- vedi il commento in phy_ac.c sulle quattro inserite
- * prima della prima GPIO.
- *
- * I flow entrano con il MAC sospeso, come ops->init e switch_channel nel driver
- * vero; b43_test_mac_reset() riporta il contatore a quello stato.
+ * Each flow sets the MAC state it enters with in dev->mac_suspended
+ * (main.c); the logical MAC state follows the counter, not the writes
+ * emitted, and b43_phy_ac_status() reads it for the driver's REQUIREs.
  */
 static int mac_refcount = -1;
-/* AC_MAC_TRACE=1 per il log delle transizioni. */
+/* AC_MAC_TRACE=1 logs the transitions. */
 static int mac_trace = -1;
-
-/*
- * Lo stato d'ingresso dei flow e' MAC *acceso*: switch_channel viene chiamata da
- * b43_phy_init dopo ops->init, e le sue coppie suspend/enable producono le write
- * che il driver stock emette solo partendo da contatore 0. Verificato: con
- * AC_MAC_REFCOUNT=1 e questo stato, switch_channel combacia con 192 MAC.MCTRL,
- * zero annidamenti e zero enable fuori posto.
- *
- * Lo stato logico del MAC segue il contatore, non le write emesse: e' il
- * contatore che b43_phy_ac_status() legge per le REQUIRE del driver.
- */
 
 static int mac_rc(void)
 {
 	if (mac_refcount < 0) {
-		/*
-		 * Default acceso: e' il modello fedele e la misura lo conferma. Sul
-		 * flow full il port emette 113 MAC.MCTRL col contatore contro le 119
-		 * del vendor, e 32 senza; in similarita' 99.30% contro 49.50%. Su
-		 * switch_channel il flag e' irrilevante, 124 in entrambi i casi.
-		 * AC_MAC_REFCOUNT=0 lo disattiva.
-		 */
+		/* On by default; AC_MAC_REFCOUNT=0 turns it off. */
 		const char *e = getenv("AC_MAC_REFCOUNT");
 		mac_refcount = !(e && *e == '0');
 		e = getenv("AC_MAC_TRACE");
@@ -1421,7 +1397,7 @@ void __wrap_b43_mac_enable(struct b43_wldev *dev)
 		b43_test_emit_mctrl(~B43_MACCTL_ENABLED,
 				   B43_MACCTL_ENABLED);
 	if (dev->mac_suspended < 0)
-		fprintf(stderr, "wrap: mac_suspended = %d (enable senza suspend)\n",
+		fprintf(stderr, "wrap: mac_suspended = %d (enable without suspend)\n",
 			dev->mac_suspended);
 }
 
@@ -1443,14 +1419,13 @@ void __wrap_b43_mac_phy_clock_set(struct b43_wldev *dev, bool on)
 { (void)dev; (void)on; }
 
 /*
- * MHF (Master Host Flag) maskset helper AC-PHY-specifico.
- * Emette label:
+ * AC-PHY-specific MHF (MAC host flag) maskset helper. It emits the label:
  *   MAC.MHF addr=<slot> val=<val> mask=<mask>
- * dove val e mask sono i 16 bit del maskset atomico applicato dal firmware
- * MAC sulla word MHF indicata da slot (0..4).
+ * where val and mask are the 16 bits of the atomic maskset the MAC firmware
+ * applies to the MHF word selected by slot (0..4).
  *
- * Differisce da b43_hf_write mainline (che ha signature `u64 value` e
- * supporta solo 3 slot). Vedi test/stubs/b43.h per la motivazione.
+ * It differs from mainline b43_hf_write (which has a `u64 value` signature
+ * and supports only 3 slots). See test/unit/stubs/b43.h for the reason.
  */
 void __real_b43_phy_ac_mhf_maskset(struct b43_wldev *dev,
 				   u16 slot, u16 mask, u16 val);
@@ -1462,10 +1437,11 @@ void __wrap_b43_phy_ac_mhf_maskset(struct b43_wldev *dev,
 		slot, val, (u16)~mask);
 
 	/*
-	 * La decisione di scrivere la cella sta nella funzione vera, che tiene
-	 * lo shadow delle cinque word: qui si emette solo il record MAC.MHF,
-	 * che e' il livello a cui l'hook del vendor traccia la chiamata. La
-	 * OBJ.WR, quando c'e', esce da b43_shm_write16 come nel driver.
+	 * The decision to write the cell is in the real function, which keeps
+	 * the shadow of the five words: here only the MAC.MHF record is
+	 * emitted, the level at which the vendor's hook traces the call. The
+	 * OBJ.WR, when there is one, comes out of b43_shm_write16 as in the
+	 * driver.
 	 */
 	__real_b43_phy_ac_mhf_maskset(dev, slot, mask, val);
 }
@@ -1475,12 +1451,12 @@ void __wrap_b43_phyop_switch_analog_generic(struct b43_wldev *dev, bool on)
 
 /* ============ SHM (OBJ) accessors ============
  *
- * Definizioni piene, non wrap: nel link di test main.c non c'e',
- * quindi b43_shm_read16/write16 non hanno un'implementazione reale da
- * intercettare. Il tracer le emette come OBJ.RD/OBJ.WR, gli stessi
- * mnemonici della cattura vendor. Le letture pescano dall'oracolo per
- * indirizzo (i valori SHM sono stato ucode, non derivabile dal modello) e
- * cadono sul mirror delle write in sua assenza.
+ * Full definitions, not wraps: main.c is not in the test link, so
+ * b43_shm_read16/write16 have no real implementation to intercept. The
+ * tracer emits them as OBJ.RD/OBJ.WR, the same mnemonics as the vendor
+ * capture. The reads draw from the oracle by address (the SHM values are
+ * ucode state, not derivable from the model) and fall back on the write
+ * mirror without it.
  */
 #define MIRROR_SHM_WORDS 0x1000	/* offset byte < 0x2000 */
 static u16 mirror_shm[MIRROR_SHM_WORDS];
@@ -1547,14 +1523,14 @@ u16 b43_rate_block(struct b43_wldev *dev, u16 hw_value)
 
 /* ============ template RAM (TPL) ============
  *
- * b43 scrive i template dei frame da b43_write_template_common() e
- * b43_write_mac_bssid_templates(), che passano dalla coppia
- * B43_MMIO_TMPLT_CTL/TMPLT_DATA; il tracer del vendor aggancia la' ed emette
- * una TPL.RAMW per word.
+ * b43 writes the frame templates from b43_write_template_common() and
+ * b43_write_mac_bssid_templates(), which go through the
+ * B43_MMIO_TMPLT_CTL/TMPLT_DATA pair; the vendor tracer hooks there and
+ * emits one TPL.RAMW per word.
  *
- * Qui c'e' solo l'emissione. Quali word scrivere lo decidono i doppioni del
- * core in main.c, perche' quel codice sta in main.c del kernel e l'harness non
- * lo compila -- come per emit_core_shm_macaddr() e le altre.
+ * Only the emission is here. Which words to write is decided by the core's
+ * duplicates in main.c, because that code is in the kernel's main.c and the
+ * harness does not compile it -- like emit_core_shm_macaddr() and the others.
  */
 void b43_test_tplram_write16(u16 offset, u16 val)
 {
@@ -1563,33 +1539,16 @@ void b43_test_tplram_write16(u16 offset, u16 val)
 
 /* ============ address match table ============
  *
- * Un record per riga, che e' la granularita' del tracer: il suo hook su
- * wlc_bmac_write_amt da' `AMT.WR idx=`, non le due word sottostanti. Quelle il
- * vendor le scrive sulla coppia objaddr/objdata direttamente, per una via che
- * nessun accessor agganciato copre, quindi non sono confrontabili.
- *
- * Non passa da b43_shm_write16: quella ignora il routing e indicizza il mirror
- * su offset/2, quindi una riga AMT -- word 0..127 -- calpesterebbe le celle
- * basse della shared memory, UCODEREV e le HOSTF comprese.
+ * One record per row, the tracer's granularity, plus the traffic the row
+ * costs. It does not go through b43_shm_write16: that one ignores the
+ * routing and indexes the mirror on offset/2, so an AMT row -- words 0..127
+ * -- would trample the low shared memory cells, UCODEREV and the HOSTFs
+ * included.
  */
+
 /*
- * Un record per riga piu' il traffico che la riga costa. L'hook del tracer su
- * wlc_bmac_write_amt da' `AMT.WR idx=`, e sotto ci sono la lettura e la
- * riscrittura della riga da 8 byte sul routing RCMTA -- `OBJ.BULKR` e
- * `OBJ.BULKW`, due degli hook aggiunti con la ricattura. Prima non c'erano e
- * qui si emetteva solo il record logico; adesso ci sono e la riga si confronta
- * per intero.
- *
- * Quello che si emette qui e' la forma che ha la cattura: una lettura e una
- * scrittura della riga intera. `b43_amt_write()` di b43/main.c fa invece due
- * b43_shm_write32() sulle due word, e rilegge solo nel caso KEEP_FLAGS. Le due
- * cose non coincidono e la patch va portata alla forma della cattura -- vedi
- * docs/retrace-todo.md. Finche' non lo e', questo doppione descrive il vendor
- * e non la patch, che e' il contrario di come dovrebbe stare.
- */
-/*
- * L'etichetta con cui il tracer del vendor marca l'ingresso di
- * keymac_write(): l'indice della riga, o -1 e -2 per le due in cima.
+ * The label the vendor tracer puts on the entry of keymac_write(): the row's
+ * index, or -1 and -2 for the two at the top.
  */
 void b43_test_emit_addrm(u32 idx)
 {
@@ -1599,6 +1558,18 @@ void b43_test_emit_addrm(u32 idx)
 		fprintf(trace(), "cpu1 ADDRM.SET idx=0x%04x\n", idx);
 }
 
+/*
+ * The tracer's hook on wlc_bmac_write_amt gives `AMT.WR idx=`, and below it
+ * come the read and the rewrite of the 8-byte row on the RCMTA routing,
+ * `OBJ.BULKR` and `OBJ.BULKW`, so the row is compared whole.
+ *
+ * What is emitted here is the capture's shape: one read and one write of the
+ * whole row. b43/main.c's `b43_amt_write()` does two b43_shm_write32() on
+ * the two words instead, and rereads only in the KEEP_FLAGS case. The two do
+ * not coincide and the patch has to be brought to the capture's shape -- see
+ * docs/retrace-todo.md. Until it is, this duplicate describes the vendor and
+ * not the patch, the opposite of how it should be.
+ */
 void b43_test_emit_amt(u16 idx, u16 flags)
 {
 	if (flags)

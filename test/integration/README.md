@@ -35,7 +35,7 @@ ln -s $(realpath ../build-6.18) /usr/src/linux-headers-6.18.0-0-generic
 ```
 
 ```sh
-make check          # every file of b43 and of the port: must say "0 errori"
+make check          # every file of b43 and of the port: must say "0 errors"
 make b43-trace      # expects "kernel 0" and only libc symbols unresolved
 ```
 
@@ -154,7 +154,7 @@ The second score has the PHY's and the radio's operations and the MAC's
 around them, MACCTL and the core's I/O control with its forced gated clock.
 wl's power saving while no BSS is up is not scored
 (`drop_power_save()` in `../unit/compare.py`). On `cold-2g6-20`,
-2026-11-13: `grezzo` 37472/57594 = 65.06%, PHY+radio+MAC 25746/26676 =
+2026-11-13: `raw` 37472/57594 = 65.06%, PHY+radio+MAC 25746/26676 =
 96.51%.
 
 With `UCODE=DIR` the run goes against a real ucode on b43-tools' virtual
@@ -165,13 +165,13 @@ PHY's and the radio's reads still come from the capture
 writes from a wl object. On `cold-2g6-20`, 2026-11-14, b43 brings each up
 and starts the BSS with no MAC suspend failed, no warning:
 
-| ucode | from | `grezzo` | PHY+radio+MAC |
+| ucode | from | `raw` | PHY+radio+MAC |
 |---|---|---|---|
 | 928.10006 | DD-WRT's 7.14.164.18, the R6400's own | 68.33% | 96.51% |
 | 784.2 | the DSL-3580L's 6.30 | 40.64% | 96.51% |
 | 675.2 | DD-WRT's 5.100.138.9 | 39.97% | 96.51% |
 
-`grezzo` is against wl's run with the 928: with another ucode the upload's
+`raw` is against wl's run with the 928: with another ucode the upload's
 words and the initvals differ from the capture's.
 
 ### bcma's PMU against the stock attach

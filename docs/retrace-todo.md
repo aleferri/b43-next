@@ -316,8 +316,8 @@ Open, for `CONFIG_B43_DFS` (`b43_phy_ac_radar_arm()`, `b43-next/radar_ac.c`):
 ### Probe-response offload
 
 Deliberately off: b43 keeps HOSTF2 bit 0 set and HOSTF5 bit 15 clear, and the
-cells are in `SOLO_VENDOR` of `test/unit/compare.py`, the two bits in
-`VAL_BIT_FUORI_PERIMETRO`. `PRMAXTIME=1` from `b43_wireless_core_init()` does
+cells are in `VENDOR_ONLY` of `test/unit/compare.py`, the two bits in
+`VAL_BITS_OUTSIDE_PERIMETER`. `PRMAXTIME=1` from `b43_wireless_core_init()` does
 not hold on the AC: the PHY comes up after it and writes 0 in
 `b43_phy_ac_op_switch_channel()`, as the stock driver does.
 
@@ -372,7 +372,7 @@ To implement the offload:
    `op_switch_channel` site, `0x8088` in `b43_wireless_core_init()`), and
    handle `B43_RX_MAC_RESP` on the probe requests that still come up when the
    bit is clear;
-6. remove the `SOLO_VENDOR` entries and `VAL_BIT_FUORI_PERIMETRO`;
+6. remove the `VENDOR_ONLY` entries and `VAL_BITS_OUTSIDE_PERIMETER`;
 7. clear HOSTF2 bit 0 (`b43_phy_ac_op_switch_channel()`), and keep the cores
    of SHM `0x0098` (bits 8:6) on the board's chains, as
    `b43_phy_ac_bss_cc_update()` does for `0x00cc`: the response takes PHY

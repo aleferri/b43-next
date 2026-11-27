@@ -1,24 +1,24 @@
 // SPDX-License-Identifier: GPL-2.0
 /*
- * Il chiamante: fa partire b43 vero e ne raccoglie le op.
+ * The caller: it starts the real b43 and collects its ops.
  *
- * L'aggancio non e' una chiamata diretta a `b43_bcma_probe`, che e' statica.
- * `module_init(b43_init)` con -DMODULE crea l'alias `init_module`, quindi:
+ * The hook is not a direct call to `b43_bcma_probe`, which is static.
+ * `module_init(b43_init)` with -DMODULE creates the `init_module` alias, so:
  *
  *     init_module()  ->  b43_init()  ->  __bcmn_driver_register(&b43_bcma_driver)
  *
- * e il nostro `__bcmn_driver_register` cattura la `probe`. Da li' la chiamiamo
- * con un core finto. Cosi' non si tocca b43 e non si duplica la sua sequenza
- * di attach: la percorre lui.
+ * and our `__bcmn_driver_register` captures the `probe`. From there we call
+ * it with a fake core. So b43 is not touched and its attach sequence is not
+ * duplicated: b43 walks it itself.
  *
- * Compilato coi flag del KERNEL, perche' costruisce `struct bcmn_device` e
- * `struct bcmn_bus` veri: i loro campi sono ingresso dei gate di b43
- * (`core->id.rev`, `chipinfo.id`, `chipinfo.rev`), e con strutture inventate
- * i gate prenderebbero il ramo sbagliato in silenzio.
+ * Compiled with the KERNEL's flags, because it builds real `struct
+ * bcmn_device` and `struct bcmn_bus`: their fields are inputs of b43's gates
+ * (`core->id.rev`, `chipinfo.id`, `chipinfo.rev`), and with invented
+ * structures the gates would take the wrong branch silently.
  *
- * Le op le emette bcmn_stub.c attraverso la vtable. Le letture le serve
- * l'oracolo: senza B43_READ_ORACLE ogni lettura e' zero e la traccia non e'
- * una misura -- vedi trace_out.c.
+ * bcma_stub.c emits the ops through the vtable. The oracle serves the reads:
+ * without B43_READ_ORACLE every read is zero and the trace is not a
+ * measurement -- see trace_out.c.
  */
 #include <bcma-next/bcmn.h>
 #include <linux/pci.h>
@@ -42,14 +42,14 @@ void b43_test_chip_identity(unsigned int core_rev, u16 phy_ver, u16 radio,
 extern const struct bcmn_host_ops b43_test_bcma_ops;
 
 /*
- * Compilato coi flag del kernel, quindi senza stdio: il messaggio va a una
- * funzione di trace_out.c, che e' codice utente. Includere <stdio.h> qui
- * romperebbe -nostdinc, ed e' proprio la separazione che tiene le due meta'
- * della suite compilabili.
+ * Compiled with the kernel's flags, so without stdio: the message goes to a
+ * function of trace_out.c, which is user code. Including <stdio.h> here
+ * would break -nostdinc, which is exactly the separation that keeps the
+ * suite's two halves compilable.
  */
 void b43_trace_note(const char *fmt, int arg);
 
-/* Catturata da __bcmn_driver_register in kernel_shim.c. */
+/* Captured by __bcmn_driver_register in kernel_shim.c. */
 extern int (*b43_test_probe)(struct bcmn_device *core);
 extern void (*b43_test_remove)(struct bcmn_device *core);
 
@@ -57,12 +57,12 @@ int init_module(void);
 void cleanup_module(void);
 
 /*
- * Il core 802.11: corerev 42 su tutte le board della collezione (ucode42, AC
- * rev1, `corerev 0x2a` in ogni wl1_revinfo.txt). Chip, chiprev e deviceid PCI
- * cambiano da board a board e vengono dal profilo: sono i valori che decidono
- * i gate -- b43_supported_bands (main.c:5494) legge `bus->host_pci->device`
- * quando l'hosttype e' PCI -- quindi sono dati della board e non una scelta
- * qui.
+ * The 802.11 core: corerev 42 on all the collection's boards (ucode42, AC
+ * rev1, `corerev 0x2a` in every wl1_revinfo.txt). Chip, chiprev and PCI
+ * deviceid change from board to board and come from the profile: they are
+ * the values that decide the gates -- b43_supported_bands reads
+ * `bus->host_pci->device` when the hosttype is PCI -- so they are board data
+ * and not a choice made here.
  */
 #define TEST_CORE_REV		42
 #define TEST_CORE_ID		BCMN_CORE_80211
@@ -130,10 +130,10 @@ static void build_core(void)
 						   board->chip_rev);
 	test_bus.chipinfo.pkg = 0x1;
 
-	/*
-	 * b43 legge la ChipCommon per la SPROM e i GPIO. Il core c'e' perche'
-	 * un puntatore nullo la' dentro non e' un ramo che b43 gestisce.
-	 */
+		/*
+		 * b43 reads the ChipCommon for the SPROM and the GPIOs. The core is
+		 * there because a null pointer in there is not a branch b43 handles.
+		 */
 	test_cc_core.bus = &test_bus;
 	test_cc_core.id.id = BCMN_CORE_CHIPCOMMON;
 	/* Rev 43 on the 4360 family (archer-t5e EROM); bcma reads chipstatus
@@ -159,16 +159,16 @@ static void build_core(void)
 	test_host_core.id.id = board->host_core ?: BCMN_CORE_PCIE2;
 	test_host_core.id.rev = board->host_core ? 15 : 1;
 
-	/*
-	 * La SROM. Senza, b43 gira su una board azzerata: femctrl=0 -- che il
-	 * driver segnala -- rxchain=0, coremask=0, subband5gver=0 e pa5ga tutta
-	 * a zero, cioe' ogni valore che dipende dalla board sbagliato in
-	 * silenzio. Il profilo e' condiviso con ../unit, che e' la stessa
-	 * board, e si sceglie con B43_BOARD come la' con argv.
-	 *
-	 * Su hardware la riempie bcmn_sprom_extract_r11(); qui il profilo sta
-	 * al suo posto, con le stesse maschere.
-	 */
+		/*
+		 * The SROM. Without it b43 runs on a zeroed board: femctrl=0 -- which
+		 * the driver reports -- rxchain=0, coremask=0, subband5gver=0 and
+		 * pa5ga all zero, every board-dependent value silently wrong. The
+		 * profile is shared with ../unit, which is the same board, and is
+		 * chosen with B43_BOARD as there with argv.
+		 *
+		 * On hardware bcmn_sprom_extract_r11() fills it; here the profile
+		 * stands in for it, with the same masks.
+		 */
 	if (board->nvram_prefix)
 		bcm47xx_fill_sprom(&test_bus.sprom, board->nvram_prefix, false);
 	else
@@ -226,23 +226,23 @@ static void test_bcma_bus_init(void)
 }
 
 /*
- * Il canale NON si inietta da qui, e il tentativo e' stato istruttivo: `dev`
- * nasce dentro la probe, quindi l'harness non lo raggiunge prima. Ma il
- * problema non e' il banco -- vedi il README, sezione "il difetto che la
- * suite ha trovato".
+ * b43's ieee80211_ops and hw, captured by subsystem_stub.c's
+ * ieee80211_alloc_hw_nm(). The channel is not injected from here: `dev` is
+ * born inside the probe, out of the harness's reach, and register_hw picks
+ * the channel (subsystem_stub.c).
  */
 extern const struct ieee80211_ops *b43_test_hw_ops;
 extern struct ieee80211_hw *b43_test_hw;
 
-/* Il kernel e il microcodice, dagli stub. */
+/* The kernel and the microcode, from the stubs. */
 void b43_test_run_until(unsigned long until);
 void b43_test_irq(void);
 void b43_test_raise_irq(u32 reason);
 void b43_test_raise_dma0(u32 reason);
 
 /*
- * Il campione di rumore pronto, bit di B43_MMIO_GEN_IRQ_REASON: e' il
- * registro dell'hardware, lo stesso valore di b43.h.
+ * The noise sample ready, a bit of B43_MMIO_GEN_IRQ_REASON: it is the
+ * hardware's register, the same value as b43.h's.
  */
 #define TEST_IRQ_NOISESAMPLE_OK	0x00040000
 
@@ -260,9 +260,9 @@ static void test_bss(u64 changed)
 }
 
 /*
- * Quel che mac80211 fa all'ifup di un'interfaccia AP, dopo drv_start():
- * drv_add_interface(), ieee80211_hw_config(~0) e i parametri WMM di default
- * dell'AP, una conf_tx per coda.
+ * What mac80211 does at the ifup of an AP interface, after drv_start():
+ * drv_add_interface(), ieee80211_hw_config(~0) and the AP's default WMM
+ * parameters, one conf_tx per queue.
  */
 static void test_ifup(void)
 {
@@ -287,9 +287,9 @@ static void test_ifup(void)
 }
 
 /*
- * start_ap: hostapd da' il BSS e mac80211 lo passa al driver, beacon
- * compreso, in un solo bss_info_changed. DTIM 3 e il basic set {6, 12, 24}
- * sono quelli della cattura.
+ * start_ap: hostapd gives the BSS and mac80211 passes it to the driver,
+ * beacon included, in a single bss_info_changed. DTIM 3 and the basic set
+ * {6, 12, 24} are the capture's.
  */
 static void test_start_ap(void)
 {
@@ -307,10 +307,10 @@ static void test_start_ap(void)
 }
 
 /*
- * Il channel availability check come lo fa mac80211 per un driver senza
- * channel context: il tune col radar acceso, poi a check finito il rilascio
- * -- 20 MHz senza HT sullo stesso primario, radar spento -- e il tune di
- * start_ap, col radar di nuovo acceso.
+ * The channel availability check as mac80211 does it for a driver without
+ * channel contexts: the tune with the radar on, then once the check is over
+ * the release -- 20 MHz without HT on the same primary, radar off -- and
+ * start_ap's tune, with the radar on again.
  */
 static void test_cac_start(void)
 {
@@ -333,26 +333,26 @@ static void test_cac_end(void)
 }
 
 /*
- * L'ambiente dopo il bring-up, dalla timeline della cattura. L'orologio del
- * driver sono i jiffies, che qui avanzano solo quando lo dice la timeline:
- * l'istante di ogni evento si porta in jiffies e prima dell'evento scattano i
- * delayed work scaduti -- il periodic work, il poll del radar. I giri del
- * watchdog del vendor quindi non si consegnano, li fa il periodic work di
- * b43; servono a mettere in scala l'orologio: il vendor dichiara un secondo e
- * la cattura ne misura 1.004, e il primo giro cade un secondo dopo lo start,
- * come quello di b43.
+ * The environment after the bring-up, from the capture's timeline. The
+ * driver's clock is the jiffies, which here advance only when the timeline
+ * says so: each event's instant is carried into jiffies and before the event
+ * the expired delayed works fire -- the periodic work, the radar poll. So the
+ * vendor's watchdog rounds are not delivered, b43's periodic work does them;
+ * they serve to scale the clock: the vendor declares one second and the
+ * capture measures 1.004, and the first round falls one second after the
+ * start, like b43's.
  *
- *   NOISE   il campione pronto: B43_IRQ_NOISESAMPLE_OK dall'hard handler
- *   IRQ     un'interruzione del microcodice come la cattura l'ha vista:
- *           la causa in GEN_IRQ_REASON e lo stato del canale DMA 0, RX_DONE
- *           quando c'e' un frame. Cosa b43 ne fa -- l'ACK, le maschere, la
- *           lettura dell'anello di ricezione -- e' suo. Quelle cadute
- *           durante il bring-up del vendor arrivano tutte insieme all'inizio,
- *           perche' qui il bring-up e' una sola chiamata e l'orologio parte
- *           dopo.
- *   TPL     il beacon cambiato: bss_info_changed(BSS_CHANGED_BEACON)
- *   BSS_UP  il check chiuso: il rilascio del canale e start_ap
- *   WD, POLL  i timer del driver, che scattano da se'
+ *   NOISE   the sample ready: B43_IRQ_NOISESAMPLE_OK from the hard handler
+ *   IRQ     a microcode interrupt as the capture saw it: the reason in
+ *           GEN_IRQ_REASON and the state of DMA channel 0, RX_DONE when
+ *           there is a frame. What b43 does with it -- the ACK, the masks,
+ *           the read of the receive ring -- is its own. Those that fell
+ *           during the vendor's bring-up all arrive together at the start,
+ *           because here the bring-up is a single call and the clock starts
+ *           after it.
+ *   TPL     the beacon changed: bss_info_changed(BSS_CHANGED_BEACON)
+ *   BSS_UP  the check closed: the channel release and start_ap
+ *   WD, POLL  the driver's timers, which fire by themselves
  */
 static void test_environment(bool cac)
 {
@@ -447,22 +447,22 @@ int main(void)
 		return 1;
 	}
 	if (!b43_test_probe) {
-		b43_trace_note("b43 non ha registrato una probe bcma; "
-			       "compilato senza CONFIG_B43_NEXT_BCMA?%d\n", 0);
+		b43_trace_note("b43 registered no bcma probe; "
+			       "built without CONFIG_B43_NEXT_BCMA?%d\n", 0);
 		return 1;
 	}
 
 	err = b43_test_probe(&test_core);
 	b43_trace_note("probe: %d\n", err);
 
-	/*
-	 * Il bring-up. La probe fa solo l'attach: cio' che emette le ~29k op
-	 * del segmento e' il percorso di `ifconfig up`, che nel kernel entra
-	 * da mac80211 con hw->ops->start(). Chiamarlo qui e' l'aggancio
-	 * giusto, e non tocca b43: la vtable la cattura
-	 * ieee80211_alloc_hw_nm() nello stub, come __bcmn_driver_register
-	 * cattura la probe.
-	 */
+		/*
+		 * The bring-up. The probe does only the attach: what emits the
+		 * segment's ~29k ops is the `ifconfig up` path, which in the kernel
+		 * comes in from mac80211 with hw->ops->start(). Calling it here is the
+		 * right hook, and does not touch b43: the stub's
+		 * ieee80211_alloc_hw_nm() captures the vtable, as
+		 * __bcmn_driver_register captures the probe.
+		 */
 	/* A registration cfg80211 would refuse leaves no channel to start on */
 	if (!err && b43_test_hw && !b43_test_hw->conf.chandef.chan)
 		b43_trace_note("no channel registered, no start: %d\n", -EINVAL);
@@ -488,14 +488,14 @@ int main(void)
 	}
 
 	/*
-	 * L'esito NON e' il risultato del test: il risultato e' la traccia.
-	 * Una probe che ritorna 0 e non emette op e' un fallimento, e una che
-	 * ritorna un errore dopo aver emesso il bring-up e' informazione --
-	 * di solito il punto in cui uno stub non basta piu'.
+	 * The return value is NOT the test's result: the result is the trace. A
+	 * probe that returns 0 and emits no op is a failure, and one that
+	 * returns an error after emitting the bring-up is information -- usually
+	 * the point where a stub is no longer enough.
+	 *
+	 * The remove only if the probe succeeded: otherwise there is no drvdata
+	 * to free and the remove would read a pointer nobody wrote.
 	 */
-	/* Solo se la probe e' riuscita: altrimenti non c'e' drvdata da
-	 * liberare e la remove va a leggere un puntatore che nessuno ha
-	 * scritto. */
 	if (!err && b43_test_remove)
 		b43_test_remove(&test_core);
 	cleanup_module();
