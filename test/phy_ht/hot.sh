@@ -112,7 +112,6 @@ case ${1:-} in hot-2g-*) caps=$1; shift ;; esac
 for c in $caps; do
 	ops=$T/$c.ops
 	zcat "$BOARD"/traces/mmio-*/"$c-ops.txt.gz" > "$ops"
-	grep -E "$PHYSEL" "$ops" > "$T/$c.phy.ops"
 	rc0=$(rc "$ops" 0x0cc2) rc1=$(rc "$ops" 0x0cc3) rc2=$(rc "$ops" 0x0ca1)
 	before=6 gain=40
 	windows "$ops" | while read -r mark a z turns tick0 t25 t25b glitch; do
@@ -125,18 +124,26 @@ for c in $caps; do
 			*) center=0 ;;
 			esac
 			echo "== $c $seg, ops $a:$z"
+			# The window's operations and the marks, all that is
+			# read of the capture
+			win=$T/$c.$seg
+			awk -v a="$a" -v z="$z" '/ MARK / { print; next }
+				{ n = substr($2, 2) + 0 } n >= a && n <= z' \
+				"$ops" > "$win.ops"
+			grep -E "$PHYSEL" "$win.ops" > "$win.phy.ops"
 			HT_CHANNEL=$ch HT_CENTER=$center HT_PREV_CHANNEL=$before \
 				HT_TX_GAIN_IDX=$gain HT_WD_TURNS=$turns HT_GLITCH_HIGH=$glitch \
 				HT_WD_TICK0=$tick0 HT_RCCAL0=$rc0 \
 				HT_RCCAL1=$rc1 HT_RCCAL2=$rc2 HT_T25=$t25 HT_T25B=$t25b \
-				./ht-trace ap_start "$ops" "$a" "$z" -o "$T/$c.$seg.trace" 2>/dev/null
-			python3 ../unit/cmp_skip.py "$ops" "$T/$c.$seg.trace" "$a:$z" \
+				./ht-trace ap_start "$win.ops" "$a" "$z" -o "$win.trace" \
+				2>/dev/null || exit 1
+			python3 ../unit/cmp_skip.py "$win.ops" "$win.trace" "$a:$z" \
 				--board r6400v1 --bus $B | grep -A2 '^grezzo'
-			grep -E "$PHYSEL" "$T/$c.$seg.trace" > "$T/$c.$seg.phy.trace"
-			python3 ../unit/cmp_skip.py "$T/$c.phy.ops" "$T/$c.$seg.phy.trace" \
+			grep -E "$PHYSEL" "$win.trace" > "$win.phy.trace"
+			python3 ../unit/cmp_skip.py "$win.phy.ops" "$win.phy.trace" \
 				"$a:$z" --board r6400v1 --bus $B | grep -A2 '^grezzo' |
 				sed '1s/^grezzo       /PHY+radio+MAC/'
 		fi
 		before=$ch gain=10
-	done
+	done || exit 1
 done

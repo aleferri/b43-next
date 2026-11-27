@@ -4,6 +4,7 @@
 #
 #   make          build ./replay
 #   make check    replay the recorded runs and synthetic bursts (check.sh)
+#   make check-synth  the synthetic bursts only, without the captures
 
 B43   := ../../b43-next
 STUBS := ../unit/stubs
@@ -17,7 +18,10 @@ replay: replay.c $(B43)/radar_ac.c $(B43)/radar_ac.h
 check: replay
 	./check.sh
 
+check-synth: replay
+	./check.sh synth
+
 clean:
 	rm -rf replay build
 
-.PHONY: check clean
+.PHONY: check check-synth clean

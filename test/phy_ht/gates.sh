@@ -61,7 +61,7 @@ for c in "$@"; do
 	}
 	echo "== $c, ops $first:$last, channel $ch"
 	HT_CHANNEL=$ch HT_WD_TURNS=$(turns "$first" "$last") \
-		./ht-trace full "$ops" "$first" "$last" -o "$T/$c.trace"
+		./ht-trace full "$ops" "$first" "$last" -o "$T/$c.trace" || exit 1
 	python3 ../unit/cmp_skip.py "$ops" "$T/$c.trace" "$first:$last" \
 		--board r6400v1 --bus $B | grep -A2 '^grezzo'
 	grep -E "$PHYSEL" "$ops" > "$T/$c.phy.ops"
@@ -88,7 +88,8 @@ for c in "$@"; do
 	HT_CHANNEL=$ch HT_WD_TURNS=$(turns "$a" "$z") HT_WD_TICK0=$tick0 \
 		HT_RCCAL0=$(rc 0x034c) HT_RCCAL1=$(rc 0x034d) \
 		HT_RCCAL2=$(rc 0x034e) HT_T25=$t25 HT_T25B=$t25b \
-		./ht-trace ap_start "$ops" "$a" "$z" -o "$T/$c.ap.trace" 2>/dev/null
+		./ht-trace ap_start "$ops" "$a" "$z" -o "$T/$c.ap.trace" \
+		2>/dev/null || exit 1
 	python3 ../unit/cmp_skip.py "$ops" "$T/$c.ap.trace" "$a:$z" \
 		--board r6400v1 --bus $B | grep -A2 '^grezzo'
 	grep -E "$PHYSEL" "$T/$c.ap.trace" > "$T/$c.ap.phy.trace"

@@ -1,0 +1,58 @@
+# Builds the module and runs the tests that need no captures, or only the
+# ones in the linked public repositories (test/linked.sh).
+name: tests
+on: [push, pull_request]
+permissions:
+  contents: read
+
+jobs:
+  module:
+    runs-on: ubuntu-latest
+    container: alpine:3.23 # Linux 6.18
+    steps:
+      - run: apk add build-base git linux-lts-dev
+      - uses: actions/checkout@v7
+      - run: make -j4 KSRC=$(echo /lib/modules/*/build) KCFLAGS=-Werror
+      - run: |
+          make -j4 KSRC=$(echo /lib/modules/*/build) KCFLAGS=-Werror \
+            B43_NEXT_DEBUG=y B43_NEXT_CALSTAT=y
+
+  tests:
+    runs-on: ubuntu-latest
+    env:
+      K: /tmp/linux
+      KG: /tmp/linux
+    steps:
+      - uses: actions/checkout@v7
+      - run: make -C test/unit trace
+      - name: sprom
+        run: |
+          make -C test/sprom check-bcm4360usb test_nvram
+          test/sprom/test_nvram test/sprom/vectors/bcm4360usb.nvram
+      - run: make -C test/radar check-synth
+      # As in test/integration/README.md
+      - name: Linux 6.18
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y bc bison flex g++ libelf-dev
+          git clone -q --depth 1 --branch v6.18 \
+            https://github.com/torvalds/linux $K
+          cd $K
+          make defconfig
+          scripts/config --module B43
+          make -j4 olddefconfig modules_prepare
+      - run: make -C test/txhdr check
+      - name: phy_ht
+        run: |
+          test/linked.sh TRACES bcm4331-rev2/r6400v1
+          test/linked.sh TRACE_TOOLS src
+          make -C test/phy_ht ht-trace
+          test/phy_ht/check.sh
+          test/phy_ht/gates.sh --min-block 8 --gap-tol 2
+      - name: phy_n
+        run: |
+          test/linked.sh TRACES bcm43217-rev0/rt-ac56u
+          test/linked.sh TRACE_TOOLS src
+          make -C test/phy_n n-trace
+          test/phy_n/gates.sh --min-block 8 --gap-tol 2
+      - run: make -C test/integration b43-trace

@@ -48,7 +48,8 @@ for c in "$@"; do
 	*) bw=20 sb=0 ;;
 	esac
 	echo "== $c, ops $first:$last, channel $ch, $bw MHz"
-	N_CHANNEL=$ch N_BW=$bw N_SB=$sb ./n-trace full "$ops" "$first" "$last" -o "$T/$c.trace"
+	N_CHANNEL=$ch N_BW=$bw N_SB=$sb ./n-trace full "$ops" "$first" "$last" \
+		-o "$T/$c.trace" || exit 1
 	python3 ../unit/cmp_skip.py "$ops" "$T/$c.trace" "$first:$last" \
 		--board rt-ac56u --bus --rmw $B | grep -A2 '^grezzo'
 	grep -E ' (PHY|RAD)\.' "$ops" > "$T/$c.phy.ops"

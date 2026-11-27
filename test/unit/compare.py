@@ -25,6 +25,7 @@ test's PHY.MOD lines diff cleanly.
 import re
 import sys
 import argparse
+from functools import lru_cache
 import os
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)),
@@ -619,15 +620,20 @@ SOLO_PORT_SENZA_CLASSE = (
 )
 
 
+def _any_pattern(patterns):
+    return re.compile('|'.join(f'(?:{p})' for p in patterns)).search
+
+
 def drop_solo_port(ops, vendor=()):
     """Togli dal port le op che il vendor legittimamente non ha."""
     pats = list(SOLO_PORT)
     for pat, classe in SOLO_PORT_SENZA_CLASSE:
         if not any(op.startswith(classe) for op in vendor):
             pats.append(pat)
+    search = _any_pattern(pats)
     out, dropped = [], []
     for op in ops:
-        (dropped if any(re.search(p, op) for p in pats) else out).append(op)
+        (dropped if search(op) else out).append(op)
     return out, dropped
 
 
@@ -665,9 +671,10 @@ def drop_power_save(ops):
 
 def drop_solo_vendor(ops):
     """Togli dal vendor le op che nessun codice b43 puo' emettere."""
+    search = _any_pattern(SOLO_VENDOR)
     out, dropped = [], []
     for op in ops:
-        (dropped if any(re.search(p, op) for p in SOLO_VENDOR) else out).append(op)
+        (dropped if search(op) else out).append(op)
     return out, dropped
 
 
@@ -793,18 +800,23 @@ def apply_perimeter(ops, led_pins=0):
     cella del PHY finisse la' dentro il conto tornerebbe con l'omissione
     nascosta.
     """
-    out, dropped, keys = [], [], set()
-    for op in ops:
-        hit = None
-        for k, r in enumerate(PERIMETER):
-            if not re.search(r['pattern'], op):
+    searches = tuple(re.compile(r['pattern']).search for r in PERIMETER)
+
+    @lru_cache(maxsize=32768)
+    def match(op):
+        for k, (r, search) in enumerate(zip(PERIMETER, searches)):
+            if not search(op):
                 continue
             if r.get('core_shm') and not _core_shm(op):
                 continue
             if r.get('led') and not _led(op, led_pins):
                 continue
-            hit = k
-            break
+            return k
+        return None
+
+    out, dropped, keys = [], [], set()
+    for op in ops:
+        hit = match(op)
         if hit is None:
             out.append(op)
         else:

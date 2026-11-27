@@ -363,11 +363,12 @@ static int load(const char *path, long first, long last)
 		unsigned int a, v;
 		long n;
 
+		/* Before the regex, which takes most of the time */
+		if (sscanf(line, "%*[^#]#%ld", &n) != 1 ||
+		    n < first || n > last)
+			continue;
 		line[strcspn(line, "\n")] = 0;
 		if (regexec(&re, line, 4, m, 0))
-			continue;
-		n = strtol(line + m[1].rm_so, NULL, 10);
-		if (n < first || n > last)
 			continue;
 		snprintf(cls, sizeof(cls), "%.*s", (int)(m[2].rm_eo - m[2].rm_so),
 			 line + m[2].rm_so);
