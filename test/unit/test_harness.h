@@ -17,13 +17,13 @@
 #include "b43.h"
 
 void b43_test_plan_phy_reads(u16 addr, const u16 *results, int cap);
-/* Plan per cella di tabella: indipendente dalla posizione nella coda 0x000f. */
+/* Plan per table cell: independent of the position in the 0x000f queue. */
 void b43_test_plan_table_cell(u16 id, u16 off, const u16 *vals, int n);
 void b43_test_plan_radio_reads(u16 addr, const u16 *results, int cap);
 
-/* Address match table: un record per riga, la granularita' del tracer.
- * Doppione di b43_amt_write() di b43/main.c, che vive nel core e che
- * l'harness non compila. */
+/* Address match table: one record per row, the tracer's granularity.
+ * Duplicate of b43/main.c's b43_amt_write(), which lives in the core and the
+ * harness does not compile. */
 void b43_test_emit_amt(u16 idx, u16 flags);
 void b43_test_emit_addrm(u32 idx);
 void b43_test_emit_mctrl(u32 mask, u32 set);
@@ -43,19 +43,19 @@ u16 b43_test_mirror_phy_get(u16 reg);
 void b43_test_trace_to(FILE *f);
 
 /*
- * Emette una TPL.RAMW, la classe con cui il tracer del vendor riporta una word
- * scritta in template RAM. Serve ai doppioni del core in main.c: il PHY non
- * tocca nessuna cella di template RAM.
+ * Emit a TPL.RAMW, the class with which the vendor tracer reports a word
+ * written in template RAM. It serves the core's duplicates in main.c: the
+ * PHY touches no template RAM cell.
  */
 void b43_test_tplram_write16(u16 offset, u16 val);
 
 /*
- * Riepilogo del read oracle (AC_READ_ORACLE): quante letture sono state
- * servite dalla cattura e quali code non sono state consumate del tutto.
+ * Summary of the read oracle (AC_READ_ORACLE): how many reads the capture
+ * served and which queues were not fully consumed.
  */
 void b43_test_oracle_report(void);
 
-/* Riporta il contatore MAC allo stato d'ingresso dei flow: MAC sospeso. */
+/* No-op: each flow sets the MAC state it enters with in dev->mac_suspended. */
 void b43_test_mac_reset(void);
 
 /* The PHY's share of core writes, defined in phy_ac_test.c. */
