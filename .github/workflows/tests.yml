@@ -24,7 +24,7 @@ jobs:
       KG: /tmp/linux
     steps:
       - uses: actions/checkout@v7
-      - run: make -C test/unit trace
+      - run: make -C test/unit trace check
       - name: sprom
         run: |
           make -C test/sprom check-bcm4360usb test_nvram

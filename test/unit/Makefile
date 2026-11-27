@@ -126,7 +126,11 @@ trace: $(BIN)
 	./$(BIN) rxiq_est_debug d6220 > trace.d6220.out
 	@echo "wrote trace.d6220.out ($$(wc -l < trace.d6220.out) lines)"
 
+# The self-tests of ac_trace, which fail with a non-zero exit.
+check: $(BIN)
+	./$(BIN) crsmin d6220 > /dev/null
+
 clean:
 	rm -rf build $(BIN) trace.*.out
 
-.PHONY: all clean trace
+.PHONY: all check clean trace

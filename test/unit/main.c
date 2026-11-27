@@ -2408,19 +2408,20 @@ int main(int argc, char **argv)
 	} else if (!strcmp(flow, "crsmin")) {
 		/*
 		 * Self-test of the crsmin chain (uses no oracle). It runs
-		 * pwork_60sec three times: the first two (cal_cycles 0->1->2) are
-		 * "cold" and write the bumped ladder (+4); from the third the bump
-		 * is gone. Expected, ch36 BW20 (idx 1 -> 48): cold 52 (=0x34, the
-		 * observed attach value), then 48 (=0x30).
+		 * pwork_60sec three times at ch36 BW20, index 1, ladder entry 48.
+		 * Every board here is PHY rev 1, where the +4 bump stays after the
+		 * first two calibrations: cycle 0 writes 52 (0x34, the observed
+		 * attach value), and cycles 1 and 2, past and at the end of the
+		 * cold count, compute 52 again.
 		 *
-		 * Cycle 1 computes the same threshold as cycle 0, and the hook must
-		 * skip the write instead of re-emitting the eight registers: that is
-		 * what the vendor does, rewriting only when the ladder's index moves.
+		 * Those two must skip the write instead of re-emitting the eight
+		 * registers: the vendor rewrites only when the threshold moves.
 		 * Reading the mirror would not tell the two apart -- the value is the
-		 * same either way -- so before that cycle a sentinel is seeded and
-		 * checked to survive.
+		 * same either way -- so before each a sentinel is seeded and checked
+		 * to survive. A bump dropped after the cold count writes 48 (0x30)
+		 * over it on cycle 2.
 		 */
-		static const u8 want[3] = { 0x34, 0xff, 0x30 };
+		static const u8 want[3] = { 0x34, 0xff, 0xff };
 		unsigned int k;
 		int fails = 0;
 
@@ -2445,7 +2446,7 @@ int main(int argc, char **argv)
 		for (k = 0; k < 3; k++) {
 			u8 got;
 
-			if (k == 1)
+			if (k > 0)
 				b43_test_mirror_phy_set(0x0324, 0x00ff);
 
 			b43_phyops_ac.pwork_60sec(&g_wldev);
@@ -2453,7 +2454,7 @@ int main(int argc, char **argv)
 			fprintf(stderr,
 				"crsmin: cycle %u  CRS low byte=0x%02x expected=0x%02x  %s%s\n",
 				k, got, want[k], got == want[k] ? "OK" : "FAIL",
-				k == 1 ? "  (sentinel: no write)" : "");
+				k > 0 ? "  (sentinel: no write)" : "");
 			if (got != want[k])
 				fails++;
 		}

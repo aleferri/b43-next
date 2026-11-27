@@ -70,13 +70,22 @@ For each chain and each latch:
 The index goes into a ring of four per chain. The index in force is the ring's
 mean **rounded up**. Then:
 
-    common threshold = row[index of chain 0] + 4 when cold
+    common threshold = row[index of chain 0] + 4
     bank of chain c  = row[index of chain c] - row[index of chain 0]
 
-**The +4 bump** applies to the first two calibrations of the session, and
-cancels in the bank. The sum `threshold + bank` is chain c's threshold: the
-stock driver writes the common one for all chains and the correction for the
-others, and the hardware adds them.
+**The +4 bump** is on every write on PHY revs 0 and 1, which every AC board
+in the collection is: wl 7.14.164's `wlc_phy_crs_min_pwr_cal_acphy` adds it
+whenever `phy_rev <= 1`. On the R7000's public 5 GHz captures (cold at 20,
+40 and 80 MHz, hot at 20 MHz) 103 of the 105 writes of `0x0324` are a
+ladder entry plus 4 for the width in force, 76 of them no bare entry, the hot
+session's last ones included; the other two, 79 on the 40 MHz capture, follow
+no chanspec record that gives their width. On other revisions the port takes
+the bump for the first two calibrations of the session only; no capture
+covers them.
+
+The bump cancels in the bank. The sum `threshold + bank` is chain c's
+threshold: the stock driver writes the common one for all chains and the
+correction for the others, and the hardware adds them.
 
 **Holes in the index.** A single sample's index has holes at 2 and 5, and the
 mean fills them. 55 at 20 MHz and 56 at 40 appear only behind a window where
