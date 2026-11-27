@@ -1,23 +1,24 @@
 #!/usr/bin/env python3
-"""Confronto vendor/test con una lista DICHIARATA di divergenze note.
+"""Vendor/test comparison with a DECLARED list of known divergences.
 
-Il problema che risolve: una singola op non riprodotta a inizio traccia
-disallinea tutto il resto, e 30000 op diventano illeggibili. Togliendo dal
-flusso vendor le op che sappiamo di non voler emettere, il confronto a valle
-torna misurabile.
+The problem it solves: a single op not reproduced at the start of the trace
+misaligns everything after it, and 30000 ops become unreadable. Removing from
+the vendor stream the ops we know we do not want to emit makes the comparison
+downstream measurable again.
 
-Il problema che introduce, e per cui ci sono delle regole: una lista di
-eccezioni e' anche il modo piu' comodo di far tornare un numero.
+The problem it introduces, hence the rules: a list of exceptions is also the
+easiest way to make a number add up.
 
-  1. Ogni voce ha un MOTIVO scritto e un CONTESTO (op precedente attesa).
-     Se il contesto non combacia, la voce non si applica e lo si dice.
-  2. Il risultato riporta SEMPRE quante op sono state saltate. La percentuale
-     non si cita da sola.
-  3. Una voce e' legittima solo se sappiamo perche' il port non deve emettere
-     quell'op. "Si allinea meglio" non e' un motivo.
-  4. Le op saltate che potrebbero avere effetti su valori letti piu' tardi sono
-     marcate `cascata=True`: in quel caso il confronto a valle e' sospetto e il
-     tool lo segnala.
+  1. Every entry has a written REASON and a CONTEXT (the expected previous
+     op). If the context does not match, the entry does not apply, and the
+     tool says so.
+  2. The result ALWAYS reports how many ops were skipped. The percentage is
+     not quoted alone.
+  3. An entry is legitimate only if we know why the port must not emit that
+     op. "It aligns better" is not a reason.
+  4. Skipped ops that could affect values read later are marked
+     `cascade=True`: then the comparison downstream is suspect and the tool
+     flags it.
 
 Uso: cmp_skip.py vendor.txt test.txt lo:hi --min-block N --gap-tol M
      [--board agcombo] [--bus] [--verbose]
@@ -36,157 +37,160 @@ from b43trace import tracelib  # noqa: E402
 
 
 # ---------------------------------------------------------------------------
-# Divergenze note, per board. Ogni voce:
-#   pattern  : regex sull'op vendor da saltare
-#   dopo     : regex sull'op vendor immediatamente precedente (contesto)
-#   dopo2    : regex sull'op due posizioni prima (opzionale)
-#   prima    : regex sull'op immediatamente successiva (opzionale)
-#   prima2   : regex sull'op due posizioni dopo (opzionale)
-#   max      : quante volte al massimo puo' applicarsi
-#   motivo   : perche' il port non deve emetterla
-#   cascata  : True se l'op potrebbe influenzare valori letti dopo
-# ---------------------------------------------------------------------------
+# Known divergences, per board. Each entry:
+#   pattern  : regex on the vendor op to skip
+#   after    : regex on the vendor op right before it (context)
+#   after2   : regex on the op two positions before (optional)
+#   before   : regex on the op right after it (optional)
+#   before2  : regex on the op two positions after (optional)
+#   max      : how many times at most it can apply
+#   reason   : why the port must not emit it
+#   cascade  : True if the op could affect values read later
 KNOWN = {
     'd6220': [
         dict(pattern=r'^MAC\.MCTRL val=0x1 mask=0x1$',
-             dopo=r'^MAC\.MCTRL val=0x0 mask=0x1$',
-             prima=r'^MAC\.MCTRL val=0x0 mask=0x1$',
-             prima2=r'^PHY\.RD addr=0x7af',
+             after=r'^MAC\.MCTRL val=0x0 mask=0x1$',
+             before=r'^MAC\.MCTRL val=0x0 mask=0x1$',
+             before2=r'^PHY\.RD addr=0x7af',
              ctx=[(-6, r'^PHY\.RD addr=0x527')],
-             max=3, cascata=False,
-             motivo="coppia enable+suspend interlacciata dal contesto up "
-                    "durante l'attesa ~1 s del probe pacing di "
-                    "cal_restore: compare solo dopo risvegli in ritardo "
-                    "(gap 1.32 s invece di 1.00 s, es. #28859/#28950) e solo "
-                    "nella cattura -up -- assente in attach ch44, attach "
-                    "ch36-bw40 e down-to-bss. Il contesto a -6 (peek 0x527, "
-                    "cioe' iter regolare) esclude la coppia gemella in coda "
-                    "all'extended-first, che il port trascrive ed emette. "
-                    "Rumore di scheduling, non struttura del driver: il port "
-                    "non deve emetterla."),
+             max=3, cascade=False,
+             reason="enable+suspend pair interleaved by the up context "
+                    "during cal_restore's ~1 s probe pacing wait: it "
+                    "appears only after late wakeups (gap 1.32 s instead "
+                    "of 1.00 s, e.g. #28859/#28950) and only in the -up "
+                    "capture -- absent in attach ch44, attach ch36-bw40 and "
+                    "down-to-bss. The context at -6 (peek 0x527, a regular "
+                    "iteration) excludes the twin pair at the end of the "
+                    "extended-first, which the port transcribes and emits. "
+                    "Scheduling noise, not driver structure: the port must "
+                    "not emit it."),
 
         dict(pattern=r'^MAC\.MCTRL val=0x0 mask=0x1$',
-             dopo=r'^MAC\.MCTRL val=0x1 mask=0x1$',
-             dopo2=r'^MAC\.MCTRL val=0x0 mask=0x1$',
-             prima=r'^PHY\.RD addr=0x7af',
+             after=r'^MAC\.MCTRL val=0x1 mask=0x1$',
+             after2=r'^MAC\.MCTRL val=0x0 mask=0x1$',
+             before=r'^PHY\.RD addr=0x7af',
              ctx=[(-7, r'^PHY\.RD addr=0x527')],
-             max=3, cascata=False,
-             motivo="meta' suspend della coppia sopra: stessa evidenza."),
+             max=3, cascade=False,
+             reason="suspend half of the pair above: same evidence."),
 
         dict(pattern=r'^MAC\.MCTRL val=0x0 mask=0x1$',
-             dopo=r'^MAC\.MHF addr=0x0 val=0x0 mask=0x4000$',
-             prima=r'^MAC\.MCTRL val=0x1 mask=0x1$',
-             max=1, cascata=False,
-             motivo="prima coppia suspend+enable fra la MHF (clr 0x4000) e la "
-                    "GPIO della finalize. NON e' rumore del contesto up, come "
-                    "diceva questa voce: e' il suspend interno di una ricarica "
-                    "del beacon, e il port ne emette "
-                    "@beacon_reload_pre. Sui sette segmenti sotto i 5250 MHz "
-                    "quelle bastano e questa regola non scatta; sui diciannove "
-                    "sopra ne resta una senza controparte, due op con la voce "
-                    "sotto, e il residuo e' che la' il vendor ne ha una in piu' "
-                    "di quante il chiamante ne dichiari."),
+             after=r'^MAC\.MHF addr=0x0 val=0x0 mask=0x4000$',
+             before=r'^MAC\.MCTRL val=0x1 mask=0x1$',
+             max=1, cascade=False,
+             reason="first suspend+enable pair between the MHF (clr 0x4000) "
+                    "and the finalize's GPIO. It is a beacon reload's inner "
+                    "suspend, and the port emits those at "
+                    "@beacon_reload_pre. On the seven segments below 5250 "
+                    "MHz those are enough and this rule does not fire; on "
+                    "the nineteen above one is left without a counterpart, "
+                    "two ops with the entry below, and the residual is that "
+                    "there the vendor has one more than its caller declares."),
         dict(pattern=r'^MAC\.MCTRL val=0x1 mask=0x1$',
-             dopo=r'^MAC\.MCTRL val=0x0 mask=0x1$',
-             dopo2=r'^MAC\.MHF addr=0x0 val=0x0 mask=0x4000$',
-             max=1, cascata=False,
-             motivo="meta' enable della coppia sopra."),
+             after=r'^MAC\.MCTRL val=0x0 mask=0x1$',
+             after2=r'^MAC\.MHF addr=0x0 val=0x0 mask=0x4000$',
+             max=1, cascade=False,
+             reason="enable half of the pair above."),
         dict(pattern=r'^MAC\.MCTRL val=0x0 mask=0x1$',
-             dopo=r'^MAC\.MCTRL val=0x1 mask=0x1$',
-             prima=r'^MAC\.MCTRL val=0x1 mask=0x1$',
+             after=r'^MAC\.MCTRL val=0x1 mask=0x1$',
+             before=r'^MAC\.MCTRL val=0x1 mask=0x1$',
              ctx=[(-3, r'^MAC\.MHF addr=0x0 val=0x0 mask=0x4000$')],
-             max=1, cascata=False,
-             motivo="seconda coppia fra MHF e GPIO: #28761 a +1.29 s dalla "
-                    "prima, stessa natura -- e sui 26 segmenti a freddo non "
-                    "scatta mai, perche' quella ricarica il port la emette."),
+             max=1, cascade=False,
+             reason="second pair between MHF and GPIO: #28761, +1.29 s from "
+                    "the first, of the same nature -- and on the 26 cold "
+                    "segments it never fires, because the port emits that "
+                    "reload."),
         dict(pattern=r'^MAC\.MCTRL val=0x1 mask=0x1$',
-             dopo=r'^MAC\.MCTRL val=0x0 mask=0x1$',
-             prima=r'^GPIO\.OUT val=0x4 mask=0x4',
+             after=r'^MAC\.MCTRL val=0x0 mask=0x1$',
+             before=r'^GPIO\.OUT val=0x4 mask=0x4',
              ctx=[(-4, r'^MAC\.MHF addr=0x0 val=0x0 mask=0x4000$')],
-             max=1, cascata=False,
-             motivo="meta' enable della seconda coppia."),
+             max=1, cascade=False,
+             reason="enable half of the second pair."),
 
-        # L'azzeramento delle righe MAC delle chiavi pairwise e le due righe in
-        # cima. Le emette il core: b43_upload_card_macaddress() e
+        # The clearing of the pairwise keys' MAC rows and the two rows at the
+        # top. The core emits them: b43_upload_card_macaddress() and
         # b43_security_init() -> b43_clear_keys() -> keymac_write() ->
-        # b43_amt_write(), dopo il primo switch_channel. ADDRM.SET e AMT.WR
-        # sono le etichette che il tracer del vendor mette sull'ingresso di
-        # keymac_write()/b43_amt_write() -- niente addr=/val=, solo idx= --
-        # e la suite di integrazione, che vede solo il bus, non le puo'
-        # produrre. Le OBJ.BULKR/OBJ.BULKW invece sono traffico bus, e b43 le
-        # fa a 16 bit: stanno qui finche' il confronto non sa svolgerle.
-        # Solo col profilo bus: l'harness di ../unit emette i record del
-        # vendor lui stesso, nel punto di b43 (vedi MOVED).
-        # Vedi docs/retrace-todo.md, "Key-table clearing (ADDRM.SET)".
+        # b43_amt_write(), after the first switch_channel. ADDRM.SET and
+        # AMT.WR are the labels the vendor tracer puts on the entry of
+        # keymac_write()/b43_amt_write() -- no addr=/val=, only idx= -- and
+        # the integration suite, which sees only the bus, cannot produce
+        # them. The OBJ.BULKR/OBJ.BULKW are bus traffic instead, and b43 does
+        # them 16 bits at a time: they are here until the comparison can
+        # unroll them.
+        # Bus profile only: ../unit's harness emits the vendor's records
+        # itself, at b43's point (see MOVED).
+        # See docs/retrace-todo.md, "Key-table clearing (ADDRM.SET)".
         dict(pattern=r'^ADDRM\.SET idx=',
-             dopo=None,
-             max=60, solo_bus=True, cascata=False,
-             motivo="etichetta di ingresso di keymac_write() sul vendor, non "
-                    "un accesso bus: b43 ci arriva da b43_clear_keys() e "
-                    "b43_upload_card_macaddress(), ma sul bus i confini di "
-                    "funzione non si vedono."),
+             after=None,
+             max=60, bus_only=True, cascade=False,
+             reason="entry label of keymac_write() on the vendor, not a bus "
+                    "access: b43 gets there from b43_clear_keys() and "
+                    "b43_upload_card_macaddress(), but function boundaries "
+                    "do not show on the bus."),
         dict(pattern=r'^AMT\.WR idx=',
-             dopo=r'^ADDRM\.SET idx=',
-             max=60, solo_bus=True, cascata=False,
-             motivo="etichetta di ingresso di b43_amt_write(): stessa "
-                    "ragione della voce sopra, non un accesso bus."),
+             after=r'^ADDRM\.SET idx=',
+             max=60, bus_only=True, cascade=False,
+             reason="entry label of b43_amt_write(): same reason as the "
+                    "entry above, not a bus access."),
         dict(pattern=r'^OBJ\.BULKR addr=0x[0-9a-f]+ len=8$',
-             dopo=r'^AMT\.WR idx=',
-             dopo2=r'^ADDRM\.SET idx=',
-             max=60, solo_bus=True, cascata=False,
-             motivo="rilettura della riga, che KEEP_FLAGS comporta."),
+             after=r'^AMT\.WR idx=',
+             after2=r'^ADDRM\.SET idx=',
+             max=60, bus_only=True, cascade=False,
+             reason="reread of the row, which KEEP_FLAGS implies."),
         dict(pattern=r'^OBJ\.BULKW addr=0x[0-9a-f]+ len=8$',
-             dopo=r'^OBJ\.BULKR addr=0x[0-9a-f]+ len=8$',
-             dopo2=r'^AMT\.WR idx=',
-             max=60, solo_bus=True, cascata=False,
-             motivo="riscrittura della riga."),
+             after=r'^OBJ\.BULKR addr=0x[0-9a-f]+ len=8$',
+             after2=r'^AMT\.WR idx=',
+             max=60, bus_only=True, cascade=False,
+             reason="rewrite of the row."),
     ],
     'agcombo': [
         dict(pattern=r'^PHY\.WR addr=0x1ec val=0x2$',
-             dopo=r'^PHY\.MOD addr=0x2e4',
-             max=2, cascata=False,
-             motivo="radar detect OFF. wlc_phy_radar_detect_on_off_cfg_acphy e' "
-                    "144B in 7.14.43 (due scritture: 0x2 poi 0x9c40) e 52B in "
-                    "7.14.89, dove lo spegnimento preliminare non c'e' piu'. "
-                    "Il port modella 7.14.89, quindi non deve emetterla."),
+             after=r'^PHY\.MOD addr=0x2e4',
+             max=2, cascade=False,
+             reason="radar detect OFF. wlc_phy_radar_detect_on_off_cfg_acphy "
+                    "is 144B in 7.14.43 (two writes: 0x2 then 0x9c40) and "
+                    "52B in 7.14.89, where the preliminary switch-off is "
+                    "gone. The port models 7.14.89, so it must not emit it."),
 
         dict(pattern=r'^(SI\.COREREG|PMU\.PLL|GPIO\.(OUT|OE) val=0x0 mask=0x0)',
-             dopo=None,
-             max=6, cascata=True,
-             motivo="re-init di clock e bus fra le due entrate nell'analogico. "
-                    "Sono op di bcma/b43-core, non del PHY: il PHY non "
-                    "riprogramma il PLL. NON CAPITO se e per chip o per "
-                    "versione -- il codice di switch_radio e' identico fra "
-                    "7.14.89 e 7.14.43, quindi la differenza e' a runtime."),
+             after=None,
+             max=6, cascade=True,
+             reason="clock and bus re-init between the two entries into the "
+                    "analog section. These are bcma/b43-core ops, not the "
+                    "PHY's: the PHY does not reprogram the PLL. NOT "
+                    "UNDERSTOOD whether it is per chip or per version -- "
+                    "switch_radio's code is identical between 7.14.89 and "
+                    "7.14.43, so the difference is at runtime."),
     ],
 }
 
 
 # ---------------------------------------------------------------------------
-# Blocchi che b43 emette in un altro punto del flusso, per board. Ogni voce e'
-# un blocco delimitato del flusso vendor e il punto in cui b43 lo emette:
-#   da, a    : regex sulla prima e sull'ultima op del blocco
-#   dopo     : regex sull'op che precede il blocco (contesto, opzionale)
-#   lung     : quante op al massimo fra `da` e `a`, estremi compresi
-#   verso    : regex sulla prima op dopo il blocco dietro cui b43 lo emette
-#   verso_ctx: contesto di quell'op, coppie (offset, regex) (opzionale)
-#   indietro : True se b43 lo emette prima: `verso` e' allora l'ultima op
-#              prima del blocco
-#   max      : quanti blocchi al massimo
-#   motivo   : dove e perche' b43 lo emette li'
+# Blocks b43 emits at another point of the stream, per board. Each entry is
+# a delimited block of the vendor stream and the point where b43 emits it:
+#   start, end : regex on the block's first and last op
+#   after      : regex on the op before the block (context, optional)
+#   span       : how many ops at most from `start` to `end`, both included
+#   dest       : regex on the first op after the block behind which b43
+#                emits it
+#   dest_ctx   : context of that op, (offset, regex) pairs (optional)
+#   backward   : True if b43 emits it earlier: `dest` is then the last op
+#                before the block
+#   max        : how many blocks at most
+#   reason     : where and why b43 emits it there
 #
-# Il blocco si sposta nel flusso vendor prima dell'allineamento: le sue op
-# restano tutte nel confronto, e contano come giuste solo se il port le emette
-# nel punto dichiarato.
+# The block is moved in the vendor stream before the alignment: its ops all
+# stay in the comparison, and count as right only if the port emits them at
+# the declared point.
 #
-# Vuota: i blocchi del core che il vendor emette dentro le sequenze del PHY
-# l'harness li emette al punto del vendor, dai siti b43_phy_ac_core_site()
-# (b43/phy_ac.h), e spostarli qui li rimetterebbe fuori posto.
+# Empty: the core blocks the vendor emits inside the PHY's sequences are
+# emitted by the harness at the vendor's point, from the
+# b43_phy_ac_core_site() sites (b43/phy_ac.h), and moving them here would put
+# them out of place again.
 # ---------------------------------------------------------------------------
 MOVED = {}
 
 def apply_moves(ops, rules):
-    """Sposta i blocchi dichiarati in MOVED dove b43 li emette."""
+    """Move the blocks declared in MOVED to where b43 emits them."""
     used = [0] * len(rules)
     moved_ops = [0] * len(rules)
     out = list(ops)
@@ -197,19 +201,19 @@ def apply_moves(ops, rules):
         for k, r in enumerate(rules):
             if used[k] >= r['max'] or fixed[i]:
                 continue
-            if not re.search(r['da'], out[i]):
+            if not re.search(r['start'], out[i]):
                 continue
-            if r.get('dopo') and not (i > 0 and re.search(r['dopo'], out[i - 1])):
+            if r.get('after') and not (i > 0 and re.search(r['after'], out[i - 1])):
                 continue
-            end = next((j for j in range(i, min(len(out), i + r['lung']))
-                        if re.search(r['a'], out[j])), None)
+            end = next((j for j in range(i, min(len(out), i + r['span']))
+                        if re.search(r['end'], out[j])), None)
             if end is None:
                 continue
             def at(j):
-                return re.search(r['verso'], out[j]) and \
+                return re.search(r['dest'], out[j]) and \
                     all(0 <= j + o < len(out) and re.search(x, out[j + o])
-                        for o, x in r.get('verso_ctx', ()))
-            if r.get('indietro'):
+                        for o, x in r.get('dest_ctx', ()))
+            if r.get('backward'):
                 dest = next((j + 1 for j in range(i - 1, -1, -1) if at(j)),
                             None)
             else:
@@ -239,15 +243,15 @@ def apply_moves(ops, rules):
 
 
 # ---------------------------------------------------------------------------
-# Read-modify-write sul bus (--rmw). Le catture MMIO dell'N-PHY non hanno le
-# op degli accessori (i MOD delle catture wl-diag dell'AC): un RMW vi compare
-# come la lettura di un registro PHY o radio seguita subito dalla scrittura
-# dello stesso registro. La coppia diventa un'op sola, X.RMW, col valore
-# letto e quello scritto, da entrambi i lati; anche un RMW che riscrive il
-# valore letto resta un'op da emettere. Fuori la porta delle tabelle, dove
-# lettura e scrittura dei dati non sono un RMW dello stesso registro.
+# Read-modify-write on the bus (--rmw). The N-PHY's MMIO captures do not have
+# the accessors' ops (the MODs of the AC's wl-diag captures): an RMW appears
+# there as the read of a PHY or radio register followed right away by the
+# write of the same register. The pair becomes a single op, X.RMW, with the
+# value read and the value written, on both sides; an RMW that writes back
+# the value read is still an op to emit. The table port is excluded, where
+# the data read and write are not an RMW of the same register.
 # ---------------------------------------------------------------------------
-RMW_FUORI = {
+RMW_EXCLUDED = {
     ('PHY', 0x072),     # TABLE_ADDR
     ('PHY', 0x073),     # TABLE_DATALO
     ('PHY', 0x074),     # TABLE_DATAHI
@@ -261,11 +265,11 @@ def _rmw_op(o):
         return None
     sp, kind, addr, val = m.groups()
     addr = int(addr, 16)
-    return None if (sp, addr) in RMW_FUORI else (sp, kind, addr, val)
+    return None if (sp, addr) in RMW_EXCLUDED else (sp, kind, addr, val)
 
 
 def fold_rmw(ops):
-    """Le coppie lettura+scrittura dello stesso registro come X.RMW."""
+    """The read+write pairs of the same register as X.RMW."""
     out = []
     i = 0
     while i < len(ops):
@@ -292,7 +296,7 @@ def load_compare(path=None):
 
 
 def apply_skips(ops, rules, verbose=False):
-    """togli dal flusso vendor le op che combaciano, rispettando max e contesto"""
+    """Remove from the vendor stream the ops that match, honoring max and context."""
     used = [0] * len(rules)
     out, skipped = [], []
     for i, op in enumerate(ops):
@@ -302,8 +306,8 @@ def apply_skips(ops, rules, verbose=False):
                 continue
             if not re.search(r['pattern'], op):
                 continue
-            ctx = [('dopo', i - 1), ('dopo2', i - 2),
-                   ('prima', i + 1), ('prima2', i + 2)]
+            ctx = [('after', i - 1), ('after2', i - 2),
+                   ('before', i + 1), ('before2', i + 2)]
             ok = True
             for key, j in ctx:
                 rx = r.get(key)
@@ -333,49 +337,47 @@ def apply_skips(ops, rules, verbose=False):
 OP_HEAD = re.compile(r'^(\S+)\s+(?:addr|off)=(0x[0-9a-f]+)')
 TBL_HEAD = re.compile(r'^TBL\.(?:WR|RD)\s+(id=\S+\s+off=\S+)')
 
-# Op che NON hanno un'identita' propria: sono porte, e l'identita' e' l'accesso
-# che le racchiude.
+# Ops WITHOUT an identity of their own: they are ports, and the identity is
+# the access that encloses them.
 #
-#   PHY 0x000d/0x000e   porta indirizzo delle tabelle
-#   PHY 0x000f/0x0010   porta dati delle tabelle, word bassa e alta
+#   PHY 0x000d/0x000e   table address port
+#   PHY 0x000f/0x0010   table data port, low and high word
 #
-# Che 0x0010 sia la seconda word della porta e non un registro si vede dalla
-# corsa: 0x000d, 0x000e, poi 0x0010 e 0x000f alternati, una coppia per voce.
+# That 0x0010 is the port's second word and not a register shows in the run:
+# 0x000d, 0x000e, then 0x0010 and 0x000f alternating, one pair per entry.
 #
-# Una TBL.WR e' un marcatore: i dati escono come una corsa di scritture sulla
-# porta dati, una per voce. Due scritture su 0x000f non sono "la stessa op con
-# un valore diverso" solo perche' l'indirizzo coincide -- l'indirizzo coincide
-# sempre, e' una porta. Possono appartenere a tabelle diverse.
+# A TBL.WR is a marker: the data go out as a run of writes on the data port,
+# one per entry. Two writes to 0x000f are not "the same op with a different
+# value" just because the address coincides -- the address always
+# coincides, it is a port. They can belong to different tables.
 #
-# Percio' la chiave di accoppiamento, per queste, include il marcatore TBL che
-# le precede nel rispettivo flusso. Le altre classi hanno un indirizzo che
-# identifica un registro e si accoppiano su quello.
-PORTE = {('PHY.WR', '0xd'), ('PHY.WR', '0xe'), ('PHY.WR', '0xf'),
+# So the pairing key for these includes the TBL marker before them in their
+# stream. The other classes have an address that identifies a register and
+# pair on that.
+PORTS = {('PHY.WR', '0xd'), ('PHY.WR', '0xe'), ('PHY.WR', '0xf'),
          ('PHY.WR', '0x10'),
          ('PHY.RD', '0xd'), ('PHY.RD', '0xe'), ('PHY.RD', '0xf'),
          ('PHY.RD', '0x10')}
 
-# Relazioni di generazione controllate e per cui NON serve una regola, perche'
-# le classi generate non compaiono nelle catture del d6220:
+# Generation relations checked and that need NO rule, because the generated
+# classes do not appear in the d6220's captures:
 #
-#   TPL.RAMW -> TPL.PTRW/TPL.DATW    zero occorrenze delle seconde
+#   TPL.RAMW -> TPL.PTRW/TPL.DATW    zero occurrences of the latter
 #
-# Una che invece c'era in questa lista e non ci sta piu': `OBJ.BULKW -> OBJ.WR`
-# stava qui perche' la coppia bulk non era agganciata nelle catture del d6220.
-# Adesso lo e' -- su cold01 sono 130 OBJ.BULKR e 151 OBJ.BULKW -- e i due lati
-# emettono entrambi l'intestazione, quindi si accoppiano da soli sulla loro
-# classe. Se ricompare una cattura in cui il bulk non c'e' e le op singole si',
-# quella si' che vuole una regola.
+# OBJ.BULKW -> OBJ.WR needs none either: the bulk pair is hooked in the
+# d6220's captures -- 130 OBJ.BULKR and 151 OBJ.BULKW on cold01 -- and both
+# sides emit the header, so they pair on their own class. A capture with the
+# single ops and without the bulk would want a rule.
 #
-# E una che c'e' ma non e' un pericolo per l'accoppiamento: MAC.MHF scrive la
-# cella HOSTF corrispondente in cinque casi su undici, quindi un MHF mancante
-# porta con se' una OBJ.WR mancante. Sono due op tracciate e contano due, ma
-# non si accoppiano fra loro -- le classi sono diverse -- quindi _pair_gap() non
-# le confonde. Vedi "Host-flag order" in docs/retrace-todo.md.
+# One that exists but does not endanger the pairing: MAC.MHF writes the
+# matching HOSTF cell in five cases out of eleven, so a missing MHF brings a
+# missing OBJ.WR with it. They are two traced ops and count as two, but they
+# do not pair with each other -- the classes differ -- so _pair_gap() does
+# not mix them up. See "Host-flag order" in docs/retrace-todo.md.
 
 
-def chiavi(ops):
-    """Chiave di identita' per ogni op: per le porte include il marcatore TBL."""
+def op_keys(ops):
+    """Identity key of every op: for the ports it includes the TBL marker."""
     out = []
     tbl = None
     for o in ops:
@@ -387,14 +389,14 @@ def chiavi(ops):
             out.append(None)
             continue
         key = (m.group(1), m.group(2))
-        out.append(key + (tbl,) if key in PORTE else key)
+        out.append(key + (tbl,) if key in PORTS else key)
     return out
 
 
 @lru_cache(maxsize=32768)
 def ident(o):
-    """Identita' di un'op senza il valore: classe e registro, o la sola classe
-    per quelle che un registro non lo hanno (MAC.MCTRL, GPIO.*)."""
+    """Identity of an op without the value: class and register, or the class
+    alone for those that have no register (MAC.MCTRL, GPIO.*)."""
     m = OP_HEAD.match(o)
     if m:
         return m.group(1) + ' ' + m.group(2)
@@ -402,67 +404,69 @@ def ident(o):
 
 
 def _pair_gap(kv, kt, V, a, b, c, d):
-    """Coppie dello stesso registro dentro una regione non allineata.
+    """Pairs of the same register inside an unaligned region.
 
-    Un'op emessa sul registro giusto col valore sbagliato compare due volte
-    nel diff -- manca la versione di wl e sopravanza quella del port -- e
-    contarla come "una mancante piu' una di troppo" gonfia il difetto e lo
-    chiama col nome sbagliato. L'accoppiamento e' per identita' (chiavi()):
-    un registro per le classi normali, il registro piu' il marcatore TBL per
-    le porte delle tabelle. Un'op del vendor col valore jolly (`val=*`, vedi
-    canon()) appaiata cosi' non ha un valore da sbagliare e torna come uguale.
+    An op emitted on the right register with the wrong value appears twice
+    in the diff -- wl's version missing and the port's left over -- and
+    counting it as "one missing plus one too many" inflates the defect and
+    calls it by the wrong name. The pairing is by identity (op_keys()): a
+    register for the normal classes, the register plus the TBL marker for
+    the table ports. A vendor op with the wildcard value (`val=*`, see
+    canon()) paired this way has no value to get wrong and comes back as
+    equal.
 
-    Ritorna (uguali, valore sbagliato, mancanti, di troppo).
+    Returns (equal, wrong value, missing, too many).
     """
     avail = {}
     for x in kt[c:d]:
         if x is not None:
             avail[x] = avail.get(x, 0) + 1
-    jolly = wrong = 0
+    wild = wrong = 0
     for i, x in enumerate(kv[a:b]):
         if x is not None and avail.get(x):
             avail[x] -= 1
             if 'val=*' in V[a + i]:
-                jolly += 1
+                wild += 1
             else:
                 wrong += 1
-    paired = jolly + wrong
-    return jolly, wrong, (b - a) - paired, (d - c) - paired
+    paired = wild + wrong
+    return wild, wrong, (b - a) - paired, (d - c) - paired
 
 
 def segments(V, T, ops_equal, bus, anchor=False):
-    """L'allineamento come sequenza di tratti, nell'ordine dei due flussi.
+    """The alignment as a sequence of stretches, in the order of the two
+    streams.
 
-    ('run', n): n coppie di op corrispondenti, consecutive su entrambi i lati.
-    ('gap', nv, nt, eq, wrong, missing, surplus): nv op di wl e nt del port
-    fra un tratto e il successivo; eq di quelle coppie valgono come uguali
-    (il jolly, vedi _pair_gap()), le altre sono non corrispondenti.
+    ('run', n): n pairs of corresponding ops, consecutive on both sides.
+    ('gap', nv, nt, eq, wrong, missing, surplus): nv ops of wl and nt of the
+    port between one stretch and the next; eq of those pairs count as equal
+    (the wildcard, see _pair_gap()), the others do not correspond.
 
-    Col profilo bus una traccia ha i valori pieni e il vendor svolto ha la
-    lettura di un MOD senza valore e la scrittura vincolata a maschera: le
-    stringhe non sono mai uguali, quindi si allinea sull'identita' -- classe
-    e registro -- e dentro i blocchi allineati il valore si giudica con
-    ops_equal() di compare.py; un valore sbagliato spezza il tratto. Senza
-    profilo bus si allinea sulle stringhe.
+    With the bus profile a trace has the full values and the unrolled vendor
+    has a MOD's read without a value and the write bound to a mask: the
+    strings are never equal, so it aligns on the identity -- class and
+    register -- and inside the aligned blocks the value is judged with
+    compare.py's ops_equal(); a wrong value breaks the stretch. Without the
+    bus profile it aligns on the strings.
 
-    Con anchor, due flussi coi valori pieni su entrambi i lati (una cattura
-    al bus contro test/integration): si allinea prima sulle stringhe, e
-    sull'identita' solo fra un blocco e l'altro. Su una lunga serie di
-    scritture alla stessa porta l'identita' da sola non sa dove la serie
-    comincia, e un'op in piu' o in meno prima di essa appaia tutta la serie
-    sfasata di uno.
+    With anchor, two streams with full values on both sides (a bus capture
+    against test/integration): it aligns on the strings first, and on the
+    identity only between one block and the next. On a long series of writes
+    to the same port the identity alone does not know where the series
+    starts, and one op more or less before it pairs the whole series off by
+    one.
     """
     def same(v, t):
-        # canon() ha reso 'val=*' la lettura senza valore; ops_equal() la
-        # conosce come UNDEFINED. Il lato a livello di accessor puo' essere
-        # l'uno o l'altro: il vendor wl-diag contro una traccia al bus
-        # (test/integration), o l'harness contro una cattura al bus
-        # (reverse-tools/mmio2ops.py). Il lato bus non ha ne' jolly ne'
-        # maschere, quindi provare i due versi non allarga il confronto.
+        # canon() made 'val=*' the read without a value; ops_equal() knows it
+        # as UNDEFINED. The accessor-level side can be either one: the
+        # wl-diag vendor against a bus trace (test/integration), or the
+        # harness against a bus capture (reverse-tools/mmio2ops.py). The bus
+        # side has neither wildcards nor masks, so trying both directions
+        # does not widen the comparison.
         return (ops_equal(v.replace('val=*', 'val=UNDEFINED'), t) or
                 ops_equal(t.replace('val=*', 'val=UNDEFINED'), v))
 
-    kv, kt = (None, None) if bus else (chiavi(V), chiavi(T))
+    kv, kt = (None, None) if bus else (op_keys(V), op_keys(T))
     av, at = ([ident(o) for o in V], [ident(o) for o in T]) if bus else (V, T)
     segs, diff = [], []
 
@@ -486,8 +490,8 @@ def segments(V, T, ops_equal, bus, anchor=False):
 
     for k, a, b, c, d in opcodes():
         if k != 'equal':
-            # Col profilo bus le identita' fuori dai blocchi allineati
-            # differiscono per costruzione: tutto mancante o di troppo.
+            # With the bus profile the identities outside the aligned blocks
+            # differ by construction: all missing or too many.
             pg = ((0, 0, b - a, d - c) if bus else
                   _pair_gap(kv, kt, V, a, b, c, d))
             segs.append(('gap', b - a, d - c) + pg)
@@ -512,18 +516,18 @@ def segments(V, T, ops_equal, bus, anchor=False):
 
 
 def score(segs, min_block, gap_tol):
-    """Le coppie uguali che stanno in blocchi abbastanza lunghi.
+    """The equal pairs that are in long enough blocks.
 
-    Un blocco e' una sequenza di tratti separati da non piu' di gap_tol op
-    non corrispondenti, contate come max(nv, nt) meno le coppie che valgono
-    come uguali: un valore sbagliato e' una, un'op mancante e' una, tre op
-    di wl contro cinque del port sono cinque. Un blocco conta se ha almeno
-    min_block coppie uguali; le op non corrispondenti che tollera restano
-    non corrispondenti. Le coppie dei blocchi piu' corti contano come una
-    mancante e una di troppo.
+    A block is a sequence of stretches separated by no more than gap_tol
+    non-corresponding ops, counted as max(nv, nt) minus the pairs that count
+    as equal: a wrong value is one, a missing op is one, three wl ops
+    against five of the port are five. A block counts if it has at least
+    min_block equal pairs; the non-corresponding ops it tolerates stay
+    non-corresponding. The pairs of shorter blocks count as one missing and
+    one too many.
 
-    Ritorna (uguali contate, blocchi contati, uguali scartate, op non
-    corrispondenti tollerate dentro i blocchi contati).
+    Returns (equal counted, blocks counted, equal discarded, non-corresponding
+    ops tolerated inside the counted blocks).
     """
     eq = nblk = lost = tol = 0
     cur = cur_tol = 0
@@ -565,36 +569,37 @@ def main():
     ap.add_argument('test')
     ap.add_argument('range')
     ap.add_argument('--bus', action='store_true',
-                    help='profilo bus di compare.py: MOD svolti, TBL.* scartati')
+                    help='compare.py\'s bus profile: MODs unrolled, TBL.* '
+                         'dropped')
     ap.add_argument('--anchor-values', action='store_true',
-                    help='allinea prima sui valori: due flussi al bus coi '
-                         'valori pieni, vedi segments()')
+                    help='align on the values first: two bus streams with '
+                         'full values, see segments()')
     ap.add_argument('--board', default='agcombo')
     ap.add_argument('--led-pins', type=lambda v: int(v, 0), default=0,
-                    help='pin GPIO dei LED, da ./ac_trace led_pins BOARD')
+                    help='GPIO pins of the LEDs, from ./ac_trace led_pins BOARD')
     ap.add_argument('--min-block', type=int, required=True,
-                    help='coppie uguali minime di un blocco perche\' conti '
-                         f'(almeno {tracelib.MIN_BLOCK}, il minimo '
-                         'dell\'allineamento)')
+                    help='minimum equal pairs of a block for it to count '
+                         f'(at least {tracelib.MIN_BLOCK}, the alignment\'s '
+                         'minimum)')
     ap.add_argument('--gap-tol', type=int, required=True,
-                    help='op non corrispondenti tollerate fra un tratto e il '
-                         'successivo dello stesso blocco')
+                    help='non-corresponding ops tolerated between one '
+                         'stretch and the next of the same block')
     ap.add_argument('--rmw', action='store_true',
-                    help='lettura+scrittura dello stesso registro PHY o '
-                         'radio come un RMW')
+                    help='read+write of the same PHY or radio register as '
+                         'one RMW')
     ap.add_argument('--verbose', action='store_true')
     args = ap.parse_args()
     if args.min_block < tracelib.MIN_BLOCK:
-        ap.error(f'--min-block sotto {tracelib.MIN_BLOCK}: l\'allineamento '
-                 'non produce blocchi piu\' corti')
+        ap.error(f'--min-block below {tracelib.MIN_BLOCK}: the alignment '
+                 'produces no shorter blocks')
     if args.gap_tol < 0:
-        ap.error('--gap-tol negativo')
+        ap.error('--gap-tol negative')
 
     C = load_compare()
     lo, hi = (int(x) for x in args.range.split(':'))
     profile = 'bus' if args.bus else None
-    espanse = {}
-    v = C.load_vendor(args.vendor, (lo, hi), profile, espanse)
+    expanded = {}
+    v = C.load_vendor(args.vendor, (lo, hi), profile, expanded)
     t = C.load_test(args.test, profile)
     off = C.find_offset(t, v[0])
     if off > 0:
@@ -605,21 +610,21 @@ def main():
         o = C.RET_SUFFIX.sub('', o)
         if 'val=UNDEFINED' in o or C.val_nondet(o):
             o = C.VAL_TOK.sub('val=*', o, count=1)
-        return C.senza_bit_fuori_perimetro(o)
+        return C.strip_bits_outside_perimeter(o)
 
     rules = [r for r in KNOWN.get(args.board, [])
-             if args.bus or not r.get('solo_bus')]
+             if args.bus or not r.get('bus_only')]
     moves = MOVED.get(args.board, [])
     V0 = [canon(x) for x in v]
     T = [canon(x) for x in t]
 
-    # Op che nessuna cattura puo' contenere: via da entrambi i lati, o il
-    # denominatore e il numeratore parlano di cose diverse. Definite in
-    # compare.py, come il perimetro.
+    # Ops no capture can contain: out from both sides, or the denominator and
+    # the numerator talk about different things. Defined in compare.py, like
+    # the perimeter.
     V0, ps = C.drop_power_save(V0)
-    V0, sv = C.drop_solo_vendor(V0)
+    V0, sv = C.drop_vendor_only(V0)
     V0, mv_used, mv_ops = apply_moves(V0, moves)
-    T, sp = C.drop_solo_port(T, V0)
+    T, sp = C.drop_port_only(T, V0)
     if args.rmw:
         V0, T = fold_rmw(V0), fold_rmw(T)
 
@@ -637,86 +642,84 @@ def main():
     V1, skipped, used = apply_skips(VP, rules, args.verbose)
     eq1, nblk1, diff1, bl1, cls1 = stats(V1, T)
 
-    print(f"board {args.board}, finestra {lo}:{hi}")
-    if espanse:
-        print(f"bulk espanse    : {C.format_espanse(espanse)}")
+    print(f"board {args.board}, window {lo}:{hi}")
+    if expanded:
+        print(f"bulk expanded   : {C.format_expanded(expanded)}")
     if ps:
-        print(f"risparmio       : {len(ps)} op del risparmio energetico di "
-              f"wl senza BSS, vedi drop_power_save()")
+        print(f"power save      : {len(ps)} ops of wl's power saving "
+              f"without a BSS, see drop_power_save()")
     if sv:
-        print(f"solo vendor     : {len(sv)} op che nessun codice b43 "
-              f"puo' emettere")
+        print(f"vendor only     : {len(sv)} ops no b43 code can emit")
     if sp:
-        print(f"solo port       : {len(sp)} op del port senza oracolo, "
-              f"vedi SOLO_PORT")
+        print(f"port only       : {len(sp)} port ops without an oracle, "
+              f"see PORT_ONLY")
     if moves:
-        print(f"spostate        : {sum(mv_ops)} op in {sum(mv_used)} blocchi "
-              f"su {len(moves)} regole, vedi MOVED")
+        print(f"moved           : {sum(mv_ops)} ops in {sum(mv_used)} blocks "
+              f"on {len(moves)} rules, see MOVED")
     print()
-    print("La riga che conta e' 'grezzo'. Il denominatore e' l'unione: tutte le")
-    print("op di wl PIU' quelle che il port emette e wl no, perche' un'op di")
-    print("troppo e' un difetto quanto una mancante -- il driver deve emettere")
-    print("le op di wl, non le sue. Fa 100% solo se i due flussi coincidono.")
-    print("Il numeratore sono le coppie uguali nei blocchi di almeno")
-    print(f"{args.min_block} coppie, con al piu' {args.gap_tol} op non "
-          "corrispondenti fra un tratto e il")
-    print("successivo.")
-    print("'nel perimetro' toglie cio' che l'harness non puo' emettere e serve")
-    print("a navigare, non a dare un punteggio: quel debito e' in")
-    print("docs/retrace-todo.md.\n")
-    par = f"[blocco>={args.min_block} tol={args.gap_tol}]"
+    print("The line that counts is 'raw'. The denominator is the union: all")
+    print("of wl's ops PLUS those the port emits and wl does not, because an")
+    print("op too many is as much a defect as a missing one -- the driver must")
+    print("emit wl's ops, not its own. It reaches 100% only if the two streams")
+    print("coincide. The numerator is the equal pairs in the blocks of at least")
+    print(f"{args.min_block} pairs, with at most {args.gap_tol} "
+          "non-corresponding ops between one stretch")
+    print("and the next.")
+    print("'in perimeter' removes what the harness cannot emit and serves")
+    print("navigation, not scoring: that debt is in docs/retrace-todo.md.\n")
+    par = f"[block>={args.min_block} tol={args.gap_tol}]"
 
-    def riga(nome, eq, nv, nt, nblk, bl, cls):
+    def line(name, eq, nv, nt, nblk, bl, cls):
         tot = nv + nt - eq
         wrong, missing, surplus = cls
         lost, tol = bl
-        print(f"{nome:16s}: {eq}/{tot} = {100.0 * eq / tot:.2f}%   {par}   "
-              f"{nblk} blocchi")
-        print(f"                  {wrong} col valore sbagliato, "
-              f"{missing} op di wl mancanti, {surplus} op del port di troppo")
-        print(f"                  {lost} coppie uguali in blocchi troppo corti, "
-              f"{tol} op non corrispondenti tollerate nei blocchi")
+        print(f"{name:16s}: {eq}/{tot} = {100.0 * eq / tot:.2f}%   {par}   "
+              f"{nblk} blocks")
+        print(f"                  {wrong} with the wrong value, "
+              f"{missing} wl ops missing, {surplus} port ops too many")
+        print(f"                  {lost} equal pairs in blocks too short, "
+              f"{tol} non-corresponding ops tolerated in the blocks")
 
-    riga("grezzo", eq0, len(V0), len(T), nblk0, bl0, cls0)
-    riga("nel perimetro", eqp, len(VP), len(T), nblkp, blp, clsp)
-    print(f"                  {len(outside)} op fuori perimetro su "
-          f"{len(keys)} celle dichiarate di altri")
-    riga("CON  eccezioni", eq1, len(V1), len(T), nblk1, bl1, cls1)
-    print(f"                  {len(skipped)} op saltate su {len(rules)} regole\n")
+    line("raw", eq0, len(V0), len(T), nblk0, bl0, cls0)
+    line("in perimeter", eqp, len(VP), len(T), nblkp, blp, clsp)
+    print(f"                  {len(outside)} ops outside the perimeter on "
+          f"{len(keys)} cells declared someone else's")
+    line("WITH exceptions", eq1, len(V1), len(T), nblk1, bl1, cls1)
+    print(f"                  {len(skipped)} ops skipped on {len(rules)} rules\n")
 
     for k, r in enumerate(C.PERIMETER):
         n = sum(1 for _, h in outside if h == k)
-        print(f"  [perimetro {k}] {n} op" + ("  NON APPLICATA" if not n else ""))
-        for line in re.findall(r'.{1,72}(?:\s|$)', r['motivo']):
-            print(f"      {line.strip()}")
+        print(f"  [perimeter {k}] {n} ops" + ("  NOT APPLIED" if not n else ""))
+        for ln in re.findall(r'.{1,72}(?:\s|$)', r['reason']):
+            print(f"      {ln.strip()}")
         print()
 
     for k, r in enumerate(moves):
-        tag = "NON APPLICATA (0 volte)" if not mv_used[k] else \
-            f"{mv_used[k]}/{r['max']} blocchi, {mv_ops[k]} op"
-        print(f"  [spostamento {k}] {tag}")
-        for line in re.findall(r'.{1,72}(?:\s|$)', r['motivo']):
-            print(f"      {line.strip()}")
+        tag = "NOT APPLIED (0 times)" if not mv_used[k] else \
+            f"{mv_used[k]}/{r['max']} blocks, {mv_ops[k]} ops"
+        print(f"  [move {k}] {tag}")
+        for ln in re.findall(r'.{1,72}(?:\s|$)', r['reason']):
+            print(f"      {ln.strip()}")
         print()
 
     casc = False
     for k, r in enumerate(rules):
         if not used[k]:
-            print(f"  [regola {k}] NON APPLICATA (0 volte)")
+            print(f"  [rule {k}] NOT APPLIED (0 times)")
         else:
-            flag = '  ** CASCATA **' if r['cascata'] else ''
-            print(f"  [regola {k}] {used[k]}/{r['max']} volte{flag}")
-            casc = casc or r['cascata']
-        for line in re.findall(r'.{1,72}(?:\s|$)', r['motivo']):
-            print(f"      {line.strip()}")
+            flag = '  ** CASCADE **' if r['cascade'] else ''
+            print(f"  [rule {k}] {used[k]}/{r['max']} times{flag}")
+            casc = casc or r['cascade']
+        for ln in re.findall(r'.{1,72}(?:\s|$)', r['reason']):
+            print(f"      {ln.strip()}")
         print()
 
     if casc:
-        print("ATTENZIONE: almeno una regola e' marcata cascata. Le op saltate")
-        print("potrebbero influenzare valori letti piu' tardi, quindi il")
-        print("confronto a valle e' indicativo e non probante.\n")
+        print("WARNING: at least one rule is marked cascade. The skipped ops")
+        print("could affect values read later, so the comparison downstream")
+        print("is indicative, not conclusive.\n")
 
-    print("prime regioni divergenti dopo le eccezioni:")
+    print("first divergent regions after the exceptions:")
     for k, a, b, c, d in diff1[:6]:
         print(f"  {k:<7} V[{a}:{b}]={b - a}  T[{c}:{d}]={d - c}")
         for i in range(a, min(b, a + 2)):

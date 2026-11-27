@@ -27,7 +27,7 @@ The window runs from wl's first PHY operation after the `up` mark to the
 PHY calls of its core in its order: the analog switch of
 `b43_wireless_core_reset()` and of `b43_phy_bringup()`, `b43_phy_init()`,
 and the TX power check of mac80211's first config. `../unit/cmp_skip.py
---bus --rmw` scores the two streams; the line to quote is `grezzo`, with its
+--bus --rmw` scores the two streams; the line to quote is `raw`, with its
 two parameters. The captures are MMIO, without the read-modify-writes of the
 accessors: `--rmw` takes a read followed by a write of the same PHY or radio
 register as one, on both sides, as the AC captures carry them. The second row compares the PHY's and radio's operations only:

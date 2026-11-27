@@ -10518,7 +10518,7 @@ static void b43_phy_ac_down(struct b43_wldev *dev)
 	 * The solver runs again over the same accumulators and writes the same
 	 * pair as the first apply. The stock pair here is what block D's peek
 	 * returned, but using the peek would hide the solver's residual on b
-	 * from the score (see VAL_TOLLERANZA in test/unit/compare.py).
+	 * from the score (see VAL_TOLERANCE in test/unit/compare.py).
 	 */
 	if (dev->phy.ac->iqlo_saved) {
 		unsigned int c;

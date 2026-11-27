@@ -57,9 +57,9 @@ a=$(awk "/MARK 'up'/ { print substr(\$2, 2) + 1; exit }" "$T/cap.m2o")
 z=$(awk "/MARK 'beaconing'/ { print substr(\$2, 2) - 1; exit }" "$T/cap.m2o")
 echo "== $CAP, ops $a:$z"
 python3 ../unit/cmp_skip.py "$T/cap.m2o" "$T/b43.trace" "$a:$z" \
-	--board r6400v1 --bus --anchor-values --min-block 8 --gap-tol 2 | grep -A2 '^grezzo'
+	--board r6400v1 --bus --anchor-values --min-block 8 --gap-tol 2 | grep -A2 '^raw '
 grep -E "$PHYSEL" "$T/cap.m2o" > "$T/cap.phy"
 grep -E "$PHYSEL" "$T/b43.trace" > "$T/b43.phy"
 python3 ../unit/cmp_skip.py "$T/cap.phy" "$T/b43.phy" "$a:$z" \
-	--board r6400v1 --bus --anchor-values --min-block 8 --gap-tol 2 | grep -A2 '^grezzo' |
-	sed '1s/^grezzo       /PHY+radio+MAC/'
+	--board r6400v1 --bus --anchor-values --min-block 8 --gap-tol 2 | grep -A2 '^raw ' |
+	sed '1s/^raw          /PHY+radio+MAC/'

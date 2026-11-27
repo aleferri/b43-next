@@ -59,15 +59,15 @@ values (`$TRACE_TOOLS/trace_filter.py --retvals`), or every read looks absent.
 ## Reading the score
 
 ```
-grezzo          : 29820/29846 = 99.91%   [blocco>=8 tol=2]   3 blocchi
-                  0 col valore sbagliato, 26 op di wl mancanti, 0 op del port di troppo
-                  0 coppie uguali in blocchi troppo corti, 15 op non corrispondenti tollerate nei blocchi
+raw             : 29820/29846 = 99.91%   [block>=8 tol=2]   3 blocks
+                  0 with the wrong value, 26 wl ops missing, 0 port ops too many
+                  0 equal pairs in blocks too short, 15 non-corresponding ops tolerated in the blocks
 ```
 
 (cold01 of the d6220 on 2026-10-08; the 26 missing ops are core cells
 outside the PHY's perimeter.)
 
-The line to quote is `grezzo` (raw). Its denominator is the union of the two
+The line to quote is `raw`. Its denominator is the union of the two
 streams, so it reaches 100% only when they coincide.
 
 Ops are matched in order, in blocks: `tracelib.align_opcodes()` anchors the
@@ -88,11 +88,11 @@ different jobs:
 
 | count | meaning | the job |
 |---|---|---|
-| `col valore sbagliato` | right register, wrong number | a formula to find |
-| `op di wl mancanti` | the stock driver emits it, the port does not | code to write |
-| `op del port di troppo` | the port emits it, the stock driver does not | a gate to add |
+| `with the wrong value` | right register, wrong number | a formula to find |
+| `wl ops missing` | the stock driver emits it, the port does not | code to write |
+| `port ops too many` | the port emits it, the stock driver does not | a gate to add |
 
-`nel perimetro` and `CON eccezioni` also drop the code outside the PHY and the
+`in perimeter` and `WITH exceptions` also drop the code outside the PHY and the
 `KNOWN` rules; they serve navigation, not scoring.
 
 ## Finding the next divergence
@@ -118,8 +118,8 @@ at zero proves the register absent, not the phase;
 
 ## Exception lists
 
-`compare.py` holds `SOLO_VENDOR`, `SOLO_PORT`, `SOLO_PORT_SENZA_CLASSE`,
-`PERIMETER`, `VAL_NONDET`, `VAL_TOLLERANZA` and `VAL_BIT_FUORI_PERIMETRO`,
+`compare.py` holds `VENDOR_ONLY`, `PORT_ONLY`, `PORT_ONLY_UNTRACED`,
+`PERIMETER`, `VAL_NONDET`, `VAL_TOLERANCE` and `VAL_BITS_OUTSIDE_PERIMETER`,
 and `cmp_skip.py` holds `MOVED`
 (empty: see the core sites below) and `KNOWN`, each entry with its
 reason. They are the only place where an
@@ -131,10 +131,10 @@ goal:
   `b43_phy_ac_todo()`;
 - `PERIMETER` is decided by ownership shown by `b43.h` or the blob, not by
   reachability from the PHY, and is narrowed every time the port learns to write
-  a cell (`PHY_ANCHE` lists the core cells the port emits);
-- a `VAL_TOLLERANZA` applies to the positional gate only; `cmp_skip.py` still
+  a cell (`PHY_ALSO` lists the core cells the port emits);
+- a `VAL_TOLERANCE` applies to the positional gate only; `cmp_skip.py` still
   counts the value as wrong;
-- `VAL_BIT_FUORI_PERIMETRO` masks bits of a shared-memory cell on which the
+- `VAL_BITS_OUTSIDE_PERIMETER` masks bits of a shared-memory cell on which the
   port departs from the stock driver by decision, and only in the cell's
   `OBJ.WR` value: a `MAC.MHF` record of the same bit still counts.
 

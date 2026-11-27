@@ -102,7 +102,7 @@ the five DMA channels on every interrupt where the stock driver touches one.
 Since the key table init left the PHY its 548 words per `up` are missing on
 both integration rows.
 
-The number to quote is the `grezzo` line of `cmp_skip.py`, with its two
+The number to quote is the `raw` line of `cmp_skip.py`, with its two
 parameters, `--min-block 8 --gap-tol 2`; how to reproduce and read it is in
 [`test/unit/README.md`](../test/unit/README.md) and
 [`test/integration/README.md`](../test/integration/README.md). The six

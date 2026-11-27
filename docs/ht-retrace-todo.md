@@ -12,14 +12,14 @@ cold captures, from the probe to the BSS's start; `test/phy_ht` compiles no
 core but the watchdog turn's calls into it. From `up` to `beaconing`,
 2026-11-13:
 
-| capture | grezzo | PHY+radio+MAC |
+| capture | raw | PHY+radio+MAC |
 |---|---|---|
 | cold-2g6-20 | 65.06% | 96.51% |
 
 The second score has the PHY's and the radio's operations, MACCTL and the
 core's I/O control with its forced gated clock. wl's power saving while no
 BSS is up is not scored (`drop_power_save()` in `test/unit/compare.py`).
-`grezzo` follows the traffic, 991 interrupts on ch 1 against 217 on ch 6:
+`raw` follows the traffic, 991 interrupts on ch 1 against 217 on ch 6:
 the rest is the core's attach, init, interrupts and RX, not divided by phase
 yet.
 

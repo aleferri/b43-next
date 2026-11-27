@@ -75,8 +75,9 @@ HERE=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 REPO=$HERE/../..
 . "$REPO/test/paths.sh"
 TOOLS=$TRACE_TOOLS
-# GATE_TMP: la directory di lavoro, quando serve tenerne i file -- la cattura
-# ripiegata la rilegge read_perturb.py. Senza, una dir per run che sparisce.
+# GATE_TMP: the working directory, when its files are to be kept -- the
+# folded capture is reread by read_perturb.py. Without it, a directory per run
+# that goes away.
 if [ -n "${GATE_TMP:-}" ]; then
 	TMP=$GATE_TMP
 	mkdir -p "$TMP"
@@ -175,8 +176,8 @@ else
 	SEGS=$DEFAULT
 fi
 
-# I pin dei LED, che il perimetro usa per riconoscere le op LED del vendor.
-# Li ricava l'harness dalla SROM del profilo, con la regola di leds.c.
+# The LED pins, which the perimeter uses to recognize the vendor's LED ops.
+# The harness derives them from the profile's SROM, with leds.c's rule.
 LED_PINS=$("$HERE/ac_trace" led_pins "$BOARD" 2>/dev/null)
 
 [ "$TABLE" = 1 ] && printf '%5s %8s %8s %10s %10s %s\n' \
@@ -197,14 +198,14 @@ for seg in $SEGS; do
 		python3 "$TOOLS/check_class_coverage.py" \
 			--require "$seg"
 
-	# L'attach dell'altro core esce prima di piegare le letture, o la
-	# finestra dell'oracolo -- che parte dall'insmod per coprire l'OTP e il
-	# probe dei core -- si mangia anche le sue, e le code per (classe,
-	# indirizzo) servono al driver sotto esame la shared memory di wl0.
-	# Sulle celle 0x0000/0x0002 e' visibile: il self-test di
-	# b43_validate_chipaccess lo eseguono entrambi i core. Il taglio e' un
-	# no-op per il punteggio del PHY -- nel prefisso non c'e' una sola
-	# PHY.RD o RAD.RD -- e serve all'oracolo, non al confronto.
+		# The other core's attach goes before the reads are folded, or the
+		# oracle's window -- which starts at the insmod to cover the OTP and
+		# the core probe -- eats its reads too, and the queues per (class,
+		# address) feed wl0's shared memory to the driver under test. It shows
+		# on the cells 0x0000/0x0002: both cores run b43_validate_chipaccess's
+		# self-test. The cut is a no-op for the PHY's score -- there is not a
+		# single PHY.RD or RAD.RD in the prefix -- and serves the oracle, not
+		# the comparison.
 	python3 "$TOOLS/strip_other_core.py" "$seg" \
 		"$TMP/seg" 2>/dev/null || cp "$seg" "$TMP/seg"
 
@@ -330,9 +331,9 @@ PY
 
 	# The two measures, with the reference tools.
 	#
-	# The line to look at is "grezzo": wl ops reproduced in order over ALL
+	# The line to look at is "raw": wl ops reproduced in order over ALL
 	# of wl's, because the goal is for b43 to emit them all, the core's
-	# included. "nel perimetro" removes what the harness cannot emit and
+	# included. "in perimeter" removes what the harness cannot emit and
 	# only serves to show the next PHY divergence without stopping at the
 	# first core op -- it is navigation, not a score. The core's debt is in
 	# docs/retrace-todo.md.
@@ -344,7 +345,7 @@ PY
 	python3 "$HERE/cmp_skip.py" "$TMP/merged" "$TMP/full" \
 		"$from:$last" --board "$BOARD" --led-pins "$LED_PINS" \
 		--min-block "$MIN_BLOCK" --gap-tol "$GAP_TOL" \
-		| grep -E 'grezzo|spostate|nel perimetro|CON  ecce|fuori perimetro|op saltate|valore sbagliato|op di wl mancanti|solo vendor|solo port|invisibili|bulk espanse|blocchi troppo corti'
+		| grep -E '^raw |^moved |^in perimeter|^WITH exceptions|outside the perimeter|ops skipped|wrong value|wl ops missing|^vendor only|^port only|^bulk expanded|blocks too short'
 	echo "  --- compare ---"
 	python3 "$HERE/compare.py" "$TMP/merged" "$TMP/full" \
 		--range "$from:$last" --auto-align --led-pins "$LED_PINS" \

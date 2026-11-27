@@ -21,13 +21,13 @@ make K=... KG=...        # the kernel headers, see ../integration/README.md
 AC-PHY's: the window runs from wl's first PHY operation after `up` to the
 `ssid` mark, b43 runs its up on the capture's channel (flow `full`) with
 the window as read oracle, and `../unit/cmp_skip.py --bus` scores the two;
-it needs `$TRACE_TOOLS` for `tracelib`. The line to quote is `grezzo`,
+it needs `$TRACE_TOOLS` for `tracelib`. The line to quote is `raw`,
 with its two parameters. What wl does when the BSS starts, at `ssid` and
 `bss up`, is not part of b43's up and is not in the window.
 
 On 2026-11-13, `--min-block 8 --gap-tol 2`:
 
-| capture | grezzo | PHY+radio+MAC |
+| capture | raw | PHY+radio+MAC |
 |---|---|---|
 | cold-2g1-20 | 5481/7293 = 75.15% | 5340/5485 = 97.36% |
 | cold-2g6-20 | 5477/7418 = 73.83% | 5340/5485 = 97.36% |
@@ -108,7 +108,7 @@ analog switches and the radio's power), which b43 does not make; the
 calibrations match wl's to the value, coefficients included, and so do the
 values the watchdog writes to 0x280 and 0x283.
 
-| capture | grezzo | PHY+radio+MAC |
+| capture | raw | PHY+radio+MAC |
 |---|---|---|
 | cold-2g1-20 | 21314/37780 = 56.42% | 20585/21237 = 96.93% |
 | cold-2g6-20 | 21396/28484 = 75.12% | 20594/21246 = 96.93% |
@@ -127,7 +127,7 @@ later init, and `hot.sh` scores it on every `ssid-N` window, to `down-N`,
 whole and PHY, radio and MAC: the channel setup, the calibrations, the
 temperature measurements and the watchdog's turns of 25 configurations.
 
-| MHz | window | grezzo | PHY+radio+MAC |
+| MHz | window | raw | PHY+radio+MAC |
 |---|---|---|---|
 | 20 | ssid-1 | 20565/31162 = 65.99% | 20095/20747 = 96.86% |
 | 20 | ssid-2 | 21116/28140 = 75.04% | 20642/21294 = 96.94% |

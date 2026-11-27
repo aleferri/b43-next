@@ -51,12 +51,12 @@ for c in "$@"; do
 	N_CHANNEL=$ch N_BW=$bw N_SB=$sb ./n-trace full "$ops" "$first" "$last" \
 		-o "$T/$c.trace" || exit 1
 	python3 ../unit/cmp_skip.py "$ops" "$T/$c.trace" "$first:$last" \
-		--board rt-ac56u --bus --rmw $B | grep -A2 '^grezzo'
+		--board rt-ac56u --bus --rmw $B | grep -A2 '^raw '
 	grep -E ' (PHY|RAD)\.' "$ops" > "$T/$c.phy.ops"
 	grep -E ' (PHY|RAD)\.' "$T/$c.trace" > "$T/$c.phy.trace"
 	python3 ../unit/cmp_skip.py "$T/$c.phy.ops" "$T/$c.phy.trace" \
-		"$first:$last" --board rt-ac56u --bus --rmw $B | grep -A2 '^grezzo' |
-		sed '1s/^grezzo   /PHY+radio/'
+		"$first:$last" --board rt-ac56u --bus --rmw $B | grep -A2 '^raw ' |
+		sed '1s/^raw      /PHY+radio/'
 	# The noise samples wl takes after the BSS start, through the flow noise
 	first=$(awk "/MARK 'bss-up'/ { print substr(\$2, 2) + 1; exit }" "$ops")
 	last=$(awk "/MARK 'done'/ { print substr(\$2, 2) - 1; exit }" "$ops")

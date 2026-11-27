@@ -63,12 +63,12 @@ for c in "$@"; do
 	HT_CHANNEL=$ch HT_WD_TURNS=$(turns "$first" "$last") \
 		./ht-trace full "$ops" "$first" "$last" -o "$T/$c.trace" || exit 1
 	python3 ../unit/cmp_skip.py "$ops" "$T/$c.trace" "$first:$last" \
-		--board r6400v1 --bus $B | grep -A2 '^grezzo'
+		--board r6400v1 --bus $B | grep -A2 '^raw '
 	grep -E "$PHYSEL" "$ops" > "$T/$c.phy.ops"
 	grep -E "$PHYSEL" "$T/$c.trace" > "$T/$c.phy.trace"
 	python3 ../unit/cmp_skip.py "$T/$c.phy.ops" "$T/$c.phy.trace" \
-		"$first:$last" --board r6400v1 --bus $B | grep -A2 '^grezzo' |
-		sed '1s/^grezzo       /PHY+radio+MAC/'
+		"$first:$last" --board r6400v1 --bus $B | grep -A2 '^raw ' |
+		sed '1s/^raw          /PHY+radio+MAC/'
 
 	# The start of the BSS: wl's init at `ssid`, b43's b43_phy_recycle(),
 	# with what the up left read off the up.
@@ -91,9 +91,9 @@ for c in "$@"; do
 		./ht-trace ap_start "$ops" "$a" "$z" -o "$T/$c.ap.trace" \
 		2>/dev/null || exit 1
 	python3 ../unit/cmp_skip.py "$ops" "$T/$c.ap.trace" "$a:$z" \
-		--board r6400v1 --bus $B | grep -A2 '^grezzo'
+		--board r6400v1 --bus $B | grep -A2 '^raw '
 	grep -E "$PHYSEL" "$T/$c.ap.trace" > "$T/$c.ap.phy.trace"
 	python3 ../unit/cmp_skip.py "$T/$c.phy.ops" "$T/$c.ap.phy.trace" \
-		"$a:$z" --board r6400v1 --bus $B | grep -A2 '^grezzo' |
-		sed '1s/^grezzo       /PHY+radio+MAC/'
+		"$a:$z" --board r6400v1 --bus $B | grep -A2 '^raw ' |
+		sed '1s/^raw          /PHY+radio+MAC/'
 done
