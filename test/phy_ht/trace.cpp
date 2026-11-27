@@ -16,6 +16,9 @@
 #include <stdlib.h>
 #include <string.h>
 #include <regex.h>
+#include <string>
+#include <unordered_map>
+#include <vector>
 #include "ht_trace.h"
 
 #define PHY_VER		0x3e0
@@ -36,65 +39,40 @@ static int nref, nout, nlog;
 
 /* One queue of read values per register, in the capture's order. */
 struct queue {
-	char key[24];
-	unsigned int vals[MAX_OPS / 16];
-	int at[MAX_OPS / 16];	/* the read's index in ref[] */
-	int n, pos;
+	std::vector<unsigned int> vals;
+	std::vector<int> at;	/* the read's index in ref[] */
+	size_t pos = 0;
 };
-static struct queue queues[512];
-static int nqueues, exhausted;
+static std::unordered_map<std::string, queue> queues;
+static int exhausted;
 
 /* Last value written per register, for a read the capture does not have. */
-struct cell {
-	char key[24];
-	unsigned int val;
-};
-static struct cell cells[4096];
-static int ncells;
+static std::unordered_map<std::string, unsigned int> cells;
 
 /* Where wl's watchdog turns start in ref[]: their read of MMIO 0x4d0 */
-static int turn_at[MAX_OPS / 64], nturns;
+static std::vector<int> turn_at;
 
 static unsigned int phy_addr, radio_addr;
 static char phy_last;
 
-static struct queue *queue(const char *key, int create)
-{
-	int i;
-
-	for (i = 0; i < nqueues; i++)
-		if (!strcmp(queues[i].key, key))
-			return &queues[i];
-	if (!create)
-		return NULL;
-	snprintf(queues[nqueues].key, sizeof(queues[0].key), "%s", key);
-	return &queues[nqueues++];
-}
-
 static void store(const char *key, unsigned int val)
 {
-	int i;
-
-	for (i = 0; i < ncells; i++)
-		if (!strcmp(cells[i].key, key))
-			break;
-	if (i == ncells)
-		snprintf(cells[ncells++].key, sizeof(cells[0].key), "%s", key);
-	cells[i].val = val;
+	cells[key] = val;
 }
 
 static unsigned int serve(const char *key)
 {
-	struct queue *q = queue(key, 0);
-	int i;
+	auto entry = queues.find(key);
 
-	if (q && q->pos < q->n)
-		return q->vals[q->pos++];
+	if (entry != queues.end()) {
+		auto &q = entry->second;
+		if (q.pos < q.vals.size())
+			return q.vals[q.pos++];
+	}
 	exhausted++;
-	for (i = 0; i < ncells; i++)
-		if (!strcmp(cells[i].key, key))
-			return cells[i].val;
-	return 0;
+
+	auto cell = cells.find(key);
+	return cell == cells.end() ? 0 : cell->second;
 }
 
 static void emit(const char *fmt, const char *cls, unsigned int a,
@@ -274,17 +252,13 @@ void ht_wrap_write32(unsigned short offset, unsigned int value)
  */
 void ht_turn(int k)
 {
-	int i;
-
-	if (k >= nturns)
+	if (k >= (int)turn_at.size())
 		return;
-	for (i = 0; i < nqueues; i++) {
-		struct queue *q = &queues[i];
-
-		if (!strncmp(q->key, "PHY ", 4) || !strncmp(q->key, "RAD ", 4))
+	for (auto &[key, q] : queues) {
+		if (!key.compare(0, 4, "PHY ") || !key.compare(0, 4, "RAD "))
 			continue;
-		while (q->pos < q->n && q->at[q->pos] < turn_at[k])
-			q->pos++;
+		while (q.pos < q.vals.size() && q.at[q.pos] < turn_at[k])
+			q.pos++;
 	}
 }
 
@@ -381,9 +355,8 @@ static int load(const char *path, long first, long last)
 		if (nref >= MAX_OPS)
 			continue;
 		snprintf(ref[nref++].text, LINE, "%s %s", cls, args);
-		if (!strncmp(ref[nref - 1].text, "REG.RD off=0x04d0 ", 18) &&
-		    nturns < (int)(sizeof(turn_at) / sizeof(turn_at[0])))
-			turn_at[nturns++] = nref - 1;
+		if (!strncmp(ref[nref - 1].text, "REG.RD off=0x04d0 ", 18))
+			turn_at.push_back(nref - 1);
 
 		if (strcmp(cls + strlen(cls) - 3, ".RD"))
 			continue;
@@ -394,14 +367,10 @@ static int load(const char *path, long first, long last)
 				 strncmp(cls, "WRAP", 4) ? "REG" : "WRAP", a);
 		else
 			continue;
-		{
-			struct queue *q = queue(key, 1);
 
-			if (q->n < (int)(sizeof(q->vals) / sizeof(q->vals[0]))) {
-				q->at[q->n] = nref - 1;
-				q->vals[q->n++] = v;
-			}
-		}
+		auto &q = queues[key];
+		q.vals.push_back(v);
+		q.at.push_back(nref - 1);
 	}
 	fclose(f);
 	regfree(&re);
@@ -412,7 +381,7 @@ int main(int argc, char **argv)
 {
 	int i, verbose = argc > 5 && !strcmp(argv[5], "-v");
 	const char *trace = argc > 6 && !strcmp(argv[5], "-o") ? argv[6] : NULL;
-	int unread = 0;
+	size_t unread = 0;
 
 	if (argc < 5) {
 		fprintf(stderr, "usage: %s FLOW OPS FIRST LAST [-v]\n", argv[0]);
@@ -425,8 +394,8 @@ int main(int argc, char **argv)
 		fprintf(stderr, "unknown flow %s\n", argv[1]);
 		return 2;
 	}
-	for (i = 0; i < nqueues; i++)
-		unread += queues[i].n - queues[i].pos;
+	for (const auto &entry : queues)
+		unread += entry.second.vals.size() - entry.second.pos;
 
 	if (verbose)
 		for (i = 0; i < nout; i++)
@@ -442,7 +411,7 @@ int main(int argc, char **argv)
 			fprintf(f, "cpu0 %s\n", out[i].text);
 		fclose(f);
 		fprintf(stderr, "%d ops; reads past the window %d, window reads "
-			"not taken %d, b43 messages %d\n", nout, exhausted,
+			"not taken %zu, b43 messages %d\n", nout, exhausted,
 			unread, nlog);
 		for (i = 0; i < ncore; i++)
 			fprintf(stderr, "core, no ops: %s x%d\n",
@@ -463,7 +432,7 @@ int main(int argc, char **argv)
 	if (i < nref || i < nout)
 		printf("     wl: %s\n     b43: %s\n", i < nref ? ref[i].text : "(end)",
 		       i < nout ? out[i].text : "(end)");
-	printf("     reads past the capture %d, capture reads not taken %d, "
+	printf("     reads past the capture %d, capture reads not taken %zu, "
 	       "b43 messages %d\n", exhausted, unread, nlog);
 	return 1;
 }

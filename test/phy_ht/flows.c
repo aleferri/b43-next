@@ -3,7 +3,7 @@
  * Driver side of the HT-PHY harness, built against the kernel headers like
  * the driver. It compiles phy_ht.c into this file to reach its static
  * functions, puts a BCM4331 (HT-PHY rev 1, radio 2059) on a bus whose
- * accesses go to trace.c, and runs one flow. Nothing of b43 is modified.
+ * accesses go to trace.cpp, and runs one flow. Nothing of b43 is modified.
  */
 #include "phy_ht.c"
 #include "ht_trace.h"

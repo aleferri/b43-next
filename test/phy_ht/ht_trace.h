@@ -1,10 +1,14 @@
 /* SPDX-License-Identifier: GPL-2.0 */
 /*
  * What the driver side (flows.c, built against the kernel headers) and the
- * user side (trace.c, built against libc) share: plain C types only.
+ * user side (trace.cpp) share: plain C types only.
  */
 #ifndef HT_TRACE_H
 #define HT_TRACE_H
+
+#ifdef __cplusplus
+extern "C" {
+#endif
 
 unsigned short ht_mmio_read16(unsigned short offset);
 void ht_mmio_write16(unsigned short offset, unsigned short value);
@@ -27,5 +31,9 @@ void ht_core(const char *fn);
 
 /* Driver side: run one flow; nonzero if the name is unknown. */
 int ht_run_flow(const char *name);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif
