@@ -474,7 +474,6 @@ void b43_generate_plcp_hdr(struct b43_plcp_hdr4 *plcp,
 			   const u16 octets, const u8 bitrate);
 
 void b43_rx(struct b43_wldev *dev, struct sk_buff *skb, const void *_rxhdr);
-void b43_rx_amsdu_free(struct b43_wldev *dev);
 
 void b43_txstatus_dump(struct b43_wldev *dev,
 		       const struct b43_txstatus *status);
