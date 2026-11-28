@@ -636,11 +636,15 @@ def main():
         cls = [sum(sg[i] for sg in segs if sg[0] == 'gap') for i in (4, 5, 6)]
         return eq, nblk, diff, (lost, tol), cls
 
-    eq0, nblk0, _, bl0, cls0 = stats(V0, T)
+    # The perimeter and the rules only drop ops: when one drops none, its
+    # stream is the one before it and so is the alignment.
+    raw = stats(V0, T)
+    eq0, nblk0, _, bl0, cls0 = raw
     VP, outside, keys = C.apply_perimeter(V0, args.led_pins)
-    eqp, nblkp, _, blp, clsp = stats(VP, T)
+    perim = stats(VP, T) if outside else raw
+    eqp, nblkp, _, blp, clsp = perim
     V1, skipped, used = apply_skips(VP, rules, args.verbose)
-    eq1, nblk1, diff1, bl1, cls1 = stats(V1, T)
+    eq1, nblk1, diff1, bl1, cls1 = stats(V1, T) if skipped else perim
 
     print(f"board {args.board}, window {lo}:{hi}")
     if expanded:
