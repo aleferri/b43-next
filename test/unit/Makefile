@@ -19,7 +19,7 @@ include $(B43)/files.mk
 SCRATCH := build/b43
 STUBS   := stubs
 AC_HDRS := $(addprefix $(SCRATCH)/,phy_ac.h tables_phy_ac.h radio_2069.h \
-            ppr.h radar_ac.h fw_layout.h calstat.h qmath.h \
+            ppr.h radar_ac.h fw_layout.h calstat.h \
             calibrate.h)
 AC_HDRS += $(SCRATCH)/rates.h
 

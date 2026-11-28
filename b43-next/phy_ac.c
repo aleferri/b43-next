@@ -46,7 +46,6 @@
 #include "main.h"
 #include "rates.h"
 #include "calstat.h"
-#include "qmath.h"
 #include "calibrate.h"
 
 /* The check of B43_PHY_AC_REQUIRE(): true when @func must return. */
@@ -85,6 +84,8 @@ static void b43_phy_ac_force_clock(struct b43_wldev *dev, bool force)
 	b43_phy_force_clock(dev, false);
 }
 
+static void b43_phy_ac_radar_work(struct work_struct *work);
+
 /* Basic PHY ops */
 
 static int b43_phy_ac_op_allocate(struct b43_wldev *dev)
@@ -97,6 +98,7 @@ static int b43_phy_ac_op_allocate(struct b43_wldev *dev)
 	dev->phy.ac = phy_ac;
 	/* The host flags reach the cells only from the bring-up's point */
 	dev->mhf_hold = true;
+	INIT_DELAYED_WORK(&dev->phy.work, b43_phy_ac_radar_work);
 
 	return 0;
 }
@@ -6480,6 +6482,9 @@ static void b43_phy_ac_op_channel_calibrate(struct b43_wldev *dev,
 		return;
 	}
 	B43_AC_FN();
+	if (dev->radar_arm)
+		ieee80211_queue_delayed_work(dev->wl->hw, &dev->phy.work,
+				msecs_to_jiffies(B43_RADAR_POLL_MS));
 	if (b43_phy_ac_cal_reads_temp(dev)) {
 		B43_AC_BLOCK(dev, "tempsense");
 		b43_phy_ac_tempsense(dev);
@@ -10198,9 +10203,44 @@ bool b43_phy_ac_radar_poll(struct b43_wldev *dev)
 	/*
 	 * Drained in any case; reported only while mac80211 asks for radar
 	 * detection, read here because it does not always say so on a
-	 * config call (b43_radar_work_handler()).
+	 * config call (b43_phy_ac_radar_work()).
 	 */
 	return b43_phy_ac_cac_poll(dev) && dev->wl->hw->conf.radar_enabled;
+}
+
+/*
+ * The detector is read while the AP is on a channel with the radar duty
+ * (dev->radar_arm), which is the availability check and, after it, the whole
+ * time the AP stays on the channel.
+ *
+ * Not while mac80211 asks for radar detection: a driver without channel
+ * contexts learns that from conf->radar_enabled, but not always on a config
+ * call. mac80211 creates the context with radar_enabled false, tunes, and
+ * turns it on after (_ieee80211_link_use_channel(),
+ * ieee80211_recalc_radar_chanctx()); the chandef has not changed, so the
+ * emulated change_chanctx does not call the driver. After the check, when
+ * start_ap takes the channel again, the poll keyed on radar_enabled stopped
+ * for good and the FIFOs filled up undrained. radar_enabled is read here
+ * instead, to report. B43_RADAR_POLL_MS is radar_ac.h's.
+ */
+static void b43_phy_ac_radar_work(struct work_struct *work)
+{
+	struct b43_wldev *dev = container_of(work, struct b43_wldev,
+					     phy.work.work);
+	struct b43_wl *wl = dev->wl;
+
+	mutex_lock(&wl->mutex);
+	if (likely(b43_status(dev) == B43_STAT_STARTED) && dev->radar_arm) {
+		/*
+		 * The PHY matches the pulses against the radar types, and
+		 * reports a match while mac80211 asks for detection.
+		 */
+		if (b43_phy_ac_radar_poll(dev))
+			ieee80211_radar_detected(wl->hw, NULL);
+		ieee80211_queue_delayed_work(wl->hw, &dev->phy.work,
+				msecs_to_jiffies(B43_RADAR_POLL_MS));
+	}
+	mutex_unlock(&wl->mutex);
 }
 
 /*
@@ -11045,7 +11085,6 @@ const struct b43_phy_operations b43_phyops_ac = {
 	.pwork_60sec		= b43_phy_ac_op_pwork_60sec,
 	.channel_calibrate	= b43_phy_ac_op_channel_calibrate,
 	.noise_sample_done	= b43_phy_ac_noise_sample_done,
-	.radar_poll		= b43_phy_ac_radar_poll,
 	.beacon_rate_set	= b43_phy_ac_op_beacon_rate_set,
 	B43_CAL_OPS(b43_phy_ac_cal_entries)
 };

@@ -8311,7 +8311,7 @@ static void b43_nphy_perical_mphase_reset(struct b43_wldev *dev)
 {
 	struct b43_phy_n *nphy = dev->phy.n;
 
-	cancel_delayed_work(&nphy->perical_work);
+	cancel_delayed_work(&dev->phy.work);
 	nphy->mphase_cal_phase_id = 0;
 	nphy->mphase_txcal_cmdidx = 0;
 }
@@ -8439,9 +8439,9 @@ static void b43_nphy_perical_run(struct b43_wldev *dev)
 
 static void b43_nphy_perical_work(struct work_struct *work)
 {
-	struct b43_phy_n *nphy = container_of(to_delayed_work(work),
-					      struct b43_phy_n, perical_work);
-	struct b43_wldev *dev = nphy->dev;
+	struct b43_wldev *dev = container_of(work, struct b43_wldev,
+					     phy.work.work);
+	struct b43_phy_n *nphy = dev->phy.n;
 	unsigned long delay = msecs_to_jiffies(5);
 
 	mutex_lock(&dev->wl->mutex);
@@ -8460,16 +8460,10 @@ static void b43_nphy_perical_work(struct work_struct *work)
 		b43_nphy_perical_run(dev);
 	}
 	if (nphy->mphase_cal_phase_id)
-		ieee80211_queue_delayed_work(dev->wl->hw, &nphy->perical_work,
+		ieee80211_queue_delayed_work(dev->wl->hw, &dev->phy.work,
 					     delay);
 out:
 	mutex_unlock(&dev->wl->mutex);
-}
-
-/* Called without wl->mutex, as the work takes it */
-void b43_nphy_cancel_perical(struct b43_wldev *dev)
-{
-	cancel_delayed_work_sync(&dev->phy.n->perical_work);
 }
 
 enum b43_nphy_perical_reason {
@@ -8498,7 +8492,7 @@ static void b43_nphy_perical(struct b43_wldev *dev,
 	}
 
 	nphy->mphase_cal_phase_id = 1;
-	ieee80211_queue_delayed_work(dev->wl->hw, &nphy->perical_work,
+	ieee80211_queue_delayed_work(dev->wl->hw, &dev->phy.work,
 				     msecs_to_jiffies(5));
 }
 
@@ -9140,7 +9134,7 @@ static int b43_nphy_op_allocate(struct b43_wldev *dev)
 		return -ENOMEM;
 
 	dev->phy.n = nphy;
-	INIT_DELAYED_WORK(&nphy->perical_work, b43_nphy_perical_work);
+	INIT_DELAYED_WORK(&dev->phy.work, b43_nphy_perical_work);
 
 	return 0;
 }
@@ -9152,8 +9146,6 @@ static void b43_nphy_op_prepare_structs(struct b43_wldev *dev)
 	struct ssbn_sprom *sprom = dev->dev->bus_sprom;
 
 	memset(nphy, 0, sizeof(*nphy));
-	nphy->dev = dev;
-	INIT_DELAYED_WORK(&nphy->perical_work, b43_nphy_perical_work);
 
 	nphy->hang_avoid = (phy->rev == 3 || phy->rev == 4);
 	nphy->spur_avoid = (phy->rev >= 3) ?
@@ -9210,7 +9202,7 @@ static void b43_nphy_op_free(struct b43_wldev *dev)
 	struct b43_phy *phy = &dev->phy;
 	struct b43_phy_n *nphy = phy->n;
 
-	cancel_delayed_work_sync(&nphy->perical_work);
+	cancel_delayed_work_sync(&phy->work);
 	kfree(nphy);
 	phy->n = NULL;
 }

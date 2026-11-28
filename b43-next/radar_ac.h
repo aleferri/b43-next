@@ -51,7 +51,7 @@ struct b43_radar_pulse {
 
 /*
  * The FIFOs are drained and matched every B43_RADAR_POLL_MS while the
- * detector is armed (b43_radar_work_handler()); FCC 5 counts its 12 s in
+ * detector is armed (b43_phy_ac_radar_work()); FCC 5 counts its 12 s in
  * polls.
  */
 #define B43_RADAR_POLL_MS	150

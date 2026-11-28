@@ -260,7 +260,27 @@ struct b43_bus_dev {
 #define B43_PHYTYPE_LCN40	0x0a
 #define B43_PHYTYPE_AC		0x0b
 
+/*
+ * The work of the radar poll (b43_phy_ac_radar_work()). The harness calls
+ * b43_phy_ac_radar_poll() itself, so nothing is queued or locked.
+ */
+struct work_struct { int unused; };
+struct delayed_work { struct work_struct work; };
+struct mutex { int unused; };
+
+#define INIT_DELAYED_WORK(work, func)	((void)(work), (void)(func))
+#define msecs_to_jiffies(ms)		(ms)
+
+static inline void mutex_lock(struct mutex *lock) { }
+static inline void mutex_unlock(struct mutex *lock) { }
+static inline void ieee80211_queue_delayed_work(struct ieee80211_hw *hw,
+						struct delayed_work *work,
+						unsigned long delay) { }
+static inline void ieee80211_radar_detected(struct ieee80211_hw *hw,
+					    void *chanctx) { }
+
 struct b43_phy {
+	struct delayed_work work;
 	/*
 	 * Current width and channel. In b43 b43_phy_init() points them at the
 	 * hardware's config, before switch_analog() and b43_software_rfkill(),
@@ -294,6 +314,7 @@ struct b43_phy {
 };
 
 struct b43_wl {
+	struct mutex mutex;
 	struct ieee80211_hw *hw;
 	u8 radar_region;
 };
@@ -322,6 +343,9 @@ struct b43_wldev {
 	u16 dirmap_ofdm[16];
 	u16 dirmap_cck[16];
 };
+
+#define B43_STAT_STARTED	2
+static inline int b43_status(struct b43_wldev *dev) { return B43_STAT_STARTED; }
 
 /*
  * Log macros. Route everything to stderr so it does not interleave

@@ -4564,42 +4564,6 @@ out:
 	mutex_unlock(&wl->mutex);
 }
 
-/*
- * The detector is read while the AP is on a channel with the radar duty
- * (dev->radar_arm), which is the availability check and, after it, the whole
- * time the AP stays on the channel.
- *
- * Not while mac80211 asks for radar detection: a driver without channel
- * contexts learns that from conf->radar_enabled, but not always on a config
- * call. mac80211 creates the context with radar_enabled false, tunes, and
- * turns it on after (_ieee80211_link_use_channel(),
- * ieee80211_recalc_radar_chanctx()); the chandef has not changed, so the
- * emulated change_chanctx does not call the driver. After the check, when
- * start_ap takes the channel again, the poll keyed on radar_enabled stopped
- * for good and the FIFOs filled up undrained. radar_enabled is read here
- * instead, to report. B43_RADAR_POLL_MS is radar_ac.h's.
- */
-
-static void b43_radar_work_handler(struct work_struct *work)
-{
-	struct b43_wldev *dev = container_of(work, struct b43_wldev,
-					     radar_work.work);
-	struct b43_wl *wl = dev->wl;
-
-	mutex_lock(&wl->mutex);
-	if (likely(b43_status(dev) == B43_STAT_STARTED) && dev->radar_arm) {
-		/*
-		 * The PHY matches the pulses against the radar types, and
-		 * reports a match while mac80211 asks for detection.
-		 */
-		if (dev->phy.ops->radar_poll(dev))
-			ieee80211_radar_detected(wl->hw, NULL);
-		ieee80211_queue_delayed_work(wl->hw, &dev->radar_work,
-					     msecs_to_jiffies(B43_RADAR_POLL_MS));
-	}
-	mutex_unlock(&wl->mutex);
-}
-
 static void b43_ampdu_kick_work(struct work_struct *work);
 
 static void b43_periodic_tasks_setup(struct b43_wldev *dev)
@@ -4612,7 +4576,6 @@ static void b43_periodic_tasks_setup(struct b43_wldev *dev)
 	ieee80211_queue_delayed_work(dev->wl->hw, work,
 				     b43_periodic_ticks_per_15sec(dev) > 1 ? HZ : 0);
 
-	INIT_DELAYED_WORK(&dev->radar_work, b43_radar_work_handler);
 	INIT_DELAYED_WORK(&dev->ampdu_kick_work, b43_ampdu_kick_work);
 }
 
@@ -5907,7 +5870,7 @@ static void b43_set_retry_limits(struct b43_wldev *dev,
  * Not conf->radar_enabled: without channel contexts it is not set on the
  * config call that tunes the channel. mac80211 creates the context with it
  * off, tunes, and turns it on after without a config call (see
- * b43_radar_work_handler()); on the RT-AC66U B1 every config call through a
+ * b43_phy_ac_radar_work()); on the RT-AC66U B1 every config call through a
  * check read it 0, so the gate never closed: MACCTL kept B43_MACCTL_AP and
  * the transmitting calibrations ran on the radar channel.
  */
@@ -6163,9 +6126,6 @@ static int b43_op_config(struct ieee80211_hw *hw, int radio_idx, u32 changed)
 
 		if (ac && dev->cac_pending != cac_was)
 			b43_ac_cac_match_gate(dev, !dev->cac_pending);
-		if (dev->radar_arm && phy->ops->radar_poll)
-			ieee80211_queue_delayed_work(hw, &dev->radar_work,
-				msecs_to_jiffies(B43_RADAR_POLL_MS));
 	}
 
 	if (changed & IEEE80211_CONF_CHANGE_RETRY_LIMITS)
@@ -6600,9 +6560,8 @@ redo:
 	/* Cancel work. Unlock to avoid deadlocks. */
 	mutex_unlock(&wl->mutex);
 	cancel_delayed_work_sync(&dev->periodic_work);
-	cancel_delayed_work_sync(&dev->radar_work);
-	if (IS_ENABLED(CONFIG_B43_NEXT_PHY_N) && dev->phy.type == B43_PHYTYPE_N)
-		b43_nphy_cancel_perical(dev);
+	if (dev->phy.work.work.func)
+		cancel_delayed_work_sync(&dev->phy.work);
 	cancel_work_sync(&wl->tx_work);
 	/* After the TX work, which arms it */
 	cancel_delayed_work_sync(&dev->ampdu_kick_work);
@@ -8491,7 +8450,7 @@ static int b43_setup_bands(struct b43_wldev *dev,
 	 * channel without radar duty cfg80211 does not look at the widths.
 	 */
 	if (IS_ENABLED(CONFIG_B43_NEXT_DFS) && have_5ghz_phy &&
-	    dev->phy.ops->radar_poll) {
+	    dev->phy.type == B43_PHYTYPE_AC) {
 		hw->wiphy->iface_combinations = &b43_if_comb_dfs;
 		hw->wiphy->n_iface_combinations = 1;
 	}
