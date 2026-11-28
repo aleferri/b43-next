@@ -66,9 +66,12 @@ python3 ../unit/cmp_skip.py "$T/attach.phy.ops" "$T/attach.phy.trace" \
 # MAC is enabled again, in a file of its own.
 python3 - "$ops" "$T" > "$T/switches" <<'PY'
 import re, sys
+from calres import CalRes
 sfo = {965 + 2 * c: c + 1 for c in range(13)}
 tunes = start = 0
+cal = CalRes()
 for line in open(sys.argv[1]):
+    cal.feed(line)
     f = line.split()
     if len(f) < 5:
         continue
@@ -80,10 +83,10 @@ for line in open(sys.argv[1]):
     if tunes < 14:
         continue
     if ' PHY.RD addr=0x0780 ' in line and not start:
-        start, win = n, []
+        start, win, env = n, [], cal.env()
     if tunes > 14 and start and re.search(r'MAC\.MCTRL val=0x\w*[13579bdf]\s*$', line):
         open('%s/sw%d.ops' % (sys.argv[2], ch), 'w').writelines(win)
-        print(start, n - 1, ch)
+        print(start, n - 1, ch, env)
         start = 0
         if ch == 13:
             break
@@ -91,8 +94,8 @@ for line in open(sys.argv[1]):
         win.append(line)
 PY
 printf '\n%-8s %-14s %s\n' channel ops PHY+radio
-while read first last ch; do
-	env $(python3 calres.py "$ops" "$first") LCN_CHANNEL=$ch \
+while read first last ch cal; do
+	env $cal LCN_CHANNEL=$ch \
 		./lcn-trace switch "$T/sw$ch.ops" "$first" "$last" \
 		-o "$T/sw$ch.trace" 2>/dev/null || exit 1
 	grep -E ' (PHY|RAD)\.' "$T/sw$ch.ops" > "$T/sw$ch.phy.ops"
