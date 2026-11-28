@@ -3,7 +3,7 @@
 # The sources of b43-next/, for Kbuild and for the test suites.
 
 b43n-core	:= main.c beacon.c bus.c fw_layout.c sysfs.c xmit.c dma.c pio.c \
-		   rfkill.c ampdu.c
+		   rfkill.c ampdu.c fw.c
 # What every PHY links against
 b43n-phy	:= phy_common.c ppr.c qmath.c calibrate.c
 

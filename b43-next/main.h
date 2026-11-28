@@ -82,6 +82,18 @@ void b43_tsf_read(struct b43_wldev *dev, u64 * tsf);
 void b43_watchdog_poll(struct b43_wldev *dev);
 void b43_tsf_write(struct b43_wldev *dev, u64 tsf);
 
+static inline void b43_shm_control_word(struct b43_wldev *dev,
+					u16 routing, u16 offset)
+{
+	u32 control;
+
+	/* "offset" is the WORD offset. */
+	control = routing;
+	control <<= 16;
+	control |= offset;
+	b43_write32(dev, B43_MMIO_SHM_CONTROL, control);
+}
+
 u32 b43_shm_read32(struct b43_wldev *dev, u16 routing, u16 offset);
 u16 b43_shm_read16(struct b43_wldev *dev, u16 routing, u16 offset);
 void b43_shm_write32(struct b43_wldev *dev, u16 routing, u16 offset, u32 value);
@@ -121,12 +133,6 @@ void b43_mac_suspend(struct b43_wldev *dev);
 void b43_mac_enable(struct b43_wldev *dev);
 void b43_mac_phy_clock_set(struct b43_wldev *dev, bool on);
 void b43_mac_switch_freq(struct b43_wldev *dev, u8 spurmode);
-
-
-struct b43_request_fw_context;
-int b43_do_request_fw(struct b43_request_fw_context *ctx, const char *name,
-		      struct b43_firmware_file *fw, bool async);
-void b43_do_release_fw(struct b43_firmware_file *fw);
 
 void b43_ampdu_kick_arm(struct b43_wldev *dev);
 
