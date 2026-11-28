@@ -3,7 +3,7 @@
  * Driver side of the LCN-PHY harness, built against the kernel headers like
  * the driver. It compiles phy_lcn.c into this file to reach its static
  * functions, puts a BCM4313 (chip rev 1, core rev 24, LCN-PHY rev 1, radio
- * 2064 rev 1) on a bus whose accesses go to trace.c, and runs one flow.
+ * 2064 rev 1) on a bus whose accesses go to trace.cpp, and runs one flow.
  * Nothing of b43 is modified.
  */
 #include "lcn_trace.h"

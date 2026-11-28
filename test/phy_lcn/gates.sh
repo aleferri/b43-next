@@ -50,7 +50,8 @@ last=$(awk -v i="$init" '{ n = substr($2, 2) + 0 }
 
 # wl's attach tunes channel 1: 0x657 = 965, channel 1's SFO
 echo "== attach, ops $first:$last, channel 1, 20 MHz"
-LCN_CHANNEL=1 ./lcn-trace full "$ops" "$first" "$last" -o "$T/attach.trace"
+LCN_CHANNEL=1 ./lcn-trace full "$ops" "$first" "$last" \
+	-o "$T/attach.trace" || exit 1
 python3 ../unit/cmp_skip.py "$ops" "$T/attach.trace" "$first:$last" \
 	--board compaq-cq57 --bus --rmw $B | grep -A2 '^raw '
 grep -E ' (PHY|RAD)\.' "$ops" > "$T/attach.phy.ops"
@@ -62,12 +63,15 @@ python3 ../unit/cmp_skip.py "$T/attach.phy.ops" "$T/attach.phy.trace" \
 # The channel switches of wl's second scan, every 2.4 GHz channel but 14,
 # with the init's calibration results as wl holds them (calres.py): each
 # window from the switch's first PHY operation (0x780) to the op before the
-# MAC is enabled again.
-python3 - "$ops" > "$T/switches" <<'PY'
+# MAC is enabled again, in a file of its own.
+python3 - "$ops" "$T" > "$T/switches" <<'PY'
 import re, sys
+from calres import CalRes
 sfo = {965 + 2 * c: c + 1 for c in range(13)}
 tunes = start = 0
+cal = CalRes()
 for line in open(sys.argv[1]):
+    cal.feed(line)
     f = line.split()
     if len(f) < 5:
         continue
@@ -79,20 +83,25 @@ for line in open(sys.argv[1]):
     if tunes < 14:
         continue
     if ' PHY.RD addr=0x0780 ' in line and not start:
-        start = n
+        start, win, env = n, [], cal.env()
     if tunes > 14 and start and re.search(r'MAC\.MCTRL val=0x\w*[13579bdf]\s*$', line):
-        print(start, n - 1, ch)
+        open('%s/sw%d.ops' % (sys.argv[2], ch), 'w').writelines(win)
+        print(start, n - 1, ch, env)
         start = 0
         if ch == 13:
             break
+    if start:
+        win.append(line)
 PY
 printf '\n%-8s %-14s %s\n' channel ops PHY+radio
-while read first last ch; do
-	env $(python3 calres.py "$ops" "$first") LCN_CHANNEL=$ch \
-		./lcn-trace switch "$ops" "$first" "$last" -o "$T/sw$ch.trace" 2>/dev/null
+while read first last ch cal; do
+	env $cal LCN_CHANNEL=$ch \
+		./lcn-trace switch "$T/sw$ch.ops" "$first" "$last" \
+		-o "$T/sw$ch.trace" 2>/dev/null || exit 1
+	grep -E ' (PHY|RAD)\.' "$T/sw$ch.ops" > "$T/sw$ch.phy.ops"
 	grep -E ' (PHY|RAD)\.' "$T/sw$ch.trace" > "$T/sw$ch.phy.trace"
 	printf '%-8s %-14s %s\n' "$ch" "$first:$last" "$(python3 ../unit/cmp_skip.py \
-		"$T/attach.phy.ops" "$T/sw$ch.phy.trace" "$first:$last" \
+		"$T/sw$ch.phy.ops" "$T/sw$ch.phy.trace" "$first:$last" \
 		--board compaq-cq57 --bus --rmw $B | sed -n 's/^raw *: //p' |
 		cut -d' ' -f1-3)"
 done < "$T/switches"
@@ -129,7 +138,7 @@ pass=0 all=0
 while read first last cnt; do
 	all=$((all + 1))
 	LCN_TSSI_TX_CNT=$cnt ./lcn-trace watchdog "$T/wd/$first.ops" "$first" \
-		"$last" -o "$T/wd.trace" 2>/dev/null
+		"$last" -o "$T/wd.trace" 2>/dev/null || exit 1
 	grep -E ' (PHY|RAD)\.' "$T/wd.trace" | cut -d' ' -f2- > "$T/wd.b43"
 	grep -E ' (PHY|RAD)\.' "$T/wd/$first.ops" |
 		sed 's/.* cpu[0-9]* //' > "$T/wd.wl"

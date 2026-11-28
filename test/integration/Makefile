@@ -134,9 +134,11 @@ LIBC := pipe|fork|execl|dup2|close|waitpid|fdopen|fflush|fputs|perror|_exit|exit
 DRV_OBJS := $(patsubst %.c,$(B)/b43-next/%.o,$(UPSTREAM)) \
             $(patsubst %.c,$(B)/bcma-next/%.o,$(BCMA)) \
             $(patsubst %.c,$(B)/nvram/%.o,$(NVRAM)) \
-            $(patsubst %.c,$(B)/klib/%.o,$(notdir $(KLIB)))
+            $(patsubst %.c,$(B)/klib/%.o,$(KLIB))
+LOCAL_OBJS := $(patsubst %.c,%.o,$(LOCAL))
+USER_OBJS := $(patsubst %.c,%.o,$(USER))
 
-.PHONY: all check link run clean
+.PHONY: all check link run clean FORCE
 all: b43-trace
 
 # b43's sources compile against the real headers.
@@ -147,23 +149,24 @@ check:
 	    echo "  $$f: $$n errors"; \
 	done
 
+# One rule per object, for make -j. FORCE rebuilds every object on every
+# run, as neither the headers nor the flags are tracked.
+$(B)/%.o: $(REPO)/%.c FORCE
+	@mkdir -p $(@D)
+	@gcc -c $< -o $@ $(KFLAGS)
+$(B)/nvram/%.o: KFLAGS += -DCONFIG_BCM47XX_NVRAM=1
+$(B)/klib/%.o: $(K)/%.c FORCE
+	@mkdir -p $(@D)
+	@gcc -c $< -o $@ $(KFLAGS)
+$(LOCAL_OBJS): %.o: %.c FORCE
+	@gcc -c $< -o $@ $(KFLAGS) -I.
+$(USER_OBJS): %.o: %.c FORCE
+	@gcc -c $< -o $@ $(UFLAGS) -I.
+
 # What is missing for the link, per family. The number is the map of the
 # remaining work.
-link:
-	@mkdir -p $(B)/b43-next $(B)/bcma-next $(B)/nvram $(B)/klib
-	@for f in $(addprefix b43-next/,$(UPSTREAM)) $(addprefix bcma-next/,$(BCMA)); do \
-	    gcc -c $(REPO)/$$f -o $(B)/$${f%.c}.o $(KFLAGS) || exit 1; done
-	@for f in $(addprefix nvram/,$(NVRAM)); do \
-	    gcc -c $(REPO)/$$f -o $(B)/$${f%.c}.o $(KFLAGS) \
-	        -DCONFIG_BCM47XX_NVRAM=1 || exit 1; done
-	@for f in $(KLIB); do \
-	    gcc -c $(K)/$$f -o $(B)/klib/$$(basename $${f%.c}).o $(KFLAGS) \
-	        || exit 1; done
-	@for f in $(LOCAL); do gcc -c $$f -o $${f%.c}.o $(KFLAGS) -I.; done
-	@for f in $(USER); do gcc -c $$f -o $${f%.c}.o $(UFLAGS) -I.; done
-	@ld -r $(DRV_OBJS) \
-	      $(patsubst %.c,%.o,$(LOCAL)) $(patsubst %.c,%.o,$(USER)) \
-	      -o b43_partial.o
+link: $(DRV_OBJS) $(LOCAL_OBJS) $(USER_OBJS)
+	@ld -r $^ -o b43_partial.o
 	@nm -u b43_partial.o | awk '{print $$2}' | sort -u > residual.txt
 	@echo "  unresolved symbols: $$(wc -l < residual.txt)"
 	@for p in bcmn_ ssbn_ ieee80211_ b43_; do \

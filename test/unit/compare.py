@@ -965,8 +965,10 @@ def ops_equal(v: str, t: str) -> bool:
         return VAL_TOK.sub('val=*', v, count=1) == VAL_TOK.sub('val=*', t, count=1)
     return False
 
+EPISODE = re.compile(r'#(\d+)')
+
 def extract_episode(raw: str) -> int:
-    m = re.search(r'#(\d+)', raw)
+    m = EPISODE.search(raw)
     return int(m.group(1)) if m else -1
 
 def op_forms(raws, profile):
@@ -1000,11 +1002,11 @@ def load_vendor(path, ep_range, profile=None, expanded=None):
     lo, hi = ep_range or (0, 10**9)
     raws = []
     for line in open(path):
-        m = VENDOR_LINE.match(line)
-        if not m:
-            continue
         ep = extract_episode(line)
         if not (lo <= ep <= hi):
+            continue
+        m = VENDOR_LINE.match(line)
+        if not m:
             continue
         raws.append(m.group(1))
     raws = expand_bulk_heads(raws, expanded)

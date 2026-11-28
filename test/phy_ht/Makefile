@@ -32,7 +32,7 @@ AUTOCONF := $(KG)/include/config/auto.conf
 KFLAGS += $(shell sed -n 's/^CONFIG_CC_MS_EXTENSIONS=//p' $(AUTOCONF))
 KFLAGS += $(if $(shell grep -s '^CONFIG_FUNCTION_TRACER=y' $(AUTOCONF)),-DCC_USING_FENTRY)
 
-UFLAGS := -O2 -g -Wall -Werror -std=gnu11
+UFLAGS := -O2 -g -Wall -Werror -std=gnu++17
 
 # flows.c includes phy_ht.c; the others are linked as they are.
 DRIVER := $(filter-out phy_ht.c,$(b43n-phy-ht)) $(b43n-phy)
@@ -58,11 +58,11 @@ $(B)/int_sqrt.o: $(K)/lib/math/int_sqrt.c | $(B)
 $(B)/flows.o: flows.c ht_trace.h $(REPO)/b43-next/phy_ht.c | $(B)
 	$(CC) -c $< -o $@ $(KFLAGS) -I.
 
-$(B)/trace.o: trace.c ht_trace.h | $(B)
-	$(CC) -c $< -o $@ $(UFLAGS)
+$(B)/trace.o: trace.cpp ht_trace.h | $(B)
+	$(CXX) -c $< -o $@ $(UFLAGS)
 
 ht-trace: $(OBJS)
-	$(CC) -no-pie $^ -o $@
+	$(CXX) -no-pie $^ -o $@
 
 check: ht-trace
 	./check.sh

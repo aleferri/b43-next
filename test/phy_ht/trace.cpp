@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: GPL-2.0
 /*
- * User side of the LCN-PHY harness, ../phy_n/trace.c on the LCN-PHY's table
- * port. It turns the driver's MMIO, agent and ChipCommon accesses into the
- * ops mmio2ops.py prints, serves every read from the capture's own reads,
- * and compares the flow's ops with the capture's, op by op.
+ * User side of the HT-PHY harness. It turns the driver's MMIO and agent
+ * accesses into the ops mmio2ops.py prints for a wl-mmio-trap capture,
+ * serves every read from the capture's own reads, and compares the flow's
+ * ops with the capture's, op by op.
  *
- *   lcn-trace FLOW OPS FIRST LAST [-v]
- *   lcn-trace FLOW OPS FIRST LAST -o TRACE
+ *   ht-trace FLOW OPS FIRST LAST [-v]
+ *   ht-trace FLOW OPS FIRST LAST -o TRACE
  *
  * OPS is mmio2ops.py output, FIRST and LAST the #numbers of the window.
  * With -o the flow's ops go to TRACE, for ../unit/cmp_skip.py --bus, and
@@ -16,8 +16,12 @@
 #include <stdlib.h>
 #include <string.h>
 #include <regex.h>
-#include "lcn_trace.h"
+#include <string>
+#include <unordered_map>
+#include <vector>
+#include "ht_trace.h"
 
+#define PHY_VER		0x3e0
 #define PHY_CTL		0x3fc
 #define PHY_DATA	0x3fe
 #define RADIO_CTL	0x3d8
@@ -35,120 +39,40 @@ static int nref, nout, nlog;
 
 /* One queue of read values per register, in the capture's order. */
 struct queue {
-	char key[24];
-	unsigned int *vals;
-	int n, cap, pos;
+	std::vector<unsigned int> vals;
+	std::vector<int> at;	/* the read's index in ref[] */
+	size_t pos = 0;
 };
-/* Per register, and per table cell: thousands */
-static struct queue queues[16384];
-static int nqueues, exhausted;
+static std::unordered_map<std::string, queue> queues;
+static int exhausted;
 
 /* Last value written per register, for a read the capture does not have. */
-struct cell {
-	char key[24];
-	unsigned int val;
-};
-static struct cell cells[16384];
-static int ncells;
+static std::unordered_map<std::string, unsigned int> cells;
+
+/* Where wl's watchdog turns start in ref[]: their read of MMIO 0x4d0 */
+static std::vector<int> turn_at;
 
 static unsigned int phy_addr, radio_addr;
-
-/*
- * The PHY table port: 0x455 = table id << 10 | offset, 0x457 the high half
- * of a 32-bit cell, 0x456 the low half (or a 16-bit cell), and the offset
- * advances on every 0x456 access. Table reads are served per cell, keyed by
- * (id, offset, half), from wl's reads of that cell, not per data register:
- * a per-register queue hands b43 wl's table reads in wl's order, whatever
- * cell b43 reads.
- */
-struct tbl_port {
-	unsigned int id, off;
-};
-static struct tbl_port b43_tbl;
-
-/* The key of a table data access at PHY address a; 0 if a is not one */
-static int tbl_key(struct tbl_port *t, unsigned int a, char *key, size_t n)
-{
-	if (a != 0x456 && a != 0x457)
-		return 0;
-	snprintf(key, n, "TBL %02x %03x %c", t->id, t->off, a == 0x457 ? 'H' : 'L');
-	return 1;
-}
-
-static void tbl_after(struct tbl_port *t, unsigned int a, unsigned int v,
-		      int write)
-{
-	if (a == 0x455 && write) {
-		t->id = v >> 10;
-		t->off = v & 0x3ff;
-	} else if (a == 0x456) {
-		t->off++;
-	}
-}
-
 static char phy_last;
-
-static struct queue *queue(const char *key, int create)
-{
-	int i;
-
-	for (i = 0; i < nqueues; i++)
-		if (!strcmp(queues[i].key, key))
-			return &queues[i];
-	if (!create)
-		return NULL;
-	if (nqueues == (int)(sizeof(queues) / sizeof(queues[0]))) {
-		fprintf(stderr, "too many read queues\n");
-		exit(2);
-	}
-	snprintf(queues[nqueues].key, sizeof(queues[0].key), "%s", key);
-	return &queues[nqueues++];
-}
-
-static void push(const char *key, unsigned int v)
-{
-	struct queue *q = queue(key, 1);
-
-	if (q->n == q->cap) {
-		q->cap = q->cap ? 2 * q->cap : 16;
-		q->vals = realloc(q->vals, q->cap * sizeof(*q->vals));
-		if (!q->vals)
-			exit(2);
-	}
-	q->vals[q->n++] = v;
-}
 
 static void store(const char *key, unsigned int val)
 {
-	int i;
-
-	for (i = 0; i < ncells; i++)
-		if (!strcmp(cells[i].key, key))
-			break;
-	if (i == ncells) {
-		if (ncells == (int)(sizeof(cells) / sizeof(cells[0]))) {
-			fprintf(stderr, "too many cells\n");
-			exit(2);
-		}
-		snprintf(cells[ncells++].key, sizeof(cells[0].key), "%s", key);
-	}
-	cells[i].val = val;
+	cells[key] = val;
 }
 
 static unsigned int serve(const char *key)
 {
-	struct queue *q = queue(key, 0);
-	int i;
+	auto entry = queues.find(key);
 
-	if (q && q->pos < q->n)
-		return q->vals[q->pos++];
+	if (entry != queues.end()) {
+		auto &q = entry->second;
+		if (q.pos < q.vals.size())
+			return q.vals[q.pos++];
+	}
 	exhausted++;
-	if (getenv("LCN_DEBUG"))
-		fprintf(stderr, "read past the window: %s (op %d)\n", key, nout + 1);
-	for (i = 0; i < ncells; i++)
-		if (!strcmp(cells[i].key, key))
-			return cells[i].val;
-	return 0;
+
+	auto cell = cells.find(key);
+	return cell == cells.end() ? 0 : cell->second;
 }
 
 static void emit(const char *fmt, const char *cls, unsigned int a,
@@ -173,17 +97,15 @@ static void phy_data(const char *cls, int wide, unsigned int v)
 			 cls, phy_addr, v);
 }
 
-unsigned short lcn_mmio_read16(unsigned short offset)
+unsigned short ht_mmio_read16(unsigned short offset)
 {
 	char key[24];
 	unsigned int v;
 
 	switch (offset) {
 	case PHY_DATA:
-		if (!tbl_key(&b43_tbl, phy_addr, key, sizeof(key)))
-			snprintf(key, sizeof(key), "PHY %04x", phy_addr);
+		snprintf(key, sizeof(key), "PHY %04x", phy_addr);
 		v = serve(key);
-		tbl_after(&b43_tbl, phy_addr, v, 0);
 		phy_data("PHY.RD", phy_last != 0, v);
 		phy_last = 'R';
 		return v;
@@ -192,6 +114,9 @@ unsigned short lcn_mmio_read16(unsigned short offset)
 		v = serve(key);
 		emit("%s addr=0x%04x val=0x%04x", "RAD.RD", radio_addr, v);
 		return v;
+	case PHY_VER:
+		/* b43's posting read every 64 writes: mmio2ops drops it. */
+		return 0;
 	default:
 		snprintf(key, sizeof(key), "REG %04x", offset);
 		v = serve(key);
@@ -200,7 +125,7 @@ unsigned short lcn_mmio_read16(unsigned short offset)
 	}
 }
 
-void lcn_mmio_write16(unsigned short offset, unsigned short value)
+void ht_mmio_write16(unsigned short offset, unsigned short value)
 {
 	char key[24];
 
@@ -212,10 +137,8 @@ void lcn_mmio_write16(unsigned short offset, unsigned short value)
 	case PHY_DATA:
 		phy_data("PHY.WR", phy_last == 'W', value);
 		phy_last = 'W';
-		if (!tbl_key(&b43_tbl, phy_addr, key, sizeof(key)))
-			snprintf(key, sizeof(key), "PHY %04x", phy_addr);
+		snprintf(key, sizeof(key), "PHY %04x", phy_addr);
 		store(key, value);
-		tbl_after(&b43_tbl, phy_addr, value, 1);
 		return;
 	case RADIO_CTL:
 		radio_addr = value;
@@ -233,30 +156,74 @@ void lcn_mmio_write16(unsigned short offset, unsigned short value)
 	}
 }
 
-unsigned int lcn_mmio_read32(unsigned short offset)
+static unsigned int macctl = 1;
+
+unsigned int ht_mmio_read32(unsigned short offset)
 {
 	char key[24];
 	unsigned int v;
 
 	snprintf(key, sizeof(key), "REG %04x", offset);
 	v = serve(key);
+	/*
+	 * The microcode's answer, which no capture can serve in b43's
+	 * order: with the MAC's enable bit clear, GEN_IRQ_REASON says
+	 * suspended.
+	 */
+	if (offset == 0x128 && !(macctl & 1))
+		v |= 1;
 	emit("%s off=0x%04x val=0x%08x", "REG.RD", offset, v);
 	return v;
 }
 
-void lcn_mmio_write32(unsigned short offset, unsigned int value)
+void ht_mmio_write32(unsigned short offset, unsigned int value)
 {
 	char key[24];
 
-	if (offset == 0x120 && nout < MAX_OPS)
-		snprintf(out[nout++].text, LINE, "MAC.MCTRL val=0x%08x", value);
-	else if (offset != 0x120)
+	if (offset == 0x120)
+		macctl = value;
+	/* MACCTL and MACCMD, which mmio2ops names */
+	if ((offset == 0x120 || offset == 0x124) && nout < MAX_OPS)
+		snprintf(out[nout++].text, LINE, "%s val=0x%08x",
+			 offset == 0x120 ? "MAC.MCTRL" : "MAC.MCMD", value);
+	else if (offset != 0x120 && offset != 0x124)
 		emit("%s off=0x%04x val=0x%08x", "REG.WR", offset, value);
 	snprintf(key, sizeof(key), "REG %04x", offset);
 	store(key, value);
 }
 
-unsigned int lcn_wrap_read32(unsigned short offset)
+/*
+ * The shared memory as mmio2ops prints wl's accesses, the routing in the
+ * select: one op for the control word and the data.
+ */
+unsigned short ht_shm_read16(unsigned short routing, unsigned short offset)
+{
+	char key[24];
+	unsigned int v;
+
+	snprintf(key, sizeof(key), "OBJ %04x", offset);
+	v = serve(key);
+	if (nout < MAX_OPS)
+		snprintf(out[nout++].text, LINE,
+			 "OBJ.RD addr=0x%04x val=0x%04x sel=0x%x", offset, v,
+			 routing << 16);
+	return v;
+}
+
+void ht_shm_write16(unsigned short routing, unsigned short offset,
+		    unsigned short value)
+{
+	char key[24];
+
+	if (nout < MAX_OPS)
+		snprintf(out[nout++].text, LINE,
+			 "OBJ.WR addr=0x%04x val=0x%04x sel=0x%x", offset, value,
+			 routing << 16);
+	snprintf(key, sizeof(key), "OBJ %04x", offset);
+	store(key, value);
+}
+
+unsigned int ht_wrap_read32(unsigned short offset)
 {
 	char key[24];
 	unsigned int v;
@@ -267,7 +234,7 @@ unsigned int lcn_wrap_read32(unsigned short offset)
 	return v;
 }
 
-void lcn_wrap_write32(unsigned short offset, unsigned int value)
+void ht_wrap_write32(unsigned short offset, unsigned int value)
 {
 	char key[24];
 
@@ -276,35 +243,26 @@ void lcn_wrap_write32(unsigned short offset, unsigned int value)
 	store(key, value);
 }
 
-unsigned int lcn_cc_read32(unsigned short offset)
+/*
+ * Turn k of the window starts. wl reads the core's registers and shared
+ * memory outside its turns too, at the inits and in its interrupt
+ * handling, where b43 reads others: its reads of a turn take the values wl
+ * read from the same turn on, not the ones before it. The PHY's and the
+ * radio's reads keep their order across the window.
+ */
+void ht_turn(int k)
 {
-	char key[24];
-	unsigned int v;
-
-	snprintf(key, sizeof(key), "CC %04x", offset);
-	v = serve(key);
-	emit("%s off=0x%04x val=0x%08x", "CC.RD", offset, v);
-	return v;
+	if (k >= (int)turn_at.size())
+		return;
+	for (auto &[key, q] : queues) {
+		if (!key.compare(0, 4, "PHY ") || !key.compare(0, 4, "RAD "))
+			continue;
+		while (q.pos < q.vals.size() && q.at[q.pos] < turn_at[k])
+			q.pos++;
+	}
 }
 
-void lcn_cc_write32(unsigned short offset, unsigned int value)
-{
-	char key[24];
-
-	emit("%s off=0x%04x val=0x%08x", "CC.WR", offset, value);
-	snprintf(key, sizeof(key), "CC %04x", offset);
-	store(key, value);
-}
-
-unsigned short lcn_shm_read16(unsigned short offset)
-{
-	char key[24];
-
-	snprintf(key, sizeof(key), "OBJ %04x", offset);
-	return serve(key);
-}
-
-void lcn_log(const char *what)
+void ht_log(const char *what)
 {
 	nlog++;
 	fprintf(stderr, "b43: %s%s", what,
@@ -313,7 +271,7 @@ void lcn_log(const char *what)
 
 static const char *nvram_path;
 
-long lcn_env(const char *name, long dflt)
+long ht_env(const char *name, long dflt)
 {
 	const char *v = getenv(name);
 
@@ -327,7 +285,7 @@ static struct {
 } core_calls[32];
 static int ncore;
 
-void lcn_core(const char *fn)
+void ht_core(const char *fn)
 {
 	int i;
 
@@ -340,7 +298,7 @@ void lcn_core(const char *fn)
 		core_calls[i].n++;
 }
 
-long lcn_nvram(const char *name, long dflt)
+long ht_nvram(const char *name, long dflt)
 {
 	char line[256];
 	size_t n = strlen(name);
@@ -350,9 +308,6 @@ long lcn_nvram(const char *name, long dflt)
 	while (f && fgets(line, sizeof(line), f)) {
 		char *p = strrchr(line, '/');
 
-		/* router-data's "pci/1/1/name" and the CFE's "0:name" */
-		if (!p)
-			p = strchr(line, ':');
 		p = p ? p + 1 : line;
 		if (!strncmp(p, name, n) && p[n] == '=') {
 			v = strtol(p + n + 1, NULL, 0);
@@ -364,33 +319,9 @@ long lcn_nvram(const char *name, long dflt)
 	return v;
 }
 
-/*
- * Ops whose value b43 sets by design otherwise than wl: compared by class
- * and address only. None yet for the LCN-PHY; see README.md.
- */
-static const char *const value_free[] = {
-	NULL,
-};
-
-static int same(const char *a, const char *b)
-{
-	size_t i;
-
-	if (!strcmp(a, b))
-		return 1;
-	for (i = 0; value_free[i]; i++) {
-		size_t n = strlen(value_free[i]);
-
-		if (!strncmp(a, value_free[i], n) && !strncmp(b, value_free[i], n))
-			return 2;
-	}
-	return 0;
-}
-
 /* The window of the capture, without timestamps, numbers and reg names. */
 static int load(const char *path, long first, long last)
 {
-	struct tbl_port wl_tbl = { 0, 0 };
 	regex_t re;
 	regmatch_t m[4];
 	char line[512], key[24];
@@ -406,11 +337,12 @@ static int load(const char *path, long first, long last)
 		unsigned int a, v;
 		long n;
 
+		/* Before the regex, which takes most of the time */
+		if (sscanf(line, "%*[^#]#%ld", &n) != 1 ||
+		    n < first || n > last)
+			continue;
 		line[strcspn(line, "\n")] = 0;
 		if (regexec(&re, line, 4, m, 0))
-			continue;
-		n = strtol(line + m[1].rm_so, NULL, 10);
-		if (n < first || n > last)
 			continue;
 		snprintf(cls, sizeof(cls), "%.*s", (int)(m[2].rm_eo - m[2].rm_so),
 			 line + m[2].rm_so);
@@ -420,31 +352,25 @@ static int load(const char *path, long first, long last)
 		r = strstr(args, " reg=");
 		if (r)
 			*r = 0;
-		if (nref < MAX_OPS)
-			snprintf(ref[nref++].text, LINE, "%s %s", cls, args);
+		if (nref >= MAX_OPS)
+			continue;
+		snprintf(ref[nref++].text, LINE, "%s %s", cls, args);
+		if (!strncmp(ref[nref - 1].text, "REG.RD off=0x04d0 ", 18))
+			turn_at.push_back(nref - 1);
 
-		if (!strncmp(cls, "PHY.", 4) &&
-		    sscanf(args, "addr=0x%x val=0x%x", &a, &v) == 2) {
-			int rd = !strcmp(cls, "PHY.RD");
-
-			if (rd && tbl_key(&wl_tbl, a, key, sizeof(key))) {
-				push(key, v);
-				tbl_after(&wl_tbl, a, v, 0);
-				continue;
-			}
-			tbl_after(&wl_tbl, a, v, !rd);
-		}
 		if (strcmp(cls + strlen(cls) - 3, ".RD"))
 			continue;
 		if (sscanf(args, "addr=0x%x val=0x%x", &a, &v) == 2)
 			snprintf(key, sizeof(key), "%.3s %04x", cls, a);
 		else if (sscanf(args, "off=0x%x val=0x%x", &a, &v) == 2)
-			/* the window the op is in: REG, WRAP, CC, PCIE */
-			snprintf(key, sizeof(key), "%.*s %04x",
-				 (int)(strchr(cls, '.') - cls), cls, a);
+			snprintf(key, sizeof(key), "%s %04x",
+				 strncmp(cls, "WRAP", 4) ? "REG" : "WRAP", a);
 		else
 			continue;
-		push(key, v);
+
+		auto &q = queues[key];
+		q.vals.push_back(v);
+		q.at.push_back(nref - 1);
 	}
 	fclose(f);
 	regfree(&re);
@@ -455,21 +381,21 @@ int main(int argc, char **argv)
 {
 	int i, verbose = argc > 5 && !strcmp(argv[5], "-v");
 	const char *trace = argc > 6 && !strcmp(argv[5], "-o") ? argv[6] : NULL;
-	int unread = 0, excepted = 0, r = 1;
+	size_t unread = 0;
 
 	if (argc < 5) {
 		fprintf(stderr, "usage: %s FLOW OPS FIRST LAST [-v]\n", argv[0]);
 		return 2;
 	}
-	nvram_path = getenv("LCN_NVRAM");
+	nvram_path = getenv("HT_NVRAM");
 	if (load(argv[2], atol(argv[3]), atol(argv[4])))
 		return 2;
-	if (lcn_run_flow(argv[1])) {
+	if (ht_run_flow(argv[1])) {
 		fprintf(stderr, "unknown flow %s\n", argv[1]);
 		return 2;
 	}
-	for (i = 0; i < nqueues; i++)
-		unread += queues[i].n - queues[i].pos;
+	for (const auto &entry : queues)
+		unread += entry.second.vals.size() - entry.second.pos;
 
 	if (verbose)
 		for (i = 0; i < nout; i++)
@@ -485,7 +411,7 @@ int main(int argc, char **argv)
 			fprintf(f, "cpu0 %s\n", out[i].text);
 		fclose(f);
 		fprintf(stderr, "%d ops; reads past the window %d, window reads "
-			"not taken %d, b43 messages %d\n", nout, exhausted,
+			"not taken %zu, b43 messages %d\n", nout, exhausted,
 			unread, nlog);
 		for (i = 0; i < ncore; i++)
 			fprintf(stderr, "core, no ops: %s x%d\n",
@@ -494,16 +420,11 @@ int main(int argc, char **argv)
 	}
 
 	for (i = 0; i < nout && i < nref; i++) {
-		r = same(out[i].text, ref[i].text);
-		if (!r)
+		if (strcmp(out[i].text, ref[i].text))
 			break;
-		excepted += r == 2;
 	}
 	if (i == nout && i == nref && !exhausted && !unread && !nlog) {
-		printf("PASS %-12s %d ops", argv[1], nref);
-		if (excepted)
-			printf(", %d by address only", excepted);
-		printf("\n");
+		printf("PASS %-12s %d ops\n", argv[1], nref);
 		return 0;
 	}
 	printf("FAIL %-12s ops %d/%d, first difference at op %d of the window\n",
@@ -511,7 +432,7 @@ int main(int argc, char **argv)
 	if (i < nref || i < nout)
 		printf("     wl: %s\n     b43: %s\n", i < nref ? ref[i].text : "(end)",
 		       i < nout ? out[i].text : "(end)");
-	printf("     reads past the capture %d, capture reads not taken %d, "
+	printf("     reads past the capture %d, capture reads not taken %zu, "
 	       "b43 messages %d\n", exhausted, unread, nlog);
 	return 1;
 }
